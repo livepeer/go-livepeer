@@ -34,6 +34,10 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		return
 	}
 
+	// Read any query params
+	queryParams := r.URL.Query()
+	desync := queryParams.Get("desync") != ""
+
 	// Read the SDP offer
 	offerBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -108,11 +112,18 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			hasVideo = true
 
 		case *mpegts.CodecOpus:
+			// if tracks share the same mid the browser will sync them for playback
+			// this may lead to buffering / latency so use a separate mid if requested
+			audioMid := "livepeer"
+			if desync {
+				clog.Info(ctx, "Using a separate mid for audio")
+				audioMid = audioMid + "-audio"
+			}
 			webrtcTrack, err := NewLocalTrack(
 				// NB: Don't signal sample rate or channel count here. Leave empty to use defaults.
 				// Opus RTP RFC 7587 requires opus/48000/2 regardless of the actual content
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
-				"audio", "livepeer", // NB: can be another MediaID to desync a/v for latency
+				"audio", audioMid, // NB: can be another MediaID to desync a/v for latency
 			)
 			if err != nil {
 				clog.InfofErr(ctx, "Error creating track for opus", err)
