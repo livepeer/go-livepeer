@@ -185,11 +185,11 @@ type LivePipeline struct {
 	ControlPub   *trickle.TricklePublisher
 	StopControl  func()
 	ReportUpdate func([]byte)
-  OutCond      *sync.Cond
+	OutCond      *sync.Cond
 	OutWriter    *media.RingBuffer
 	Closed       bool
 
-	DataWriter   *media.SegmentWriter
+	DataWriter *media.SegmentWriter
 
 	StreamCtx     context.Context
 	streamCancel  context.CancelCauseFunc

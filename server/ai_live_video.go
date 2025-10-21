@@ -534,7 +534,7 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 		Pipeline:   params.liveParams.pipeline,
 		DataWriter: params.liveParams.dataWriter,
 		StreamID:   params.liveParams.streamID,
-    OutCond:   sync.NewCond(params.node.LiveMu),
+		OutCond:    sync.NewCond(params.node.LiveMu),
 	}
 }
 
@@ -946,7 +946,6 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 		}
 	}()
 }
-
 
 func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
