@@ -34,9 +34,11 @@ const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
+const containerStopTimeout = 8 * time.Second
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
+const containerCreatorIDLabel = "creator_id"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -109,10 +111,11 @@ func NewDefaultDockerClient() (DockerClient, error) {
 }
 
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
+	gpus               []string
+	modelDir           string
+	overrides          ImageOverrides
+	verboseLogs        bool
+	containerCreatorID string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -122,7 +125,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -132,21 +135,22 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if _, err := RemoveExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client, containerCreatorID); err != nil {
 		cancel()
 		return nil, err
 	}
 	cancel()
 
 	manager := &DockerManager{
-		gpus:          gpus,
-		modelDir:      modelDir,
-		overrides:     overrides,
-		verboseLogs:   verboseLogs,
-		dockerClient:  client,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               gpus,
+		modelDir:           modelDir,
+		overrides:          overrides,
+		verboseLogs:        verboseLogs,
+		dockerClient:       client,
+		containerCreatorID: containerCreatorID,
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
 	}
 
 	return manager, nil
@@ -397,7 +401,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerPort: struct{}{},
 		},
 		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
+			containerCreatorLabel:   containerCreator,
+			containerCreatorIDLabel: m.containerCreatorID,
 		},
 	}
 
@@ -407,11 +412,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	restartPolicy := container.RestartPolicy{
-		Name:              "on-failure",
+		Name:              container.RestartPolicyOnFailure,
 		MaximumRetryCount: 3,
-	}
-	if keepWarm {
-		restartPolicy = container.RestartPolicy{Name: "always"}
 	}
 
 	hostConfig := &container.HostConfig{
@@ -686,7 +688,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, error) {
+func RemoveExistingContainers(ctx context.Context, client DockerClient, containerCreatorID string) (int, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -703,6 +705,12 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, er
 
 	removed := 0
 	for _, c := range containers {
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
+		// We also remove containers without creator-id label as a migration from previous versions that didn't have it.
+		shouldRemove := !hasCreatorID || creatorID == containerCreatorID
+		if !shouldRemove {
+			continue
+		}
 		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
 		if err := dockerRemoveContainer(client, c.ID); err != nil {
 			return removed, err
@@ -726,7 +734,8 @@ func dockerRemoveContainer(client DockerClient, containerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 
-	err := client.ContainerStop(ctx, containerID, container.StopOptions{})
+	timeoutSec := int(containerStopTimeout.Seconds())
+	err := client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeoutSec})
 	// Ignore "not found" or "already stopped" errors
 	if err != nil && !docker.IsErrNotFound(err) && !errdefs.IsNotModified(err) {
 		return err
@@ -770,8 +779,25 @@ tickerLoop:
 				return err
 			}
 
+			// If the container is running, we're done.
 			if json.State.Running {
 				break tickerLoop
+			}
+
+			// Fail fast on states that won't become running after startup.
+			if json.State != nil {
+				status := strings.ToLower(json.State.Status)
+				// Consider exited/dead as terminal. "removing" will surface via
+				// inspect error or transition to exited/dead shortly.
+				if status == "exited" || status == "dead" {
+					return fmt.Errorf("container entered terminal state before running: %s (exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.ExitCode != 0 {
+					return fmt.Errorf("container exited before running (status=%s, exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.Error != "" {
+					return fmt.Errorf("container error before running: %s", json.State.Error)
+				}
 			}
 		}
 	}
