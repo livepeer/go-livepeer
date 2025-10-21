@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -1660,7 +1661,16 @@ func getRemoteAddr(r *http.Request) string {
 	if proxiedAddr := r.Header.Get("X-Forwarded-For"); proxiedAddr != "" {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
-	return strings.Split(addr, ":")[0]
+
+	// addr is typically in the format "ip:port"
+	// Need to extract just the IP. Handle IPv6 too.
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		// probably not a real IP
+		return addr
+	}
+
+	return host
 }
 
 func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {
