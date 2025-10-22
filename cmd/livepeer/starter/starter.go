@@ -168,7 +168,6 @@ type LivepeerConfig struct {
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
-	SingleShot                 *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -303,7 +302,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
-	defaultSingleShot := false
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -425,7 +423,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
 		RemoteSigner:  &defaultRemoteSigner,
-		SingleShot:    &defaultSingleShot,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -875,16 +872,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		n.Eth = client
-
-		// Handle single-shot mode after wallet is initialized
-		if *cfg.SingleShot {
-			if *cfg.RemoteSigner {
-				// Generate signature and exit
-				server.GenerateSingleSignature(n)
-				return
-			}
-			exit("no valid actions for single shot mode")
-		}
 
 		addrMap := n.Eth.ContractAddresses()
 

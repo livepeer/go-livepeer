@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -62,38 +61,4 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 		IdleTimeout: HTTPIdleTimeout,
 	}
 	return srv.ListenAndServe()
-}
-
-// GenerateSingleSignature generates a single signature and prints it to stdout, then exits
-func GenerateSingleSignature(node *core.LivepeerNode) {
-	// Create broadcaster for signing
-	gw := core.NewBroadcaster(node)
-
-	// Create empty params for signing
-	params := GetOrchestratorInfoParams{}
-
-	// Generate the request (this creates the signature)
-	req, err := genOrchestratorReq(gw, params)
-	if err != nil {
-		glog.Exitf("Failed to generate signature: %v", err)
-	}
-
-	// Extract signature and format as hex
-	var (
-		signature = "0x" + hex.EncodeToString(req.Sig)
-		address   = gw.Address().String()
-	)
-
-	// Output JSON to stdout
-	result := map[string]string{
-		"address":   address,
-		"signature": signature,
-	}
-
-	jsonData, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		glog.Exitf("Failed to marshal result: %v", err)
-	}
-
-	fmt.Println(string(jsonData))
 }
