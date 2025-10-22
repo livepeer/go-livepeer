@@ -168,6 +168,7 @@ type LivepeerConfig struct {
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
+	RemoteSignerAddr           *string
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -302,6 +303,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
+	defaultRemoteSignerAddr := ""
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -421,8 +423,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail: &defaultTestOrchAvail,
-		RemoteSigner:  &defaultRemoteSigner,
+		TestOrchAvail:    &defaultTestOrchAvail,
+		RemoteSigner:     &defaultRemoteSigner,
+		RemoteSignerAddr: &defaultRemoteSignerAddr,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1576,11 +1579,31 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		bcast := core.NewBroadcaster(n)
-		infoSig, err := bcast.Sign([]byte(fmt.Sprintf("%v", bcast.Address().Hex())))
-		if err != nil {
-			glog.Exit("Unable to generate info sig: ", err)
+
+		// Populate infoSig with remote signer if configured
+		if *cfg.RemoteSignerAddr != "" {
+			url, err := url.Parse(*cfg.RemoteSignerAddr)
+			if err != nil {
+				glog.Exit("Invalid remote signer addr: ", err)
+			}
+
+			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
+			fields, err := server.GetOrchInfoSig(url)
+			if err != nil {
+				glog.Exit("Unable to query remote signer: ", err)
+			}
+			n.RemoteSignerAddr = url
+			n.RemoteEthAddr = ethcommon.BytesToAddress(fields.Address)
+			n.InfoSig = fields.Signature
+			glog.Info("Using Ethereum address from remote signer: ", n.RemoteEthAddr)
+		} else {
+			// Use local signing
+			infoSig, err := bcast.Sign([]byte(fmt.Sprintf("%v", bcast.Address().Hex())))
+			if err != nil {
+				glog.Exit("Unable to generate info sig: ", err)
+			}
+			n.InfoSig = infoSig
 		}
-		n.InfoSig = infoSig
 
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
