@@ -48,6 +48,7 @@ const (
 	TranscoderNode
 	RedeemerNode
 	AIWorkerNode
+	RemoteSignerNode
 )
 
 var nodeTypeStrs = map[NodeType]string{
@@ -57,6 +58,7 @@ var nodeTypeStrs = map[NodeType]string{
 	TranscoderNode:   "transcoder",
 	RedeemerNode:     "redeemer",
 	AIWorkerNode:     "aiworker",
+	RemoteSignerNode: "remotesigner",
 }
 
 func (t NodeType) String() string {
