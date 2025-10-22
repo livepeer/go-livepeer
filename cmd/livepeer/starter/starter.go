@@ -167,6 +167,7 @@ type LivepeerConfig struct {
 	OrchBlacklist              *string
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
+	RemoteSigner               *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -300,6 +301,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 	// Flags
 	defaultTestOrchAvail := true
+	defaultRemoteSigner := false
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -420,6 +422,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
+		RemoteSigner:  &defaultRemoteSigner,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -676,8 +679,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
+	// Validate remote signer mode
+	if *cfg.RemoteSigner {
+		if *cfg.Network == "offchain" {
+			exit("Remote signer mode requires on-chain network")
+		}
+	}
+
 	if *cfg.Redeemer {
 		n.NodeType = core.RedeemerNode
+	} else if *cfg.RemoteSigner {
+		n.NodeType = core.RemoteSignerNode
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
 		if !*cfg.Transcoder {
@@ -1787,6 +1799,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if n.NodeType != core.RedeemerNode {
 		go func() {
 			ec <- s.StartMediaServer(msCtx, *cfg.HttpAddr)
+		}()
+	}
+
+	// Start remote signer server if in remote signer mode
+	if n.NodeType == core.RemoteSignerNode {
+		go func() {
+			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
+			err := server.StartRemoteSignerServer(s, *cfg.HttpAddr)
+			if err != nil {
+				exit("Error starting remote signer server: err=%q", err)
+			}
 		}()
 	}
 
