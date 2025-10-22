@@ -23,6 +23,12 @@ func (bcast *broadcaster) Address() ethcommon.Address {
 	}
 	return bcast.node.Eth.Account().Address
 }
+func (bcast *broadcaster) OrchInfoSig() []byte {
+	if bcast == nil || bcast.node == nil {
+		return nil
+	}
+	return bcast.node.InfoSig
+}
 func (bcast *broadcaster) ExtraNodes() int {
 	if bcast == nil || bcast.node == nil {
 		return 0

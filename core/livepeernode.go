@@ -145,6 +145,7 @@ type LivepeerNode struct {
 	// Broadcaster public fields
 	Sender     pm.Sender
 	ExtraNodes int
+	InfoSig    []byte // sig over eth address for the OrchestratorInfo request
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
