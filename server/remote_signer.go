@@ -3,7 +3,11 @@ package server
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/clog"
@@ -67,4 +71,71 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 		IdleTimeout: HTTPIdleTimeout,
 	}
 	return srv.ListenAndServe()
+}
+
+// HexBytes represents a byte slice that marshals/unmarshals as hex with 0x prefix
+type HexBytes []byte
+
+func (h HexBytes) MarshalJSON() ([]byte, error) {
+	hexStr := "0x" + hex.EncodeToString(h)
+	return json.Marshal(hexStr)
+}
+
+func (h *HexBytes) UnmarshalJSON(data []byte) error {
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return err
+	}
+
+	// Remove 0x prefix if present
+	if len(hexStr) >= 2 && hexStr[:2] == "0x" {
+		hexStr = hexStr[2:]
+	}
+
+	// Decode hex string to bytes
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return fmt.Errorf("invalid hex string: %v", err)
+	}
+
+	*h = decoded
+	return nil
+}
+
+// OrchInfoSigResponse represents the response from the remote signer
+type OrchInfoSigResponse struct {
+	Address   HexBytes `json:"address"`
+	Signature HexBytes `json:"signature"`
+}
+
+// Calls the remote signer service to get a signature for GetOrchInfo
+func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
+
+	url := remoteSignerHost.ResolveReference(&url.URL{Path: "/sign-orchestrator-info"})
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Make the request
+	resp, err := client.Post(url.String(), "application/json", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call remote signer: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("remote signer returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var signerResp OrchInfoSigResponse
+	if err := json.NewDecoder(resp.Body).Decode(&signerResp); err != nil {
+		return nil, fmt.Errorf("failed to parse remote signer response: %w", err)
+	}
+
+	return &signerResp, nil
 }

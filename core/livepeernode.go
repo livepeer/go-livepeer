@@ -26,6 +26,8 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -145,7 +147,11 @@ type LivepeerNode struct {
 	// Broadcaster public fields
 	Sender     pm.Sender
 	ExtraNodes int
-	InfoSig    []byte // sig over eth address for the OrchestratorInfo request
+
+	// Gateway fields for remote signers
+	RemoteSignerAddr *url.URL
+	RemoteEthAddr    ethcommon.Address // eth address of the remote signer
+	InfoSig          []byte            // sig over eth address for the OrchestratorInfo request
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
