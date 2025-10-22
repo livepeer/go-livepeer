@@ -1579,6 +1579,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		bcast := core.NewBroadcaster(n)
+		infoSig, err := bcast.Sign([]byte(fmt.Sprintf("%v", bcast.Address().Hex())))
+		if err != nil {
+			glog.Exit("Unable to generate info sig: ", err)
+		}
+		n.InfoSig = infoSig
+
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)

@@ -55,6 +55,12 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 
 	// Start the HTTP server
 	glog.Info("Starting Remote Signer server on ", bind)
+	gw := core.NewBroadcaster(ls.LivepeerNode)
+	sig, err := gw.Sign([]byte(fmt.Sprintf("%v", gw.Address().Hex())))
+	if err != nil {
+		return err
+	}
+	ls.LivepeerNode.InfoSig = sig
 	srv := http.Server{
 		Addr:        bind,
 		Handler:     ls.HTTPMux,
