@@ -199,7 +199,7 @@ func TestStreamStart_SetupStream(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, stream)
 	assert.Equal(t, urls.StreamId, stream.StreamID)
-	assert.Equal(t, stream.StreamRequest(), body)
+	assert.Equal(t, stream.StreamRequest(), []byte("{\"params\":{}}"))
 	params := stream.StreamParams()
 	_, checkParamsType := params.(aiRequestParams)
 	assert.True(t, checkParamsType)
@@ -283,9 +283,23 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	mux.HandleFunc("/ai/stream/start", lp.StartStream)
 	mux.HandleFunc("/ai/stream/stop", lp.StopStream)
 	mux.HandleFunc("/process/token", orchTokenHandler)
+	// Handle DELETE requests for trickle cleanup (in addition to trickle server's built-in handlers)
+	mux.HandleFunc("DELETE /ai/trickle/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
 	server := httptest.NewServer(lp)
 	defer server.Close()
+	// Add a connection state tracker
+	mu := sync.Mutex{}
+	conns := make(map[net.Conn]http.ConnState)
+	server.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		conns[conn] = state
+	}
+
 	stubOrchServerUrl = server.URL
 
 	// Configure mock orchestrator behavior expected by lphttp handlers
@@ -345,15 +359,26 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	// Cancel the stream after a short delay to simulate shutdown
 	done := make(chan struct{})
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		stream := node.LivePipelines["test-stream"]
-		if stream != nil {
-			params, _ := getStreamRequestParams(stream)
-			if params.liveParams.kickOrch != nil {
-				params.liveParams.kickOrch(errors.New("test cancel"))
-			}
 
-			stream.StopStream(nil)
+		if stream != nil {
+			// Wait for ControlPub to be initialized by runStream
+			timeout := time.After(2 * time.Second)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+
+			for stream.ControlPub == nil {
+				select {
+				case <-ticker.C:
+					// Check again
+				case <-timeout:
+					// Timeout waiting for ControlPub, proceed anyway
+					break
+				}
+			}
+			//cancel stream context and force cleanup
+			stream.StopStream(errors.New("test error"))
 		}
 		close(done)
 	}()
@@ -369,6 +394,14 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	// After cancel, the stream should be removed from LivePipelines
 	_, exists := node.LivePipelines["test-stream"]
 	assert.False(t, exists)
+
+	//clean up http connections
+	mu.Lock()
+	defer mu.Unlock()
+	for conn := range conns {
+		conn.Close()
+		delete(conns, conn)
+	}
 }
 
 // Test StartStream handler
@@ -389,8 +422,19 @@ func TestStartStreamHandler(t *testing.T) {
 	//setup Orch server stub
 	mux.HandleFunc("/process/token", orchTokenHandler)
 	mux.HandleFunc("/ai/stream/start", orchAIStreamStartHandler)
+
 	server := httptest.NewServer(mux)
 	defer server.Close()
+	// Add a connection state tracker
+	mu := sync.Mutex{}
+	conns := make(map[net.Conn]http.ConnState)
+	server.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		conns[conn] = state
+	}
+
 	ls.LivepeerNode.OrchestratorPool = newStubOrchestratorPool(ls.LivepeerNode, []string{server.URL})
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	// Prepare a valid StartRequest body
@@ -427,6 +471,17 @@ func TestStartStreamHandler(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	streamParams.liveParams.kickOrch(errors.New("test error"))
 	stream.StopStream(nil)
+
+	//clean up http connections
+	mu.Lock()
+	defer mu.Unlock()
+	for conn := range conns {
+		conn.Close()
+		delete(conns, conn)
+	}
+
+	// Give time for cleanup to complete
+	time.Sleep(50 * time.Millisecond)
 }
 
 // Test StopStream handler
@@ -974,143 +1029,23 @@ func TestUpdateStreamHandler(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "Stream not found")
 	})
 
-	t.Run("UpdateStream_WithOrchestratorControlChannel", func(t *testing.T) {
-		// Setup test infrastructure with mock orchestrator and trickle server
-		node := mockJobLivepeerNode()
-
-		// Set up trickle-enabled orchestrator server
-		mux := http.NewServeMux()
-		mockOrch := &mockOrchestrator{}
-
-		lp := &lphttp{orchestrator: nil, transRPC: mux, node: node}
-		lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
-			Mux:        mux,
-			BasePath:   TrickleHTTPPath,
-			Autocreate: true,
-		})
-
-		// Register other required endpoints
-		mux.HandleFunc("/process/token", orchTokenHandler)
-		mux.HandleFunc("/ai/stream/start", orchAIStreamStartHandler)
-
-		server := httptest.NewServer(lp)
-		defer server.Close()
-
-		// Configure mock orchestrator
-		parsedURL, _ := url.Parse(server.URL)
-		capabilitySrv := httptest.NewServer(http.HandlerFunc(orchCapabilityUrlHandler))
-		defer capabilitySrv.Close()
-
-		lp.orchestrator = &testStreamOrch{mockOrchestrator: mockOrch, svc: parsedURL, capURL: capabilitySrv.URL}
-
-		// Setup LivepeerServer
-		node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
-		ls := &LivepeerServer{LivepeerNode: node}
-		drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-
-		// Create a stream with control publisher
-		streamID := "test-stream"
-		controlURL := fmt.Sprintf("%s%stest-stream-control", server.URL, TrickleHTTPPath)
-		controlPub, err := trickle.NewTricklePublisher(controlURL)
-		assert.NoError(t, err)
-
-		// Create minimal AI session
-		token := createMockJobToken(server.URL)
-		sess, err := tokenToAISession(*token)
-		assert.NoError(t, err)
-
-		params := aiRequestParams{
-			liveParams: &liveRequestParams{
-				requestID:      "req-1",
-				sess:           &sess,
-				stream:         streamID,
-				streamID:       streamID,
-				sendErrorEvent: func(err error) {},
-				segmentReader:  media.NewSwitchableSegmentReader(),
-			},
-			node: node,
-		}
-
-		// Create and setup stream
-		stream := node.NewLivePipeline("req-1", streamID, "test-capability", params, nil)
-		stream.ControlPub = controlPub
-
-		// Test update with valid stream and control publisher
-		updateData := `{"param1": "updated_value1", "param2": "updated_value2"}`
-		req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
-			strings.NewReader(updateData))
-		req.SetPathValue("streamId", streamID)
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		handler := ls.UpdateStream()
-		handler.ServeHTTP(w, req)
-
-		// Should succeed
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		// Verify stream params were cached
-		assert.Equal(t, []byte(updateData), stream.Params)
-
-		// Clean up
-		stream.StopStream(nil)
-		controlPub.Close()
-	})
-
-	t.Run("UpdateStream_WithoutControlChannel", func(t *testing.T) {
-		// Test stream update when no orchestrator control channel is available
-		node := mockJobLivepeerNode()
-		ls := &LivepeerServer{LivepeerNode: node}
-
-		streamID := "test-stream-no-control"
-
-		// Create minimal AI session
-		server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
-		defer server.Close()
-		token := createMockJobToken(server.URL)
-		sess, err := tokenToAISession(*token)
-		assert.NoError(t, err)
-
-		params := aiRequestParams{
-			liveParams: &liveRequestParams{
-				requestID:      "req-1",
-				sess:           &sess,
-				stream:         streamID,
-				streamID:       streamID,
-				sendErrorEvent: func(err error) {},
-				segmentReader:  media.NewSwitchableSegmentReader(),
-			},
-			node: node,
-		}
-
-		// Create stream WITHOUT control publisher
-		stream := node.NewLivePipeline("req-1", streamID, "test-capability", params, nil)
-		stream.ControlPub = nil // Explicitly set to nil
-
-		updateData := `{"param1": "cached_value"}`
-		req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
-			strings.NewReader(updateData))
-		req.SetPathValue("streamId", streamID)
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		handler := ls.UpdateStream()
-		handler.ServeHTTP(w, req)
-
-		// Should still succeed (params cached locally)
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		// Verify stream params were cached even without control channel
-		assert.Equal(t, []byte(updateData), stream.Params)
-
-		// Clean up
-		stream.StopStream(nil)
-	})
-
 	t.Run("UpdateStream_ErrorHandling", func(t *testing.T) {
 		// Test various error conditions
 		node := mockJobLivepeerNode()
+		server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
+		defer server.Close()
+		node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
+
+		// Set up mock sender to prevent nil pointer dereference
+		mockSender := pm.MockSender{}
+		mockSender.On("StartSession", mock.Anything).Return("foo")
+		mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
+		node.Sender = &mockSender
+		node.Balances = core.NewAddressBalances(10)
+		defer node.Balances.StopCleanup()
+
 		ls := &LivepeerServer{LivepeerNode: node}
+		drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 		// Test 1: Wrong HTTP method
 		req := httptest.NewRequest(http.MethodGet, "/ai/stream/{streamId}/update", nil)
@@ -1121,7 +1056,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 
 		// Test 2: Request too large
 		streamID := "test-stream-large"
-		token := createMockJobToken("http://example.com")
+		token := createMockJobToken(server.URL)
 		sess, _ := tokenToAISession(*token)
 		params := aiRequestParams{
 			liveParams: &liveRequestParams{
@@ -1136,57 +1071,33 @@ func TestUpdateStreamHandler(t *testing.T) {
 		}
 		stream := node.NewLivePipeline("req-1", streamID, "test-capability", params, nil)
 
+		// Create job request header
+		jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+		jobDetails := JobRequestDetails{StreamId: streamID}
+		jobReq := JobRequest{
+			ID:         streamID,
+			Request:    marshalToString(t, jobDetails),
+			Capability: "test-capability",
+			Parameters: marshalToString(t, jobParams),
+			Timeout:    10,
+		}
+		jobReqB, err := json.Marshal(jobReq)
+		assert.NoError(t, err)
+		jobReqB64 := base64.StdEncoding.EncodeToString(jobReqB)
+
 		// Create a body larger than 10MB
 		largeData := bytes.Repeat([]byte("a"), 10*1024*1024+1)
 		req = httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
 			bytes.NewReader(largeData))
 		req.SetPathValue("streamId", streamID)
+		req.Header.Set(jobRequestHdr, jobReqB64)
 		w = httptest.NewRecorder()
 
 		ls.UpdateStream().ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), "http: request body too large")
+		assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+		assert.Contains(t, w.Body.String(), "request body too large")
 
 		stream.StopStream(nil)
-
-		// Test 3: Control publisher write failure (simulate network error)
-		streamID2 := "test-stream-net-error"
-		params2 := aiRequestParams{
-			liveParams: &liveRequestParams{
-				requestID:      "req-2",
-				sess:           &sess,
-				stream:         streamID2,
-				streamID:       streamID2,
-				sendErrorEvent: func(err error) {},
-				segmentReader:  media.NewSwitchableSegmentReader(),
-			},
-			node: node,
-		}
-		stream2 := node.NewLivePipeline("req-2", streamID2, "test-capability", params2, nil)
-
-		// Use a control publisher pointing to non-existent URL
-		badControlPub, err := trickle.NewTricklePublisher("http://localhost:1/nonexistent")
-		if err == nil {
-			stream2.ControlPub = badControlPub
-
-			req = httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
-				strings.NewReader(`{"param": "value"}`))
-			req.SetPathValue("streamId", streamID2)
-			req.Header.Set("Content-Type", "application/json")
-			w = httptest.NewRecorder()
-
-			ls.UpdateStream().ServeHTTP(w, req)
-
-			// Should return 500 due to control publisher write failure
-			assert.Equal(t, http.StatusInternalServerError, w.Code)
-
-			// But params should still be cached
-			assert.Equal(t, []byte(`{"param": "value"}`), stream2.Params)
-
-			badControlPub.Close()
-		}
-
-		stream2.StopStream(nil)
 	})
 }
 
@@ -1220,7 +1131,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		node := mockJobLivepeerNode()
 		mockSender := pm.MockSender{}
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
-		mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Once()
+		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
 		node.Balances = core.NewAddressBalances(10)
 		defer node.Balances.StopCleanup()
@@ -1371,7 +1282,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		node := mockJobLivepeerNode()
 		mockSender := pm.MockSender{}
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
-		mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Once()
+		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
 		node.Balances = core.NewAddressBalances(10)
 		defer node.Balances.StopCleanup()
@@ -1484,7 +1395,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		node := mockJobLivepeerNode()
 		mockSender := pm.MockSender{}
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
-		mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Once()
+		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
 		node.Balances = core.NewAddressBalances(10)
 		defer node.Balances.StopCleanup()

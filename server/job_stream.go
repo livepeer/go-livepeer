@@ -809,18 +809,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 }
 
 func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
-	//required channels
-	control, err := common.AppendHostname(params.liveParams.orchControlUrl, params.liveParams.sess.BroadcastSession.Transcoder())
-	if err != nil {
-		return fmt.Errorf("invalid control URL: %w", err)
-	}
-	events, err := common.AppendHostname(params.liveParams.orchEventsUrl, params.liveParams.sess.BroadcastSession.Transcoder())
-	if err != nil {
-		return fmt.Errorf("invalid events URL: %w", err)
-	}
-
-	startControlPublish(ctx, control, params)
-	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
 
 	//Optional channels
 	if params.liveParams.orchPublishUrl != "" {
@@ -851,6 +839,19 @@ func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, param
 
 		startDataSubscribe(ctx, data, params, params.liveParams.sess)
 	}
+
+	//required channels
+	control, err := common.AppendHostname(params.liveParams.orchControlUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+	if err != nil {
+		return fmt.Errorf("invalid control URL: %w", err)
+	}
+	events, err := common.AppendHostname(params.liveParams.orchEventsUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+	if err != nil {
+		return fmt.Errorf("invalid events URL: %w", err)
+	}
+
+	startControlPublish(ctx, control, params)
+	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
 
 	return nil
 }
@@ -987,15 +988,22 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 		// switched to using regular post request like /stream/start and /stream/stop
 		//controlPub := stream.ControlPub
 
-		reader := http.MaxBytesReader(w, r.Body, 10*1024*1024) // 10 MB
+		reader := http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB
 		defer reader.Close()
 
 		reportUpdate := stream.ReportUpdate
 
 		data, err := io.ReadAll(reader)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			if maxErr, ok := err.(*http.MaxBytesError); ok {
+				clog.Warningf(ctx, "Request body too large (over 10MB)")
+				http.Error(w, fmt.Sprintf("request body too large (max %d bytes)", maxErr.Limit), http.StatusRequestEntityTooLarge)
+				return
+			} else {
+				clog.Errorf(ctx, "Error reading request body: %v", err)
+				http.Error(w, "Error reading request body", http.StatusBadRequest)
+				return
+			}
 		}
 		stream.Params = data
 

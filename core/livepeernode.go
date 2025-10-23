@@ -201,6 +201,12 @@ func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, str
 	streamCtx, streamCancel := context.WithCancelCause(context.Background())
 	n.LiveMu.Lock()
 	defer n.LiveMu.Unlock()
+
+	//ensure streamRequest is not nil or empty
+	if streamRequest == nil || len(streamRequest) == 0 {
+		streamRequest = []byte("{}")
+	}
+
 	n.LivePipelines[streamID] = &LivePipeline{
 		RequestID:     requestID,
 		StreamID:      streamID,
@@ -209,6 +215,7 @@ func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, str
 		streamParams:  streamParams,
 		streamCancel:  streamCancel,
 		streamRequest: streamRequest,
+		OutCond:       sync.NewCond(n.LiveMu),
 	}
 	return n.LivePipelines[streamID]
 }
@@ -232,11 +239,18 @@ func (p *LivePipeline) StreamRequest() []byte {
 }
 
 func (p *LivePipeline) StopStream(err error) {
-	if p.StopControl != nil {
-		p.StopControl()
+	p.OutCond.Broadcast()
+	if p.ControlPub != nil {
+		if err := p.ControlPub.Close(); err != nil {
+			glog.Errorf("Error closing trickle publisher", err)
+		}
+		if p.StopControl != nil {
+			p.StopControl()
+		}
 	}
 
 	p.streamCancel(err)
+	p.Closed = true
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
