@@ -89,7 +89,7 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).StartMediaServer", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage.func1",
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
 		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal", "github.com/livepeer/lpms/stream.NewBasicRTMPVideoStream.func1", "github.com/patrickmn/go-cache.(*janitor).Run",
-		"github.com/golang/glog.(*fileSink).flushDaemon", "github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
+		"github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
 		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
 		"internal/synctest.Run",
 		"testing/synctest.testingSynctestTest",
@@ -102,6 +102,7 @@ func IgnoreRoutines() []goleak.Option {
 	// These need to be ignored with IgnoreAnyFunction instead of IgnoreTopFunction
 	funcsAnyIgnore := []string{
 		"github.com/livepeer/go-livepeer/server.ffmpegOutput",
+		"github.com/golang/glog.(*fileSink).flushDaemon",
 	}
 
 	res := make([]goleak.Option, 0, len(funcs2ignore)+len(funcsAnyIgnore))
