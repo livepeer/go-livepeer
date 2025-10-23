@@ -379,6 +379,12 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 			}
 			//cancel stream context and force cleanup
 			stream.StopStream(errors.New("test error"))
+
+			// Close the segment reader to trigger EOS and cleanup publishers
+			params, _ := getStreamRequestParams(stream)
+			if params.liveParams != nil && params.liveParams.segmentReader != nil {
+				params.liveParams.segmentReader.Close()
+			}
 		}
 		close(done)
 	}()
@@ -395,6 +401,28 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	_, exists := node.LivePipelines["test-stream"]
 	assert.False(t, exists)
 
+	// Clean up trickle streams via HTTP DELETE
+	streamID := "test-stream"
+	trickleStreams := []string{
+		streamID,
+		streamID + "-out",
+		streamID + "-control",
+		streamID + "-events",
+		streamID + "-data",
+	}
+	for _, stream := range trickleStreams {
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("%s/%s", TrickleHTTPPath, stream), nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+	}
+
+	// Clean up external capabilities streams
+	if node.ExternalCapabilities != nil {
+		for streamID := range node.ExternalCapabilities.Streams {
+			node.ExternalCapabilities.RemoveStream(streamID)
+		}
+	}
+
 	//clean up http connections
 	mu.Lock()
 	defer mu.Unlock()
@@ -402,6 +430,9 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 		conn.Close()
 		delete(conns, conn)
 	}
+
+	// Give goroutines time to exit (increased to ensure TricklePublisher.preconnect goroutines finish)
+	time.Sleep(200 * time.Millisecond)
 }
 
 // Test StartStream handler
