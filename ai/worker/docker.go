@@ -602,7 +602,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 		if m.ctx.Err() != nil {
 			slog.Info("Docker manager context is done, stopping container", "container", rc.Name)
 			m.destroyContainer(rc, false)
-			slog.Info("Container destroyed", slog.String("container", rc.Name))
+			slog.Info("Container destroyed", "container", rc.Name)
 			return
 		}
 
