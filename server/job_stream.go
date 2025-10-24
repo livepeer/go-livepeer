@@ -542,7 +542,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	}
 
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
-	clog.Infof(ctx, "Received live video AI request pipelineParams=%v", streamID, pipelineParams)
+	clog.Infof(ctx, "Received live video AI request")
 
 	// collect all RTMP outputs
 	var rtmpOutputs []string
