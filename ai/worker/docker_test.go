@@ -98,6 +98,7 @@ func NewMockServer() *MockServer {
 
 // createDockerManager creates a DockerManager with a mock DockerClient.
 func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &DockerManager{
 		gpus:               []string{"gpu0"},
 		modelDir:           "/models",
@@ -107,6 +108,8 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		gpuContainers:      make(map[string]*RunnerContainer),
 		containers:         make(map[string]*RunnerContainer),
 		mu:                 &sync.Mutex{},
+		ctx:                ctx,
+		stop:               cancel,
 	}
 }
 
