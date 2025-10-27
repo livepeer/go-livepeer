@@ -233,18 +233,37 @@ func TestDockerManager_Stop(t *testing.T) {
 	MockDockerClient := new(MockDockerClient)
 	dockerManager := createDockerManager(MockDockerClient)
 
+	// Create a mock server for health checks
+	mockServer := NewMockServer()
+	defer mockServer.Close()
+	mockClient, err := NewClientWithResponses(mockServer.URL)
+	require.NoError(t, err)
+
+	// Mock health check to keep the container running until Stop is called
+	mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
+		Return(200, "application/json", `{"status":"OK"}`).Maybe()
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 	containerID := "container1"
-	dockerManager.containers[containerID] = &RunnerContainer{
+	rc := &RunnerContainer{
 		RunnerContainerConfig: RunnerContainerConfig{
 			ID: containerID,
 		},
+		Name:   containerID,
+		Client: mockClient,
 	}
+	dockerManager.containers[containerID] = rc
+
+	// Start the watchContainer goroutine
+	dockerManager.watchGroup.Go(func() { dockerManager.watchContainer(rc) })
+
+	// Allow the watch goroutine to start
+	time.Sleep(50 * time.Millisecond)
 
 	MockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
-	err := dockerManager.Stop(ctx)
+	err = dockerManager.Stop(ctx)
 	require.NoError(t, err)
 	MockDockerClient.AssertExpectations(t)
 }
