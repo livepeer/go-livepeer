@@ -175,6 +175,14 @@ func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
 	delete(extCaps.Streams, streamID)
 }
 
+func (extCaps *ExternalCapabilities) GetStream(streamID string) (*StreamInfo, bool) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	streamInfo, ok := extCaps.Streams[streamID]
+	return streamInfo, ok
+}
+
 func (extCaps *ExternalCapabilities) StreamExists(streamID string) bool {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()

@@ -1223,7 +1223,12 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 
 	//start payment monitoring
 	go func() {
-		stream, _ := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
+		stream, exists := h.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
+		if !exists {
+			clog.Infof(ctx, "Stream not found for payment monitoring, exiting monitoring stream_id=%s", orchJob.Req.ID)
+			return
+		}
+
 		ctx := context.Background()
 		ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
 		ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
@@ -1255,7 +1260,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 							}
 
 							clog.Infof(ctx, "Insufficient balance, stopping stream %s for sender %s", orchJob.Req.ID, orchJob.Sender)
-							_, exists := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
+							_, exists := h.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
 							if exists {
 								h.node.ExternalCapabilities.RemoveStream(orchJob.Req.ID)
 							}
@@ -1269,7 +1274,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 
 				//check if stream still exists
 				// if not, send stop to worker and exit monitoring
-				stream, exists := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
+				stream, exists := h.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
 				if !exists {
 					req, err := http.NewRequestWithContext(ctx, "POST", orchJob.Req.CapabilityUrl+"/stream/stop", nil)
 					// set the headers
