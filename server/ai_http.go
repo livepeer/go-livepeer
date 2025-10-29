@@ -210,20 +210,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
 
-		// Subscribe to the publishUrl for payments monitoring and payment processing
+		// For every segment, check payments
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
-				segment, err := sub.Read()
+				_, err := sub.Read()
 				if err != nil {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-				reader := segment.Reader
 				if paymentProcessor != nil {
-					reader = paymentProcessor.process(ctx, segment.Reader)
+					paymentProcessor.process(ctx)
 				}
-				io.Copy(io.Discard, reader)
 			}
 		}()
 
