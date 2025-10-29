@@ -258,9 +258,6 @@ func TestDockerManager_Stop(t *testing.T) {
 	// Start the watchContainer goroutine
 	dockerManager.watchGroup.Go(func() { dockerManager.watchContainer(rc) })
 
-	// Allow the watch goroutine to start
-	time.Sleep(50 * time.Millisecond)
-
 	MockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 	err = dockerManager.Stop(ctx)
