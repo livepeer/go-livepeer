@@ -83,6 +83,7 @@ jobs:
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Set GPU build environment
@@ -189,6 +190,7 @@ jobs:
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Cache ffmpeg
