@@ -96,13 +96,13 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
 		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		ctx := clog.AddVal(context.Background(), clog.ClientIP, remoteAddr)
 
 		streamID := r.Header.Get("streamID")
 		gatewayRequestID := r.Header.Get("requestID")
 		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "orch_request_id", requestID)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		if err := jsonDecoder(&req, r); err != nil {
@@ -115,7 +115,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		if req.StreamId != nil && *req.StreamId != "" {
 			streamID = *req.StreamId
 		}
-		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "request_id", gatewayRequestID)
 		ctx = clog.AddVal(ctx, "manifest_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
@@ -123,7 +123,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		pipeline := "live-video-to-video"
 		cap := core.Capability_LiveVideoToVideo
 		modelID := *req.ModelId
-		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+		clog.Info(ctx, "Received request", "cap", cap, "modelID", modelID)
 
 		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
 		err := orch.CreateStorageForRequest(requestID)
@@ -185,18 +185,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		priceInfo := payment.GetExpectedPrice()
 		var paymentProcessor *LivePaymentProcessor
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(ctx)
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 			accountPaymentFunc := func(inPixels int64) error {
-				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
 					inPixels:  inPixels,
 					priceInfo: priceInfo,
 					sessionID: mid,
 				})
 				if err != nil {
-					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+					clog.Errorf(ctx, "Error accounting payment, stopping stream processing", err)
 					pubCh.Close()
 					subCh.Close()
 					eventsCh.Close()
@@ -275,7 +275,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
-		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
+		took := time.Since(startTime)
+		clog.Info(ctx, "Processed request", "cap", cap, "modelID", modelID, "took", took)
 		respondJsonOk(w, jsonData)
 	})
 }
