@@ -1709,6 +1709,7 @@ func TestGetOrchestrator_Nodes_Simple(t *testing.T) {
 }
 
 func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 
