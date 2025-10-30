@@ -585,8 +585,11 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 }
 
 func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
+	cfg := server.NewBroadcastConfig()
 	pred := func(info *net.OrchestratorInfo) bool {
-		price := server.BroadcastCfg.MaxPrice()
+		// create a new one for each call -for some reason the price auto-converts
+		// to zero and messes up if we reuse it
+		price := cfg.MaxPrice()
 		if price == nil {
 			return true
 		}
@@ -612,15 +615,15 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		},
 	}
 
-	// server.BroadcastCfg.maxPrice not yet set, predicate should return true
+	// cfg.maxPrice not yet set, predicate should return true
 	assert.True(t, pool.pred(oInfo))
 
-	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	// Set cfg.maxPrice higher than PriceInfo , should return true
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	assert.True(t, pool.pred(oInfo))
 
-	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	// Set cfg.MaxBroadcastPrice lower than PriceInfo, should return false
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
