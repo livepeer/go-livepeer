@@ -41,7 +41,7 @@ var maxRefreshSessionsThreshold = 8.0
 var recordSegmentsMaxTimeout = 1 * time.Minute
 
 var Policy *verification.Policy
-var BroadcastCfg = newBroadcastConfig()
+var BroadcastCfg = NewBroadcastConfig()
 var MaxAttempts = 3
 
 var MetadataQueue event.SimpleProducer
@@ -60,7 +60,7 @@ type BroadcastConfig struct {
 	mu                    sync.RWMutex
 }
 
-func newBroadcastConfig() *BroadcastConfig {
+func NewBroadcastConfig() *BroadcastConfig {
 	maxPrices := make(map[core.Capability]map[string]*core.AutoConvertedPrice)
 	models := make(map[string]*core.AutoConvertedPrice)
 	maxPrices[core.Capability_Unused] = models
