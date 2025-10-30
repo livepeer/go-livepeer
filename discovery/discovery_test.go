@@ -1636,7 +1636,9 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 
 func TestSetGetOrchestratorTimeout(t *testing.T) {
 	assert := assert.New(t)
-	dbh, _, err := common.TempDB(t)
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
