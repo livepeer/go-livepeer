@@ -1826,7 +1826,7 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 }
 
 func TestMaxPrice(t *testing.T) {
-	cfg := newBroadcastConfig()
+	cfg := NewBroadcastConfig()
 
 	// Should return nil if max price is not set.
 	assert.Nil(t, cfg.MaxPrice())
@@ -1847,7 +1847,7 @@ func TestMaxPrice(t *testing.T) {
 }
 
 func TestCapabilityMaxPrice(t *testing.T) {
-	cfg := newBroadcastConfig()
+	cfg := NewBroadcastConfig()
 
 	// Should return nil if no price is set for the capability.
 	assert.Nil(t, cfg.getCapabilityMaxPrice(core.Capability(1), "model1"))
@@ -1885,7 +1885,7 @@ func TestCapabilityMaxPrice(t *testing.T) {
 }
 
 func TestGetCapabilitiesMaxPrice(t *testing.T) {
-	cfg := newBroadcastConfig()
+	cfg := NewBroadcastConfig()
 
 	// Should return nil if no max price is set and no capabilities are provided.
 	assert.Nil(t, cfg.GetCapabilitiesMaxPrice(nil))
