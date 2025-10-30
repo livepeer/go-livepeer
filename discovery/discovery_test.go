@@ -1477,9 +1477,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	ch := make(chan struct{})
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
@@ -1487,6 +1485,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	timeout := 1 * time.Millisecond
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, timeout)
+	pool.getOrchInfo = getOrchInfo
 
 	timedOut := func(start, end time.Time) bool {
 		return end.Sub(start).Milliseconds() >= pool.discoveryTimeout.Milliseconds()
