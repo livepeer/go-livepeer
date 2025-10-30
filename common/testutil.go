@@ -89,15 +89,23 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).StartMediaServer", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage.func1",
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
 		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal", "github.com/livepeer/lpms/stream.NewBasicRTMPVideoStream.func1", "github.com/patrickmn/go-cache.(*janitor).Run",
-		"github.com/golang/glog.(*fileSink).flushDaemon", "github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
+		"github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
 		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
 		"internal/synctest.Run",
 		"testing/synctest.testingSynctestTest",
 	}
+	ignoreAnywhereFuncs := []string{
+		// glog’s file flusher often has syscall/os.* on top
+		"github.com/golang/glog.(*fileSink).flushDaemon",
+	}
 
-	res := make([]goleak.Option, 0, len(funcs2ignore))
+	res := make([]goleak.Option, 0, len(funcs2ignore)+len(ignoreAnywhereFuncs))
 	for _, f := range funcs2ignore {
 		res = append(res, goleak.IgnoreTopFunction(f))
+	}
+	for _, f := range ignoreAnywhereFuncs {
+		// ignore if these function signatures appear anywhere in the call stack
+		res = append(res, goleak.IgnoreAnyFunction(f))
 	}
 	return res
 }
