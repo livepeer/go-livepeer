@@ -1650,7 +1650,9 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 	}
 
 	//set timeout to 1000ms
-	poolCache, err := NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	poolCache, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond)
 	assert.Nil(err)
 	//confirm the timeout is now 1000ms
 	assert.Equal(poolCache.discoveryTimeout, 1000*time.Millisecond)
