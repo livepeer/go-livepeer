@@ -214,7 +214,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
-				_, err := sub.Read()
+				segment, err := sub.Read()
 				if err != nil {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
@@ -222,6 +222,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				if paymentProcessor != nil {
 					paymentProcessor.process(ctx)
 				}
+				// read the segment so we know when it is complete, otherwise sub.Read()
+				// would rapidly request follow-on segments that do not yet exist
+				io.Copy(io.Discard, segment.Reader)
 			}
 		}()
 
