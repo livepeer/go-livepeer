@@ -82,7 +82,10 @@ func (s *StubServerStream) Send(n *net.NotifySegment) error {
 func IgnoreRoutines() []goleak.Option {
 	// goleak works by making list of all running goroutines and reporting error if it finds any
 	// this list tells goleak to ignore these goroutines - we're not interested in these particular goroutines
-	// net/http.(*persistConn).mapRoundTripError and net/http.(*persistConn).readLoop", "io.(*pipe).readadded to ignore because trickle channels stay open for a while and close themselves
+	// following added for job_stream_tests, believe related to open connections on trickle server that are cleaned up periodically
+	//   net/http.(*persistConn).mapRoundTripError
+	//   net/http.(*persistConn).readLoop
+	//   net/http.(*persistConn).writeLoop
 	funcs2ignore := []string{"github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
 		"github.com/rjeczalik/notify.(*recursiveTree).dispatch", "github.com/rjeczalik/notify._Cfunc_CFRunLoopRun", "github.com/ethereum/go-ethereum/metrics.(*meterArbiter).tick",
 		"github.com/ethereum/go-ethereum/consensus/ethash.(*Ethash).remote", "github.com/ethereum/go-ethereum/core.(*txSenderCacher).cache",
@@ -96,7 +99,8 @@ func IgnoreRoutines() []goleak.Option {
 		"testing/synctest.testingSynctestTest",
 		"github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2",
 		"net/http.(*persistConn).mapRoundTripError",
-		"net/http.(*persistConn).readLoop", "io.(*pipe).read",
+		"net/http.(*persistConn).readLoop",
+		"net/http.(*persistConn).writeLoop",
 		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}
 	ignoreAnywhereFuncs := []string{
