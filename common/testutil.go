@@ -102,18 +102,11 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/golang/glog.(*fileSink).flushDaemon",
 	}
 
-	// Functions that might have other functions on top of their stack (like time.Sleep)
-	// These need to be ignored with IgnoreAnyFunction instead of IgnoreTopFunction
-	funcsAnyIgnore := []string{
-		"github.com/livepeer/go-livepeer/server.ffmpegOutput",
-		"github.com/golang/glog.(*fileSink).flushDaemon",
-	}
-
-	res := make([]goleak.Option, 0, len(funcs2ignore)+len(funcsAnyIgnore))
+	res := make([]goleak.Option, 0, len(funcs2ignore)+len(ignoreAnywhereFuncs))
 	for _, f := range funcs2ignore {
 		res = append(res, goleak.IgnoreTopFunction(f))
 	}
-	for _, f := range funcsAnyIgnore {
+	for _, f := range ignoreAnywhereFuncs {
 		res = append(res, goleak.IgnoreAnyFunction(f))
 	}
 	return res

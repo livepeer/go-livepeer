@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
@@ -24,6 +25,7 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/goleak"
 )
 
 var stubOrchServerUrl string
@@ -264,6 +266,7 @@ func TestStreamStart_SetupStream(t *testing.T) {
 }
 
 func TestRunStream_RunAndCancelStream(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	node := mockJobLivepeerNode()
 
 	// Set up an lphttp-based orchestrator test server with trickle endpoints
@@ -430,9 +433,6 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 		conn.Close()
 		delete(conns, conn)
 	}
-
-	// Give goroutines time to exit (increased to ensure TricklePublisher.preconnect goroutines finish)
-	time.Sleep(200 * time.Millisecond)
 }
 
 // Test StartStream handler
@@ -705,6 +705,7 @@ func TestStopStreamHandler(t *testing.T) {
 
 // Test StartStreamRTMPIngest handler
 func TestStartStreamRTMPIngestHandler(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	// Setup mock MediaMTX server on port 9997 before starting the test
 	mockMediaMTXServer := createMockMediaMTXServer(t)
 	defer mockMediaMTXServer.Close()
@@ -791,6 +792,9 @@ func TestStartStreamRTMPIngestHandler(t *testing.T) {
 	// Stop the stream to cleanup
 	newParams.liveParams.kickInput(errors.New("test error"))
 	stream.StopStream(nil)
+
+	//ffmpegOUtput sleeps for 5 seconds at end of function, let it wrap up for go routine leak check
+	time.Sleep(5 * time.Second)
 }
 
 // Test StartStreamWhipIngest handler
