@@ -107,13 +107,14 @@ func (a *AddressBalances) CompareAndUpdateBalance(addr ethcommon.Address, id Man
 	a.sharedBaltx.Lock()
 	defer a.sharedBaltx.Unlock()
 	current := a.balancesForAddr(addr).Balance(id)
-	//lock while comparing and updating balance
 	if current == nil {
 		//create a balance of 1 to start tracking
 		a.Debit(addr, id, big.NewRat(0, 1))
 		current = a.balancesForAddr(addr).Balance(id)
 	}
-
+	if expected == nil {
+		expected = big.NewRat(0, 1)
+	}
 	diff := new(big.Rat).Sub(expected, current)
 
 	if diff.Sign() > 0 {
