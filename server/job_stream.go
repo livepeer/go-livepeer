@@ -1245,11 +1245,18 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 				return
 			case <-pmtTicker.C:
 				// Check payment status
-
+				extCap, ok := h.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]
+				if !ok {
+					clog.Errorf(ctx, "Capability not found for payment monitoring, exiting monitoring capability=%s", orchJob.Req.Capability)
+					return
+				}
 				jobPriceRat := big.NewRat(orchJob.JobPrice.PricePerUnit, orchJob.JobPrice.PixelsPerUnit)
 				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+					//lock during balance update to complete balance update
+					extCap.Mu.Lock()
 					h.orchestrator.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, int64(pmtCheckDur.Seconds()))
 					senderBalance := getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability)
+					extCap.Mu.Unlock()
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
 							if !shouldStopStreamNextRound {

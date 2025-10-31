@@ -884,48 +884,28 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken *core.JobT
 	sessionID := node.Sender.StartSession(*pmTicketParams(orchToken.TicketParams))
 
 	//setup balances and update Gateway balance to Orchestrator balance, log differences
-	//Orchestrator tracks balance paid and will not perform work if the balance it is
+	//Orchestrator tracks balance paid and will not perform work if the balance it
 	//has is not sufficient
 	orchBal := big.NewRat(orchToken.Balance, 1)
-	balance := node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
-	if balance == nil {
-		//create a balance of 0
-		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), big.NewRat(0, 1))
-		balance = node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
-	}
-
-	diff := new(big.Rat).Sub(orchBal, balance)
-	if balance.Cmp(orchBal) != 0 {
-		clog.Infof(ctx, "Adjusting gateway balance to Orchestrator provided balance for sender=%v capability=%v balance=%v orchBal=%v diff=%v", sender.Hex(), jobReq.Capability, balance.FloatString(0), orchBal.FloatString(0), diff.FloatString(0))
-	}
-
-	if diff.Sign() > 0 {
-		node.Balances.Credit(orchAddr, core.ManifestID(jobReq.Capability), diff)
-	} else {
-		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), new(big.Rat).Abs(diff))
-	}
-
 	price := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
 	cost := new(big.Rat).Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
 	minBal := new(big.Rat).Mul(price, big.NewRat(60, 1)) //minimum 1 minute balance
-	if cost.Cmp(minBal) < 0 {
-		cost = minBal
-	}
+	balance, diffToOrch, minBalCovered, resetToZero := node.Balances.CompareAndUpdateBalance(orchAddr, core.ManifestID(jobReq.Capability), orchBal, minBal)
 
-	if balance.Sign() > 0 && orchToken.Balance == 0 {
-		clog.Infof(ctx, "Updating balance to 0 because orchestrator balance reset for sender=%v capability=%v balance=%v", sender.Hex(), jobReq.Capability, balance.FloatString(0))
-		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), balance)
-		balance = node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
+	if diffToOrch.Sign() != 0 {
+		clog.Infof(ctx, "Updated balance for sender=%v capability=%v by %v to match Orchestrator reported balance %v", sender.Hex(), jobReq.Capability, diffToOrch.FloatString(3), orchBal.FloatString(3))
 	}
-
-	if balance.Cmp(cost) > 0 {
+	if resetToZero {
+		clog.Infof(ctx, "Reset balance to zero for to match Orchestrator reported balance sender=%v capability=%v", sender.Hex(), jobReq.Capability)
+	}
+	if minBalCovered {
 		createTickets = false
 		payment = &net.Payment{
 			Sender:        sender.Bytes(),
 			ExpectedPrice: orchToken.Price,
 		}
 	}
-	clog.Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
+	clog.V(common.DEBUG).Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
 
 	if !createTickets {
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))

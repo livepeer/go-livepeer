@@ -1163,8 +1163,8 @@ func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) 
 func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string) error {
 	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
 	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
+		cap.Mu.Lock()
+		defer cap.Mu.Unlock()
 
 		cap.Load++
 		return nil
@@ -1176,8 +1176,8 @@ func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string
 func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) error {
 	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
 	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
+		cap.Mu.Lock()
+		defer cap.Mu.Unlock()
 
 		cap.Load--
 		return nil

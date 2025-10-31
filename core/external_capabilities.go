@@ -39,7 +39,7 @@ type ExternalCapability struct {
 
 	price *AutoConvertedPrice
 
-	mu   sync.RWMutex
+	Mu   sync.RWMutex
 	Load int
 }
 
@@ -233,7 +233,7 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 }
 
 func (extCap *ExternalCapability) GetPrice() *big.Rat {
-	extCap.mu.RLock()
-	defer extCap.mu.RUnlock()
+	extCap.Mu.RLock()
+	defer extCap.Mu.RUnlock()
 	return extCap.price.Value()
 }
