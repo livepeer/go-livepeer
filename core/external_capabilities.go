@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-
 	"sync"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -60,7 +60,8 @@ type StreamInfo struct {
 	StreamCtx    context.Context
 	CancelStream context.CancelFunc
 
-	sdm sync.Mutex
+	cleanupOnce sync.Once
+	sdm         sync.Mutex
 }
 
 func (sd *StreamInfo) IsActive() bool {
@@ -91,6 +92,27 @@ func (sd *StreamInfo) SetChannels(pub, sub, control, events, data *trickle.Trick
 	sd.controlChannel = control
 	sd.eventsChannel = events
 	sd.dataChannel = data
+}
+
+func (sd *StreamInfo) cleanup() {
+	sd.cleanupOnce.Do(func() {
+		// Close all channels exactly once
+		if sd.pubChannel != nil {
+			sd.pubChannel.Close()
+		}
+		if sd.subChannel != nil {
+			sd.subChannel.Close()
+		}
+		if sd.controlChannel != nil {
+			sd.controlChannel.Close()
+		}
+		if sd.eventsChannel != nil {
+			sd.eventsChannel.Close()
+		}
+		if sd.dataChannel != nil {
+			sd.dataChannel.Close()
+		}
+	})
 }
 
 type ExternalCapabilities struct {
@@ -126,35 +148,24 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, capability strin
 
 	//clean up when stream ends
 	go func() {
-		<-ctx.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		defer stream.cleanup()
 
-		//orchestrator channels shutdown
-		if stream.pubChannel != nil {
-			if err := stream.pubChannel.Close(); err != nil {
-				glog.Errorf("error closing pubChannel for stream=%s: %v", streamID, err)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Periodically check if stream still exists in map
+				extCaps.capm.Lock()
+				_, exists := extCaps.Streams[streamID]
+				extCaps.capm.Unlock()
+				if !exists {
+					return
+				}
 			}
 		}
-		if stream.subChannel != nil {
-			if err := stream.subChannel.Close(); err != nil {
-				glog.Errorf("error closing subChannel for stream=%s: %v", streamID, err)
-			}
-		}
-		if stream.controlChannel != nil {
-			if err := stream.controlChannel.Close(); err != nil {
-				glog.Errorf("error closing controlChannel for stream=%s: %v", streamID, err)
-			}
-		}
-		if stream.eventsChannel != nil {
-			if err := stream.eventsChannel.Close(); err != nil {
-				glog.Errorf("error closing eventsChannel for stream=%s: %v", streamID, err)
-			}
-		}
-		if stream.dataChannel != nil {
-			if err := stream.dataChannel.Close(); err != nil {
-				glog.Errorf("error closing dataChannel for stream=%s: %v", streamID, err)
-			}
-		}
-		return
 	}()
 
 	return &stream, nil
