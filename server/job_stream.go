@@ -151,6 +151,14 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		glog.Errorf("Stream %s not found", streamID)
 		return
 	}
+	// Ensure cleanup happens on ALL exit paths
+	var exitErr error
+	defer func() {
+		// Best-effort cleanup
+		if stream, exists := ls.LivepeerNode.LivePipelines[streamID]; exists {
+			stream.StopStream(exitErr)
+		}
+	}()
 	//this context passes to all channels that will close when stream is canceled
 	ctx := stream.GetContext()
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
@@ -158,6 +166,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	params, err := getStreamRequestParams(stream)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting stream request params: %s", err)
+		exitErr = err
 		return
 	}
 
@@ -192,7 +201,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		err = gatewayJob.sign()
 		if err != nil {
 			clog.Errorf(ctx, "Error signing job, exiting stream processing request: %v", err)
-			stream.StopStream(err)
+			exitErr = err
 			return
 		}
 		orchResp, _, err := ls.sendJobToOrch(ctx, nil, gatewayJob.Job.Req, gatewayJob.SignedJobReq, orch, "/ai/stream/start", stream.StreamRequest())
@@ -257,7 +266,8 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	}
 
 	//all orchestrators tried or stream ended, stop the stream
-	stream.StopStream(errors.New("All Orchestrators exhausted, restart the stream"))
+	// stream stop called in defer above
+	exitErr = errors.New("All Orchestrators exhausted, restart the stream")
 }
 
 func (ls *LivepeerServer) monitorStream(streamId string) {
@@ -290,6 +300,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 
 	//ensure live pipeline is cleaned up if monitoring ends
 	defer ls.LivepeerNode.RemoveLivePipeline(streamId)
+	//start monitoring loop
 	streamCtx := stream.GetContext()
 	for {
 		select {
