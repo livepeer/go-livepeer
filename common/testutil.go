@@ -86,6 +86,7 @@ func IgnoreRoutines() []goleak.Option {
 	//   net/http.(*persistConn).mapRoundTripError
 	//   net/http.(*persistConn).readLoop
 	//   net/http.(*persistConn).writeLoop
+	//   io.(*pipe).read
 	funcs2ignore := []string{"github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
 		"github.com/rjeczalik/notify.(*recursiveTree).dispatch", "github.com/rjeczalik/notify._Cfunc_CFRunLoopRun", "github.com/ethereum/go-ethereum/metrics.(*meterArbiter).tick",
 		"github.com/ethereum/go-ethereum/consensus/ethash.(*Ethash).remote", "github.com/ethereum/go-ethereum/core.(*txSenderCacher).cache",
@@ -101,6 +102,7 @@ func IgnoreRoutines() []goleak.Option {
 		"net/http.(*persistConn).mapRoundTripError",
 		"net/http.(*persistConn).readLoop",
 		"net/http.(*persistConn).writeLoop",
+		"io.(*pipe).read",
 		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}
 	ignoreAnywhereFuncs := []string{
