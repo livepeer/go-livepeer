@@ -66,10 +66,10 @@ func (b *Balance) Balance() *big.Rat {
 
 // AddressBalances holds credit balances for ETH addresses
 type AddressBalances struct {
-	balances    map[ethcommon.Address]*Balances
-	mtx         sync.Mutex
-	sharedBaltx sync.Mutex
-	ttl         time.Duration
+	balances     map[ethcommon.Address]*Balances
+	mtx          sync.Mutex
+	sharedBalMtx sync.Mutex
+	ttl          time.Duration
 }
 
 // NewAddressBalances creates a new AddressBalances instance
@@ -104,8 +104,8 @@ func (a *AddressBalances) Balance(addr ethcommon.Address, id ManifestID) *big.Ra
 // returns the difference and if minimum balance was covered
 // also returns if balance was reset to zero because expected was zero
 func (a *AddressBalances) CompareAndUpdateBalance(addr ethcommon.Address, id ManifestID, expected *big.Rat, minimumBal *big.Rat) (*big.Rat, *big.Rat, bool, bool) {
-	a.sharedBaltx.Lock()
-	defer a.sharedBaltx.Unlock()
+	a.sharedBalMtx.Lock()
+	defer a.sharedBalMtx.Unlock()
 	current := a.balancesForAddr(addr).Balance(id)
 	if current == nil {
 		//create a balance of 1 to start tracking
