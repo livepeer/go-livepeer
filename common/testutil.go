@@ -97,6 +97,10 @@ func IgnoreRoutines() []goleak.Option {
 		"net/http.(*persistConn).writeLoop", "net/http.(*persistConn).readLoop", "io.(*pipe).read",
 		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}
+	ignoreAnywhereFuncs := []string{
+		// glog’s file flusher often has syscall/os.* on top
+		"github.com/golang/glog.(*fileSink).flushDaemon",
+	}
 
 	// Functions that might have other functions on top of their stack (like time.Sleep)
 	// These need to be ignored with IgnoreAnyFunction instead of IgnoreTopFunction
