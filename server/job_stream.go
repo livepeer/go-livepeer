@@ -288,11 +288,13 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 		return
 	}
 
+	//ensure live pipeline is cleaned up if monitoring ends
+	defer ls.LivepeerNode.RemoveLivePipeline(streamId)
+
 	for {
 		select {
 		case <-stream.StreamCtx.Done():
 			clog.Infof(ctx, "Stream %s stopped, ending monitoring", streamId)
-			ls.LivepeerNode.RemoveLivePipeline(streamId)
 			return
 		case <-pmtTicker.C:
 			if !params.inputStreamExists() {
