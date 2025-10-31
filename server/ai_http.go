@@ -218,6 +218,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
+				// Set seq to next segment in case the subscriber is outside
+				// the server's retention window
+				sub.SetSeq(-1)
 				segment, err := sub.Read()
 				if err != nil {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
