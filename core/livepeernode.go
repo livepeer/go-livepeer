@@ -191,7 +191,7 @@ type LivePipeline struct {
 
 	DataWriter *media.SegmentWriter
 
-	StreamCtx     context.Context
+	streamCtx     context.Context
 	streamCancel  context.CancelCauseFunc
 	streamParams  interface{}
 	streamRequest []byte
@@ -211,7 +211,7 @@ func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, str
 		RequestID:     requestID,
 		StreamID:      streamID,
 		Pipeline:      pipeline,
-		StreamCtx:     streamCtx,
+		streamCtx:     streamCtx,
 		streamParams:  streamParams,
 		streamCancel:  streamCancel,
 		streamRequest: streamRequest,
@@ -224,6 +224,10 @@ func (n *LivepeerNode) RemoveLivePipeline(streamID string) {
 	n.LiveMu.Lock()
 	defer n.LiveMu.Unlock()
 	delete(n.LivePipelines, streamID)
+}
+
+func (n *LivePipeline) GetContext() context.Context {
+	return n.streamCtx
 }
 
 func (p *LivePipeline) StreamParams() interface{} {

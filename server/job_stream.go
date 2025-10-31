@@ -152,7 +152,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		return
 	}
 	//this context passes to all channels that will close when stream is canceled
-	ctx := stream.StreamCtx
+	ctx := stream.GetContext()
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 	params, err := getStreamRequestParams(stream)
@@ -290,10 +290,10 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 
 	//ensure live pipeline is cleaned up if monitoring ends
 	defer ls.LivepeerNode.RemoveLivePipeline(streamId)
-
+	streamCtx := stream.GetContext()
 	for {
 		select {
-		case <-stream.StreamCtx.Done():
+		case <-streamCtx.Done():
 			clog.Infof(ctx, "Stream %s stopped, ending monitoring", streamId)
 			return
 		case <-pmtTicker.C:
