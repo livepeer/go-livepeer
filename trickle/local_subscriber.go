@@ -2,16 +2,17 @@ package trickle
 
 import (
 	"errors"
-	"io"
 	"log/slog"
 	"strconv"
 	"sync"
+
+	"github.com/livepeer/go-livepeer/media"
 )
 
 // local (in-memory) subscriber for trickle protocol
 
 type TrickleData struct {
-	Reader   io.Reader
+	Reader   media.CloneableReader
 	Metadata map[string]string
 }
 
@@ -47,7 +48,8 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 		return nil, errors.New("seq not found")
 	}
 	c.seq++
-	r, w := io.Pipe()
+	w := media.NewMediaWriter()
+	r := w.MakeReader()
 	go func() {
 		subscriber := &SegmentSubscriber{
 			segment: segment,
