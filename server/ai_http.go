@@ -182,10 +182,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 		eventsCh.CreateChannel()
 
+		ctx, cancel := context.WithCancel(ctx)
+		closeSession := func() {
+			pubCh.Close()
+			subCh.Close()
+			eventsCh.Close()
+			controlPubCh.Close()
+			cancel()
+		}
+
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		priceInfo := payment.GetExpectedPrice()
 		var paymentProcessor *LivePaymentProcessor
-		ctx, cancel := context.WithCancel(ctx)
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 			accountPaymentFunc := func(inPixels int64) error {
@@ -197,11 +205,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				})
 				if err != nil {
 					clog.Errorf(ctx, "Error accounting payment, stopping stream processing", err)
-					pubCh.Close()
-					subCh.Close()
-					eventsCh.Close()
-					controlPubCh.Close()
-					cancel()
+					closeSession()
 				}
 				return err
 			}
@@ -217,6 +221,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				segment, err := sub.Read()
 				if err != nil {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					closeSession()
 					return
 				}
 				reader := segment.Reader
@@ -252,11 +257,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
 			}
 
-			pubCh.Close()
-			subCh.Close()
-			controlPubCh.Close()
-			eventsCh.Close()
-			cancel()
+			closeSession()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -272,6 +273,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			closeSession()
 			return
 		}
 
