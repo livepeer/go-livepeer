@@ -82,6 +82,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	ctx, cancel := context.WithCancel(ctx)
 	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
+	// Only start payment processor if we have valid price info and auth token
+	// BYOC does not require AuthToken for payment, so this will skip the live payment processor for BYOC streaming
 	if priceInfo != nil && priceInfo.PricePerUnit != 0 && sess.OrchestratorInfo.AuthToken != nil {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
