@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -24,11 +22,6 @@ type LivePaymentProcessor struct {
 	lastProcessedMu sync.RWMutex
 	processCh       chan time.Time
 
-	lastProbedAt        time.Time
-	lastProbedSegInfoMu sync.RWMutex
-	lastProbedSegInfo   *ffmpeg.MediaFormatInfo
-	probeSegCh          chan *segment
-
 	processSegmentFunc func(inPixels int64) error
 }
 
@@ -44,10 +37,6 @@ func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration,
 		processCh:          make(chan time.Time, 1),
 		processSegmentFunc: processSegmentFunc,
 		lastProcessedAt:    time.Now(),
-
-		lastProbedAt:      time.Now(),
-		lastProbedSegInfo: &defaultSegInfo,
-		probeSegCh:        make(chan *segment, 1),
 	}
 	pp.start(ctx)
 	return pp
@@ -63,19 +52,6 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 				clog.Info(ctx, "Done processing payments for session")
 				return
 			}
-
-		}
-	}()
-	go func() {
-		for {
-			select {
-			case seg := <-p.probeSegCh:
-				p.probeOne(ctx, seg)
-			case <-ctx.Done():
-				clog.Info(ctx, "Done probing segments for session")
-				return
-			}
-
 		}
 	}()
 }
@@ -85,14 +61,12 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 		return
 	}
 
-	p.lastProbedSegInfoMu.RLock()
-	info := p.lastProbedSegInfo
-	p.lastProbedSegInfoMu.RUnlock()
+	info := defaultSegInfo
 
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.V(6).Infof(ctx, "Processing live payment: secSinceLastProcessed=%v, pixelsSinceLastProcessed=%v, height=%d, width=%d, FPS=%v", secSinceLastProcessed, pixelsSinceLastProcessed, info.Height, info.Width, info.FPS)
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "pixelsSinceLastProcessed", pixelsSinceLastProcessed)
 
 	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
@@ -106,44 +80,22 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	p.lastProcessedAt = timestamp
 }
 
-func (p *LivePaymentProcessor) process(ctx context.Context, reader io.Reader) io.Reader {
+func (p *LivePaymentProcessor) process(ctx context.Context) {
 	timestamp := time.Now()
 	if p.shouldSkip(timestamp) {
-		// We don't process every segment, because it's too compute-expensive
-		return reader
+		// Only need to process segments periodically
+		return
 	}
 
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		clog.InfofErr(ctx, "Error creating pipe", err)
-		return reader
-	}
-
-	resReader := io.TeeReader(reader, pipeWriter)
 	go func() {
 		select {
 		case p.processCh <- timestamp:
 		default:
 			// We process one segment at the time, no need to buffer them
 		}
-
-		// read the segment into the buffer, because the direct use of the reader causes Broken pipe
-		// it's probably related to different pace of reading by trickle and ffmpeg.GetCodecInfo()
-		defer pipeReader.Close()
-		segData, err := io.ReadAll(pipeReader)
-		if err != nil {
-			clog.InfofErr(ctx, "Error reading segment data", err)
-			return
-		}
-
-		select {
-		case p.probeSegCh <- &segment{timestamp: timestamp, segData: segData}:
-		default:
-			// We process one segment at the time, no need to buffer them
-		}
 	}()
 
-	return resReader
+	return
 }
 
 func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
@@ -155,28 +107,4 @@ func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 		return true
 	}
 	return false
-}
-
-func (p *LivePaymentProcessor) probeOne(ctx context.Context, seg *segment) {
-	if p.lastProbedAt.Add(p.interval).After(seg.timestamp) {
-		// We don't probe every segment, because it's too compute-expensive
-		return
-	}
-
-	info, err := probeSegment(ctx, seg)
-	if err != nil {
-		clog.Warningf(ctx, "Error probing segment, err=%v", err)
-		return
-	}
-	clog.V(6).Infof(ctx, "Probed segment: height=%d, width=%d, FPS=%v", info.Height, info.Width, info.FPS)
-
-	p.lastProbedSegInfoMu.Lock()
-	defer p.lastProbedSegInfoMu.Unlock()
-	p.lastProbedSegInfo = &info
-	p.lastProbedAt = seg.timestamp
-}
-
-func probeSegment(ctx context.Context, seg *segment) (ffmpeg.MediaFormatInfo, error) {
-	// Return a constant value to calculate payments based on time intervals rather than input segment pixel data
-	return defaultSegInfo, nil
 }
