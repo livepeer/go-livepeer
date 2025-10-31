@@ -435,6 +435,248 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	}
 }
 
+// TestRunStream_OrchestratorFailover tests that runStream fails over to a second orchestrator
+// when the first one fails, and stops when the second orchestrator also fails
+func TestRunStream_OrchestratorFailover(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	node := mockJobLivepeerNode()
+
+	// Set up an lphttp-based orchestrator test server with trickle endpoints
+	mux := http.NewServeMux()
+	mockOrch := &mockOrchestrator{}
+	mockOrch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	mockOrch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+
+	lp := &lphttp{orchestrator: nil, transRPC: mux, node: node}
+	// Configure trickle server on the mux (imitate production trickle endpoints)
+	lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:        mux,
+		BasePath:   TrickleHTTPPath,
+		Autocreate: true,
+	})
+	// Register orchestrator endpoints used by runStream path
+	mux.HandleFunc("/ai/stream/start", lp.StartStream)
+	mux.HandleFunc("/ai/stream/stop", lp.StopStream)
+	mux.HandleFunc("/process/token", orchTokenHandler)
+	// Handle DELETE requests for trickle cleanup (in addition to trickle server's built-in handlers)
+	mux.HandleFunc("DELETE /ai/trickle/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	server := httptest.NewServer(lp)
+	defer server.Close()
+	mux2 := http.NewServeMux()
+	lp2 := &lphttp{orchestrator: nil, transRPC: mux2, node: node}
+	// Configure trickle server on the mux (imitate production trickle endpoints)
+	lp2.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:        mux2,
+		BasePath:   TrickleHTTPPath,
+		Autocreate: true,
+	})
+	// Register orchestrator endpoints used by runStream path
+	mux2.HandleFunc("/ai/stream/start", lp.StartStream)
+	mux2.HandleFunc("/ai/stream/stop", lp.StopStream)
+	mux2.HandleFunc("/process/token", orchTokenHandler)
+	// Handle DELETE requests for trickle cleanup (in addition to trickle server's built-in handlers)
+	mux2.HandleFunc("DELETE /ai/trickle/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	server2 := httptest.NewServer(lp2)
+	defer server2.Close()
+	// Add a connection state tracker
+	mu := sync.Mutex{}
+	conns := make(map[net.Conn]http.ConnState)
+	server.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		conns[conn] = state
+	}
+	server2.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		conns[conn] = state
+	}
+
+	// Configure mock orchestrator behavior expected by lphttp handlers
+	parsedURL, _ := url.Parse(server.URL)
+	capabilitySrv := httptest.NewServer(http.HandlerFunc(orchCapabilityUrlHandler))
+	defer capabilitySrv.Close()
+
+	parsedURL2, _ := url.Parse(server2.URL)
+	capabilitySrv2 := httptest.NewServer(http.HandlerFunc(orchCapabilityUrlHandler))
+	defer capabilitySrv2.Close()
+	// attach our orchestrator implementation to lphttp
+	lp.orchestrator = &testStreamOrch{mockOrchestrator: mockOrch, svc: parsedURL, capURL: capabilitySrv.URL}
+	lp2.orchestrator = &testStreamOrch{mockOrchestrator: mockOrch, svc: parsedURL2, capURL: capabilitySrv2.URL}
+
+	// Prepare a gatewayJob with a dummy orchestrator token
+	jobReq := &JobRequest{
+		ID:         "test-stream",
+		Capability: "test-capability",
+		Timeout:    10,
+		Request:    "{}",
+	}
+	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+	paramsStr := marshalToString(t, jobParams)
+	jobReq.Parameters = paramsStr
+
+	orchToken := createMockJobToken(server.URL)
+	orchToken2 := createMockJobToken(server2.URL)
+	orchJob := &orchJob{Req: jobReq, Params: &jobParams}
+	gatewayJob := &gatewayJob{Job: orchJob, Orchs: []core.JobToken{*orchToken, *orchToken2}, node: node}
+
+	// Setup a LivepeerServer and a mock pipeline
+	ls := &LivepeerServer{LivepeerNode: node}
+	ls.LivepeerNode.OrchestratorPool = newStubOrchestratorPool(ls.LivepeerNode, []string{server.URL, server2.URL})
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	mockSender := pm.MockSender{}
+	mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
+	mockSender.On("CreateTicketBatch", "foo", orchJob.Req.Timeout).Return(mockTicketBatch(orchJob.Req.Timeout), nil).Twice()
+	node.Sender = &mockSender
+	node.Balances = core.NewAddressBalances(10)
+	defer node.Balances.StopCleanup()
+
+	//now sign job and create a sig for the sender to include
+	gatewayJob.sign()
+	sender, err := getJobSender(context.TODO(), node)
+	assert.NoError(t, err)
+	orchJob.Req.Sender = sender.Addr
+	orchJob.Req.Sig = sender.Sig
+	// Minimal aiRequestParams and liveRequestParams
+	params := aiRequestParams{
+		liveParams: &liveRequestParams{
+			requestID:      "req-1",
+			stream:         "test-stream",
+			streamID:       "test-stream",
+			sendErrorEvent: func(err error) {},
+			segmentReader:  media.NewSwitchableSegmentReader(),
+		},
+		node: node,
+	}
+
+	ls.LivepeerNode.NewLivePipeline("req-1", "test-stream", "test-capability", params, nil)
+
+	// Cancel the stream after a short delay to simulate shutdown
+	done1 := make(chan struct{})
+	done2 := make(chan struct{})
+
+	// Should not panic and should clean up
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); ls.runStream(gatewayJob) }()
+	go func() { defer wg.Done(); ls.monitorStream(gatewayJob.Job.Req.ID) }()
+	// First, simulate failure of the first orchestrator
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		stream := node.LivePipelines["test-stream"]
+
+		if stream != nil {
+			// Wait for ControlPub to be initialized by runStream
+			timeout := time.After(2 * time.Second)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+
+			for stream.ControlPub == nil {
+				select {
+				case <-ticker.C:
+					// Check again
+				case <-timeout:
+					// Timeout waiting for ControlPub, proceed anyway
+					break
+				}
+			}
+			params := stream.StreamParams()
+			aiParams, _ := params.(aiRequestParams)
+			aiParams.liveParams.kickOrch(errors.New("simulated orchestrator failure"))
+		}
+		close(done1)
+	}()
+	<-done1
+	t.Log("Orchestrator 1 kicked")
+
+	// Wait for GatewayStatus to update to server2.URL (up to 1 second)
+	var serviceAddr interface{}
+	for i := 0; i < 100; i++ {
+		currentOrch, _ := GatewayStatus.Get(gatewayJob.Job.Req.ID)
+		if currentOrch != nil {
+			serviceAddr = currentOrch["orchestrator"]
+			if serviceAddr != nil && serviceAddr.(string) == server2.URL {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Equal(t, server2.URL, serviceAddr.(string))
+
+	//kick the second Orchestrator
+	go func() {
+		stream := node.LivePipelines["test-stream"]
+		if stream != nil {
+			// Wait for ControlPub to be initialized by runStream
+			timeout := time.After(2 * time.Second)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+
+			for stream.ControlPub == nil {
+				select {
+				case <-ticker.C:
+					// Check again
+				case <-timeout:
+					// Timeout waiting for ControlPub, proceed anyway
+					break
+				}
+			}
+			params := stream.StreamParams()
+			aiParams, _ := params.(aiRequestParams)
+			aiParams.liveParams.kickOrch(errors.New("simulated orchestrator failure"))
+		}
+		close(done2)
+	}()
+	<-done2
+	t.Log("Orchestrator 2 kicked")
+	// Wait for both goroutines to finish before asserting
+	wg.Wait()
+	// After cancel, the stream should be removed from LivePipelines
+	_, exists := node.LivePipelines["test-stream"]
+	assert.False(t, exists)
+
+	// Clean up trickle streams via HTTP DELETE
+	streamID := "test-stream"
+	trickleStreams := []string{
+		streamID,
+		streamID + "-out",
+		streamID + "-control",
+		streamID + "-events",
+		streamID + "-data",
+	}
+	for _, stream := range trickleStreams {
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("%s/%s", TrickleHTTPPath, stream), nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+	}
+	for _, stream := range trickleStreams {
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("%s/%s", TrickleHTTPPath, stream), nil)
+		w := httptest.NewRecorder()
+		mux2.ServeHTTP(w, req)
+	}
+
+	// Clean up external capabilities streams
+	if node.ExternalCapabilities != nil {
+		for streamID := range node.ExternalCapabilities.Streams {
+			node.ExternalCapabilities.RemoveStream(streamID)
+		}
+	}
+
+	//clean up http connections
+	mu.Lock()
+	defer mu.Unlock()
+	for conn := range conns {
+		conn.Close()
+		delete(conns, conn)
+	}
+}
+
 // Test StartStream handler
 func TestStartStreamHandler(t *testing.T) {
 	node := mockJobLivepeerNode()
