@@ -202,7 +202,8 @@ func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, str
 	n.LiveMu.Lock()
 	defer n.LiveMu.Unlock()
 
-	//ensure streamRequest is not nil or empty
+	//ensure streamRequest is not nil or empty to avoid json unmarshal issues on Orchestrator failover
+	//sends the request bytes to next Orchestrator
 	if streamRequest == nil || len(streamRequest) == 0 {
 		streamRequest = []byte("{}")
 	}
