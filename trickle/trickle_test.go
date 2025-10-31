@@ -93,19 +93,7 @@ func TestTrickle_Close(t *testing.T) {
 }
 
 func TestTrickle_SetSeq(t *testing.T) {
-	require := require.New(t)
-	mux := http.NewServeMux()
-	server := ConfigureServer(TrickleServerConfig{
-		Mux:        mux,
-		Autocreate: true,
-	})
-
-	stop := server.Start()
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-	defer stop()
-
-	channelURL := ts.URL + "/testest"
+	require, channelURL := makeServer(t)
 
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
@@ -391,6 +379,11 @@ func TestTrickle_SetSubStart(t *testing.T) {
 }
 
 func makeServer(t *testing.T) (*require.Assertions, string) {
+	require, url, _ := makeServerWithServer(t)
+	return require, url
+}
+
+func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
 	// use this function if these defaults work, otherwise copy-paste
 	require := require.New(t)
 	mux := http.NewServeMux()
@@ -409,7 +402,7 @@ func makeServer(t *testing.T) (*require.Assertions, string) {
 	lp := NewLocalPublisher(server, chanName, "text/plain")
 	lp.CreateChannel()
 
-	return require, ts.URL + "/" + chanName
+	return require, ts.URL + "/" + chanName, server
 }
 
 func subConfig(url string) TrickleSubscriberConfig {
