@@ -124,7 +124,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
-				r = paymentProcessor.process(ctx, reader)
+				paymentProcessor.process(ctx)
 			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
