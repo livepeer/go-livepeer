@@ -96,7 +96,6 @@ type aiRequestParams struct {
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
-	dataWriter    *media.SegmentWriter
 	stream        string
 	requestID     string
 	streamID      string
@@ -132,12 +131,6 @@ type liveRequestParams struct {
 
 	// when the write for the last segment started
 	lastSegmentTime time.Time
-
-	orchPublishUrl   string
-	orchSubscribeUrl string
-	orchControlUrl   string
-	orchEventsUrl    string
-	orchDataUrl      string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
