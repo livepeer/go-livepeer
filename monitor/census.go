@@ -208,6 +208,7 @@ type (
 		mAIResultSaveFailed                      *stats.Int64Measure
 		mAIContainersInUse                       *stats.Int64Measure
 		mAIContainersIdle                        *stats.Int64Measure
+		mLiveAIPricePerPixel                     *stats.Float64Measure
 		aiContainersIdleByPipelineByOrchestrator map[string]map[string]int
 		mAIGPUsIdle                              *stats.Int64Measure
 		mAICurrentLivePipelines                  *stats.Int64Measure
@@ -391,6 +392,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
 	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
+	census.mLiveAIPricePerPixel = stats.Float64("live_ai_price_per_pixel", "Live AI price per pixel", "wei/pixel")
 	census.aiContainersIdleByPipelineByOrchestrator = make(map[string]map[string]int)
 	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
@@ -1027,6 +1029,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mAIContainersIdle,
 			Description: "Number of containers currently available for AI processing",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName, census.kOrchestratorURI}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "live_ai_price_per_pixel",
+			Measure:     census.mLiveAIPricePerPixel,
+			Description: "Live AI price per pixel",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
@@ -2063,6 +2072,15 @@ func AIContainersIdle(currentContainersIdle int, pipeline, modelID, uri string) 
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelID), tag.Insert(census.kOrchestratorURI, uri)},
 		census.mAIContainersIdle.M(int64(currentContainersIdle))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func LiveAIPricePerPixel(orchestratorURI string, pricePerPixel *big.Rat) {
+	floatPrice, _ := pricePerPixel.Float64()
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kOrchestratorURI, orchestratorURI)},
+		census.mLiveAIPricePerPixel.M(floatPrice)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
