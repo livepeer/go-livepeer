@@ -1359,15 +1359,17 @@ func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
 	}
+	var respBody []byte
+	if resp.Body != nil {
+		respBody, err = io.ReadAll(resp.Body)
+		if err != nil {
+			clog.Errorf(ctx, "Error reading response body: %v", err)
+		}
+		defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		clog.Errorf(ctx, "Error reading response body: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode > 399 {
-		clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
+		if resp.StatusCode > 399 {
+			clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
+		}
 	}
 
 	// Stop the stream and free capacity

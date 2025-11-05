@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1324,4 +1325,108 @@ func createMockJobToken(hostUrl string) *core.JobToken {
 			PixelsPerUnit: 1,
 		},
 	}
+}
+
+func TestSubmitJob_OrchestratorReceivesPOSTRequest(t *testing.T) {
+	// Track received requests
+	var receivedRequests []string
+	var requestMethods []string
+	var mu sync.Mutex
+
+	// Create mock orchestrator server that captures request methods
+	mockOrchServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestMethods = append(requestMethods, r.Method)
+		receivedRequests = append(receivedRequests, r.URL.Path)
+		mu.Unlock()
+
+		switch r.URL.Path {
+		case "/process/token":
+			// Return mock job token for orchestrator discovery
+			token := createMockJobToken("http://" + r.Host)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(token)
+		case "/process/request":
+			// Mock successful job processing response
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"result": "success"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockOrchServer.Close()
+
+	// Set up LivepeerServer with mock orchestrator pool
+	node := mockJobLivepeerNode()
+	pool := newStubOrchestratorPool(node, []string{mockOrchServer.URL})
+	node.OrchestratorPool = pool
+
+	// Mock sender for payment processing
+	mockSender := pm.MockSender{}
+	mockSender.On("StartSession", mock.Anything).Return("foo")
+	mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
+	node.Sender = &mockSender
+	node.Balances = core.NewAddressBalances(10)
+	defer node.Balances.StopCleanup()
+
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	// Create job request
+	jobDetails := JobRequestDetails{StreamId: "test-stream"}
+	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+	jobReq := JobRequest{
+		ID:         "test-job-123",
+		Request:    marshalToString(t, jobDetails),
+		Parameters: marshalToString(t, jobParams),
+		Capability: "test-capability",
+		Timeout:    10,
+		Sender:     "0x1234567890abcdef1234567890abcdef12345678",
+		Sig:        "0x456",
+	}
+
+	// Marshal and encode job request for header
+	jobReqBytes, err := json.Marshal(jobReq)
+	assert.NoError(t, err)
+	jobReqB64 := base64.StdEncoding.EncodeToString(jobReqBytes)
+
+	// Create HTTP request to submit job
+	requestBody := `{"test": "data"}`
+	req := httptest.NewRequest(http.MethodPost, "/process/request", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(jobRequestHdr, jobReqB64)
+
+	// Execute submitJob
+	w := httptest.NewRecorder()
+	handler := ls.SubmitJob()
+	handler.ServeHTTP(w, req)
+
+	// Verify the test results
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check that we received requests
+	assert.Greater(t, len(receivedRequests), 0, "Expected to receive at least one request")
+	assert.Greater(t, len(requestMethods), 0, "Expected to capture at least one request method")
+
+	// Verify that GET request was made for token discovery
+	assert.Contains(t, requestMethods, "GET", "Expected GET request for token discovery")
+	assert.Contains(t, receivedRequests, "/process/token", "Expected token discovery request")
+
+	// Verify that POST request was made to process the job
+	assert.Contains(t, requestMethods, "POST", "Expected POST request for job processing")
+	assert.Contains(t, receivedRequests, "/process/request", "Expected job processing request")
+
+	// Count POST requests specifically
+	postCount := 0
+	for _, method := range requestMethods {
+		if method == "POST" {
+			postCount++
+		}
+	}
+	assert.Greater(t, postCount, 0, "Expected at least one POST request to orchestrator")
+
+	t.Logf("Received %d requests, %d POST requests", len(receivedRequests), postCount)
+	t.Logf("Request methods: %v", requestMethods)
+	t.Logf("Request paths: %v", receivedRequests)
 }
