@@ -66,9 +66,10 @@ func (b *Balance) Balance() *big.Rat {
 
 // AddressBalances holds credit balances for ETH addresses
 type AddressBalances struct {
-	balances map[ethcommon.Address]*Balances
-	mtx      sync.Mutex
-	ttl      time.Duration
+	balances     map[ethcommon.Address]*Balances
+	mtx          sync.Mutex
+	sharedBalMtx sync.Mutex
+	ttl          time.Duration
 }
 
 // NewAddressBalances creates a new AddressBalances instance
@@ -97,6 +98,47 @@ func (a *AddressBalances) Reserve(addr ethcommon.Address, id ManifestID) *big.Ra
 // Balance retrieves the current balance for an address' ManifestID
 func (a *AddressBalances) Balance(addr ethcommon.Address, id ManifestID) *big.Rat {
 	return a.balancesForAddr(addr).Balance(id)
+}
+
+// compares expected balance with current balance and updates accordingly with the expected balance being the target
+// returns the difference and if minimum balance was covered
+// also returns if balance was reset to zero because expected was zero
+func (a *AddressBalances) CompareAndUpdateBalance(addr ethcommon.Address, id ManifestID, expected *big.Rat, minimumBal *big.Rat) (*big.Rat, *big.Rat, bool, bool) {
+	a.sharedBalMtx.Lock()
+	defer a.sharedBalMtx.Unlock()
+	current := a.balancesForAddr(addr).Balance(id)
+	if current == nil {
+		//create a balance of 1 to start tracking
+		a.Debit(addr, id, big.NewRat(0, 1))
+		current = a.balancesForAddr(addr).Balance(id)
+	}
+	if expected == nil {
+		expected = big.NewRat(0, 1)
+	}
+	diff := new(big.Rat).Sub(expected, current)
+
+	if diff.Sign() > 0 {
+		a.Credit(addr, id, diff)
+	} else {
+		a.Debit(addr, id, new(big.Rat).Abs(diff))
+	}
+
+	var resetToZero bool
+	if expected.Sign() == 0 {
+		a.Debit(addr, id, current)
+
+		resetToZero = true
+	}
+
+	//get updated balance after changes
+	current = a.balancesForAddr(addr).Balance(id)
+
+	var minimumBalCovered bool
+	if current.Cmp(minimumBal) >= 0 {
+		minimumBalCovered = true
+	}
+
+	return current, diff, minimumBalCovered, resetToZero
 }
 
 // StopCleanup stops the cleanup loop for all balances
