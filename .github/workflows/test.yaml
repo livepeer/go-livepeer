@@ -108,11 +108,11 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.61.0
+          version: v2.4.0
           skip-pkg-cache: true
-          args: '--out-format=colored-line-number --disable-all --enable=gofmt --enable=govet --enable=revive --timeout=4m pm verification'
+          args: '--output.text.path=stdout --output.text.colors=true --output.text.print-issued-lines=true --default=none --enable=govet --timeout=4m pm verification'
 
       - name: Run Revive Action by building from repository
         uses: docker://morphy/revive-action:v2

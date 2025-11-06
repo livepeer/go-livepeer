@@ -433,10 +433,7 @@ func (w *Watcher) getSubBlockRanges(from, to, rangeSize int) []*blockRange {
 
 		for i := 0; i < numChunks; i = i + 1 {
 			fromIndex := i * rangeSize
-			toIndex := fromIndex + rangeSize
-			if toIndex > len(blocks) {
-				toIndex = len(blocks)
-			}
+			toIndex := min(fromIndex+rangeSize, len(blocks))
 			bs := blocks[fromIndex:toIndex]
 			blockRange := &blockRange{
 				FromBlock: bs[0],

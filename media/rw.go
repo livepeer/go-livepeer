@@ -67,9 +67,9 @@ func (mw *MediaWriter) readData(startPos int) ([]byte, bool) {
 	}
 }
 
-func (mw *MediaWriter) Close() {
+func (mw *MediaWriter) Close() error {
 	if mw == nil {
-		return // sometimes happens, weird
+		return nil // sometimes happens, weird
 	}
 	mw.mu.Lock()
 	defer mw.mu.Unlock()
@@ -77,6 +77,7 @@ func (mw *MediaWriter) Close() {
 		mw.closed = true
 		mw.cond.Broadcast()
 	}
+	return nil
 }
 
 func (mw *MediaWriter) MakeReader() CloneableReader {

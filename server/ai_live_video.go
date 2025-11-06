@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,10 @@ const (
 	maxRecentSwapsCount = 2
 )
 
+var (
+	liveAISaveNSegments = 10
+)
+
 type orchestratorSwapper struct {
 	params           aiRequestParams
 	cap              core.Capability
@@ -47,7 +52,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	}
 }
 
-func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
+func (os *orchestratorSwapper) checkSwap(ctx context.Context) error {
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
@@ -57,11 +62,11 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	// Stop if too many swaps, because there may be something wrong with the input stream
 	if os.recentSwapsCount > maxRecentSwapsCount {
 		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
-		return false
+		return errors.New("Too many swaps")
 	}
 
 	os.lastSwapped = time.Now()
-	return true
+	return nil
 }
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
@@ -116,7 +121,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
-				r = paymentProcessor.process(ctx, reader)
+				paymentProcessor.process(ctx)
 			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
@@ -145,7 +150,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				params.liveParams.mu.Lock()
 				params.liveParams.lastSegmentTime = startTime
 				params.liveParams.mu.Unlock()
-				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, params.liveParams.manifestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
@@ -231,14 +236,23 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
 		return
 	}
+	setOutWriter(ctx, outWriter, params) // for WHEP
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
-		go ffmpegOutput(ctx, outURL, outWriter.MakeReader(), params)
+		go ffmpegOutput(ctx, outURL, outWriter, params)
 	}
+
+	// watchdog that gets reset on every segment to catch output stalls
+	segmentTimeout := params.liveParams.outSegmentTimeout
+	if segmentTimeout <= 0 {
+		segmentTimeout = 30 * time.Second
+	}
+	segmentTicker := time.NewTicker(segmentTimeout)
 
 	// read segments from trickle subscription
 	go func() {
 		defer outWriter.Close()
+		defer segmentTicker.Stop()
 
 		var err error
 		firstSegment := true
@@ -259,6 +273,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
+			segmentTicker.Reset(segmentTimeout) // reset ticker on each iteration.
 			var segment *http.Response
 			clog.V(8).Infof(ctx, "trickle subscribe read data await")
 			segment, err = subscriber.Read()
@@ -349,12 +364,37 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				})
 
 			}
-			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
+			clog.Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
+
+	// watchdog: fires if orch does not produce segments for too long
+	go func() {
+		for {
+			select {
+			case <-segmentTicker.C:
+				// check whether this timeout is due to missing input
+				// only suspend orchestrator if there is recent input
+				// ( no input == no output, so don't suspend for that )
+				params.liveParams.mu.Lock()
+				lastInputSegmentTime := params.liveParams.lastSegmentTime
+				params.liveParams.mu.Unlock()
+				lastInputSegmentAge := time.Since(lastInputSegmentTime)
+				hasRecentInput := lastInputSegmentAge < segmentTimeout/2
+				if hasRecentInput && params.inputStreamExists() {
+					// abandon the orchestrator
+					suspendOrchestrator(ctx, params)
+					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for segments"))
+					segmentTicker.Stop()
+					return
+				}
+			}
+		}
+	}()
+
 }
 
-func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
+func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBuffer, params aiRequestParams) {
 	// Clone the context since we can call this function multiple times
 	// Adding rtmpOut val multiple times to the same context will just stomp over old ones
 	ctx = clog.Clone(ctx, ctx)
@@ -396,13 +436,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			return cmd.Process.Signal(syscall.SIGTERM)
 		}
 		cmd.WaitDelay = 5 * time.Second
-		cmd.Stdin = r
+		cmd.Stdin = outWriter.MakeReader() // start at leading edge of output for each retry
 		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process output: %s", output)
-		if err != nil {
-			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
-			return
+		clog.Infof(ctx, "Process err=%v output: %s", err, output)
+
+		select {
+		case <-ctx.Done():
+			clog.Info(ctx, "Context done, stopping rtmp output")
+			return // Returns context.Canceled or context.DeadlineExceeded
+		default:
+			// Context is still active, continue with normal processing
 		}
+
 		time.Sleep(5 * time.Second)
 	}
 }
@@ -410,8 +455,8 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq int, params aiRequestParams) (int64, error) {
 	defer segment.Body.Close()
 	var reader io.Reader = segment.Body
-	if seq < 10 {
-		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
+	if seq < liveAISaveNSegments {
+		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-%s-out-%d.ts", params.liveParams.requestID, params.liveParams.manifestID, seq))
 		outFile, err := os.Create(p)
 		if err != nil {
 			clog.Info(ctx, "Could not create output segment file for logging", "err", err)
@@ -449,6 +494,42 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 	}
 }
 
+func setOutWriter(ctx context.Context, writer *media.RingBuffer, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+	stream, requestID := params.liveParams.stream, params.liveParams.requestID
+	sess, exists := params.node.LivePipelines[stream]
+	if !exists || sess.RequestID != requestID {
+		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID", "exists", exists, "requestID", requestID, "session-requestID", sess.RequestID)
+		return
+	}
+	sess.OutWriter = writer
+	sess.OutCond.Broadcast()
+}
+
+func registerControl(ctx context.Context, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+
+	stream := params.liveParams.stream
+	if sess, exists := params.node.LivePipelines[stream]; exists && sess.ControlPub != nil {
+		if sess.ControlPub != nil {
+			clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
+			sess.ControlPub.Close()
+			// TODO better solution than allowing existing streams to stomp over one another
+			sess.Closed = true
+			sess.OutCond.Broadcast()
+		}
+	}
+
+	params.node.LivePipelines[stream] = &core.LivePipeline{
+		RequestID: params.liveParams.requestID,
+		Pipeline:  params.liveParams.pipeline,
+		StreamID:  params.liveParams.streamID,
+		OutCond:   sync.NewCond(params.node.LiveMu),
+	}
+}
+
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
@@ -469,21 +550,56 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LivePipelines[stream]; exists {
-		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
-		control.ControlPub.Close()
-		// TODO better solution than allowing existing streams to stomp over one another
+	reportUpdate := func(data []byte) {
+		// send the param update to kafka
+		monitor.SendQueueEventAsync("ai_stream_events", map[string]interface{}{
+			"type":        "params_update",
+			"stream_id":   params.liveParams.streamID,
+			"request_id":  params.liveParams.requestID,
+			"pipeline":    params.liveParams.pipeline,
+			"pipeline_id": params.liveParams.pipelineID,
+			"params":      json.RawMessage(data),
+			"orchestrator_info": map[string]interface{}{
+				"address": params.liveParams.sess.Address(),
+				"url":     params.liveParams.sess.Transcoder(),
+			},
+		})
 	}
 
-	params.node.LivePipelines[stream] = &core.LivePipeline{
-		ControlPub:  controlPub,
-		StopControl: stop,
-		RequestID:   params.liveParams.requestID,
+	sess, exists := params.node.LivePipelines[stream]
+	if !exists || sess.RequestID != params.liveParams.requestID {
+		stopProcessing(ctx, params, fmt.Errorf("control session did not exist"))
+		return
 	}
+	if sess.ControlPub != nil {
+		// clean up from existing orchestrator
+		go sess.ControlPub.Close()
+	}
+	sess.ControlPub = controlPub
+	sess.StopControl = stop
+	sess.ReportUpdate = reportUpdate
+
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
-		logCurrentLiveSessions(params.node.LivePipelines)
+		monitorCurrentLiveSessions(params.node.LivePipelines)
 	}
+
+	// Send any cached control params in a goroutine outside the lock.
+	msg := sess.Params
+	go func() {
+		if msg == nil {
+			return
+		}
+		var err error
+		for i := 0; i < 3; i++ {
+			err = controlPub.Write(bytes.NewReader(msg))
+			if err == nil {
+				reportUpdate(msg)
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		stopProcessing(ctx, params, fmt.Errorf("control write failed: %w", err))
+	}()
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
@@ -682,6 +798,23 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	}()
 }
 
+func getOutWriter(stream string, node *core.LivepeerNode) (*media.RingBuffer, string) {
+	node.LiveMu.Lock()
+	defer node.LiveMu.Unlock()
+	sess, exists := node.LivePipelines[stream]
+	if !exists || sess.Closed {
+		return nil, ""
+	}
+	// could be nil if we haven't gotten an orchestrator yet
+	for sess.OutWriter == nil {
+		sess.OutCond.Wait()
+		if sess.Closed {
+			return nil, ""
+		}
+	}
+	return sess.OutWriter, sess.RequestID
+}
+
 func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
 		return false
@@ -755,14 +888,14 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 	}
 }
 
-func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID, manifestID string, seq int) {
 	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
-	if seq > 10 {
+	if seq > liveAISaveNSegments {
 		return
 	}
 	go func() {
 		reader := r.Clone()
-		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%s-%d.ts", requestID, manifestID, seq))
 		file, err := os.Create(p)
 		if err != nil {
 			clog.InfofErr(ctx, "Could not create segment file for logging", err)

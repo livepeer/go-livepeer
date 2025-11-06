@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
@@ -138,8 +139,10 @@ type LivepeerNode struct {
 	ExternalCapabilities *ExternalCapabilities
 	AutoAdjustPrice      bool
 	AutoSessionLimit     bool
+
 	// Broadcaster public fields
-	Sender pm.Sender
+	Sender     pm.Sender
+	ExtraNodes int
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -152,6 +155,7 @@ type LivepeerNode struct {
 	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+	Nodes            []string // instance URLs of this orch available to do work
 
 	// For live video pipelines, cache for live pipelines; key is the stream name
 	LivePipelines map[string]*LivePipeline
@@ -160,18 +164,29 @@ type LivepeerNode struct {
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
+	LiveAIHeartbeatURL         string
+	LiveAIHeartbeatHeaders     map[string]string
+	LiveAIHeartbeatInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAICapRefreshModels     []string
+	LiveAISaveNSegments        *int
 
 	// Gateway
 	GatewayHost string
 }
 
 type LivePipeline struct {
-	RequestID   string
-	ControlPub  *trickle.TricklePublisher
-	StopControl func()
+	RequestID    string
+	StreamID     string
+	Params       []byte
+	Pipeline     string
+	ControlPub   *trickle.TricklePublisher
+	StopControl  func()
+	ReportUpdate func([]byte)
+	OutCond      *sync.Cond
+	OutWriter    *media.RingBuffer
+	Closed       bool
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

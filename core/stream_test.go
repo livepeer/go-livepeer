@@ -48,22 +48,18 @@ func TestSegmentFlatten(t *testing.T) {
 }
 
 func TestRandomIdGenerator(t *testing.T) {
-	rand.Seed(123)
+	common.PkgRNG = rand.New(rand.NewSource(123))
 	res := common.RandomIDGenerator(DefaultManifestIDLength)
-	if res != "17b336b6" {
-		t.Error("Unexpected RNG result")
-	}
+	assert.Equal(t, "f1405ced", res, "Unexpected RNG result")
 }
 
 func TestStreamID(t *testing.T) {
-	rand.Seed(123)
+	common.PkgRNG = rand.New(rand.NewSource(123))
 	mid := RandomManifestID()
 	profile := ffmpeg.P144p30fps16x9
 
 	// Test random manifest ID generation
-	if string(mid) != "17b336b6" {
-		t.Error("Unexpected ManifestID ", mid)
-	}
+	assert.Equal(t, ManifestID("f1405ced"), mid, "Unexpected ManifestID")
 
 	// Test normal cases
 	id := MakeStreamID(mid, &profile)

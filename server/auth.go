@@ -152,6 +152,7 @@ func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*
 
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("x-api-key", apiKey)
+	request.Header.Set("Authorization", apiKey)
 
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {

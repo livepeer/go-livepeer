@@ -3,6 +3,7 @@ set -e
 
 DOCKER=${DOCKER:-false}
 PIPELINE=${PIPELINE:-noop}
+AI_MODELS_JSON=${AI_MODELS_JSON:-live-video-to-video:${PIPELINE}:true}
 AI_RUNNER_CONTAINERS_PER_GPU=${AI_RUNNER_CONTAINERS_PER_GPU:-1}
 VERBOSE=${VERBOSE:-0}
 
@@ -31,7 +32,7 @@ if [ "$DOCKER" = "false" ]; then
   ./livepeer \
     -orchestrator \
     -aiWorker \
-    -aiModels ./box/aiModels-${PIPELINE}.json \
+    -aiModels "${AI_MODELS_JSON}" \
     -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${AI_MODELS_DIR_FLAG} \
     ${VERBOSE_FLAG} \
@@ -51,11 +52,10 @@ else
     --network host \
     ${GPU_FLAG} \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v ./box/aiModels-${PIPELINE}.json:/opt/aiModels.json \
   livepeer/go-livepeer \
     -orchestrator \
     -aiWorker \
-    -aiModels /opt/aiModels.json \
+    -aiModels "${AI_MODELS_JSON}" \
     -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${VERBOSE_FLAG} \
     ${AI_MODELS_DIR_FLAG} \

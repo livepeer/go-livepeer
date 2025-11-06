@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -133,6 +134,10 @@ var uaRegex = regexp.MustCompile(`iPhone|iPad|Version/18`)
 func shouldFix(s string) bool {
 	if s == "" {
 		return true
+	}
+	// Explicitly exclude Safari 18.6 user agents from the fix
+	if strings.Contains(s, "Version/18.6") {
+		return false
 	}
 	return uaRegex.MatchString(s)
 }

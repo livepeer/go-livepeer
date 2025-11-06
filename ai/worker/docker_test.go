@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var stopTimeout = 8
+var expectedContainerStopOptions = container.StopOptions{Timeout: &stopTimeout}
+
 type MockDockerClient struct {
 	mock.Mock
 }
@@ -95,14 +98,18 @@ func NewMockServer() *MockServer {
 
 // createDockerManager creates a DockerManager with a mock DockerClient.
 func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &DockerManager{
-		gpus:          []string{"gpu0"},
-		modelDir:      "/models",
-		overrides:     ImageOverrides{Default: "default-image"},
-		dockerClient:  mockDockerClient,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               []string{"gpu0"},
+		modelDir:           "/models",
+		overrides:          ImageOverrides{Default: "default-image"},
+		dockerClient:       mockDockerClient,
+		containerCreatorID: "instance-1",
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
+		ctx:                ctx,
+		stop:               cancel,
 	}
 }
 
@@ -110,7 +117,7 @@ func TestNewDockerManager(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
 	createAndVerifyManager := func() *DockerManager {
-		manager, err := NewDockerManager(ImageOverrides{Default: "default-image"}, false, []string{"gpu0"}, "/models", mockDockerClient)
+		manager, err := NewDockerManager(ImageOverrides{Default: "default-image"}, false, []string{"gpu0"}, "/models", mockDockerClient, "instance-1")
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 		require.Equal(t, "default-image", manager.overrides.Default)
@@ -131,19 +138,19 @@ func TestNewDockerManager(t *testing.T) {
 	t.Run("ExistingContainers", func(t *testing.T) {
 		// Mock client methods to simulate the removal of existing containers.
 		existingContainers := []types.Container{
-			{ID: "container1", Names: []string{"/container1"}},
-			{ID: "container2", Names: []string{"/container2"}},
+			{ID: "container1", Names: []string{"/container1"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
+			{ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
 		}
 		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
-		mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
-		mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
+		mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
+		mockDockerClient.On("ContainerStop", mock.Anything, "container2", expectedContainerStopOptions).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
 		// Verify that existing containers were stopped and removed.
 		createAndVerifyManager()
-		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container1", mock.Anything)
-		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container2", mock.Anything)
+		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container1", expectedContainerStopOptions)
+		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container2", expectedContainerStopOptions)
 		mockDockerClient.AssertCalled(t, "ContainerRemove", mock.Anything, "container1", mock.Anything)
 		mockDockerClient.AssertCalled(t, "ContainerRemove", mock.Anything, "container2", mock.Anything)
 		mockDockerClient.AssertExpectations(t)
@@ -226,18 +233,34 @@ func TestDockerManager_Stop(t *testing.T) {
 	MockDockerClient := new(MockDockerClient)
 	dockerManager := createDockerManager(MockDockerClient)
 
+	// Create a mock server for health checks
+	mockServer := NewMockServer()
+	defer mockServer.Close()
+	mockClient, err := NewClientWithResponses(mockServer.URL)
+	require.NoError(t, err)
+
+	// Mock health check to keep the container running until Stop is called
+	mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
+		Return(200, "application/json", `{"status":"OK"}`).Maybe()
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 	containerID := "container1"
-	dockerManager.containers[containerID] = &RunnerContainer{
+	rc := &RunnerContainer{
 		RunnerContainerConfig: RunnerContainerConfig{
 			ID: containerID,
 		},
+		Name:   containerID,
+		Client: mockClient,
 	}
+	dockerManager.containers[containerID] = rc
 
-	MockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{Timeout: nil}).Return(nil)
+	// Start the watchContainer goroutine
+	dockerManager.watchGroup.Go(func() { dockerManager.watchContainer(rc) })
+
+	MockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
-	err := dockerManager.Stop(ctx)
+	err = dockerManager.Stop(ctx)
 	require.NoError(t, err)
 	MockDockerClient.AssertExpectations(t)
 }
@@ -649,7 +672,7 @@ func TestDockerManager_allocGPU(t *testing.T) {
 				dockerManager.gpuContainers[rc.GPU] = rc
 				dockerManager.containers[rc.Name] = rc
 				// Mock client methods to simulate the removal of the warm container.
-				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+				mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
 				mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 			},
 			expectedAllocatedGPU: "gpu0",
@@ -693,7 +716,7 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
 
-	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{}).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 
 	err := dockerManager.destroyContainer(rc, true)
@@ -843,7 +866,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			tt.mockServerSetup(mockServer)
 
 			// Mock destroyContainer to verify it is called.
-			mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
+			mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Once()
 			mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
 			done := make(chan struct{})
@@ -905,7 +928,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
 		// Mock destroyContainer to verify it is called.
-		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
+		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Once()
 		mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
 		// after the first failure, there should only 1 more healthcheck for the container to be stopped
@@ -988,16 +1011,62 @@ func TestRemoveExistingContainers(t *testing.T) {
 
 	// Mock client methods to simulate the removal of existing containers.
 	existingContainers := []types.Container{
-		{ID: "container1", Names: []string{"/container1"}},
-		{ID: "container2", Names: []string{"/container2"}},
+		{ID: "container1", Names: []string{"/container1"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
+		{ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
 	}
 	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container2", expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
-	removeExistingContainers(ctx, mockDockerClient)
+	RemoveExistingContainers(ctx, mockDockerClient, "instance-1")
+	mockDockerClient.AssertExpectations(t)
+}
+
+func TestRemoveExistingContainers_InMemoryFilterLegacyAndOwnerID(t *testing.T) {
+	mockDockerClient := new(MockDockerClient)
+
+	ctx := context.Background()
+
+	// Expect a single list call filtered only by creator label
+	mockDockerClient.
+		On("ContainerList", mock.Anything, mock.MatchedBy(func(opts container.ListOptions) bool {
+			if !opts.All {
+				return false
+			}
+			labels := opts.Filters.Get("label")
+			if len(labels) == 0 {
+				return false
+			}
+			// ensure we only filter by creator label; no owner id filter
+			hasCreator := false
+			for _, l := range labels {
+				if l == containerCreatorLabel+"="+containerCreator {
+					hasCreator = true
+				}
+				if strings.HasPrefix(l, containerCreatorIDLabel+"=") {
+					return false
+				}
+			}
+			return hasCreator
+		})).
+		Return([]types.Container{
+			{ID: "legacy-1", Names: []string{"/legacy-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},                                   // no creator_id -> remove
+			{ID: "other-1", Names: []string{"/other-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: "owner-B"}}, // mismatched -> keep
+			{ID: "other-2-empty", Names: []string{"/other-2"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: ""}},  // empty -> keep (new version but empty label)
+			{ID: "mine-1", Names: []string{"/mine-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: "owner-A"}},   // match -> remove
+		}, nil).
+		Once()
+	mockDockerClient.On("ContainerStop", mock.Anything, "legacy-1", expectedContainerStopOptions).Return(nil).Once()
+	mockDockerClient.On("ContainerRemove", mock.Anything, "legacy-1", mock.Anything).Return(nil).Once()
+	mockDockerClient.On("ContainerStop", mock.Anything, "mine-1", expectedContainerStopOptions).Return(nil).Once()
+	mockDockerClient.On("ContainerRemove", mock.Anything, "mine-1", mock.Anything).Return(nil).Once()
+
+	removed, err := RemoveExistingContainers(ctx, mockDockerClient, "owner-A")
+	require.NoError(t, err)
+	require.Equal(t, 2, removed)
+
 	mockDockerClient.AssertExpectations(t)
 }
 
@@ -1048,7 +1117,7 @@ func TestDockerContainerName(t *testing.T) {
 func TestDockerRemoveContainer(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 
 	err := dockerRemoveContainer(mockDockerClient, "container1")
@@ -1116,6 +1185,63 @@ func TestDockerWaitUntilRunning(t *testing.T) {
 		err := dockerWaitUntilRunning(timeoutCtx, mockDockerClient, containerID, pollingInterval)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "timed out waiting for managed container")
+		mockDockerClient.AssertExpectations(t)
+	})
+
+	t.Run("FailFastOnExited", func(t *testing.T) {
+		// If the container is immediately exited, we should fail fast instead of waiting.
+		mockDockerClient := new(MockDockerClient)
+		// Always return non-running, exited state
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:   "exited",
+					Running:  false,
+					ExitCode: 137,
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "terminal state")
+		mockDockerClient.AssertExpectations(t)
+	})
+
+	t.Run("FailFastOnDead", func(t *testing.T) {
+		mockDockerClient := new(MockDockerClient)
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:  "dead",
+					Running: false,
+					Error:   "killed",
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "container entered terminal state")
+		mockDockerClient.AssertExpectations(t)
+	})
+
+	t.Run("FailFastOnExitCodeNonZeroWithoutRestarting", func(t *testing.T) {
+		mockDockerClient := new(MockDockerClient)
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:     "created",
+					Running:    false,
+					Restarting: false,
+					ExitCode:   1,
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exited before running")
 		mockDockerClient.AssertExpectations(t)
 	})
 }

@@ -23,6 +23,12 @@ func (bcast *broadcaster) Address() ethcommon.Address {
 	}
 	return bcast.node.Eth.Account().Address
 }
+func (bcast *broadcaster) ExtraNodes() int {
+	if bcast == nil || bcast.node == nil {
+		return 0
+	}
+	return bcast.node.ExtraNodes
+}
 func NewBroadcaster(node *LivepeerNode) *broadcaster {
 	return &broadcaster{
 		node: node,

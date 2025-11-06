@@ -83,7 +83,7 @@ type stubOrchestrator struct {
 	jobPriceInfo *net.PriceInfo
 }
 
-func (r *stubOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
 }
 
@@ -93,6 +93,10 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	}
 	url, _ := url.Parse(r.serviceURI)
 	return url
+}
+
+func (r *stubOrchestrator) Nodes() []string {
+	return nil
 }
 
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
@@ -276,6 +280,9 @@ func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability 
 }
 func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
 	return ""
+}
+func (r *stubOrchestrator) ExtraNodes() int {
+	return 0
 }
 
 func stubBroadcaster2() *stubOrchestrator {
@@ -900,6 +907,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -931,6 +939,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
@@ -1005,6 +1014,7 @@ func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
@@ -1023,6 +1033,7 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	expErr := errors.New("TicketParams error")
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -1044,6 +1055,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
 	}
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
@@ -1064,6 +1076,7 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
 	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
@@ -1084,6 +1097,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -1363,6 +1377,7 @@ func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
@@ -1375,11 +1390,79 @@ func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
 	assert.Nil(t, orchInfo.CapabilitiesPrices)
 }
 
+type mockAICapacityOrch struct {
+	mockOrchestrator
+	nodes []string
+}
+
+// override to simulate "no AI capacity"
+func (o *mockAICapacityOrch) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return false, nil
+}
+
+// override Nodes to return configured nodes
+func (o *mockAICapacityOrch) Nodes() []string {
+	if o.nodes != nil {
+		return o.nodes
+	}
+	return nil
+}
+
+func TestGetOrchestrator_NoLiveVideoCapacity_WithAndWithoutServiceURI(t *testing.T) {
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+
+	// Build capabilities requesting LiveVideoToVideo with a single model
+	caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"modelX": {},
+					},
+				},
+			},
+		},
+	}
+
+	// Case 1: non-empty ServiceURI -> capacity check should run and fail
+	orch1 := &mockAICapacityOrch{nodes: []string{"node1"}}
+	orch1.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch1.On("ServiceURI").Return(mustParseUrl(t, "http://someuri.com"))
+	orch1.On("Address").Return(ethcommon.Address{})
+	// Other calls won't be reached because capacity check should fail, but set sensible defaults
+	orch1.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
+	orch1.On("PriceInfo", mock.Anything).Return(nil, nil)
+	orch1.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch1.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+
+	_, err := getOrchestrator(orch1, &net.OrchestratorRequest{Capabilities: caps})
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "Invalid orchestrator request")
+	}
+
+	// Case 2: empty ServiceURI -> capacity check is skipped; should return orchestrator info and nodes
+	orch2 := &mockAICapacityOrch{nodes: []string{"node1"}}
+	orch2.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	// Return an empty URL so ServiceURI().String() == ""
+	orch2.On("ServiceURI").Return(&url.URL{})
+	orch2.On("Address").Return(ethcommon.Address{})
+	orch2.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
+	orch2.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, nil)
+	orch2.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch2.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+
+	oInfo, err := getOrchestrator(orch2, &net.OrchestratorRequest{Capabilities: caps})
+	assert.Nil(t, err)
+	// ServiceURI was empty, so Transcoder should be empty string and Nodes should include our node
+	assert.Equal(t, "", oInfo.Transcoder)
+	assert.Equal(t, []string{"node1"}, oInfo.Nodes)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
 
-func (o *mockOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (o *mockOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	args := o.Called()
 	return args.Get(0).(worker.Capacity)
 }
@@ -1389,6 +1472,10 @@ func (o *mockOrchestrator) ServiceURI() *url.URL {
 	if args.Get(0) != nil {
 		return args.Get(0).(*url.URL)
 	}
+	return nil
+}
+func (o *mockOrchestrator) Nodes() []string {
+	o.Called()
 	return nil
 }
 func (o *mockOrchestrator) Address() ethcommon.Address {
@@ -1642,17 +1729,18 @@ func Test_setLiveAICapacity(t *testing.T) {
 					},
 				},
 			},
-			expectedSet: false,
+			expectedSet: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setLiveAICapacity(orch, tt.capabilities)
 			if tt.expectedSet {
-				model := tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["foo"]
-				require.NotNil(t, model)
-				require.Equal(t, uint32(123), model.Capacity)
-				require.Equal(t, uint32(123), model.CapacityInUse)
+				for _, model := range tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models {
+					require.NotNil(t, model)
+					require.Equal(t, uint32(123), model.Capacity)
+					require.Equal(t, uint32(123), model.CapacityInUse)
+				}
 			}
 		})
 	}

@@ -83,6 +83,7 @@ jobs:
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Set GPU build environment
@@ -113,6 +114,11 @@ jobs:
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
+
+      - name: Install protoc plugins
+        run: |
+          GOARCH= GOOS= go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+          GOARCH= GOOS= go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
       - name: Install ffmpeg
         run: ./install_ffmpeg.sh
@@ -184,6 +190,7 @@ jobs:
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Cache ffmpeg
@@ -203,6 +210,11 @@ jobs:
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
+
+      - name: Install protoc plugins
+        run: |
+          GOARCH= GOOS= go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+          GOARCH= GOOS= go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
