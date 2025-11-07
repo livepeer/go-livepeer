@@ -79,7 +79,7 @@ func TestPublicLogs(t *testing.T) {
 	val = GetVal(publicCtx, "foo")
 	assert.Equal("", val)
 
-	// Verify [PublicLogs] gets pre-pended:
+	// Verify [PublicLogs] gets prepended:
 	msg, _ := formatMessage(ctx, false, true, "testing message num=%d", 123)
 	assert.Equal("[PublicLogs] manifestID=fooManID sessionID=fooSessionID nonce=999 seqNo=555 orchSessionID=fooOrchID ethaddress=0x0 orchestrator=http://127.0.0.1:8935 foo=Bar testing message num=123", msg)
 }
