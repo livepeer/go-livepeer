@@ -1381,17 +1381,17 @@ func (h *lphttp) UpdateStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	orchJob, err := h.setupOrchJob(ctx, r, false)
 	if err != nil {
-		respondWithError(w, fmt.Sprintf("Failed to stop stream, request not valid err=%v", err), http.StatusBadRequest)
+		respondWithError(w, fmt.Sprintf("Failed to update stream, request not valid err=%v", err), http.StatusBadRequest)
 		return
 	}
 
 	var jobDetails JobRequestDetails
 	err = json.Unmarshal([]byte(orchJob.Req.Request), &jobDetails)
 	if err != nil {
-		respondWithError(w, fmt.Sprintf("Failed to stop stream, request not valid, failed to parse stream id err=%v", err), http.StatusBadRequest)
+		respondWithError(w, fmt.Sprintf("Failed to update stream, request not valid, failed to parse stream id err=%v", err), http.StatusBadRequest)
 		return
 	}
-	clog.Infof(ctx, "Stopping stream %s", jobDetails.StreamId)
+	clog.Infof(ctx, "Sending stream update for %s", jobDetails.StreamId)
 
 	// Read the original body
 	body, err := io.ReadAll(r.Body)
