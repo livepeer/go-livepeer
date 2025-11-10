@@ -10,6 +10,7 @@ orchestrator.go: Code that is called only when the node is in orchestrator mode.
 package core
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"math/rand"
@@ -187,6 +188,74 @@ type LivePipeline struct {
 	OutCond      *sync.Cond
 	OutWriter    *media.RingBuffer
 	Closed       bool
+
+	DataWriter *media.SegmentWriter
+
+	streamCtx     context.Context
+	streamCancel  context.CancelCauseFunc
+	streamParams  interface{}
+	streamRequest []byte
+}
+
+func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, streamParams interface{}, streamRequest []byte) *LivePipeline {
+	streamCtx, streamCancel := context.WithCancelCause(context.Background())
+	n.LiveMu.Lock()
+	defer n.LiveMu.Unlock()
+
+	//ensure streamRequest is not nil or empty to avoid json unmarshal issues on Orchestrator failover
+	//sends the request bytes to next Orchestrator
+	if streamRequest == nil || len(streamRequest) == 0 {
+		streamRequest = []byte("{}")
+	}
+
+	n.LivePipelines[streamID] = &LivePipeline{
+		RequestID:     requestID,
+		StreamID:      streamID,
+		Pipeline:      pipeline,
+		streamCtx:     streamCtx,
+		streamParams:  streamParams,
+		streamCancel:  streamCancel,
+		streamRequest: streamRequest,
+		OutCond:       sync.NewCond(n.LiveMu),
+	}
+	return n.LivePipelines[streamID]
+}
+
+func (n *LivepeerNode) RemoveLivePipeline(streamID string) {
+	n.LiveMu.Lock()
+	defer n.LiveMu.Unlock()
+	delete(n.LivePipelines, streamID)
+}
+
+func (n *LivePipeline) GetContext() context.Context {
+	return n.streamCtx
+}
+
+func (p *LivePipeline) StreamParams() interface{} {
+	return p.streamParams
+}
+
+func (p *LivePipeline) UpdateStreamParams(newParams interface{}) {
+	p.streamParams = newParams
+}
+
+func (p *LivePipeline) StreamRequest() []byte {
+	return p.streamRequest
+}
+
+func (p *LivePipeline) StopStream(err error) {
+	p.OutCond.Broadcast()
+	if p.ControlPub != nil {
+		if err := p.ControlPub.Close(); err != nil {
+			glog.Errorf("Error closing trickle publisher", err)
+		}
+		if p.StopControl != nil {
+			p.StopControl()
+		}
+	}
+
+	p.streamCancel(err)
+	p.Closed = true
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
