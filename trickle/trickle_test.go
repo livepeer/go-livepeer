@@ -33,7 +33,7 @@ func TestTrickle_Close(t *testing.T) {
 	require.Nil(err)
 	require.Error(StreamNotFoundErr, pub.Write(bytes.NewReader([]byte("first post"))))
 
-	sub, err := NewTrickleSubscriber(subConfig(channelURL))
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 	sub.SetSeq(0)
 
@@ -84,7 +84,7 @@ func TestTrickle_Close(t *testing.T) {
 	require.Error(EOS, pub.Write(bytes.NewReader([]byte("invalid"))))
 
 	// Spinning up a second subscriber should return 404
-	sub2, err := NewTrickleSubscriber(subConfig(channelURL))
+	sub2, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 	_, err = sub2.Read()
 	require.Error(StreamNotFoundErr, err)
@@ -99,7 +99,7 @@ func TestTrickle_SetSeq(t *testing.T) {
 
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
-	sub, err := NewTrickleSubscriber(subConfig(channelURL))
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 
 	// give sub preconnect time to latch on
@@ -155,7 +155,7 @@ func TestTrickle_Reset(t *testing.T) {
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
 
-	sub, err := NewTrickleSubscriber(subConfig(channelURL))
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 	wg := &sync.WaitGroup{}
 
@@ -252,7 +252,7 @@ func TestTrickle_IdleSweep(t *testing.T) {
 	lp := NewLocalPublisher(server, channelURL, "text/plain")
 	lp.CreateChannel()
 
-	sub, err := NewTrickleSubscriber(subConfig(channelURL))
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 	_, err = sub.Read()
 	require.ErrorIs(err, StreamNotFoundErr)
@@ -286,6 +286,7 @@ func TestTrickle_SetSubStart(t *testing.T) {
 	// 1. Subscribe from the beginning
 	subBeginning, err := NewTrickleSubscriber(TrickleSubscriberConfig{
 		URL: url,
+		Ctx: t.Context(),
 	})
 	require.Nil(err)
 	wg.Add(1)
@@ -312,6 +313,7 @@ func TestTrickle_SetSubStart(t *testing.T) {
 	// 2. Subscribe from the current seq
 	seq := Current
 	subCurrent, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
 		URL:   url,
 		Start: &seq,
 	})
@@ -333,6 +335,7 @@ func TestTrickle_SetSubStart(t *testing.T) {
 	// 3. Subscribe from the next seq
 	seq = Next
 	subNext, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
 		URL:   url,
 		Start: &seq,
 	})
@@ -360,6 +363,7 @@ func TestTrickle_SetSubStart(t *testing.T) {
 	// 4. Subscribe from a specific seq
 	seq = 1
 	subSeq, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
 		URL:   url,
 		Start: &seq,
 	})
@@ -410,6 +414,6 @@ func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
 	return require, ts.URL + "/" + chanName, server
 }
 
-func subConfig(url string) TrickleSubscriberConfig {
-	return TrickleSubscriberConfig{URL: url}
+func subConfig(t *testing.T, url string) TrickleSubscriberConfig {
+	return TrickleSubscriberConfig{URL: url, Ctx: t.Context()}
 }
