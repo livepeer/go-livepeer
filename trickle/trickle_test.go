@@ -31,6 +31,7 @@ func TestTrickle_Close(t *testing.T) {
 	channelURL := ts.URL + "/testest"
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
+	defer pub.Close()
 	require.Error(StreamNotFoundErr, pub.Write(bytes.NewReader([]byte("first post"))))
 
 	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
@@ -52,6 +53,7 @@ func TestTrickle_Close(t *testing.T) {
 	// now recreate pub, should be ok
 	pub, err = NewTricklePublisher(channelURL)
 	require.Nil(err)
+	defer pub.Close()
 
 	// write two segments
 	segs := []string{"first", "second"}
@@ -91,6 +93,8 @@ func TestTrickle_Close(t *testing.T) {
 
 	// Spinning up a second publisher should return 404
 	pub2, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub2.Close()
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
 
@@ -99,6 +103,7 @@ func TestTrickle_SetSeq(t *testing.T) {
 
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
+	defer pub.Close()
 	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
 
@@ -154,6 +159,7 @@ func TestTrickle_Reset(t *testing.T) {
 
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
+	defer pub.Close()
 
 	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
@@ -307,6 +313,8 @@ func TestTrickle_SetSubStart(t *testing.T) {
 
 	pub, err := NewTricklePublisher(url)
 	require.Nil(err)
+	defer pub.Close()
+
 	require.Nil(pub.Write(bytes.NewReader([]byte("zeroth"))))
 	require.Nil(pub.Write(bytes.NewReader([]byte("first"))))
 
