@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestTrickle_Close(t *testing.T) {
@@ -23,6 +24,7 @@ func TestTrickle_Close(t *testing.T) {
 	})
 	stop := server.Start()
 	ts := httptest.NewServer(mux)
+	defer goleak.VerifyNone(t)
 	defer ts.Close()
 	defer stop()
 
@@ -144,6 +146,7 @@ func TestTrickle_Reset(t *testing.T) {
 	})
 	stop := server.Start()
 	ts := httptest.NewServer(mux)
+	defer goleak.VerifyNone(t)
 	defer ts.Close()
 	defer stop()
 
@@ -241,6 +244,7 @@ func TestTrickle_IdleSweep(t *testing.T) {
 	})
 	stop := server.Start()
 	ts := httptest.NewServer(mux)
+	defer goleak.VerifyNone(t)
 	defer ts.Close()
 	defer stop()
 
@@ -395,6 +399,7 @@ func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
 	t.Cleanup(func() {
 		stop()
 		ts.Close()
+		goleak.VerifyNone(t)
 	})
 
 	// create the channel locally on the server
