@@ -12,8 +12,8 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -279,7 +279,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		var VerificationFreq uint
-		nonce := rand.Uint64()
+		nonce := common.RandomUint64()
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
@@ -317,7 +317,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			if err != nil {
 				errMsg := fmt.Sprintf("Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
 				clog.Errorf(ctx, errMsg)
-				return nil, fmt.Errorf(errMsg)
+				return nil, errors.New(errMsg)
 			}
 			profiles = append(profiles, parsedProfiles...)
 
@@ -332,7 +332,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 			// set Recording OS if it was provided
@@ -341,7 +341,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 
@@ -379,7 +379,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			errMsg := fmt.Sprintf("Too many connections for streamID url=%s err=%q", url.String(), err)
 			clog.Errorf(ctx, errMsg)
-			return nil, fmt.Errorf(errMsg)
+			return nil, errors.New(errMsg)
 
 		}
 		return &core.StreamParameters{
@@ -1661,7 +1661,16 @@ func getRemoteAddr(r *http.Request) string {
 	if proxiedAddr := r.Header.Get("X-Forwarded-For"); proxiedAddr != "" {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
-	return strings.Split(addr, ":")[0]
+
+	// addr is typically in the format "ip:port"
+	// Need to extract just the IP. Handle IPv6 too.
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		// probably not a real IP
+		return addr
+	}
+
+	return host
 }
 
 func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {

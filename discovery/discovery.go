@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"math/big"
 	"math/rand"
 	"net/url"
 	"sort"
@@ -244,6 +245,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
+		if i >= maxOrchNodes {
+			// prevents channel deadlocks when maxOrchNodes < numAvailableOrchs
+			break
+		}
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, 0, odCh, errCh, allOrchDescrCh)
 	}
 	go reportLiveAICapacity(allOrchDescrCh, caps)
@@ -360,6 +365,11 @@ func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.Cap
 
 	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
 	for _, od := range allOrchInfo {
+		pricePerUnit := od.RemoteInfo.PriceInfo.PricePerUnit
+		pixelsPerUnit := od.RemoteInfo.PriceInfo.PixelsPerUnit
+		pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
+		monitor.LiveAIPricePerPixel(od.LocalInfo.URL.String(), pricePerPixel)
+
 		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
 		if od.RemoteInfo != nil {
 			models = getModelCaps(od.RemoteInfo.Capabilities)

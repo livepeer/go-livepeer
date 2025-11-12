@@ -34,9 +34,11 @@ const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
+const containerStopTimeout = 8 * time.Second
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
+const containerCreatorIDLabel = "creator_id"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -104,11 +106,16 @@ var _ DockerClient = (*docker.Client)(nil)
 // Create global references to functions to allow for mocking in tests.
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
+func NewDefaultDockerClient() (DockerClient, error) {
+	return docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
+}
+
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
+	gpus               []string
+	modelDir           string
+	overrides          ImageOverrides
+	verboseLogs        bool
+	containerCreatorID string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -116,25 +123,42 @@ type DockerManager struct {
 	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
+	// Every managed container has a watchContainer() goroutine that will stop when the manager ctx is done. We use the WaitGroup to wait for all containers to be removed.
+	watchGroup sync.WaitGroup
+	ctx        context.Context
+	stop       context.CancelFunc
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if err := removeExistingContainers(ctx, client); err != nil {
-		cancel()
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cleanupCtx, cleanupCancel := context.WithTimeout(ctx, containerTimeout)
+	defer cleanupCancel()
+	if _, err := RemoveExistingContainers(cleanupCtx, client, containerCreatorID); err != nil {
 		return nil, err
 	}
-	cancel()
 
 	manager := &DockerManager{
-		gpus:          gpus,
-		modelDir:      modelDir,
-		overrides:     overrides,
-		verboseLogs:   verboseLogs,
-		dockerClient:  client,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               gpus,
+		modelDir:           modelDir,
+		overrides:          overrides,
+		verboseLogs:        verboseLogs,
+		dockerClient:       client,
+		containerCreatorID: containerCreatorID,
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
+		watchGroup:         sync.WaitGroup{},
+		ctx:                ctx,
+		stop:               cancel,
 	}
 
 	return manager, nil
@@ -173,17 +197,21 @@ func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID strin
 }
 
 func (m *DockerManager) Stop(ctx context.Context) error {
-	var stopContainerWg sync.WaitGroup
-	for _, rc := range m.containers {
-		stopContainerWg.Add(1)
-		go func(container *RunnerContainer) {
-			defer stopContainerWg.Done()
-			m.destroyContainer(container, false)
-		}(rc)
-	}
+	/// Flag the stop signal to all watchContainer() goroutines and wait for them to (destroy containers) and exit.
+	m.stop()
 
-	stopContainerWg.Wait()
-	return nil
+	done := make(chan struct{})
+	go func() {
+		m.watchGroup.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
@@ -385,7 +413,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerPort: struct{}{},
 		},
 		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
+			containerCreatorLabel:   containerCreator,
+			containerCreatorIDLabel: m.containerCreatorID,
 		},
 	}
 
@@ -395,11 +424,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	restartPolicy := container.RestartPolicy{
-		Name:              "on-failure",
+		Name:              container.RestartPolicyOnFailure,
 		MaximumRetryCount: 3,
-	}
-	if keepWarm {
-		restartPolicy = container.RestartPolicy{Name: "always"}
 	}
 
 	hostConfig := &container.HostConfig{
@@ -481,7 +507,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		slog.Info("Warm container started on loading state, removing from pool on startup", slog.String("container", rc.Name))
 		m.borrowContainerLocked(context.Background(), rc)
 	}
-	go m.watchContainer(rc)
+	m.watchGroup.Go(func() { m.watchContainer(rc) })
 
 	return rc, nil
 }
@@ -573,6 +599,13 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	var loadingStartTime time.Time
 	failures := 0
 	for {
+		if m.ctx.Err() != nil {
+			slog.Info("Docker manager context is done, stopping container", "container", rc.Name)
+			m.destroyContainer(rc, false)
+			slog.Info("Container destroyed", "container", rc.Name)
+			return
+		}
+
 		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
@@ -603,6 +636,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 		}
 
 		select {
+		case <-m.ctx.Done():
+			// handled in the beginning of the loop
+			continue
 		case <-borrowDone:
 			m.returnContainer(rc)
 			continue
@@ -674,21 +710,37 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func removeExistingContainers(ctx context.Context, client DockerClient) error {
-	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	for _, c := range containers {
-		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
-		if err := dockerRemoveContainer(client, c.ID); err != nil {
-			return err
+func RemoveExistingContainers(ctx context.Context, client DockerClient, containerCreatorID string) (int, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return 0, err
 		}
 	}
 
-	return nil
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	removed := 0
+	for _, c := range containers {
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
+		// We also remove containers without creator-id label as a migration from previous versions that didn't have it.
+		shouldRemove := !hasCreatorID || creatorID == containerCreatorID
+		if !shouldRemove {
+			continue
+		}
+		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
+		if err := dockerRemoveContainer(client, c.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
 }
 
 // dockerContainerName generates a unique container name based on the pipeline, model ID, and an optional suffix.
@@ -704,7 +756,8 @@ func dockerRemoveContainer(client DockerClient, containerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 
-	err := client.ContainerStop(ctx, containerID, container.StopOptions{})
+	timeoutSec := int(containerStopTimeout.Seconds())
+	err := client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeoutSec})
 	// Ignore "not found" or "already stopped" errors
 	if err != nil && !docker.IsErrNotFound(err) && !errdefs.IsNotModified(err) {
 		return err
@@ -748,8 +801,25 @@ tickerLoop:
 				return err
 			}
 
+			// If the container is running, we're done.
 			if json.State.Running {
 				break tickerLoop
+			}
+
+			// Fail fast on states that won't become running after startup.
+			if json.State != nil {
+				status := strings.ToLower(json.State.Status)
+				// Consider exited/dead as terminal. "removing" will surface via
+				// inspect error or transition to exited/dead shortly.
+				if status == "exited" || status == "dead" {
+					return fmt.Errorf("container entered terminal state before running: %s (exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.ExitCode != 0 {
+					return fmt.Errorf("container exited before running (status=%s, exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.Error != "" {
+					return fmt.Errorf("container error before running: %s", json.State.Error)
+				}
 			}
 		}
 	}

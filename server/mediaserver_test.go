@@ -696,11 +696,11 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	rand.Seed(123)
+	common.PkgRNG = rand.New(rand.NewSource(123))
 	sid, err := createSid(u)
 	require.NoError(t, err)
 	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
+	assert.Equal(t, uint64(0xba68998bed5c40f1), sap.Nonce)
 
 	sid, err = createSid(u)
 	require.NoError(t, err)
@@ -1022,10 +1022,10 @@ func TestMultiStream(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	u := mustParseUrl(t, "rtmp://localhost")
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
+		u := mustParseUrl(t, fmt.Sprintf("rtmp://localhost/%d", i))
 		id, err := createSid(u)
 		require.NoError(t, err)
 		st := stream.NewBasicRTMPVideoStream(id)
@@ -1576,4 +1576,50 @@ func mustParseUrl(t *testing.T, str string) *url.URL {
 		t.Fatalf(`Bad url "%s": %v`, str, err)
 	}
 	return url
+}
+
+func TestGetRemoteAddr(t *testing.T) {
+	type tc struct {
+		name       string
+		remoteAddr string // r.RemoteAddr
+		xff        string // "" = header not present
+		want       string
+	}
+
+	cases := []tc{
+		// --- No X-Forwarded-For (uses RemoteAddr) ---
+		{"remote IPv4 with port", "203.0.113.9:54321", "", "203.0.113.9"},
+		{"remote hostname with port", "example.com:80", "", "example.com"},
+		{"remote bracketed IPv6 with port", "[2001:db8::1]:443", "", "2001:db8::1"},
+		{"remote IPv6 with zone", "[fe80::1%lo0]:1234", "", "fe80::1%lo0"},
+		{"remote IPv4 no port (SplitHostPort error)", "192.0.2.10", "", "192.0.2.10"},
+		{"remote bare IPv6 no port (SplitHostPort error)", "2001:db8::2", "", "2001:db8::2"},
+		{"remote empty string", "", "", ""},
+		{"remote malformed string", "1.2.3.4, nonsense", "", "1.2.3.4, nonsense"},
+
+		// --- X-Forwarded-For present (takes first comma-delimited token) ---
+		{"xff single IPv4 no port", "203.0.113.9:54321", "198.51.100.7", "198.51.100.7"},
+		{"xff single IPv4 with port", "203.0.113.9:54321", "198.51.100.7:8080", "198.51.100.7"},
+		{"xff single hostname with port", "203.0.113.9:54321", "edge.example.net:8443", "edge.example.net"},
+		{"xff single bracketed IPv6 with port", "203.0.113.9:54321", "[2001:db8::7]:9443", "2001:db8::7"},
+		{"xff IPv4-mapped IPv6 with port", "203.0.113.9:54321", "[::ffff:192.0.2.128]:12345", "::ffff:192.0.2.128"},
+		{"xff multiple entries with port", "203.0.113.9:54321", "198.51.100.7:8080, 10.0.0.1:80", "198.51.100.7"},
+		{"xff multiple entries no port", "203.0.113.9:54321", "198.51.100.7, 10.0.0.1", "198.51.100.7"},
+		{"xff first entry empty", "203.0.113.9:54321", ", 198.51.100.7", ""},
+		{"xff first entry has spaces", "203.0.113.9:54321", " \t\r198.51.100.7:8080 ", "198.51.100.7"},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &http.Request{
+				RemoteAddr: tt.remoteAddr,
+				Header:     make(http.Header),
+			}
+			if tt.xff != "" {
+				r.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			got := getRemoteAddr(r)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

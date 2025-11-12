@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -55,49 +56,50 @@ func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
 	assert.EqualError(err, "could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 }
 
-func TestDeadLock(t *testing.T) {
+func sync_TestDeadLock(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
 	wg := sync.WaitGroup{}
-	first := true
+	discoveryTimeout := 50 * time.Millisecond
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		defer wg.Done()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
+		if orchestratorServer.String() == "https://127.0.0.1:8936" {
+			// sleep for longer than the discovery timeout
+			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
 		}
-		mu.Unlock()
+		defer wg.Done()
 		return &net.OrchestratorInfo{Transcoder: "transcoderfromtestserver"}, nil
 	}
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
-		addresses = append(addresses, "https://127.0.0.1:8936")
+		addresses = append(addresses, fmt.Sprintf("https://127.0.0.1:89%d", i))
 	}
 	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
 	wg.Add(len(uris))
-	pool := NewOrchestratorPool(&stubBroadcaster{}, uris, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool := NewOrchestratorPool(&stubBroadcaster{}, uris, common.Score_Trusted, []string{}, discoveryTimeout)
 	pool.getOrchInfo = getOrchInfo
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
 	assert.Equal("transcoderfromtestserver", infos[0].RemoteInfo.Transcoder)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
-func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
+func TestDeadLock(t *testing.T) {
+	synctest.Test(t, sync_TestDeadLock)
+}
+
+func sync_TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
-	first := true
+	wg := sync.WaitGroup{}
+	discoveryTimeout := 50 * time.Millisecond
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
+		defer wg.Done()
+		if orchestratorServer.String() == "https://127.0.0.1:8936" {
+			// sleep for longer than the discovery timeout
+			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
 		}
-		mu.Unlock()
 		return &net.OrchestratorInfo{
 			Transcoder: "transcoderfromtestserver",
 			PriceInfo: &net.PriceInfo{
@@ -111,6 +113,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
 	uris := stringsToURIs(addresses)
+	wg.Add(len(uris))
 
 	assert := assert.New(t)
 	pred := func(info *net.OrchestratorInfo) bool {
@@ -121,13 +124,18 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		return true
 	}
 
-	pool := NewOrchestratorPoolWithPred(&stubBroadcaster{}, uris, pred, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool := NewOrchestratorPoolWithPred(&stubBroadcaster{}, uris, pred, common.Score_Trusted, []string{}, discoveryTimeout)
 	pool.getOrchInfo = getOrchInfo
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
 	assert.Equal("transcoderfromtestserver", infos[0].RemoteInfo.Transcoder)
+	assert.True(wgWait(&wg), "Test timed out")
+}
+
+func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
+	synctest.Test(t, sync_TestDeadLock_NewOrchestratorPoolWithPred)
 }
 
 func TestPoolSize(t *testing.T) {
@@ -145,7 +153,7 @@ func TestPoolSize(t *testing.T) {
 	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
 }
 
-func TestDBOrchestratorPoolCacheSize(t *testing.T) {
+func sync_TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	assert := assert.New(t)
 	dbh, dbraw, err := common.TempDB(t)
 	require := require.New(t)
@@ -180,6 +188,10 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(nonEmptyPool)
 	assert.Equal(len(addresses), nonEmptyPool.Size())
+}
+
+func TestDBOrchestratorPoolCacheSize(t *testing.T) {
+	synctest.Test(t, sync_TestDBOrchestratorPoolCacheSize)
 }
 
 func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
@@ -245,11 +257,7 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 
 	oldServerGetOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldServerGetOrchInfo }()
-	var mu sync.Mutex
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		defer mu.Unlock()
-
 		return &net.OrchestratorInfo{
 			Transcoder: "transcoder",
 			PriceInfo:  priceInfo,
@@ -287,22 +295,14 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 	assert.Nil(pool.cacheOrchInfos())
 }
 
-func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
+func sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
 		PixelsPerUnit: 1,
 	}
 	expTranscoder := "transcoderFromTest"
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
-	var mu sync.Mutex
-	first := true
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
-		mu.Unlock()
 		return &net.OrchestratorInfo{
 			Address:      pm.RandBytes(20),
 			Transcoder:   expTranscoder,
@@ -372,6 +372,10 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	for _, info := range infos {
 		assert.Contains(addresses, info.URL.String())
 	}
+}
+
+func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
+	synctest.Test(t, sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly)
 }
 
 func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
@@ -458,10 +462,9 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 	assert.Len(infos, 0)
 }
 
-func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
+func sync_TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	var mu sync.Mutex
 	callCount := 0
-	first := true
 	wg := sync.WaitGroup{}
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
@@ -473,10 +476,6 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 		// cache interval, so we can't reliably set the counter outside the fn
 		wg.Add(1)
 		defer wg.Done()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
 		callCount++
 		pricePerUnit, _ := strconv.Atoi(orchestratorServer.Port())
 		if callCount > 3 {
@@ -569,6 +568,10 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	mu.Unlock()
 }
 
+func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
+	synctest.Test(t, sync_TestNewDBOrchestorPoolCache_PollOrchestratorInfo)
+}
+
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 	assert := assert.New(t)
@@ -582,8 +585,11 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 }
 
 func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
+	cfg := server.NewBroadcastConfig()
 	pred := func(info *net.OrchestratorInfo) bool {
-		price := server.BroadcastCfg.MaxPrice()
+		// create a new one for each call -for some reason the price auto-converts
+		// to zero and messes up if we reuse it
+		price := cfg.MaxPrice()
 		if price == nil {
 			return true
 		}
@@ -609,15 +615,15 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		},
 	}
 
-	// server.BroadcastCfg.maxPrice not yet set, predicate should return true
+	// cfg.maxPrice not yet set, predicate should return true
 	assert.True(t, pool.pred(oInfo))
 
-	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	// Set cfg.maxPrice higher than PriceInfo , should return true
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	assert.True(t, pool.pred(oInfo))
 
-	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	// Set cfg.MaxBroadcastPrice lower than PriceInfo, should return false
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
@@ -625,7 +631,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.False(t, pool.pred(oInfo))
 }
 
-func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *testing.T) {
+func sync_TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -637,15 +643,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
-	first := true
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
-		mu.Unlock()
 		return &net.OrchestratorInfo{
 			Address:      pm.RandBytes(20),
 			Transcoder:   expTranscoder,
@@ -715,7 +713,11 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 	assert.Len(infos, 50)
 }
 
-func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
+func TestCachedPool_AllOrchestrators_TooExpensive_ReturnsAllOrchestrators(t *testing.T) {
+	synctest.Test(t, sync_TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators)
+}
+
+func sync_TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -727,15 +729,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	server.BroadcastCfg.SetMaxPrice(nil)
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
-	first := true
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
-		mu.Unlock()
 		return &net.OrchestratorInfo{
 			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
@@ -814,7 +808,11 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	assert.Len(infos, 50)
 }
 
-func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
+func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
+	synctest.Test(t, sync_TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet)
+}
+
+func sync_TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
 	addr1 := pm.RandBytes(20)
 	addr2 := pm.RandBytes(20)
@@ -822,15 +820,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
-	first := true
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
-		mu.Unlock()
 		if i, _ := strconv.Atoi(orchestratorServer.Port()); i > 8960 {
 			// Return valid pricing
 			goodTranscoder := &net.OrchestratorInfo{
@@ -937,6 +927,10 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	assert.Len(seenAddrs, 50)
 }
 
+func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
+	synctest.Test(t, sync_TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators)
+}
+
 func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	// Test setup
 	gmp := runtime.GOMAXPROCS(50)
@@ -1006,7 +1000,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 100)
 }
 
-func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
+func sync_TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  1,
@@ -1018,15 +1012,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	server.BroadcastCfg.SetMaxPrice(nil)
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
-	var mu sync.Mutex
-	first := true
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		mu.Lock()
-		if first {
-			time.Sleep(100 * time.Millisecond)
-			first = false
-		}
-		mu.Unlock()
 		return &net.OrchestratorInfo{
 			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
@@ -1110,6 +1096,10 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 25)
+}
+
+func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
+	synctest.Test(t, sync_TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators)
 }
 
 func TestNewWHOrchestratorPoolCache(t *testing.T) {
@@ -1291,9 +1281,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	orchCb := func() error { return nil }
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{
@@ -1302,6 +1290,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	}
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, orchTimeout)
+	pool.getOrchInfo = getOrchInfo
 
 	// Check that we receive everything
 	wg.Add(len(addresses))
@@ -1345,7 +1334,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	// Ensure that the timeout did not fire
 	assert.Less(end.Sub(start).Milliseconds(),
 		pool.discoveryTimeout.Milliseconds())
-
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
 func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
@@ -1484,16 +1473,14 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 	assert.NotEqual(10, iters, "Shuffling probably did not happen")
 }
 
-func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
+func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	assert := assert.New(t)
 
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	ch := make(chan struct{})
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
@@ -1501,6 +1488,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	timeout := 1 * time.Millisecond
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, timeout)
+	pool.getOrchInfo = getOrchInfo
 
 	timedOut := func(start, end time.Time) bool {
 		return end.Sub(start).Milliseconds() >= pool.discoveryTimeout.Milliseconds()
@@ -1578,6 +1566,10 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	assert.True(responsesDrained(), "Did not drain responses in time")
 }
 
+func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
+	synctest.Test(t, sync_TestOrchestratorPool_GetOrchestratorTimeout)
+}
+
 func TestOrchestratorPool_Capabilities(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1647,7 +1639,9 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 
 func TestSetGetOrchestratorTimeout(t *testing.T) {
 	assert := assert.New(t)
-	dbh, _, err := common.TempDB(t)
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
@@ -1659,11 +1653,12 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 	}
 
 	//set timeout to 1000ms
-	poolCache, err := NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	poolCache, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond)
 	assert.Nil(err)
 	//confirm the timeout is now 1000ms
 	assert.Equal(poolCache.discoveryTimeout, 1000*time.Millisecond)
-
 }
 
 func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLocalInfo {
@@ -1675,7 +1670,7 @@ func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLo
 	return res
 }
 
-func TestGetOrchestrators_Nodes_Simple(t *testing.T) {
+func sync_TestGetOrchestrators_Nodes_Simple(t *testing.T) {
 	assert := assert.New(t)
 	// only the initial URL plus one instance
 	// Also add a couple duplicates to the Nodes field for good measure
@@ -1715,7 +1710,12 @@ func TestGetOrchestrators_Nodes_Simple(t *testing.T) {
 	assert.ElementsMatch([]string{initial, inst1}, got, "Should see both initial and discovered instance")
 }
 
+func TestGetOrchestrator_Nodes_Simple(t *testing.T) {
+	synctest.Test(t, sync_TestGetOrchestrators_Nodes_Simple)
+}
+
 func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 
@@ -1777,24 +1777,28 @@ func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
 	}
 }
 
-func TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
+func sync_TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
 	// Checks that recursive GetOrchestrator calls are still clamped by
 	// the top-level discovery timeout
 
 	assert := assert.New(t)
+	wg := sync.WaitGroup{}
 	initial := "https://127.0.0.1:8300"
+	wg.Add(1)
 
 	// create 6 "nodes" so we can alternate timeouts
 	nodes := []string{}
 	for i := 1; i <= 6; i++ {
 		nodes = append(nodes, "https://127.0.0.1:83"+strconv.Itoa(100+i))
 	}
+	wg.Add(len(nodes))
 	uris := stringsToURIs([]string{initial})
 
 	// For the initial URI return the full list immediately.
 	// For node URIs: odd ports return immediately, even ports sleep
 	// (and thus are unlikely to be collected before the discovery timeout).
 	getOrchInfo := func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		defer wg.Done()
 		if u.String() == initial {
 			return &net.OrchestratorInfo{
 				Transcoder: initial,
@@ -1844,9 +1848,14 @@ func TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
 	}
 
 	assert.Equal(expected, received)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
-func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
+func TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
+	synctest.Test(t, sync_TestGetOrchestrators_Nodes_DiscoveryTimeout)
+}
+
+func sync_TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
 	assert := assert.New(t)
 
 	// Top-level orchestrators (various recursion depths)
@@ -1920,7 +1929,11 @@ func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
 	}
 }
 
-func TestOrchestratorPool_LatencySorting(t *testing.T) {
+func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
+	synctest.Test(t, sync_TestGetOrchestrators_Nodes_RecursiveDiscovery)
+}
+
+func sync_TestOrchestratorPool_LatencySorting(t *testing.T) {
 
 	// Create a set of 6 orchestrator URIs
 	uris := []string{}
@@ -2015,4 +2028,19 @@ func TestOrchestratorPool_LatencySorting(t *testing.T) {
 		received = append(received, info.LocalInfo.URL.String())
 	}
 	require.Equal(expectedFirst, received, "orchestrator latency ordering did not match")
+}
+
+func TestOrchestratorPool_LatencySorting(t *testing.T) {
+	synctest.Test(t, sync_TestOrchestratorPool_LatencySorting)
+}
+
+func wgWait(wg *sync.WaitGroup) bool {
+	c := make(chan struct{})
+	go func() { defer close(c); wg.Wait() }()
+	select {
+	case <-c:
+		return true
+	case <-time.After(1 * time.Second):
+		return false
+	}
 }

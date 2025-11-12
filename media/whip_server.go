@@ -105,13 +105,13 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// OnTrack callback: handle incoming media
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
+		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC(), "rate", track.Codec().ClockRate)
 		trackCh <- track
 	})
 
 	// PeerConnection state management
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		clog.Info(ctx, "ice connection state changed", "state", connectionState)
+		clog.Info(ctx, "whip ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
@@ -249,6 +249,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 		clog.Info(ctx, "Unsupported codec", "mime", codec)
 		return
 	}
+	gotAudio, gotVideo := false, false
 
 	ro := rtpreorderer.New()
 	au := [][]byte{}
@@ -290,6 +291,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 			if isAudio {
 				segmenter.WriteAudio(track, pts, [][]byte{d})
+				if !gotAudio {
+					clog.Info(ctx, "First packet type=audio", "pts", pts, "rtp_ts", p.Timestamp)
+					gotAudio = true
+				}
 				continue
 			}
 
@@ -355,6 +360,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 			if segmenter.IsReady() {
 				segmenter.WriteVideo(track, pts, dts, frameAU)
+				if !gotVideo {
+					clog.Info(ctx, "First packet type=video", "pts", pts, "rtp_ts", p.Timestamp)
+					gotVideo = true
+				}
 			}
 		}
 	}
@@ -566,8 +575,7 @@ func disableTSCorrection() bool {
 	return v
 }
 
-func getUDPListenerAddr() (*net.UDPAddr, error) {
-	addrStr := os.Getenv("LIVE_AI_WHIP_ADDR") // TODO cli args?
+func getUDPListenerAddr(addrStr string) (*net.UDPAddr, error) {
 	if addrStr == "" {
 		// Default to all interfaces, port 7290
 		return &net.UDPAddr{
@@ -655,7 +663,7 @@ func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	se := webrtc.SettingEngine{}
 
 	// Get UDP listener address from environment or use default
-	udpAddr, err := getUDPListenerAddr()
+	udpAddr, err := getUDPListenerAddr(os.Getenv("LIVE_AI_WHIP_ADDR"))
 	if err != nil {
 		log.Fatal("could not get UDP listener address: ", err)
 	}

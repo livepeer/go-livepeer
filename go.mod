@@ -1,6 +1,6 @@
 module github.com/livepeer/go-livepeer
 
-go 1.23.2
+go 1.25.0
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2

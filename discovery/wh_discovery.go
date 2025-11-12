@@ -47,25 +47,26 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	pool := w.pool
 	w.mu.RUnlock()
 
-	// retrive addrs from cache if time since lastRequest is less than the refresh interval
+	// retrieve addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < common.WebhookDiscoveryRefreshInterval {
 		return pool.GetInfos(), nil
 	}
 
-	// retrive addrs from webhook if time since lastRequest is more than the refresh interval
+	// retrieve addrs from webhook if time since lastRequest is more than the refresh interval
 	body, err := getURLsfromWebhook(w.callback)
 	if err != nil {
 		return nil, err
 	}
 
 	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
+	w.mu.Lock()
 	if hash == w.responseHash {
-		w.mu.Lock()
 		w.lastRequest = time.Now()
 		pool = w.pool // may have been reset since beginning
 		w.mu.Unlock()
 		return pool.GetInfos(), nil
 	}
+	w.mu.Unlock()
 
 	infos, err := deserializeWebhookJSON(body)
 	if err != nil {
