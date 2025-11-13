@@ -833,9 +833,9 @@ func sync_TestDockerManager_watchContainer_ReturnContainerOnContextDone(t *testi
 	defer updateDuringTest(&containerTimeout, 100*time.Millisecond)()
 
 	mockDockerClient, dockerManager, mockServer, rc := watchContainerTestSetup(t)
-	defer mockServer.Close()
+	defer mockDockerClient.AssertExpectations(t)
 	defer mockServer.AssertExpectations(t)
-	defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
+	defer mockServer.Close()
 
 	mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
 		Return(200, "application/json", `{"status":"OK"}`)
@@ -870,6 +870,16 @@ func sync_TestDockerManager_watchContainer_ReturnContainerOnContextDone(t *testi
 	})
 
 	require.Nil(t, watchingCtx.Err())
+
+	mockDockerClient.AssertNotCalled(t, "ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions)
+	mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
+
+	mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Maybe()
+	mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Maybe()
+
+	ctx, cancelStop := context.WithTimeout(context.Background(), time.Second)
+	defer cancelStop()
+	require.NoError(t, dockerManager.Stop(ctx))
 }
 
 func sync_TestDockerManager_watchContainer_DestroyContainerOnNotHealthy(t *testing.T, setupFunc func(*MockServer)) {
@@ -904,6 +914,10 @@ func sync_TestDockerManager_watchContainer_DestroyContainerOnNotHealthy(t *testi
 
 	_, exists := dockerManager.containers[rc.Name]
 	require.False(t, exists)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, dockerManager.Stop(ctx))
 }
 
 func sync_TestDockerManager_watchContainer_RespectLoadingStateGracePeriod(t *testing.T) {
@@ -956,6 +970,10 @@ func sync_TestDockerManager_watchContainer_RespectLoadingStateGracePeriod(t *tes
 		_, exists := dockerManager.gpuContainers[rc.GPU]
 		return !exists
 	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, dockerManager.Stop(ctx))
 }
 
 func sync_TestDockerManager_watchContainer_ReturnContainerWhenIdle(t *testing.T) {
@@ -963,9 +981,9 @@ func sync_TestDockerManager_watchContainer_ReturnContainerWhenIdle(t *testing.T)
 	defer updateDuringTest(&containerTimeout, 100*time.Millisecond)()
 
 	mockDockerClient, dockerManager, mockServer, rc := watchContainerTestSetup(t)
-	defer mockServer.Close()
+	defer mockDockerClient.AssertExpectations(t)
 	defer mockServer.AssertExpectations(t)
-	defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
+	defer mockServer.Close()
 
 	var statusMu sync.Mutex
 	statuses := make([]string, 0, 16)
@@ -1027,6 +1045,16 @@ func sync_TestDockerManager_watchContainer_ReturnContainerWhenIdle(t *testing.T)
 		_, exists := dockerManager.containers[rc.Name]
 		return exists
 	})
+
+	mockDockerClient.AssertNotCalled(t, "ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions)
+	mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
+
+	mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Maybe()
+	mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Maybe()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, dockerManager.Stop(ctx))
 }
 
 func waitForCondition(t *testing.T, cond func() bool) {
