@@ -14,6 +14,7 @@ func TestLocalSubscriber_OverrunSeq(t *testing.T) {
 
 	pub, err := NewTricklePublisher(url)
 	require.Nil(err)
+	defer pub.Close()
 
 	sub := NewLocalSubscriber(server, "testest")
 

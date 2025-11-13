@@ -60,6 +60,7 @@ type TrickleSubscriber struct {
 	url        string
 	mu         sync.Mutex      // Mutex to manage concurrent access
 	pendingGet *http.Response  // Pre-initialized GET request
+	baseCtx    context.Context // base context to use for the next context
 	ctx        context.Context // Parent context to use for pending GETs. This is bad
 	cancelCtx  func()          // cancel the pending GET
 	idx        int             // Segment index to request
@@ -91,6 +92,7 @@ func NewTrickleSubscriber(config TrickleSubscriberConfig) (*TrickleSubscriber, e
 	return &TrickleSubscriber{
 		client:    httpClient(),
 		url:       config.URL,
+		baseCtx:   baseCtx,
 		ctx:       ctx,
 		cancelCtx: cancel,
 		idx:       idx,
@@ -134,7 +136,7 @@ func (c *TrickleSubscriber) SetSeq(seq int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.idx = seq
-	c.ctx, c.cancelCtx = context.WithCancel(context.Background())
+	c.ctx, c.cancelCtx = context.WithCancel(c.baseCtx)
 	c.pendingGet = nil
 	c.preconnectErrorCount = 0
 }
