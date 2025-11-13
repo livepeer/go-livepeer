@@ -64,8 +64,12 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		R: mediaReader,
 	}
 	if err := mpegtsReader.Initialize(); err != nil {
+		// Usually happens if O swaps before any output is produced.
+		// The best error code is tricky: technically this is a 500-class (internal)
+		// code but we don't want to produce on-call alerts, so use a 404 instead
+		// to mirror the MediaMTX behavior if a stream is not ready
 		clog.InfofErr(ctx, "Failed to initialize mpegts reader", err)
-		http.Error(w, "Failed to initialize mpegts reader", http.StatusInternalServerError)
+		http.Error(w, "Failed to initialize mpegts reader", http.StatusNotFound)
 		peerConnection.Close()
 		return
 	}
