@@ -115,6 +115,7 @@ func IgnoreRoutines() []goleak.Option {
 		res = append(res, goleak.IgnoreTopFunction(f))
 	}
 	for _, f := range ignoreAnywhereFuncs {
+		// ignore if these function signatures appear anywhere in the call stack
 		res = append(res, goleak.IgnoreAnyFunction(f))
 	}
 	return res
