@@ -97,7 +97,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		return
 	}
 	tracks := mpegtsReader.Tracks()
-	hasAudio, hasVideo, hasIDR, trackAdded := false, false, false, false
+	hasAudio, hasVideo, hasIDR := false, false, false
 	trackCodecs := make([]string, 0, len(tracks))
 	for _, track := range tracks {
 		switch track.Codec.(type) {
@@ -136,7 +136,6 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(au, pts)
 			})
 			trackCodecs = append(trackCodecs, "h264")
-			trackAdded = true
 
 		case *mpegts.CodecOpus:
 			hasAudio = true
@@ -168,7 +167,6 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(packets, pts)
 			})
 			trackCodecs = append(trackCodecs, "opus")
-			trackAdded = true
 		}
 	}
 
@@ -179,6 +177,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		return
 	}
 
+	trackAdded := len(trackCodecs) > 0
 	if !trackAdded {
 		clog.InfofErr(ctx, "No compatible tracks found", errors.New("no compatible tracks found"))
 		http.Error(w, "No compatible tracks found", http.StatusBadRequest)
