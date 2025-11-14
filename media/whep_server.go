@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/livepeer/go-livepeer/clog"
 
@@ -23,9 +25,14 @@ import (
 type WHEPServer struct {
 	mediaEngine *webrtc.MediaEngine
 	settings    func(*webrtc.API)
+	maxSessions int // playback limit per stream (default 5)
+
+	// Everything below must be protected by the mutex  `mu`
+	mu       sync.Mutex
+	sessions map[string]int // session count per stream
 }
 
-func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *http.Request, mediaReader io.ReadCloser) {
+func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *http.Request, mediaReader io.ReadCloser, streamName string) {
 	clog.Info(ctx, "creating whep", "user-agent", r.Header.Get("User-Agent"), "ip", r.RemoteAddr)
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -46,18 +53,27 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	offer.Type = webrtc.SDPTypeOffer
 	offer.SDP = string(offerBytes)
 
+	// add session to limiter. released whenever the peerconnection closes
+	releaseSession, ok := s.addSession(streamName)
+	if !ok {
+		http.Error(w, "Too many viewers for this stream", http.StatusTooManyRequests)
+		return
+	}
+
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(s.mediaEngine), s.settings)
 	peerConnection, err := api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
-		peerConnection.Close()
+		releaseSession() // no peerconnection, so release immediately
 		return
 	}
+
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		clog.Info(ctx, "whep ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed || connectionState == webrtc.ICEConnectionStateClosed {
 			mediaReader.Close()
+			releaseSession()
 		}
 	})
 
@@ -81,6 +97,8 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		err := errors.New("SDP did not expect any media")
 		clog.InfofErr(ctx, "SDP did not expect any media", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		peerConnection.Close()
+		return
 	}
 
 	mpegtsReader := mpegts.Reader{
@@ -192,6 +210,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			if err := t.Stop(); err != nil {
 				clog.InfofErr(ctx, "error stopping transceiver kind=%s", kind, err)
 				http.Error(w, "Error stopping transceiver", http.StatusBadRequest)
+				peerConnection.Close()
 				return false
 			}
 			clog.Info(ctx, "Stopped transceiver", "kind", kind)
@@ -241,14 +260,15 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			err := mpegtsReader.Read()
 			if err != nil {
 				clog.InfofErr(ctx, "error reading mpegts", err)
-				if err == io.EOF {
-					peerConnection.Close()
-				}
+				peerConnection.Close()
 				return
 			}
 		}
 	}()
 }
+
+const WhepUnlimitedPlaybacks = -1
+const WhepDefaultPlaybacks = 5
 
 func NewWHEPServer() *WHEPServer {
 	me := &webrtc.MediaEngine{}
@@ -272,10 +292,54 @@ func NewWHEPServer() *WHEPServer {
 		iceFailedTimeout,
 		iceKeepAliveInterval,
 	)
+	maxSessions := WhepDefaultPlaybacks
+	sessions := os.Getenv("LIVE_AI_WHEP_MAX_SESSIONS")
+	if "unlimited" == sessions {
+		maxSessions = WhepUnlimitedPlaybacks
+	} else if "" == sessions {
+		// use default
+	} else {
+		limit, err := strconv.Atoi(sessions)
+		if err != nil || limit <= 0 {
+			log.Fatal("Invalid max WHEP sessions")
+		}
+		maxSessions = limit
+	}
 	return &WHEPServer{
 		mediaEngine: me,
 		settings:    webrtc.WithSettingEngine(se),
+		sessions:    make(map[string]int),
+		maxSessions: maxSessions,
 	}
+}
+
+// increments the active session count if under limit. if limit exceeded,
+// returns ok=false, otherwise returns a release() func (idempotent)
+func (s *WHEPServer) addSession(stream string) (release func(), ok bool) {
+	if s.maxSessions == WhepUnlimitedPlaybacks {
+		return func() {}, true
+	}
+	s.mu.Lock()
+	if s.sessions[stream] >= s.maxSessions {
+		s.mu.Unlock()
+		return nil, false
+	}
+	s.sessions[stream]++
+	s.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			if s.sessions[stream] > 0 {
+				s.sessions[stream]--
+				if s.sessions[stream] == 0 {
+					delete(s.sessions, stream)
+				}
+			}
+			s.mu.Unlock()
+		})
+	}, true
 }
 
 // Implements the TrackLocal interface in Pion
