@@ -60,6 +60,29 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			mediaReader.Close()
 		}
 	})
+
+	if err := peerConnection.SetRemoteDescription(offer); err != nil {
+		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
+		http.Error(w, "SetRemoteDescription failed", http.StatusBadRequest)
+		peerConnection.Close()
+		return
+	}
+
+	// gather up the tracks the client is expecting
+	expectsVideo, expectsAudio := false, false
+	for _, t := range peerConnection.GetTransceivers() {
+		if t.Kind() == webrtc.RTPCodecTypeVideo {
+			expectsVideo = true
+		} else if t.Kind() == webrtc.RTPCodecTypeAudio {
+			expectsAudio = true
+		}
+	}
+	if !expectsVideo && !expectsAudio {
+		err := errors.New("SDP did not expect any media")
+		clog.InfofErr(ctx, "SDP did not expect any media", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
 	mpegtsReader := mpegts.Reader{
 		R: mediaReader,
 	}
@@ -79,6 +102,10 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	for _, track := range tracks {
 		switch track.Codec.(type) {
 		case *mpegts.CodecH264:
+			hasVideo = true
+			if !expectsVideo {
+				break
+			}
 			// TODO this track can probably be reused for multiple viewers
 			webrtcTrack, err := NewLocalTrack(
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
@@ -109,9 +136,12 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(au, pts)
 			})
 			trackCodecs = append(trackCodecs, "h264")
-			hasVideo = true
 
 		case *mpegts.CodecOpus:
+			hasAudio = true
+			if !expectsAudio {
+				break
+			}
 			webrtcTrack, err := NewLocalTrack(
 				// NB: Don't signal sample rate or channel count here. Leave empty to use defaults.
 				// Opus RTP RFC 7587 requires opus/48000/2 regardless of the actual content
@@ -136,7 +166,6 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(packets, pts)
 			})
 			trackCodecs = append(trackCodecs, "opus")
-			hasAudio = true
 		}
 	}
 
@@ -146,13 +175,37 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		peerConnection.Close()
 		return
 	}
-	clog.Info(ctx, "Outputs", "hasVideo", hasVideo, "hasAudio", hasAudio, "tracks", trackCodecs)
 
-	if err := peerConnection.SetRemoteDescription(offer); err != nil {
-		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
-		http.Error(w, "SetRemoteDescription failed", http.StatusBadRequest)
+	trackAdded := len(trackCodecs) > 0
+	if !trackAdded {
+		clog.InfofErr(ctx, "No compatible tracks found", errors.New("no compatible tracks found"))
+		http.Error(w, "No compatible tracks found", http.StatusBadRequest)
 		peerConnection.Close()
 		return
+	}
+
+	clog.Info(ctx, "Outputs", "hasVideo", hasVideo, "hasAudio", hasAudio, "expectsVideo", expectsVideo, "expectsAudio", expectsAudio, "tracks", trackCodecs)
+
+	// Disable media if offered but won't exist in answer
+	disableMedia := func(has bool, kind webrtc.RTPCodecType, t *webrtc.RTPTransceiver) bool {
+		if !has && t.Kind() == kind {
+			if err := t.Stop(); err != nil {
+				clog.InfofErr(ctx, "error stopping transceiver kind=%s", kind, err)
+				http.Error(w, "Error stopping transceiver", http.StatusBadRequest)
+				return false
+			}
+			clog.Info(ctx, "Stopped transceiver", "kind", kind)
+		}
+		return true
+	}
+
+	for _, t := range peerConnection.GetTransceivers() {
+		if !disableMedia(hasAudio, webrtc.RTPCodecTypeAudio, t) {
+			return
+		}
+		if !disableMedia(hasVideo, webrtc.RTPCodecTypeVideo, t) {
+			return
+		}
 	}
 
 	// Create and set local answer
