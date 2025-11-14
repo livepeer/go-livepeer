@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1620,9 +1619,6 @@ func TestSendPaymentForStream(t *testing.T) {
 
 		stream.StopStream(nil)
 	})
-	buf := make([]byte, 1<<20) // 1MB buffer
-	stackLen := runtime.Stack(buf, true)
-	t.Logf("=== Goroutine dump ===\n%s", buf[:stackLen])
 }
 func TestTokenSessionConversion(t *testing.T) {
 	token := createMockJobToken("http://example.com")
