@@ -29,6 +29,10 @@ import (
 
 var getNewTokenTimeout = 3 * time.Second
 
+// startStreamProcessingFunc is an alias for startStreamProcessing that can be overridden in tests
+// to avoid starting up actual stream processing
+var startStreamProcessingFunc = startStreamProcessing
+
 func (ls *LivepeerServer) StartStream() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -209,6 +213,8 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orch.ServiceAddr, err.Error())
 			continue
 		}
+		defer orchResp.Body.Close()
+		io.Copy(io.Discard, orchResp.Body)
 
 		GatewayStatus.StoreKey(streamID, "orchestrator", orch.ServiceAddr)
 
@@ -221,7 +227,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
 		params.liveParams.kickOrch = perOrchCancel
 		stream.UpdateStreamParams(params) //update params used to kickOrch (perOrchCancel) and urls
-		if err = startStreamProcessing(perOrchCtx, stream, params); err != nil {
+		if err = startStreamProcessingFunc(perOrchCtx, stream, params); err != nil {
 			clog.Errorf(ctx, "Error starting processing: %s", err)
 			perOrchCancel(err)
 			break
@@ -805,7 +811,9 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 
 			whipConn.AwaitClose()
 			params.liveParams.segmentReader.Close()
-			params.liveParams.kickOrch(errors.New("whip ingest disconnected"))
+			if params.liveParams.kickOrch != nil {
+				params.liveParams.kickOrch(errors.New("whip connection closed"))
+			}
 			stream.StopStream(nil)
 			clog.Info(ctx, "Live cleaned up")
 		}()
@@ -1026,6 +1034,7 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 			http.Error(w, err.Error(), code)
 			return
 		}
+		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			// Call reportUpdate callback if available
@@ -1298,12 +1307,15 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 				if !exists {
 					req, err := http.NewRequestWithContext(ctx, "POST", orchJob.Req.CapabilityUrl+"/stream/stop", nil)
 					// set the headers
-					_, err = sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
+					resp, err = sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 					if err != nil {
 						clog.Errorf(ctx, "Error sending request to worker %v: %v", orchJob.Req.CapabilityUrl, err)
 						respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
 						return
 					}
+					defer resp.Body.Close()
+					io.Copy(io.Discard, resp.Body)
+
 					//end monitoring of stream
 					return
 				}

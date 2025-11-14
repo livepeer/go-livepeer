@@ -583,6 +583,8 @@ func (ls *LivepeerServer) sendPayment(ctx context.Context, orchPmtUrl, capabilit
 		clog.Errorf(ctx, "job payment not able to be processed by Orchestrator %v err=%v ", orchPmtUrl, err.Error())
 		return http.StatusBadRequest, err
 	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode, nil
 }
@@ -1254,6 +1256,7 @@ func getJobSender(ctx context.Context, node *core.LivepeerNode) (*core.JobSender
 
 	return jobSender, nil
 }
+
 func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capability, sender, senderSig string) (*core.JobToken, error) {
 	start := time.Now()
 	tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl+"/process/token", nil)
@@ -1268,7 +1271,6 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 	}
 
 	var resp *http.Response
-	var token []byte
 	var jobToken core.JobToken
 	var attempt int
 	var backoff time.Duration = 100 * time.Millisecond
@@ -1278,22 +1280,24 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 		resp, err = sendJobReqWithTimeout(tokenReq, respTimeout)
 		if err != nil {
 			clog.Errorf(ctx, "failed to get token from Orchestrator (attempt %d) err=%v", attempt+1, err)
-		} else if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		defer resp.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			clog.Errorf(ctx, "Failed to read token response from Orchestrator %v err=%v", orchUrl, err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
 			clog.Errorf(ctx, "Failed to get token from Orchestrator %v status=%v (attempt %d)", orchUrl, resp.StatusCode, attempt+1)
 		} else {
-			defer resp.Body.Close()
 			latency := time.Since(start)
 			clog.V(common.DEBUG).Infof(ctx, "Received job token from uri=%v, latency=%v", orchUrl, latency)
-			token, err = io.ReadAll(resp.Body)
+			err = json.Unmarshal(respBody, &jobToken)
 			if err != nil {
-				clog.Errorf(ctx, "Failed to read token from Orchestrator %v err=%v", orchUrl, err)
+				clog.Errorf(ctx, "Failed to unmarshal token from Orchestrator %v err=%v", orchUrl, err)
 			} else {
-				err = json.Unmarshal(token, &jobToken)
-				if err != nil {
-					clog.Errorf(ctx, "Failed to unmarshal token from Orchestrator %v err=%v", orchUrl, err)
-				} else {
-					return &jobToken, nil
-				}
+				return &jobToken, nil
 			}
 		}
 		// If not last attempt and time remains, backoff
