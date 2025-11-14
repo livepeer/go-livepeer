@@ -158,7 +158,6 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			if _, err := peerConnection.AddTrack(webrtcTrack); err != nil {
 				clog.InfofErr(ctx, "Error adding track for audio", err)
 				http.Error(w, "Error adding track for audio", http.StatusInternalServerError)
-
 				peerConnection.Close()
 				return
 			}
