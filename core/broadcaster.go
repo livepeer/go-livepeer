@@ -18,10 +18,22 @@ func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
 	return bcast.node.Eth.Sign(crypto.Keccak256(msg))
 }
 func (bcast *broadcaster) Address() ethcommon.Address {
-	if bcast.node == nil || bcast.node.Eth == nil {
+	if bcast.node == nil {
+		return ethcommon.Address{}
+	}
+	if (bcast.node.RemoteEthAddr != ethcommon.Address{}) {
+		return bcast.node.RemoteEthAddr
+	}
+	if bcast.node.Eth == nil {
 		return ethcommon.Address{}
 	}
 	return bcast.node.Eth.Account().Address
+}
+func (bcast *broadcaster) OrchInfoSig() []byte {
+	if bcast == nil || bcast.node == nil {
+		return nil
+	}
+	return bcast.node.InfoSig
 }
 func (bcast *broadcaster) ExtraNodes() int {
 	if bcast == nil || bcast.node == nil {
