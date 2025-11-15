@@ -22,8 +22,8 @@ else
     INFERPY_INITIAL_PARAMS=""
     if [[ "$PIPELINE" =~ ^streamdiffusion- ]]; then
         BASE_PIPELINE="streamdiffusion"
-        FILE_NAME="${PIPELINE//-/_}"
-        JSON_FILE=./app/live/pipelines/${FILE_NAME}_default_params.json
+        FILE_NAME=$(echo "${PIPELINE#streamdiffusion-}" | tr '-' '_')
+        JSON_FILE=./app/live/pipelines/streamdiffusion/${FILE_NAME}_default_params.json
         INFERPY_INITIAL_PARAMS=$(tr -d '\n' < "$JSON_FILE")
     fi
     docker build -t livepeer/ai-runner:live-base-${BASE_PIPELINE} -f docker/Dockerfile.live-base-${BASE_PIPELINE} .
