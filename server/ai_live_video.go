@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -81,7 +82,9 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	ctx, cancel := context.WithCancel(ctx)
 	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
-	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+	// Only start payment processor if we have valid price info and auth token
+	// BYOC does not require AuthToken for payment, so this will skip the live payment processor for BYOC streaming
+	if priceInfo != nil && priceInfo.PricePerUnit != 0 && sess.OrchestratorInfo.AuthToken != nil {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
 			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
@@ -199,23 +202,26 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 		// If the ingest was closed, then do not suspend the orchestrator
 		return
 	}
-	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
-	if err != nil {
-		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
-		return
+	//live-video-to-video
+	if params.sessManager != nil {
+		sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
+		if err != nil {
+			clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
+			return
+		}
+		if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
+			clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
+			return
+		}
+		// Remove the session from the current pool
+		sel.Remove(params.liveParams.sess)
+		sel.warmPool.mu.Lock()
+		sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
+		sel.warmPool.mu.Unlock()
+		// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
+		clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
+		sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 	}
-	if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
-		clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
-		return
-	}
-	// Remove the session from the current pool
-	sel.Remove(params.liveParams.sess)
-	sel.warmPool.mu.Lock()
-	sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
-	sel.warmPool.mu.Unlock()
-	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
-	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
-	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
@@ -526,10 +532,11 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
-		RequestID: params.liveParams.requestID,
-		Pipeline:  params.liveParams.pipeline,
-		StreamID:  params.liveParams.streamID,
-		OutCond:   sync.NewCond(params.node.LiveMu),
+		RequestID:  params.liveParams.requestID,
+		Pipeline:   params.liveParams.pipeline,
+		StreamID:   params.liveParams.streamID,
+		OutCond:    sync.NewCond(params.node.LiveMu),
+		DataWriter: params.liveParams.dataWriter,
 	}
 }
 
@@ -816,6 +823,130 @@ func getOutWriter(stream string, node *core.LivepeerNode) (*media.RingBuffer, st
 		}
 	}
 	return sess.OutWriter, sess.RequestID
+}
+
+func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
+	//only start DataSubscribe if enabled
+	if params.liveParams.dataWriter == nil {
+		return
+	}
+
+	// subscribe to the outputs
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		clog.Infof(ctx, "Failed to create data subscriber: %s", err)
+		return
+	}
+
+	dataWriter := params.liveParams.dataWriter
+
+	// read segments from trickle subscription
+	go func() {
+		defer dataWriter.Close()
+
+		var err error
+		firstSegment := true
+
+		retries := 0
+		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
+		const retryPause = 300 * time.Millisecond
+		const maxRetries = 5
+		for {
+			select {
+			case <-ctx.Done():
+				clog.Info(ctx, "data subscribe done")
+				return
+			default:
+			}
+			if !params.inputStreamExists() {
+				clog.Infof(ctx, "data subscribe stopping, input stream does not exist.")
+				break
+			}
+			var segment *http.Response
+			readBytes, readMessages := 0, 0
+			clog.V(8).Infof(ctx, "data subscribe await")
+			segment, err = subscriber.Read()
+			if err != nil {
+				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
+					stopProcessing(ctx, params, fmt.Errorf("data subscribe stopping, stream not found, err=%w", err))
+					return
+				}
+				var sequenceNonexistent *trickle.SequenceNonexistent
+				if errors.As(err, &sequenceNonexistent) {
+					// stream exists but segment doesn't, so skip to leading edge
+					subscriber.SetSeq(sequenceNonexistent.Latest)
+				}
+				// TODO if not EOS then signal a new orchestrator is needed
+				err = fmt.Errorf("data subscribe error reading: %w", err)
+				clog.Infof(ctx, "%s", err)
+				if retries > maxRetries {
+					stopProcessing(ctx, params, errors.New("data subscribe stopping, retries exceeded"))
+					return
+				}
+				retries++
+				params.liveParams.sendErrorEvent(err)
+				time.Sleep(retryPause)
+				continue
+			}
+			retries = 0
+			seq := trickle.GetSeq(segment)
+			clog.V(8).Infof(ctx, "data subscribe received seq=%d", seq)
+			copyStartTime := time.Now()
+
+			defer segment.Body.Close()
+			scanner := bufio.NewScanner(segment.Body)
+			for scanner.Scan() {
+				writer, err := dataWriter.Next()
+				clog.V(8).Infof(ctx, "data subscribe writing seq=%d", seq)
+				if err != nil {
+					if err != io.EOF {
+						stopProcessing(ctx, params, fmt.Errorf("data subscribe could not get next: %w", err))
+					}
+					return
+				}
+				n, err := writer.Write(scanner.Bytes())
+				if err != nil {
+					stopProcessing(ctx, params, fmt.Errorf("data subscribe could not write: %w", err))
+				}
+				readBytes += n
+				readMessages += 1
+
+				writer.Close()
+			}
+			if err := scanner.Err(); err != nil {
+				clog.InfofErr(ctx, "data subscribe error reading seq=%d", seq, err)
+				subscriber.SetSeq(seq)
+				retries++
+				continue
+			}
+
+			if firstSegment {
+				firstSegment = false
+				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
+				if monitor.Enabled {
+					//monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+						"type":        "gateway_receive_first_data_segment",
+						"timestamp":   time.Now().UnixMilli(),
+						"stream_id":   params.liveParams.streamID,
+						"pipeline_id": params.liveParams.pipelineID,
+						"request_id":  params.liveParams.requestID,
+						"orchestrator_info": map[string]interface{}{
+							"address": sess.Address(),
+							"url":     sess.Transcoder(),
+						},
+					})
+				}
+
+				clog.V(common.VERBOSE).Infof(ctx, "First Data Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
+			}
+
+			clog.V(8).Info(ctx, "data subscribe read completed", "seq", seq, "bytes", humanize.Bytes(uint64(readBytes)), "messages", readMessages, "took", time.Since(copyStartTime))
+		}
+	}()
 }
 
 func (a aiRequestParams) inputStreamExists() bool {
