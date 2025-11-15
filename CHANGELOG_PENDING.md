@@ -14,6 +14,8 @@
 
 #### Orchestrator
 
+* [#3814](https://github.com/livepeer/go-livepeer/pull/3814) Sai/worker: Add scope pipeline support to worker and build scripts (@victorges)
+
 #### Transcoder
 
 ### Bug Fixes 🐞
