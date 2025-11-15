@@ -433,6 +433,15 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			expectedImage: "livepeer/ai-runner:live-app-comfyui",
 			expectError:   false,
 		},
+		{
+			name: "scope live image",
+			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
+			},
+			pipeline:      "live-video-to-video",
+			modelID:       "scope",
+			expectedImage: "livepeer/ai-runner:live-app-scope",
+			expectError:   false,
+		},
 	}
 
 	for _, tt := range tests {
