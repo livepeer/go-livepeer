@@ -127,7 +127,7 @@ type LivepeerServer struct {
 	serverLock        *sync.RWMutex
 
 	mediaMTXApiPassword string
-	liveAIAuthApiKey    string
+	liveAIAuthSecret    string
 	livePaymentInterval time.Duration
 	outSegmentTimeout   time.Duration
 }
@@ -196,7 +196,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
-		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
+		liveAIAuthSecret:        lpNode.LiveAIAuthSecret,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
 		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,
 	}
