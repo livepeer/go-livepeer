@@ -213,6 +213,15 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			exitErr = err
 			return
 		}
+		// add Orchestrator specific info to liveParams and save with stream
+		perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
+		params.liveParams.mu.Lock()
+		params.liveParams.kickOrch = perOrchCancel
+		params.liveParams.sess = &orchSession
+		params.liveParams.mu.Unlock()
+		// Create new params instance for this orchestrator to avoid race conditions
+		ls.updateStreamRequestParams(stream, params) //update params used to kickOrch (perOrchCancel) and urls
+
 		orchResp, _, err := ls.sendJobToOrch(ctx, nil, gatewayJob.Job.Req, gatewayJob.SignedJobReq, orch, "/ai/stream/start", stream.StreamRequest())
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orch.ServiceAddr, err.Error())
@@ -229,15 +238,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			orchEventsUrl:    orchResp.Header.Get("X-Events-Url"),
 			orchDataUrl:      orchResp.Header.Get("X-Data-Url"),
 		}
-		// add Orchestrator specific info to liveParams and save with stream
-		perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
-		params.liveParams.mu.Lock()
-		params.liveParams.kickOrch = perOrchCancel
-		params.liveParams.sess = &orchSession
-		params.liveParams.mu.Unlock()
 
-		// Create new params instance for this orchestrator to avoid race conditions
-		ls.updateStreamRequestParams(stream, params) //update params used to kickOrch (perOrchCancel) and urls
 		if err = startStreamProcessing(perOrchCtx, stream, params, orchUrls); err != nil {
 			clog.Errorf(ctx, "Error starting processing: %s", err)
 			perOrchCancel(err)
