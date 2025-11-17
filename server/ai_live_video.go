@@ -851,7 +851,7 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 		firstSegment := true
 
 		retries := 0
-		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
+		// keep similar total duration of (retryPause x maxRetries) similar to startTrickleSubscribe to within one output GOP length
 		const retryPause = 300 * time.Millisecond
 		const maxRetries = 5
 		for {
@@ -927,7 +927,6 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 				firstSegment = false
 				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
 				if monitor.Enabled {
-					//monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
 					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 						"type":        "gateway_receive_first_data_segment",
 						"timestamp":   time.Now().UnixMilli(),
