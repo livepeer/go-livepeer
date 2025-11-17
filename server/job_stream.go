@@ -29,9 +29,13 @@ import (
 
 var getNewTokenTimeout = 3 * time.Second
 
-// startStreamProcessingFunc is an alias for startStreamProcessing that can be overridden in tests
-// to avoid starting up actual stream processing
-var startStreamProcessingFunc = startStreamProcessing
+type orchTrickleUrls struct {
+	orchPublishUrl   string
+	orchSubscribeUrl string
+	orchControlUrl   string
+	orchEventsUrl    string
+	orchDataUrl      string
+}
 
 func (ls *LivepeerServer) StartStream() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +94,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			return
 		}
 
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		if err != nil {
 			clog.Errorf(ctx, "Error getting stream request params: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -114,7 +118,11 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			return
 		}
 
-		token, err := sessionToToken(params.liveParams.sess)
+		params.liveParams.mu.Lock()
+		sess := params.liveParams.sess
+		params.liveParams.mu.Unlock()
+
+		token, err := sessionToToken(sess)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -167,7 +175,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	ctx := stream.GetContext()
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
 
-	params, err := getStreamRequestParams(stream)
+	params, err := ls.getStreamRequestParams(stream)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting stream request params: %s", err)
 		exitErr = err
@@ -195,13 +203,10 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			clog.Errorf(ctx, "Error converting token to AISession: %v", err)
 			continue
 		}
-		params.liveParams.sess = &orchSession
 
 		ctx = clog.AddVal(ctx, "orch", hexutil.Encode(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 
-		//set request ID to persist from Gateway to Worker
-		gatewayJob.Job.Req.ID = params.liveParams.streamID
 		err = gatewayJob.sign()
 		if err != nil {
 			clog.Errorf(ctx, "Error signing job, exiting stream processing request: %v", err)
@@ -217,17 +222,23 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		io.Copy(io.Discard, orchResp.Body)
 
 		GatewayStatus.StoreKey(streamID, "orchestrator", orch.ServiceAddr)
-
-		params.liveParams.orchPublishUrl = orchResp.Header.Get("X-Publish-Url")
-		params.liveParams.orchSubscribeUrl = orchResp.Header.Get("X-Subscribe-Url")
-		params.liveParams.orchControlUrl = orchResp.Header.Get("X-Control-Url")
-		params.liveParams.orchEventsUrl = orchResp.Header.Get("X-Events-Url")
-		params.liveParams.orchDataUrl = orchResp.Header.Get("X-Data-Url")
-
+		orchUrls := orchTrickleUrls{
+			orchPublishUrl:   orchResp.Header.Get("X-Publish-Url"),
+			orchSubscribeUrl: orchResp.Header.Get("X-Subscribe-Url"),
+			orchControlUrl:   orchResp.Header.Get("X-Control-Url"),
+			orchEventsUrl:    orchResp.Header.Get("X-Events-Url"),
+			orchDataUrl:      orchResp.Header.Get("X-Data-Url"),
+		}
+		// add Orchestrator specific info to liveParams and save with stream
 		perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
+		params.liveParams.mu.Lock()
 		params.liveParams.kickOrch = perOrchCancel
-		stream.UpdateStreamParams(params) //update params used to kickOrch (perOrchCancel) and urls
-		if err = startStreamProcessingFunc(perOrchCtx, stream, params); err != nil {
+		params.liveParams.sess = &orchSession
+		params.liveParams.mu.Unlock()
+
+		// Create new params instance for this orchestrator to avoid race conditions
+		ls.updateStreamRequestParams(stream, params) //update params used to kickOrch (perOrchCancel) and urls
+		if err = startStreamProcessing(perOrchCtx, stream, params, orchUrls); err != nil {
 			clog.Errorf(ctx, "Error starting processing: %s", err)
 			perOrchCancel(err)
 			break
@@ -285,7 +296,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 		clog.Errorf(ctx, "Stream %s not found", streamId)
 		return
 	}
-	params, err := getStreamRequestParams(stream)
+	params, err := ls.getStreamRequestParams(stream)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting stream request params: %v", err)
 		return
@@ -328,12 +339,17 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 }
 
 func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core.LivePipeline, jobSender *core.JobSender) error {
-	params, err := getStreamRequestParams(stream)
+	params, err := ls.getStreamRequestParams(stream)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting stream request params: %v", err)
 		return err
 	}
-	token, err := sessionToToken(params.liveParams.sess)
+
+	params.liveParams.mu.Lock()
+	sess := params.liveParams.sess
+	params.liveParams.mu.Unlock()
+
+	token, err := sessionToToken(sess)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting token for session: %v", err)
 		return err
@@ -351,8 +367,10 @@ func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core
 		clog.Errorf(ctx, "Error converting token to AI session: %v", err)
 		return err
 	}
+	params.liveParams.mu.Lock()
 	params.liveParams.sess = &newSess
-	stream.UpdateStreamParams(params)
+	params.liveParams.mu.Unlock()
+	ls.updateStreamRequestParams(stream, params)
 
 	// send the payment
 	streamID := params.liveParams.streamID
@@ -684,7 +702,7 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 			return
 		}
 
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		if err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -719,24 +737,29 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
-		kickInput := func(err error) {
+		kickInput := func(streamErr error) {
 			defer cancelSegmenter()
-			if err == nil {
+			if streamErr == nil {
 				return
 			}
-			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
-
-			params.liveParams.sendErrorEvent(err)
+			clog.Errorf(ctx, "Live video pipeline finished with error: %s", streamErr)
 
 			err = mediaMTXClient.KickInputConnection(ctx)
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 			}
+
+			params, err := ls.getStreamRequestParams(stream)
+			if err != nil {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
+			params.liveParams.sendErrorEvent(streamErr)
 		}
 
 		params.liveParams.localRTMPPrefix = mediaMTXInputURL
 		params.liveParams.kickInput = kickInput
-		stream.UpdateStreamParams(params) //add kickInput to stream params
+		ls.updateStreamRequestParams(stream, params) //add kickInput to stream params
 
 		// Kick off the RTMP pull and segmentation
 		clog.Infof(ctx, "Starting RTMP ingest from MediaMTX")
@@ -781,7 +804,7 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 			return
 		}
 
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		if err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -801,7 +824,7 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 			whipConn.Close()
 		}
 		params.liveParams.kickInput = kickInput
-		stream.UpdateStreamParams(params) //add kickInput to stream params
+		ls.updateStreamRequestParams(stream, params) //add kickInput to stream params
 
 		//wait for the WHIP connection to close and then cleanup
 		go func() {
@@ -811,9 +834,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 
 			whipConn.AwaitClose()
 			params.liveParams.segmentReader.Close()
-			if params.liveParams.kickOrch != nil {
-				params.liveParams.kickOrch(errors.New("whip connection closed"))
-			}
 			stream.StopStream(nil)
 			clog.Info(ctx, "Live cleaned up")
 		}()
@@ -829,50 +849,53 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 	})
 }
 
-func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
+func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, params aiRequestParams, orchUrls orchTrickleUrls) error {
+	// Lock once and copy all needed fields
+	params.liveParams.mu.Lock()
+	sess := params.liveParams.sess
+	params.liveParams.mu.Unlock()
 
 	//Optional channels
-	if params.liveParams.orchPublishUrl != "" {
+	if orchUrls.orchPublishUrl != "" {
 		clog.Infof(ctx, "Starting video ingress publisher")
-		pub, err := common.AppendHostname(params.liveParams.orchPublishUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+		pub, err := common.AppendHostname(orchUrls.orchPublishUrl, sess.BroadcastSession.Transcoder())
 		if err != nil {
 			return fmt.Errorf("invalid publish URL: %w", err)
 		}
-		startTricklePublish(ctx, pub, params, params.liveParams.sess)
+		startTricklePublish(ctx, pub, params, sess)
 	}
 
-	if params.liveParams.orchSubscribeUrl != "" {
+	if orchUrls.orchSubscribeUrl != "" {
 		clog.Infof(ctx, "Starting video egress subscriber")
-		sub, err := common.AppendHostname(params.liveParams.orchSubscribeUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+		sub, err := common.AppendHostname(orchUrls.orchSubscribeUrl, sess.BroadcastSession.Transcoder())
 		if err != nil {
 			return fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
+		startTrickleSubscribe(ctx, sub, params, sess)
 	}
 
-	if params.liveParams.orchDataUrl != "" {
+	if orchUrls.orchDataUrl != "" {
 		clog.Infof(ctx, "Starting data channel subscriber")
-		data, err := common.AppendHostname(params.liveParams.orchDataUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+		data, err := common.AppendHostname(orchUrls.orchDataUrl, sess.BroadcastSession.Transcoder())
 		if err != nil {
 			return fmt.Errorf("invalid data URL: %w", err)
 		}
-		params.liveParams.manifestID = stream.Pipeline
 
-		startDataSubscribe(ctx, data, params, params.liveParams.sess)
+		startDataSubscribe(ctx, data, params, sess)
 	}
 
 	//required channels
-	control, err := common.AppendHostname(params.liveParams.orchControlUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+	control, err := common.AppendHostname(orchUrls.orchControlUrl, sess.BroadcastSession.Transcoder())
 	if err != nil {
 		return fmt.Errorf("invalid control URL: %w", err)
 	}
-	events, err := common.AppendHostname(params.liveParams.orchEventsUrl, params.liveParams.sess.BroadcastSession.Transcoder())
+	events, err := common.AppendHostname(orchUrls.orchEventsUrl, sess.BroadcastSession.Transcoder())
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
 
 	startControlPublish(ctx, control, params)
-	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+	startEventsSubscribe(ctx, events, params, sess)
 
 	return nil
 }
@@ -894,7 +917,7 @@ func (ls *LivepeerServer) GetStreamData() http.Handler {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		if err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -972,7 +995,7 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 			return
 		}
 
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		if err != nil {
 			clog.Errorf(ctx, "Error getting stream request params: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -992,7 +1015,12 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 			clog.Errorf(ctx, "Error getting job sender: %v", err)
 			return
 		}
-		token, err := sessionToToken(params.liveParams.sess)
+
+		params.liveParams.mu.Lock()
+		sess := params.liveParams.sess
+		params.liveParams.mu.Unlock()
+
+		token, err := sessionToToken(sess)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1507,10 +1535,12 @@ func sessionToToken(session *AISession) (core.JobToken, error) {
 	return token, nil
 }
 
-func getStreamRequestParams(stream *core.LivePipeline) (aiRequestParams, error) {
+func (ls *LivepeerServer) getStreamRequestParams(stream *core.LivePipeline) (aiRequestParams, error) {
 	if stream == nil {
 		return aiRequestParams{}, fmt.Errorf("stream is nil")
 	}
+	ls.LivepeerNode.LiveMu.Lock()
+	defer ls.LivepeerNode.LiveMu.Unlock()
 
 	streamParams := stream.StreamParams()
 	params, ok := streamParams.(aiRequestParams)
@@ -1518,4 +1548,15 @@ func getStreamRequestParams(stream *core.LivePipeline) (aiRequestParams, error) 
 		return aiRequestParams{}, fmt.Errorf("failed to cast stream params to aiRequestParams")
 	}
 	return params, nil
+}
+
+func (ls *LivepeerServer) updateStreamRequestParams(stream *core.LivePipeline, params aiRequestParams) error {
+	if stream == nil {
+		return fmt.Errorf("stream is nil")
+	}
+	ls.LivepeerNode.LiveMu.Lock()
+	defer ls.LivepeerNode.LiveMu.Unlock()
+
+	stream.UpdateStreamParams(params)
+	return nil
 }

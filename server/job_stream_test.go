@@ -96,6 +96,30 @@ func orchAIStreamStartHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func orchAIStreamStartNoUrlsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/ai/stream/start" {
+		http.NotFound(w, r)
+		return
+	}
+
+	//Headers for trickle urls intentionally left out to prevent starting trickle streams for optional streams
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Control-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, TrickleHTTPPath, "test-stream-control"))
+	w.Header().Set("X-Events-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, TrickleHTTPPath, "test-stream-events"))
+	w.WriteHeader(http.StatusOK)
+}
+
+func orchAIStreamStopHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/ai/stream/stop" {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+}
+
 func orchCapabilityUrlHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
@@ -112,7 +136,7 @@ func TestStartStream_MaxBodyLimit(t *testing.T) {
 	mockSender.On("StartSession", mock.Anything).Return("foo")
 	mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 	node.Sender = &mockSender
-	node.Balances = core.NewAddressBalances(10)
+	node.Balances = core.NewAddressBalances(10 * time.Second)
 	defer node.Balances.StopCleanup()
 
 	ls := &LivepeerServer{LivepeerNode: node}
@@ -144,7 +168,6 @@ func TestStartStream_MaxBodyLimit(t *testing.T) {
 }
 
 func TestStreamStart_SetupStream(t *testing.T) {
-
 	node := mockJobLivepeerNode()
 	server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
 	defer server.Close()
@@ -155,7 +178,7 @@ func TestStreamStart_SetupStream(t *testing.T) {
 	mockSender.On("StartSession", mock.Anything).Return("foo")
 	mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 	node.Sender = &mockSender
-	node.Balances = core.NewAddressBalances(10)
+	node.Balances = core.NewAddressBalances(10 * time.Second)
 	defer node.Balances.StopCleanup()
 
 	ls := &LivepeerServer{LivepeerNode: node}
@@ -268,16 +291,6 @@ func TestStreamStart_SetupStream(t *testing.T) {
 }
 
 func TestRunStream_RunAndCancelStream(t *testing.T) {
-	// Override startStreamProcessingFunc for this test to do nothing but print a log line
-	originalFunc := startStreamProcessingFunc
-	startStreamProcessingFunc = func(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
-		fmt.Println("Test: startStreamProcessingFunc called")
-		return nil
-	}
-	defer func() {
-		startStreamProcessingFunc = originalFunc
-	}()
-
 	node := mockJobLivepeerNode()
 
 	// Set up an lphttp-based orchestrator test server with trickle endpoints
@@ -294,8 +307,8 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 		Autocreate: true,
 	})
 	// Register orchestrator endpoints used by runStream path
-	mux.HandleFunc("/ai/stream/start", lp.StartStream)
-	mux.HandleFunc("/ai/stream/stop", lp.StopStream)
+	mux.HandleFunc("/ai/stream/start", orchAIStreamStartNoUrlsHandler)
+	mux.HandleFunc("/ai/stream/stop", orchAIStreamStopHandler)
 	mux.HandleFunc("/process/token", orchTokenHandler)
 
 	server := httptest.NewServer(lp)
@@ -334,7 +347,7 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
 	mockSender.On("CreateTicketBatch", "foo", orchJob.Req.Timeout).Return(mockTicketBatch(orchJob.Req.Timeout), nil).Once()
 	node.Sender = &mockSender
-	node.Balances = core.NewAddressBalances(10)
+	node.Balances = core.NewAddressBalances(10 * time.Second)
 	defer node.Balances.StopCleanup()
 
 	//now sign job and create a sig for the sender to include
@@ -350,7 +363,7 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 			stream:         "test-stream",
 			streamID:       "test-stream",
 			sendErrorEvent: func(err error) {},
-			segmentReader:  nil,
+			segmentReader:  media.NewSwitchableSegmentReader(),
 		},
 		node: node,
 	}
@@ -366,12 +379,12 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	// Cancel the stream after a short delay to simulate shutdown
 	done := make(chan struct{})
 	go func() {
-		time.Sleep(200 * time.Millisecond)
 		stream := node.LivePipelines["test-stream"]
 
 		if stream != nil {
 			// Wait for kickOrch to be set and call it to cancel the stream
-			timeout := time.After(2 * time.Second)
+			timeout := time.After(1 * time.Second)
+			var kickOrch context.CancelCauseFunc
 		waitLoop:
 			for {
 				select {
@@ -379,12 +392,16 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 					// Timeout waiting for kickOrch, proceed anyway
 					break waitLoop
 				default:
-					params, ok := stream.StreamParams().(aiRequestParams)
-					if ok && params.liveParams.kickOrch != nil {
-						params.liveParams.kickOrch(errors.New("test cancellation"))
+					params, err := ls.getStreamRequestParams(stream)
+					if err == nil {
+						params.liveParams.mu.Lock()
+						kickOrch = params.liveParams.kickOrch
+						params.liveParams.mu.Unlock()
+					}
+					if err == nil && kickOrch != nil {
+						kickOrch(errors.New("test cancellation"))
 						break waitLoop
 					}
-					time.Sleep(10 * time.Millisecond)
 				}
 			}
 		}
@@ -393,9 +410,8 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 	<-done
 	// Wait for both goroutines to finish before asserting
 	wg.Wait()
-
-	// Give a brief moment for any remaining cleanup in defer functions to complete
-	time.Sleep(100 * time.Millisecond)
+	_, ok := node.LivePipelines["stest-stream"]
+	assert.False(t, ok)
 
 	// Clean up external capabilities streams
 	if node.ExternalCapabilities != nil {
@@ -403,20 +419,16 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 			node.ExternalCapabilities.RemoveStream(streamID)
 		}
 	}
+
+	//confirm external capability stream removed
+	_, ok = node.ExternalCapabilities.GetStream("test-stream")
+	assert.False(t, ok)
+
 }
 
 // TestRunStream_OrchestratorFailover tests that runStream fails over to a second orchestrator
 // when the first one fails, and stops when the second orchestrator also fails
 func TestRunStream_OrchestratorFailover(t *testing.T) {
-	// Override startStreamProcessingFunc for this test to do nothing but print a log line
-	originalFunc := startStreamProcessingFunc
-	startStreamProcessingFunc = func(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
-		fmt.Println("Test: startStreamProcessingFunc called")
-		return nil
-	}
-	defer func() {
-		startStreamProcessingFunc = originalFunc
-	}()
 	node := mockJobLivepeerNode()
 
 	// Set up an lphttp-based orchestrator test server with trickle endpoints
@@ -424,6 +436,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 	mockOrch := &mockOrchestrator{}
 	mockOrch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	mockOrch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+	mockOrch2 := *mockOrch
 
 	lp := &lphttp{orchestrator: nil, transRPC: mux, node: node}
 	// Configure trickle server on the mux (imitate production trickle endpoints)
@@ -433,14 +446,14 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 		Autocreate: true,
 	})
 	// Register orchestrator endpoints used by runStream path
-	mux.HandleFunc("/ai/stream/start", lp.StartStream)
-	mux.HandleFunc("/ai/stream/stop", lp.StopStream)
+	mux.HandleFunc("/ai/stream/start", orchAIStreamStartNoUrlsHandler)
+	mux.HandleFunc("/ai/stream/stop", orchAIStreamStopHandler)
 	mux.HandleFunc("/process/token", orchTokenHandler)
 
 	server := httptest.NewServer(lp)
 	defer server.Close()
 	mux2 := http.NewServeMux()
-	lp2 := &lphttp{orchestrator: nil, transRPC: mux2, node: node}
+	lp2 := &lphttp{orchestrator: nil, transRPC: mux2, node: mockJobLivepeerNode()}
 	// Configure trickle server on the mux (imitate production trickle endpoints)
 	lp2.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
 		Mux:        mux2,
@@ -448,8 +461,8 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 		Autocreate: true,
 	})
 	// Register orchestrator endpoints used by runStream path
-	mux2.HandleFunc("/ai/stream/start", lp.StartStream)
-	mux2.HandleFunc("/ai/stream/stop", lp.StopStream)
+	mux2.HandleFunc("/ai/stream/start", orchAIStreamStartNoUrlsHandler)
+	mux2.HandleFunc("/ai/stream/stop", orchAIStreamStopHandler)
 	mux2.HandleFunc("/process/token", orchTokenHandler)
 
 	server2 := httptest.NewServer(lp2)
@@ -465,7 +478,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 	defer capabilitySrv2.Close()
 	// attach our orchestrator implementation to lphttp
 	lp.orchestrator = &testStreamOrch{mockOrchestrator: mockOrch, svc: parsedURL, capURL: capabilitySrv.URL}
-	lp2.orchestrator = &testStreamOrch{mockOrchestrator: mockOrch, svc: parsedURL2, capURL: capabilitySrv2.URL}
+	lp2.orchestrator = &testStreamOrch{mockOrchestrator: &mockOrch2, svc: parsedURL2, capURL: capabilitySrv2.URL}
 
 	// Prepare a gatewayJob with a dummy orchestrator token
 	jobReq := &JobRequest{
@@ -492,7 +505,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 	mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
 	mockSender.On("CreateTicketBatch", "foo", orchJob.Req.Timeout).Return(mockTicketBatch(orchJob.Req.Timeout), nil).Twice()
 	node.Sender = &mockSender
-	node.Balances = core.NewAddressBalances(10)
+	node.Balances = core.NewAddressBalances(10 * time.Second)
 	defer node.Balances.StopCleanup()
 
 	//now sign job and create a sig for the sender to include
@@ -508,7 +521,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 			stream:         "test-stream",
 			streamID:       "test-stream",
 			sendErrorEvent: func(err error) {},
-			segmentReader:  nil,
+			segmentReader:  media.NewSwitchableSegmentReader(),
 		},
 		node: node,
 	}
@@ -519,19 +532,20 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 	done1 := make(chan struct{})
 	done2 := make(chan struct{})
 
+	streamID := gatewayJob.Job.Req.ID
 	// Should not panic and should clean up
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); ls.runStream(gatewayJob) }()
-	go func() { defer wg.Done(); ls.monitorStream(gatewayJob.Job.Req.ID) }()
+	go func() { defer wg.Done(); ls.monitorStream(streamID) }()
+
 	// First, simulate failure of the first orchestrator
 	go func() {
-		time.Sleep(200 * time.Millisecond)
 		stream := node.LivePipelines["test-stream"]
 
 		if stream != nil {
 			// Wait for kickOrch to be set and call it to cancel the stream
-			timeout := time.After(2 * time.Second)
+			timeout := time.After(1 * time.Second)
 		waitLoop:
 			for {
 				select {
@@ -539,12 +553,14 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 					// Timeout waiting for kickOrch, proceed anyway
 					break waitLoop
 				default:
-					params, ok := stream.StreamParams().(aiRequestParams)
-					if ok && params.liveParams.kickOrch != nil {
-						params.liveParams.kickOrch(errors.New("test cancellation"))
+					params, err := ls.getStreamRequestParams(stream)
+					params.liveParams.mu.Lock()
+					kickOrch := params.liveParams.kickOrch
+					params.liveParams.mu.Unlock()
+					if err == nil && kickOrch != nil {
+						kickOrch(errors.New("test cancellation"))
 						break waitLoop
 					}
-					time.Sleep(10 * time.Millisecond)
 				}
 			}
 		}
@@ -556,25 +572,26 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 	// Wait for GatewayStatus to update to server2.URL (up to 1 second)
 	var serviceAddr interface{}
 	for i := 0; i < 100; i++ {
-		currentOrch, _ := GatewayStatus.Get(gatewayJob.Job.Req.ID)
+		currentOrch, _ := GatewayStatus.Get(streamID)
 		if currentOrch != nil {
+			GatewayStatus.mu.Lock()
 			serviceAddr = currentOrch["orchestrator"]
+			GatewayStatus.mu.Unlock()
 			if serviceAddr != nil && serviceAddr.(string) == server2.URL {
 				break
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 	assert.Equal(t, server2.URL, serviceAddr.(string))
 
 	//kick the second Orchestrator
 	go func() {
-		time.Sleep(200 * time.Millisecond)
 		stream := node.LivePipelines["test-stream"]
 
 		if stream != nil {
 			// Wait for kickOrch to be set and call it to cancel the stream
-			timeout := time.After(2 * time.Second)
+			timeout := time.After(1 * time.Second)
 		waitLoop:
 			for {
 				select {
@@ -582,12 +599,14 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 					// Timeout waiting for kickOrch, proceed anyway
 					break waitLoop
 				default:
-					params, ok := stream.StreamParams().(aiRequestParams)
-					if ok && params.liveParams.kickOrch != nil {
-						params.liveParams.kickOrch(errors.New("test cancellation"))
+					params, err := ls.getStreamRequestParams(stream)
+					params.liveParams.mu.Lock()
+					kickOrch := params.liveParams.kickOrch
+					params.liveParams.mu.Unlock()
+					if err == nil && kickOrch != nil {
+						kickOrch(errors.New("test cancellation"))
 						break waitLoop
 					}
-					time.Sleep(10 * time.Millisecond)
 				}
 			}
 		}
@@ -610,16 +629,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 }
 
 func TestStartStreamHandler(t *testing.T) {
-	// Override startStreamProcessingFunc for this test to do nothing but print a log line
-	originalFunc := startStreamProcessingFunc
-	startStreamProcessingFunc = func(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
-		fmt.Println("Test: startStreamProcessingFunc called")
-		return nil
-	}
-	defer func() {
-		startStreamProcessingFunc = originalFunc
-	}()
-
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	node := mockJobLivepeerNode()
 
 	// Set up an lphttp-based orchestrator test server with trickle endpoints
@@ -631,23 +641,14 @@ func TestStartStreamHandler(t *testing.T) {
 	mockSender.On("StartSession", mock.Anything).Return("foo")
 	mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 	node.Sender = &mockSender
-	node.Balances = core.NewAddressBalances(1 * time.Second)
+	node.Balances = core.NewAddressBalances(10 * time.Second)
 	defer node.Balances.StopCleanup()
 	//setup Orch server stub
 	mux.HandleFunc("/process/token", orchTokenHandler)
-	mux.HandleFunc("/ai/stream/start", orchAIStreamStartHandler)
+	mux.HandleFunc("/ai/stream/start", orchAIStreamStartNoUrlsHandler)
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
-	// Add a connection state tracker
-	mu := sync.Mutex{}
-	conns := make(map[net.Conn]http.ConnState)
-	server.Config.ConnState = func(conn net.Conn, state http.ConnState) {
-		mu.Lock()
-		defer mu.Unlock()
-
-		conns[conn] = state
-	}
 
 	ls.LivepeerNode.OrchestratorPool = newStubOrchestratorPool(ls.LivepeerNode, []string{server.URL})
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -679,23 +680,29 @@ func TestStartStreamHandler(t *testing.T) {
 	assert.NotNil(t, stream)
 	assert.Equal(t, streamUrls.StreamId, stream.StreamID)
 	params := stream.StreamParams()
-	streamParams, checkParamsType := params.(aiRequestParams)
+	_, checkParamsType := params.(aiRequestParams)
 	assert.True(t, checkParamsType)
-	//wrap up processing
-	time.Sleep(100 * time.Millisecond)
-	streamParams.liveParams.kickOrch(errors.New("test error"))
-	stream.StopStream(nil)
 
-	//clean up http connections
-	mu.Lock()
-	defer mu.Unlock()
-	for conn := range conns {
-		conn.Close()
-		delete(conns, conn)
+	timeout := time.After(1 * time.Second)
+waitLoop:
+	for {
+		select {
+		case <-timeout:
+			// Timeout waiting for kickOrch, proceed anyway
+			break waitLoop
+		default:
+			params, err := ls.getStreamRequestParams(stream)
+			params.liveParams.mu.Lock()
+			kickOrch := params.liveParams.kickOrch
+			params.liveParams.mu.Unlock()
+			if err == nil && kickOrch != nil {
+				kickOrch(errors.New("test cancellation"))
+				break waitLoop
+			}
+		}
 	}
 
-	// Give time for cleanup to complete
-	time.Sleep(50 * time.Millisecond)
+	stream.StopStream(nil)
 }
 
 func TestStopStreamHandler(t *testing.T) {
@@ -739,7 +746,7 @@ func TestStopStreamHandler(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
 		mockSender.On("CreateTicketBatch", "foo", 10).Return(mockTicketBatch(10), nil).Once()
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 		// Create a stream to stop
 		streamID := "test-stream-to-stop"
@@ -827,7 +834,7 @@ func TestStopStreamHandler(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
 		mockSender.On("CreateTicketBatch", "foo", 10).Return(mockTicketBatch(10), nil).Once()
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 		streamID := "test-stream-orch-error"
 
@@ -886,6 +893,7 @@ func TestStopStreamHandler(t *testing.T) {
 }
 
 func TestStartStreamRTMPIngestHandler(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	// Setup mock MediaMTX server on port 9997 before starting the test
 	mockMediaMTXServer := createMockMediaMTXServer(t)
 	defer mockMediaMTXServer.Close()
@@ -934,7 +942,7 @@ func TestStartStreamRTMPIngestHandler(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, stream)
 
-	params, err := getStreamRequestParams(stream)
+	params, err := ls.getStreamRequestParams(stream)
 	assert.NoError(t, err)
 
 	//these should be empty/nil before rtmp ingest starts
@@ -965,11 +973,12 @@ func TestStartStreamRTMPIngestHandler(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Verify that the stream parameters were updated correctly
-	newParams, _ := getStreamRequestParams(stream)
+	newParams, _ := ls.getStreamRequestParams(stream)
 	assert.NotNil(t, newParams.liveParams.kickInput)
 	assert.NotEmpty(t, newParams.liveParams.localRTMPPrefix)
 
 	// Stop the stream to cleanup
+	newParams.liveParams.segmentReader.Close()
 	newParams.liveParams.kickInput(errors.New("test error"))
 	stream.StopStream(nil)
 }
@@ -1015,7 +1024,7 @@ func TestStartStreamWhipIngestHandler(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, stream)
 
-	params, err := getStreamRequestParams(stream)
+	params, err := ls.getStreamRequestParams(stream)
 	assert.NoError(t, err)
 
 	//these should be empty/nil before whip ingest starts
@@ -1040,7 +1049,7 @@ func TestStartStreamWhipIngestHandler(t *testing.T) {
 
 	// This completes testing through making the WHIP connection which would
 	// then be covered by tests in whip_server.go
-	newParams, err := getStreamRequestParams(stream)
+	newParams, err := ls.getStreamRequestParams(stream)
 	assert.NoError(t, err)
 	assert.NotNil(t, newParams.liveParams.kickInput)
 
@@ -1103,7 +1112,7 @@ func TestGetStreamDataHandler(t *testing.T) {
 		assert.True(t, ok)
 		assert.NotNil(t, stream)
 
-		params, err := getStreamRequestParams(stream)
+		params, err := ls.getStreamRequestParams(stream)
 		assert.NoError(t, err)
 		assert.NotNil(t, params.liveParams)
 
@@ -1124,8 +1133,6 @@ func TestGetStreamDataHandler(t *testing.T) {
 
 		// Start writing more segments in a goroutine
 		go func() {
-			time.Sleep(10 * time.Millisecond) // Give handler time to start
-
 			// Write additional segments
 			for i := 0; i < 2; i++ {
 				writer, err := params.liveParams.dataWriter.Next()
@@ -1134,11 +1141,9 @@ func TestGetStreamDataHandler(t *testing.T) {
 				}
 				writer.Write([]byte(fmt.Sprintf("test-data-%d", i)))
 				writer.Close()
-				time.Sleep(5 * time.Millisecond)
 			}
 
 			// Close the writer to signal EOF
-			time.Sleep(10 * time.Millisecond)
 			params.liveParams.dataWriter.Close()
 		}()
 
@@ -1208,7 +1213,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo")
 		mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		ls := &LivepeerServer{LivepeerNode: node}
@@ -1327,7 +1332,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
 		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		// Create mock orchestrator server that handles token requests and payments
@@ -1386,7 +1391,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo")
 		mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		ls := &LivepeerServer{LivepeerNode: node}
@@ -1467,7 +1472,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
 		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		// setup handlers
@@ -1518,7 +1523,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo")
 		mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(10), nil)
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		tokenHandler = func(w http.ResponseWriter, r *http.Request) {
@@ -1544,7 +1549,7 @@ func TestSendPaymentForStream(t *testing.T) {
 				stream:         streamID,
 				streamID:       streamID,
 				sendErrorEvent: func(err error) {},
-				segmentReader:  media.NewSwitchableSegmentReader(),
+				segmentReader:  nil,
 			},
 			node: node,
 		}
@@ -1569,7 +1574,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(2)
 		mockSender.On("CreateTicketBatch", "foo", 70).Return(mockTicketBatch(70), nil).Once()
 		node.Sender = &mockSender
-		node.Balances = core.NewAddressBalances(10)
+		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
 
 		tokenHandler = nil   // use default
@@ -1591,7 +1596,7 @@ func TestSendPaymentForStream(t *testing.T) {
 				stream:         streamID,
 				streamID:       streamID,
 				sendErrorEvent: func(err error) {},
-				segmentReader:  media.NewSwitchableSegmentReader(),
+				segmentReader:  nil,
 			},
 			node: node,
 		}
@@ -1607,7 +1612,7 @@ func TestSendPaymentForStream(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify that stream params were updated with new session
-		updatedParams, err := getStreamRequestParams(stream)
+		updatedParams, err := ls.getStreamRequestParams(stream)
 		assert.NoError(t, err)
 
 		// The session should be updated (new token fetched)
@@ -1635,7 +1640,8 @@ func TestTokenSessionConversion(t *testing.T) {
 }
 
 func TestGetStreamRequestParams(t *testing.T) {
-	_, err := getStreamRequestParams(nil)
+	ls := &LivepeerServer{LivepeerNode: mockJobLivepeerNode()}
+	_, err := ls.getStreamRequestParams(nil)
 	assert.Error(t, err)
 }
 
