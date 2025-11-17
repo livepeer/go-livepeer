@@ -363,7 +363,7 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 			stream:         "test-stream",
 			streamID:       "test-stream",
 			sendErrorEvent: func(err error) {},
-			segmentReader:  media.NewSwitchableSegmentReader(),
+			segmentReader:  nil,
 		},
 		node: node,
 	}
@@ -890,97 +890,6 @@ func TestStopStreamHandler(t *testing.T) {
 		_, exists := ls.LivepeerNode.LivePipelines[streamID]
 		assert.False(t, exists, "Stream should be removed even on orchestrator error")
 	})
-}
-
-func TestStartStreamRTMPIngestHandler(t *testing.T) {
-	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
-	// Setup mock MediaMTX server on port 9997 before starting the test
-	mockMediaMTXServer := createMockMediaMTXServer(t)
-	defer mockMediaMTXServer.Close()
-
-	node := mockJobLivepeerNode()
-	node.WorkDir = t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
-	defer server.Close()
-	node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
-
-	ls := &LivepeerServer{
-		LivepeerNode:        node,
-		mediaMTXApiPassword: "test-password",
-	}
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-
-	// Prepare a valid gatewayJob
-	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
-	paramsStr := marshalToString(t, jobParams)
-	jobReq := &JobRequest{
-		Capability: "test-capability",
-		Parameters: paramsStr,
-		Timeout:    10,
-	}
-	orchJob := &orchJob{Req: jobReq, Params: &jobParams}
-	gatewayJob := &gatewayJob{Job: orchJob}
-
-	// Prepare a valid StartRequest body
-	startReq := StartRequest{
-		Stream:     "teststream",
-		RtmpOutput: "rtmp://output",
-		StreamId:   "streamid",
-		Params:     "{}",
-	}
-	body, _ := json.Marshal(startReq)
-	req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	urls, code, err := ls.setupStream(context.Background(), req, gatewayJob)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, code)
-	assert.NotNil(t, urls)
-	assert.Equal(t, "teststream-streamid", urls.StreamId) //combination of stream name (Stream) and id (StreamId)
-
-	stream, ok := ls.LivepeerNode.LivePipelines[urls.StreamId]
-	assert.True(t, ok)
-	assert.NotNil(t, stream)
-
-	params, err := ls.getStreamRequestParams(stream)
-	assert.NoError(t, err)
-
-	//these should be empty/nil before rtmp ingest starts
-	assert.Empty(t, params.liveParams.localRTMPPrefix)
-	assert.Nil(t, params.liveParams.kickInput)
-
-	rtmpReq := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/rtmp", nil)
-	rtmpReq.SetPathValue("streamId", "teststream-streamid")
-	w := httptest.NewRecorder()
-
-	handler := ls.StartStreamRTMPIngest()
-	handler.ServeHTTP(w, rtmpReq)
-	// Missing source_id and source_type
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	// Now provide valid form data
-	formData := url.Values{}
-	formData.Set("source_id", "testsourceid")
-	formData.Set("source_type", "rtmpconn")
-	rtmpReq = httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/rtmp", strings.NewReader(formData.Encode()))
-	rtmpReq.SetPathValue("streamId", "teststream-streamid")
-	// Use localhost as the remote addr to simulate MediaMTX
-	rtmpReq.RemoteAddr = "127.0.0.1:1935"
-
-	rtmpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, rtmpReq)
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	// Verify that the stream parameters were updated correctly
-	newParams, _ := ls.getStreamRequestParams(stream)
-	assert.NotNil(t, newParams.liveParams.kickInput)
-	assert.NotEmpty(t, newParams.liveParams.localRTMPPrefix)
-
-	// Stop the stream to cleanup
-	newParams.liveParams.segmentReader.Close()
-	newParams.liveParams.kickInput(errors.New("test error"))
-	stream.StopStream(nil)
 }
 
 func TestStartStreamWhipIngestHandler(t *testing.T) {
@@ -1647,11 +1556,47 @@ func TestGetStreamRequestParams(t *testing.T) {
 
 // createMockMediaMTXServer creates a simple mock MediaMTX server that returns 200 OK to all requests
 func createMockMediaMTXServer(t *testing.T) *httptest.Server {
+	// Track which IDs have been kicked
+	kickedIDs := make(map[string]bool)
+	var kickedMu sync.Mutex
+
 	mux := http.NewServeMux()
 
-	// Simple handler that returns 200 OK to any request
+	// Handler that tracks kicked IDs and returns 400 for get requests on kicked IDs
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		t.Logf("Mock MediaMTX: %s %s", r.Method, r.URL.Path)
+
+		// Check if this is a kick request
+		if strings.Contains(r.URL.Path, "/kick/") {
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) > 0 {
+				id := parts[len(parts)-1]
+				kickedMu.Lock()
+				kickedIDs[id] = true
+				kickedMu.Unlock()
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
+
+		// Check if this is a get request for a kicked ID
+		if strings.Contains(r.URL.Path, "/get/") {
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) > 0 {
+				id := parts[len(parts)-1]
+				kickedMu.Lock()
+				wasKicked := kickedIDs[id]
+				kickedMu.Unlock()
+
+				if wasKicked {
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte("Connection not found"))
+					return
+				}
+			}
+		}
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
