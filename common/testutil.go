@@ -93,7 +93,6 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
 		"internal/synctest.Run",
 		"testing/synctest.testingSynctestTest",
-		"github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2",
 	}
 	ignoreAnywhereFuncs := []string{
 		// glog’s file flusher often has syscall/os.* on top
