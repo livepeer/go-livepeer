@@ -19,17 +19,17 @@ if [ "${PIPELINE}" = "noop" ]; then
     docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop --build-arg VERSION=${VERSION} .
 else
     BASE_PIPELINE=${PIPELINE}
-    PARAM_NAME=""
+    PARAMS_FILE_NAME=""
     if [[ "$PIPELINE" == "streamdiffusion" ]]; then
-        PARAM_NAME="sdturbo"
+        PARAMS_FILE_NAME="sdturbo"
     elif [[ "$PIPELINE" =~ ^streamdiffusion- ]]; then
         BASE_PIPELINE="streamdiffusion"
-        PARAM_NAME="$(echo "${PIPELINE#streamdiffusion-}" | tr '-' '_')"
+        PARAMS_FILE_NAME="$(echo "${PIPELINE#streamdiffusion-}" | tr '-' '_')"
     fi
 
     INFERPY_INITIAL_PARAMS=""
-    if [[ -n "$PARAM_NAME" ]]; then
-        JSON_FILE=./app/live/pipelines/streamdiffusion/${PARAM_NAME}_default_params.json
+    if [[ -n "$PARAMS_FILE_NAME" ]]; then
+        JSON_FILE=./app/live/pipelines/streamdiffusion/${PARAMS_FILE_NAME}_default_params.json
         if [ ! -f "$JSON_FILE" ]; then
             echo "Params file missing: $JSON_FILE" >&2
             exit 1
