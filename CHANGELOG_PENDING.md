@@ -6,7 +6,7 @@
 
 ### Features ⚒
 
-* Gateway-native WHEP server for playback of realtime AI video 
+* Gateway-native WHEP server for playback of realtime AI video
 
 #### General
 
