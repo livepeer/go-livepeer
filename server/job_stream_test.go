@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -882,81 +883,90 @@ func TestStopStreamHandler_BYOC(t *testing.T) {
 	})
 }
 
-func TestStartStreamWhipIngestHandler_BYOC_RunOnce(t *testing.T) {
-	node := mockJobLivepeerNode()
-	node.WorkDir = t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
-	defer server.Close()
-	node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
-	ls := &LivepeerServer{LivepeerNode: node}
-
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-
-	// Prepare a valid gatewayJob
-	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
-	paramsStr := marshalToString(t, jobParams)
-	jobReq := &JobRequest{
-		Capability: "test-capability",
-		Parameters: paramsStr,
-		Timeout:    10,
-	}
-	orchJob := &orchJob{Req: jobReq, Params: &jobParams}
-	gatewayJob := &gatewayJob{Job: orchJob}
-
-	// Prepare a valid StartRequest body for /ai/stream/start
-	startReq := StartRequest{
-		Stream:     "teststream",
-		RtmpOutput: "rtmp://output",
-		StreamId:   "streamid",
-		Params:     "{}",
-	}
-	body, _ := json.Marshal(startReq)
-	req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	urls, code, err := ls.setupStream(context.Background(), req, gatewayJob)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, code)
-	assert.NotNil(t, urls)
-	assert.Equal(t, "teststream-streamid", urls.StreamId) //combination of stream name (Stream) and id (StreamId)
-
-	stream, ok := ls.LivepeerNode.LivePipelines[urls.StreamId]
-	assert.True(t, ok)
-	assert.NotNil(t, stream)
-
-	params, err := ls.getStreamRequestParams(stream)
-	assert.NoError(t, err)
-
-	//these should be empty/nil before whip ingest starts
-	assert.Empty(t, params.liveParams.localRTMPPrefix)
-	assert.Nil(t, params.liveParams.kickInput)
-
-	// whipServer is required, using nil will test setup up to initializing the WHIP connection
+func TestStartStreamWhipIngestHandler_BYOC(t *testing.T) {
+	min := 10000
+	max := 65535
+	// rand.Intn returns a non-negative pseudo-random integer in the range [0, n).
+	// Adding min to the result shifts the range to [min, max].
+	randomNumber := rand.IntN(max-min+1) + min
+	t.Setenv("LIVE_AI_WHIP_ADDR", fmt.Sprintf(":%d", randomNumber))
 	whipServer := media.NewWHIPServer()
-	handler := ls.StartStreamWhipIngest(whipServer)
+	synctest.Test(t, func(t *testing.T) {
+		node := mockJobLivepeerNode()
+		node.WorkDir = t.TempDir()
+		server := httptest.NewServer(http.HandlerFunc(orchTokenHandler))
+		defer server.Close()
+		node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
+		ls := &LivepeerServer{LivepeerNode: node}
 
-	// Blank SDP offer to test through creating WHIP connection
-	sdpOffer1 := ""
+		drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
-	whipReq := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/whip", strings.NewReader(sdpOffer1))
-	whipReq.SetPathValue("streamId", "teststream-streamid")
-	whipReq.Header.Set("Content-Type", "application/sdp")
+		// Prepare a valid gatewayJob
+		jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+		paramsStr := marshalToString(t, jobParams)
+		jobReq := &JobRequest{
+			Capability: "test-capability",
+			Parameters: paramsStr,
+			Timeout:    10,
+		}
+		orchJob := &orchJob{Req: jobReq, Params: &jobParams}
+		gatewayJob := &gatewayJob{Job: orchJob}
 
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, whipReq)
-	// Since the SDP offer is empty, we expect a bad request response
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+		// Prepare a valid StartRequest body for /ai/stream/start
+		startReq := StartRequest{
+			Stream:     "teststream",
+			RtmpOutput: "rtmp://output",
+			StreamId:   "streamid",
+			Params:     "{}",
+		}
+		body, _ := json.Marshal(startReq)
+		req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
 
-	// This completes testing through making the WHIP connection which would
-	// then be covered by tests in whip_server.go
-	newParams, err := ls.getStreamRequestParams(stream)
-	assert.NoError(t, err)
-	assert.NotNil(t, newParams.liveParams.kickInput)
+		urls, code, err := ls.setupStream(context.Background(), req, gatewayJob)
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, code)
+		assert.NotNil(t, urls)
+		assert.Equal(t, "teststream-streamid", urls.StreamId) //combination of stream name (Stream) and id (StreamId)
 
-	stream.UpdateStreamParams(newParams)
-	newParams.liveParams.kickInput(errors.New("test complete"))
+		stream, ok := ls.LivepeerNode.LivePipelines[urls.StreamId]
+		assert.True(t, ok)
+		assert.NotNil(t, stream)
 
-	stream.StopStream(nil)
+		params, err := ls.getStreamRequestParams(stream)
+		assert.NoError(t, err)
+
+		//these should be empty/nil before whip ingest starts
+		assert.Empty(t, params.liveParams.localRTMPPrefix)
+		assert.Nil(t, params.liveParams.kickInput)
+
+		// whipServer is required, using nil will test setup up to initializing the WHIP connection
+
+		handler := ls.StartStreamWhipIngest(whipServer)
+
+		// Blank SDP offer to test through creating WHIP connection
+		sdpOffer1 := ""
+
+		whipReq := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/whip", strings.NewReader(sdpOffer1))
+		whipReq.SetPathValue("streamId", "teststream-streamid")
+		whipReq.Header.Set("Content-Type", "application/sdp")
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, whipReq)
+		// Since the SDP offer is empty, we expect a bad request response
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		// This completes testing through making the WHIP connection which would
+		// then be covered by tests in whip_server.go
+		newParams, err := ls.getStreamRequestParams(stream)
+		assert.NoError(t, err)
+		assert.NotNil(t, newParams.liveParams.kickInput)
+
+		stream.UpdateStreamParams(newParams)
+		newParams.liveParams.kickInput(errors.New("test complete"))
+
+		stream.StopStream(nil)
+	})
 }
 
 func TestGetStreamDataHandler_BYOC(t *testing.T) {
