@@ -1173,7 +1173,7 @@ func (ls *LivepeerServer) CreateWhep(server *media.WHEPServer) http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "request_id", rid)
 		corsHeaders(w, r.Method)
-		server.CreateWHEP(ctx, w, r, outWriter.MakeReader())
+		server.CreateWHEP(ctx, w, r, outWriter.MakeReader(), stream)
 	})
 }
 
