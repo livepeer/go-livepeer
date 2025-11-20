@@ -27,6 +27,7 @@ func (s *streamStatusStore) Clear(streamID string) {
 }
 
 // GetStreamStatus returns the current status for a stream
+// NB: Do not mutate the returned object without first (deep-)copying it
 func (s *streamStatusStore) Get(streamID string) (map[string]interface{}, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -920,6 +921,9 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 		if gatewayExists {
 			if status == nil {
 				status = make(map[string]any)
+			} else {
+				// Clone so we can safely update the object (shallow)
+				status = maps.Clone(status)
 			}
 			status["gateway_status"] = gatewayStatus
 		}
