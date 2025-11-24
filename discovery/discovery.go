@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"math/big"
 	"math/rand"
 	"net/url"
 	"sort"
@@ -251,7 +250,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, 0, odCh, errCh, allOrchDescrCh)
 	}
-	go reportLiveAICapacity(allOrchDescrCh, caps)
 
 	// use a timer to time out the entire get info loop below
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
@@ -329,67 +327,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	clog.Infof(ctx, "Done fetching orch info orchs=%d/%d responses=%d/%d timedOut=%t",
 		len(ods), numOrchestrators, nbResp, maxOrchNodes, timedOut)
 	return ods, nil
-}
-
-func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
-	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
-		return nil
-	}
-	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
-	if !ok {
-		return nil
-	}
-
-	return liveAI.Models
-}
-
-func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.CapabilityComparator) {
-	if !monitor.Enabled {
-		return
-	}
-	modelsReq := getModelCaps(caps.ToNetCapabilities())
-
-	var allOrchInfo []common.OrchestratorDescriptor
-	var done bool
-	for {
-		select {
-		case od := <-ch:
-			allOrchInfo = append(allOrchInfo, od)
-		case <-time.After(maxGetOrchestratorCutoffTimeout):
-			done = true
-		}
-		if done {
-			break
-		}
-	}
-
-	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
-	for _, od := range allOrchInfo {
-		pricePerUnit := od.RemoteInfo.PriceInfo.PricePerUnit
-		pixelsPerUnit := od.RemoteInfo.PriceInfo.PixelsPerUnit
-		pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
-		monitor.LiveAIPricePerPixel(od.LocalInfo.URL.String(), pricePerPixel)
-
-		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
-		if od.RemoteInfo != nil {
-			models = getModelCaps(od.RemoteInfo.Capabilities)
-		}
-
-		for modelID := range modelsReq {
-			idle := 0
-			if models != nil {
-				if model, ok := models[modelID]; ok {
-					idle = int(model.Capacity)
-				}
-			}
-
-			if _, exists := idleContainersByModelAndOrchestrator[modelID]; !exists {
-				idleContainersByModelAndOrchestrator[modelID] = make(map[string]int)
-			}
-			idleContainersByModelAndOrchestrator[modelID][od.LocalInfo.URL.String()] = idle
-		}
-	}
-	monitor.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
 }
 
 func (o *orchestratorPool) Size() int {
