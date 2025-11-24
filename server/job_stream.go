@@ -1401,11 +1401,14 @@ func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 		clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		clog.Errorf(ctx, "Error reading response body: %v", err)
+	var respBody []byte
+	if resp != nil {
+		respBody, err = io.ReadAll(resp.Body)
+		if err != nil {
+			clog.Errorf(ctx, "Error reading response body: %v", err)
+		}
+		defer resp.Body.Close()
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode > 399 {
 		clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
