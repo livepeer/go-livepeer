@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"math/big"
 	"math/rand"
 	"net/url"
 	"sort"
@@ -244,6 +245,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
+		if i >= maxOrchNodes {
+			// prevents channel deadlocks when maxOrchNodes < numAvailableOrchs
+			break
+		}
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, 0, odCh, errCh, allOrchDescrCh)
 	}
 

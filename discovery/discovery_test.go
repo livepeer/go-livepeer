@@ -585,8 +585,11 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 }
 
 func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
+	cfg := server.NewBroadcastConfig()
 	pred := func(info *net.OrchestratorInfo) bool {
-		price := server.BroadcastCfg.MaxPrice()
+		// create a new one for each call -for some reason the price auto-converts
+		// to zero and messes up if we reuse it
+		price := cfg.MaxPrice()
 		if price == nil {
 			return true
 		}
@@ -612,15 +615,15 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		},
 	}
 
-	// server.BroadcastCfg.maxPrice not yet set, predicate should return true
+	// cfg.maxPrice not yet set, predicate should return true
 	assert.True(t, pool.pred(oInfo))
 
-	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	// Set cfg.maxPrice higher than PriceInfo , should return true
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	assert.True(t, pool.pred(oInfo))
 
-	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	// Set cfg.MaxBroadcastPrice lower than PriceInfo, should return false
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
@@ -1477,9 +1480,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	ch := make(chan struct{})
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
@@ -1487,6 +1488,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	timeout := 1 * time.Millisecond
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, timeout)
+	pool.getOrchInfo = getOrchInfo
 
 	timedOut := func(start, end time.Time) bool {
 		return end.Sub(start).Milliseconds() >= pool.discoveryTimeout.Milliseconds()
@@ -1637,7 +1639,9 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 
 func TestSetGetOrchestratorTimeout(t *testing.T) {
 	assert := assert.New(t)
-	dbh, _, err := common.TempDB(t)
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
@@ -1649,7 +1653,9 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 	}
 
 	//set timeout to 1000ms
-	poolCache, err := NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond, 1*time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	poolCache, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond, 1*time.Minute)
 	assert.Nil(err)
 	//confirm the timeout is now 1000ms
 	assert.Equal(poolCache.discoveryTimeout, 1000*time.Millisecond)
@@ -1709,6 +1715,7 @@ func TestGetOrchestrator_Nodes_Simple(t *testing.T) {
 }
 
 func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 

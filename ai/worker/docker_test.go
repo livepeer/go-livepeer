@@ -98,6 +98,7 @@ func NewMockServer() *MockServer {
 
 // createDockerManager creates a DockerManager with a mock DockerClient.
 func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &DockerManager{
 		gpus:               []string{"gpu0"},
 		modelDir:           "/models",
@@ -107,6 +108,8 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		gpuContainers:      make(map[string]*RunnerContainer),
 		containers:         make(map[string]*RunnerContainer),
 		mu:                 &sync.Mutex{},
+		ctx:                ctx,
+		stop:               cancel,
 	}
 }
 
@@ -230,18 +233,34 @@ func TestDockerManager_Stop(t *testing.T) {
 	MockDockerClient := new(MockDockerClient)
 	dockerManager := createDockerManager(MockDockerClient)
 
+	// Create a mock server for health checks
+	mockServer := NewMockServer()
+	defer mockServer.Close()
+	mockClient, err := NewClientWithResponses(mockServer.URL)
+	require.NoError(t, err)
+
+	// Mock health check to keep the container running until Stop is called
+	mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
+		Return(200, "application/json", `{"status":"OK"}`).Maybe()
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 	containerID := "container1"
-	dockerManager.containers[containerID] = &RunnerContainer{
+	rc := &RunnerContainer{
 		RunnerContainerConfig: RunnerContainerConfig{
 			ID: containerID,
 		},
+		Name:   containerID,
+		Client: mockClient,
 	}
+	dockerManager.containers[containerID] = rc
+
+	// Start the watchContainer goroutine
+	dockerManager.watchGroup.Go(func() { dockerManager.watchContainer(rc) })
 
 	MockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
-	err := dockerManager.Stop(ctx)
+	err = dockerManager.Stop(ctx)
 	require.NoError(t, err)
 	MockDockerClient.AssertExpectations(t)
 }
@@ -412,6 +431,15 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			pipeline:      "live-video-to-video",
 			modelID:       "comfyui",
 			expectedImage: "livepeer/ai-runner:live-app-comfyui",
+			expectError:   false,
+		},
+		{
+			name: "scope live image",
+			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
+			},
+			pipeline:      "live-video-to-video",
+			modelID:       "scope",
+			expectedImage: "livepeer/ai-runner:live-app-scope",
 			expectError:   false,
 		},
 	}
