@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"math/big"
 	"math/rand"
 	"net/url"
 	"sort"

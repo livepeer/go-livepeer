@@ -185,6 +185,7 @@ type LivepeerConfig struct {
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
 	LiveAICapReportInterval    *time.Duration
+	LiveAICapRefreshModels     *string
 	LiveAISaveNSegments        *int
 }
 
@@ -1757,6 +1758,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
+	}
+	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
+		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
 	}
 	n.LiveAISaveNSegments = cfg.LiveAISaveNSegments
 

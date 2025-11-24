@@ -412,6 +412,16 @@ func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.O
 	modelCapacities := make(map[string]*monitor.ModelAICapacities)
 
 	for _, orchCap := range orchNetworkCapabilities {
+		for _, price := range orchCap.CapabilitiesPrices {
+			if price.Capability != uint32(core.Capability_LiveVideoToVideo) {
+				continue
+			}
+			pricePerUnit := price.PricePerUnit
+			pixelsPerUnit := price.PixelsPerUnit
+			pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
+			monitor.LiveAIPricePerPixel(orchCap.OrchURI, pricePerPixel)
+		}
+
 		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
 
 		for modelID, model := range models {
