@@ -22,22 +22,19 @@ import (
 	"github.com/golang/glog"
 )
 
-var networkCapabilitiesReportingInterval = 25 * time.Minute
-
 type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
 }
 
 type DBOrchestratorPoolCache struct {
-	store                           common.OrchestratorStore
-	lpEth                           eth.LivepeerEthClient
-	ticketParamsValidator           ticketParamsValidator
-	rm                              common.RoundsManager
-	bcast                           common.Broadcaster
-	orchBlacklist                   []string
-	discoveryTimeout                time.Duration
-	node                            *core.LivepeerNode
-	lastNetworkCapabilitiesReported time.Time
+	store                 common.OrchestratorStore
+	lpEth                 eth.LivepeerEthClient
+	ticketParamsValidator ticketParamsValidator
+	rm                    common.RoundsManager
+	bcast                 common.Broadcaster
+	orchBlacklist         []string
+	discoveryTimeout      time.Duration
+	node                  *core.LivepeerNode
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration, liveAICapReportInterval time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -393,13 +390,8 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		}
 	}
 
-	// Only update network capabilities every 25 minutes
-	if time.Since(dbo.lastNetworkCapabilitiesReported) >= networkCapabilitiesReportingInterval {
-		// Save network capabilities in LivepeerNode
-		dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
-
-		dbo.lastNetworkCapabilitiesReported = time.Now()
-	}
+	// Save network capabilities in LivepeerNode
+	dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
 
 	// Report AI container capacity metrics
 	reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities)

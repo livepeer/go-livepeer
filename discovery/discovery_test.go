@@ -527,9 +527,6 @@ func sync_TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	origCacheRefreshInterval := networkCapabilitiesReportingInterval
-	networkCapabilitiesReportingInterval = 200 * time.Millisecond
-	defer func() { networkCapabilitiesReportingInterval = origCacheRefreshInterval }()
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 700*time.Millisecond, 200*time.Millisecond)
 	require.NoError(err)
 
