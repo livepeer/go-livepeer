@@ -312,7 +312,7 @@ func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 		}
 	}
 
-	clog.Warningf(ctx, "failed to select an unknown session that met the selection criteria")
+	clog.Warningf(ctx, "failed to select an unknown session that meets the selection criteria")
 	return nil
 }
 
