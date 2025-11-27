@@ -253,6 +253,7 @@ func (s *MinLSSelector) Clear() {
 // Use selection algorithm to select from unknownSessions
 func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 	if len(s.sessions) == 0 {
+		clog.Warningf(ctx, "there are no sessions available to select from")
 		return nil
 	}
 
@@ -311,6 +312,7 @@ func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 		}
 	}
 
+	clog.Warningf(ctx, "failed to select an unknown session that met the selection criteria")
 	return nil
 }
 
