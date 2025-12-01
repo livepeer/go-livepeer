@@ -138,7 +138,7 @@ func TestRTPSegmenterVideoOnly(t *testing.T) {
 	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
-	ssr.SwitchReader(func(reader CloneableReader) {
+	ssr.AddReader(func(reader CloneableReader) {
 		segment = reader
 	})
 
@@ -177,7 +177,7 @@ func TestRTPSegmenterAudioOnly(t *testing.T) {
 	seg := NewRTPSegmenter([]SegmenterTrack{audioTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
-	ssr.SwitchReader(func(reader CloneableReader) {
+	ssr.AddReader(func(reader CloneableReader) {
 		segment = reader
 	})
 
@@ -266,7 +266,7 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
-	ssr.SwitchReader(func(reader CloneableReader) {
+	ssr.AddReader(func(reader CloneableReader) {
 		segment = reader
 	})
 
@@ -394,7 +394,7 @@ func TestRTPSegmenterMixedOrder(t *testing.T) {
 	seg.mpegtsInit = newStubTSWriter
 
 	var segments []CloneableReader
-	ssr.SwitchReader(func(reader CloneableReader) {
+	ssr.AddReader(func(reader CloneableReader) {
 		segments = append(segments, reader)
 	})
 	writeVideo := func(ts int64) error { return seg.WriteVideo(videoTrack, ts, ts, [][]byte{{byte(ts)}}) }
@@ -445,7 +445,7 @@ func TestRTPSegmenterDropKeyframe(t *testing.T) {
 	seg.maxQueueSize = 3
 
 	var segments []CloneableReader
-	ssr.SwitchReader(func(reader CloneableReader) {
+	ssr.AddReader(func(reader CloneableReader) {
 		segments = append(segments, reader)
 	})
 	writeVideo := func(ts int64) error { return seg.WriteVideo(videoTrack, ts, ts, [][]byte{{byte(ts)}}) }

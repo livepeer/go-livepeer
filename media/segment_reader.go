@@ -7,10 +7,6 @@ import (
 
 type SegmentHandler func(reader CloneableReader)
 
-func NoopReader(reader CloneableReader) {
-	// don't have to do anything here
-}
-
 type EOSReader struct{}
 
 func (r *EOSReader) Read(p []byte) (n int, err error) {
@@ -21,37 +17,43 @@ func (r *EOSReader) Clone() CloneableReader {
 }
 
 type SwitchableSegmentReader struct {
-	mu     sync.RWMutex
-	reader SegmentHandler
-	seg    CloneableReader
+	mu      sync.RWMutex
+	readers []SegmentHandler
+	seg     CloneableReader
 }
 
 func NewSwitchableSegmentReader() *SwitchableSegmentReader {
 	return &SwitchableSegmentReader{
-		reader: NoopReader,
+		readers: []SegmentHandler{},
 	}
 }
 
-func (sr *SwitchableSegmentReader) SwitchReader(newReader SegmentHandler) {
+func (sr *SwitchableSegmentReader) AddReader(newReader SegmentHandler) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
-	sr.reader = newReader
+	sr.readers = append(sr.readers, newReader)
 	if sr.seg != nil {
 		// immediately send the current segment instead of waiting for the next one
 		// clone since current segment may have already been partially consumed
-		sr.reader(sr.seg.Clone())
+		newReader(sr.seg.Clone())
 	}
 }
 
 func (sr *SwitchableSegmentReader) Read(reader CloneableReader) {
 	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	sr.reader(reader)
+	readers := sr.readers
 	sr.seg = reader
+	sr.mu.Unlock()
+	for _, r := range readers {
+		r(reader.Clone())
+	}
 }
 
 func (sr *SwitchableSegmentReader) Close() {
 	sr.mu.RLock()
-	defer sr.mu.RUnlock()
-	sr.reader(&EOSReader{})
+	readers := sr.readers
+	sr.mu.RUnlock()
+	for _, r := range readers {
+		r(&EOSReader{})
+	}
 }

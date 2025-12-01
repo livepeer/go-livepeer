@@ -101,7 +101,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	firstSegment := true
 
-	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
+	params.liveParams.segmentReader.AddReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
