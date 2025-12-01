@@ -77,6 +77,7 @@ var livePipelineToImage = map[string]string{
 	// streamdiffusion-sdxl-faceid is a utility image that uses an SDXL model with a FaceID IP Adapter on the default config of the pipeline. Optimizes startup time.
 	"streamdiffusion-sdxl-faceid": "livepeer/ai-runner:live-app-streamdiffusion-sdxl-faceid",
 	"comfyui":                     "livepeer/ai-runner:live-app-comfyui",
+	"scope":                       "livepeer/ai-runner:live-app-scope",
 	"segment_anything_2":          "livepeer/ai-runner:live-app-segment_anything_2",
 	"noop":                        "livepeer/ai-runner:live-app-noop",
 }
@@ -123,6 +124,10 @@ type DockerManager struct {
 	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
+	// Every managed container has a watchContainer() goroutine that will stop when the manager ctx is done. We use the WaitGroup to wait for all containers to be removed.
+	watchGroup sync.WaitGroup
+	ctx        context.Context
+	stop       context.CancelFunc
 }
 
 func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
@@ -134,12 +139,13 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if _, err := RemoveExistingContainers(ctx, client, containerCreatorID); err != nil {
-		cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cleanupCtx, cleanupCancel := context.WithTimeout(ctx, containerTimeout)
+	defer cleanupCancel()
+	if _, err := RemoveExistingContainers(cleanupCtx, client, containerCreatorID); err != nil {
 		return nil, err
 	}
-	cancel()
 
 	manager := &DockerManager{
 		gpus:               gpus,
@@ -151,6 +157,9 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		gpuContainers:      make(map[string]*RunnerContainer),
 		containers:         make(map[string]*RunnerContainer),
 		mu:                 &sync.Mutex{},
+		watchGroup:         sync.WaitGroup{},
+		ctx:                ctx,
+		stop:               cancel,
 	}
 
 	return manager, nil
@@ -189,17 +198,21 @@ func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID strin
 }
 
 func (m *DockerManager) Stop(ctx context.Context) error {
-	var stopContainerWg sync.WaitGroup
-	for _, rc := range m.containers {
-		stopContainerWg.Add(1)
-		go func(container *RunnerContainer) {
-			defer stopContainerWg.Done()
-			m.destroyContainer(container, false)
-		}(rc)
-	}
+	/// Flag the stop signal to all watchContainer() goroutines and wait for them to (destroy containers) and exit.
+	m.stop()
 
-	stopContainerWg.Wait()
-	return nil
+	done := make(chan struct{})
+	go func() {
+		m.watchGroup.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
@@ -495,7 +508,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		slog.Info("Warm container started on loading state, removing from pool on startup", slog.String("container", rc.Name))
 		m.borrowContainerLocked(context.Background(), rc)
 	}
-	go m.watchContainer(rc)
+	m.watchGroup.Go(func() { m.watchContainer(rc) })
 
 	return rc, nil
 }
@@ -587,6 +600,13 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	var loadingStartTime time.Time
 	failures := 0
 	for {
+		if m.ctx.Err() != nil {
+			slog.Info("Docker manager context is done, stopping container", "container", rc.Name)
+			m.destroyContainer(rc, false)
+			slog.Info("Container destroyed", "container", rc.Name)
+			return
+		}
+
 		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
@@ -617,6 +637,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 		}
 
 		select {
+		case <-m.ctx.Done():
+			// handled in the beginning of the loop
+			continue
 		case <-borrowDone:
 			m.returnContainer(rc)
 			continue

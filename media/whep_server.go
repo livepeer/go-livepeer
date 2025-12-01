@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/livepeer/go-livepeer/clog"
 
@@ -23,9 +25,14 @@ import (
 type WHEPServer struct {
 	mediaEngine *webrtc.MediaEngine
 	settings    func(*webrtc.API)
+	maxSessions int // playback limit per stream (default 5)
+
+	// Everything below must be protected by the mutex  `mu`
+	mu       sync.Mutex
+	sessions map[string]int // session count per stream
 }
 
-func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *http.Request, mediaReader io.ReadCloser) {
+func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *http.Request, mediaReader io.ReadCloser, streamName string) {
 	clog.Info(ctx, "creating whep", "user-agent", r.Header.Get("User-Agent"), "ip", r.RemoteAddr)
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -46,26 +53,64 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	offer.Type = webrtc.SDPTypeOffer
 	offer.SDP = string(offerBytes)
 
+	// add session to limiter. released whenever the peerconnection closes
+	releaseSession, ok := s.addSession(streamName)
+	if !ok {
+		http.Error(w, "Too many viewers for this stream", http.StatusTooManyRequests)
+		return
+	}
+
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(s.mediaEngine), s.settings)
 	peerConnection, err := api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
-		peerConnection.Close()
+		releaseSession() // no peerconnection, so release immediately
 		return
 	}
+
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		clog.Info(ctx, "whep ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed || connectionState == webrtc.ICEConnectionStateClosed {
 			mediaReader.Close()
+			releaseSession()
 		}
 	})
+
+	if err := peerConnection.SetRemoteDescription(offer); err != nil {
+		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
+		http.Error(w, "SetRemoteDescription failed", http.StatusBadRequest)
+		peerConnection.Close()
+		return
+	}
+
+	// gather up the tracks the client is expecting
+	expectsVideo, expectsAudio := false, false
+	for _, t := range peerConnection.GetTransceivers() {
+		if t.Kind() == webrtc.RTPCodecTypeVideo {
+			expectsVideo = true
+		} else if t.Kind() == webrtc.RTPCodecTypeAudio {
+			expectsAudio = true
+		}
+	}
+	if !expectsVideo && !expectsAudio {
+		err := errors.New("SDP did not expect any media")
+		clog.InfofErr(ctx, "SDP did not expect any media", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		peerConnection.Close()
+		return
+	}
+
 	mpegtsReader := mpegts.Reader{
 		R: mediaReader,
 	}
 	if err := mpegtsReader.Initialize(); err != nil {
+		// Usually happens if O swaps before any output is produced.
+		// The best error code is tricky: technically this is a 500-class (internal)
+		// code but we don't want to produce on-call alerts, so use a 404 instead
+		// to mirror the MediaMTX behavior if a stream is not ready
 		clog.InfofErr(ctx, "Failed to initialize mpegts reader", err)
-		http.Error(w, "Failed to initialize mpegts reader", http.StatusInternalServerError)
+		http.Error(w, "Failed to initialize mpegts reader", http.StatusNotFound)
 		peerConnection.Close()
 		return
 	}
@@ -75,6 +120,10 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	for _, track := range tracks {
 		switch track.Codec.(type) {
 		case *mpegts.CodecH264:
+			hasVideo = true
+			if !expectsVideo {
+				break
+			}
 			// TODO this track can probably be reused for multiple viewers
 			webrtcTrack, err := NewLocalTrack(
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
@@ -105,9 +154,12 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(au, pts)
 			})
 			trackCodecs = append(trackCodecs, "h264")
-			hasVideo = true
 
 		case *mpegts.CodecOpus:
+			hasAudio = true
+			if !expectsAudio {
+				break
+			}
 			webrtcTrack, err := NewLocalTrack(
 				// NB: Don't signal sample rate or channel count here. Leave empty to use defaults.
 				// Opus RTP RFC 7587 requires opus/48000/2 regardless of the actual content
@@ -132,7 +184,6 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				return webrtcTrack.WriteSample(packets, pts)
 			})
 			trackCodecs = append(trackCodecs, "opus")
-			hasAudio = true
 		}
 	}
 
@@ -142,13 +193,38 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		peerConnection.Close()
 		return
 	}
-	clog.Info(ctx, "Outputs", "hasVideo", hasVideo, "hasAudio", hasAudio, "tracks", trackCodecs)
 
-	if err := peerConnection.SetRemoteDescription(offer); err != nil {
-		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
-		http.Error(w, "SetRemoteDescription failed", http.StatusBadRequest)
+	trackAdded := len(trackCodecs) > 0
+	if !trackAdded {
+		clog.InfofErr(ctx, "No compatible tracks found", errors.New("no compatible tracks found"))
+		http.Error(w, "No compatible tracks found", http.StatusBadRequest)
 		peerConnection.Close()
 		return
+	}
+
+	clog.Info(ctx, "Outputs", "hasVideo", hasVideo, "hasAudio", hasAudio, "expectsVideo", expectsVideo, "expectsAudio", expectsAudio, "tracks", trackCodecs)
+
+	// Disable media if offered but won't exist in answer
+	disableMedia := func(has bool, kind webrtc.RTPCodecType, t *webrtc.RTPTransceiver) bool {
+		if !has && t.Kind() == kind {
+			if err := t.Stop(); err != nil {
+				clog.InfofErr(ctx, "error stopping transceiver kind=%s", kind, err)
+				http.Error(w, "Error stopping transceiver", http.StatusBadRequest)
+				peerConnection.Close()
+				return false
+			}
+			clog.Info(ctx, "Stopped transceiver", "kind", kind)
+		}
+		return true
+	}
+
+	for _, t := range peerConnection.GetTransceivers() {
+		if !disableMedia(hasAudio, webrtc.RTPCodecTypeAudio, t) {
+			return
+		}
+		if !disableMedia(hasVideo, webrtc.RTPCodecTypeVideo, t) {
+			return
+		}
 	}
 
 	// Create and set local answer
@@ -184,14 +260,15 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			err := mpegtsReader.Read()
 			if err != nil {
 				clog.InfofErr(ctx, "error reading mpegts", err)
-				if err == io.EOF {
-					peerConnection.Close()
-				}
+				peerConnection.Close()
 				return
 			}
 		}
 	}()
 }
+
+const WhepUnlimitedPlaybacks = -1
+const WhepDefaultPlaybacks = 5
 
 func NewWHEPServer() *WHEPServer {
 	me := &webrtc.MediaEngine{}
@@ -215,10 +292,54 @@ func NewWHEPServer() *WHEPServer {
 		iceFailedTimeout,
 		iceKeepAliveInterval,
 	)
+	maxSessions := WhepDefaultPlaybacks
+	sessions := os.Getenv("LIVE_AI_WHEP_MAX_SESSIONS")
+	if "unlimited" == sessions {
+		maxSessions = WhepUnlimitedPlaybacks
+	} else if "" == sessions {
+		// use default
+	} else {
+		limit, err := strconv.Atoi(sessions)
+		if err != nil || limit <= 0 {
+			log.Fatal("Invalid max WHEP sessions")
+		}
+		maxSessions = limit
+	}
 	return &WHEPServer{
 		mediaEngine: me,
 		settings:    webrtc.WithSettingEngine(se),
+		sessions:    make(map[string]int),
+		maxSessions: maxSessions,
 	}
+}
+
+// increments the active session count if under limit. if limit exceeded,
+// returns ok=false, otherwise returns a release() func (idempotent)
+func (s *WHEPServer) addSession(stream string) (release func(), ok bool) {
+	if s.maxSessions == WhepUnlimitedPlaybacks {
+		return func() {}, true
+	}
+	s.mu.Lock()
+	if s.sessions[stream] >= s.maxSessions {
+		s.mu.Unlock()
+		return nil, false
+	}
+	s.sessions[stream]++
+	s.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			if s.sessions[stream] > 0 {
+				s.sessions[stream]--
+				if s.sessions[stream] == 0 {
+					delete(s.sessions, stream)
+				}
+			}
+			s.mu.Unlock()
+		})
+	}, true
 }
 
 // Implements the TrackLocal interface in Pion

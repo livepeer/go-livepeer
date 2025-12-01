@@ -52,7 +52,7 @@ func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	assert.Nil(pool)
 	assert.EqualError(err, "could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 }
@@ -174,7 +174,7 @@ func sync_TestDBOrchestratorPoolCacheSize(t *testing.T) {
 		goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	}()
 
-	emptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	emptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 	require.NotNil(emptyPool)
 	assert.Equal(0, emptyPool.Size())
@@ -185,7 +185,7 @@ func sync_TestDBOrchestratorPoolCacheSize(t *testing.T) {
 		dbh.UpdateOrch(ethOrchToDBOrch(o))
 	}
 
-	nonEmptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	nonEmptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 	require.NotNil(nonEmptyPool)
 	assert.Equal(len(addresses), nonEmptyPool.Size())
@@ -233,7 +233,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.Nil(err)
 
 	// Check that serverGetOrchInfo returns early and the orchestrator isn't updated
@@ -283,7 +283,7 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.Nil(err)
 
 	// priceInfo.PixelsPerUnit = 0
@@ -347,7 +347,7 @@ func sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrec
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(3)
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	dbOrchs, err := dbh.SelectOrchs(nil)
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
@@ -423,7 +423,7 @@ func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 	// bad URLs are inserted in the database but are not included in the working set, as there is no returnable query for getting their priceInfo
 	// And if URL is updated it won't be picked up until next cache update
@@ -456,7 +456,7 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 	assert.Equal(0, pool.Size())
 	infos := pool.GetInfos()
@@ -528,10 +528,7 @@ func sync_TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	origCacheRefreshInterval := cacheRefreshInterval
-	cacheRefreshInterval = 200 * time.Millisecond
-	defer func() { cacheRefreshInterval = origCacheRefreshInterval }()
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 700*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 700*time.Millisecond, 200*time.Millisecond)
 	require.NoError(err)
 
 	// Ensure orchestrators exist in DB
@@ -586,8 +583,11 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 }
 
 func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
+	cfg := server.NewBroadcastConfig()
 	pred := func(info *net.OrchestratorInfo) bool {
-		price := server.BroadcastCfg.MaxPrice()
+		// create a new one for each call -for some reason the price auto-converts
+		// to zero and messes up if we reuse it
+		price := cfg.MaxPrice()
 		if price == nil {
 			return true
 		}
@@ -613,15 +613,15 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		},
 	}
 
-	// server.BroadcastCfg.maxPrice not yet set, predicate should return true
+	// cfg.maxPrice not yet set, predicate should return true
 	assert.True(t, pool.pred(oInfo))
 
-	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	// Set cfg.maxPrice higher than PriceInfo , should return true
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	assert.True(t, pool.pred(oInfo))
 
-	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	// Set cfg.MaxBroadcastPrice lower than PriceInfo, should return false
+	cfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
@@ -687,7 +687,7 @@ func sync_TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t 
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 
 	// ensuring orchs exist in DB
@@ -776,7 +776,7 @@ func sync_TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) 
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 
 	// ensuring orchs exist in DB
@@ -882,7 +882,7 @@ func sync_TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *tes
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 
 	// ensuring orchs exist in DB
@@ -977,7 +977,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 
 	// Test 25 out of 50 orchs pass ticket params validation
@@ -1066,7 +1066,7 @@ func sync_TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) 
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{round: big.NewInt(24)}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{round: big.NewInt(24)}, []string{}, 500*time.Millisecond, 1*time.Minute)
 	require.NoError(err)
 
 	// ensuring orchs exist in DB
@@ -1478,9 +1478,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	ch := make(chan struct{})
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
@@ -1488,6 +1486,7 @@ func sync_TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	timeout := 1 * time.Millisecond
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, timeout)
+	pool.getOrchInfo = getOrchInfo
 
 	timedOut := func(start, end time.Time) bool {
 		return end.Sub(start).Milliseconds() >= pool.discoveryTimeout.Milliseconds()
@@ -1638,7 +1637,9 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 
 func TestSetGetOrchestratorTimeout(t *testing.T) {
 	assert := assert.New(t)
-	dbh, _, err := common.TempDB(t)
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
@@ -1650,7 +1651,9 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 	}
 
 	//set timeout to 1000ms
-	poolCache, err := NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	poolCache, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 1000*time.Millisecond, 1*time.Minute)
 	assert.Nil(err)
 	//confirm the timeout is now 1000ms
 	assert.Equal(poolCache.discoveryTimeout, 1000*time.Millisecond)
@@ -1710,6 +1713,7 @@ func TestGetOrchestrator_Nodes_Simple(t *testing.T) {
 }
 
 func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 

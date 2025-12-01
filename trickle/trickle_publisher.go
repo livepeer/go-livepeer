@@ -126,6 +126,15 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 }
 
 func (c *TricklePublisher) Close() error {
+
+	// Close any pending writers
+	c.writeLock.Lock()
+	pp := c.pendingPost
+	if pp != nil {
+		pp.writer.Close()
+	}
+	c.writeLock.Unlock()
+
 	req, err := http.NewRequest("DELETE", c.baseURL, nil)
 	if err != nil {
 		return err
@@ -207,6 +216,7 @@ func (p *pendingPost) Write(data io.Reader) (int64, error) {
 	// before writing, check for error from preconnects
 	select {
 	case err := <-errCh:
+		writer.Close()
 		return 0, err
 	default:
 		// no error, continue
@@ -229,6 +239,7 @@ func (p *pendingPost) Write(data io.Reader) (int64, error) {
 	// also prioritize errors over this channel compared to io errors
 	// such as "read/write on closed pipe"
 	if err := <-errCh; err != nil {
+		writer.Close()
 		return n, err
 	}
 

@@ -79,6 +79,8 @@ func filterByMaxPrice(ctx context.Context, addrs []ethcommon.Address, maxPrice *
 		price := prices[addr]
 		if price != nil && price.Cmp(maxPrice) <= 0 {
 			res = append(res, addr)
+		} else {
+			clog.Warningf(ctx, "Orchestrator %s is above max price %v, price=%v", addr, maxPrice, price)
 		}
 	}
 	return res
