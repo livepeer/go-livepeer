@@ -511,6 +511,11 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	return args.String(0)
 }
 
+func (m *MockSender) StartSessionWithNonce(ticketParams TicketParams, nonce uint32) string {
+	args := m.Called(ticketParams, nonce)
+	return args.String(0)
+}
+
 // CleanupSession deletes session from the internal ma
 func (m *MockSender) CleanupSession(sessionID string) {
 	m.Called(sessionID)
@@ -544,4 +549,9 @@ func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch
 func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
 	args := m.Called(ticketParams)
 	return args.Error(0)
+}
+
+func (m *MockSender) Nonce(sessionID string) (uint32, error) {
+	args := m.Called(sessionID)
+	return uint32(args.Int(0)), args.Error(1)
 }
