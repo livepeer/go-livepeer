@@ -104,6 +104,7 @@ type liveRequestParams struct {
 	pipeline      string
 	orchestrator  string
 
+	paymentSender          LivePaymentSender
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration
 
@@ -1051,11 +1052,46 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	params.liveParams.sess = sess
 	params.liveParams.startTime = time.Now()
 
-	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
-	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
-	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
-	clearSessionBalance(sess.BroadcastSession, core.RandomManifestID())
+	var paymentHeaders worker.RequestEditorFn
+	if hasRemoteSigner(params) {
+		rpp, ok := params.liveParams.paymentSender.(*remotePaymentSender)
+		if !ok {
+			return nil, errors.New("remote sender was not the correct type")
+		}
+		res, err := rpp.RequestPayment(ctx, &SegmentInfoSender{
+			sess: sess.BroadcastSession,
+		})
+		if err != nil {
+			return nil, err
+		}
+		paymentHeaders = func(_ context.Context, req *http.Request) error {
+			req.Header.Set(segmentHeader, res.SegCreds)
+			req.Header.Set(paymentHeader, res.Payment)
+			req.Header.Set("Authorization", protoVerAIWorker)
+			return nil
+		}
+	} else {
 
+		// Live Video should not reuse the existing session balance, because it could lead to not sending the init
+		// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
+		// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
+		clearSessionBalance(sess.BroadcastSession, core.RandomManifestID())
+
+		var (
+			balUpdate *BalanceUpdate
+			err       error
+		)
+		paymentHeaders, balUpdate, err = prepareAIPayment(ctx, sess, initPixelsToPay)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+			}
+			return nil, err
+		}
+		defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+	}
+
+	// Send request to orchestrator
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
@@ -1063,16 +1099,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	paymentHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	// Send request to orchestrator
 	reqTimeout := 5 * time.Second
 	reqCtx, cancel := context.WithTimeout(ctx, reqTimeout)
 	defer cancel()
@@ -1668,4 +1695,8 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 func encodeReqMetadata(metadata map[string]string) string {
 	metadataBytes, _ := json.Marshal(metadata)
 	return string(metadataBytes)
+}
+
+func hasRemoteSigner(params aiRequestParams) bool {
+	return params.node != nil && params.node.RemoteSignerAddr != nil
 }
