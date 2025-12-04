@@ -284,6 +284,10 @@ func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
 func (r *stubOrchestrator) ExtraNodes() int {
 	return 0
 }
+func (r *stubOrchestrator) OrchInfoSig() []byte {
+	b, _ := r.Sign([]byte(r.Address().Hex()))
+	return b
+}
 
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -323,13 +327,6 @@ func TestRPCTranscoderReq(t *testing.T) {
 		t.Errorf("Expected %v; got %v", o.sessCapErr, err)
 	}
 	o.sessCapErr = nil
-
-	// error signing
-	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b, GetOrchestratorInfoParams{})
-	if err == nil {
-		t.Error("Did not expect to generate a orchestrator request with invalid address")
-	}
 }
 
 func TestRPCSeg(t *testing.T) {
