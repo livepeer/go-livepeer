@@ -1,14 +1,32 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
-
 	"sync"
+	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/trickle"
 )
+
+type JobToken struct {
+	SenderAddress *JobSender        `json:"sender_address,omitempty"`
+	TicketParams  *net.TicketParams `json:"ticket_params,omitempty"`
+	Balance       int64             `json:"balance,omitempty"`
+	Price         *net.PriceInfo    `json:"price,omitempty"`
+	ServiceAddr   string            `json:"service_addr,omitempty"`
+
+	LastNonce uint32
+}
+type JobSender struct {
+	Addr string `json:"addr"`
+	Sig  string `json:"sig"`
+}
 
 type ExternalCapability struct {
 	Name          string `json:"name"`
@@ -21,17 +39,167 @@ type ExternalCapability struct {
 
 	price *AutoConvertedPrice
 
-	mu   sync.RWMutex
+	Mu   sync.RWMutex
 	Load int
+}
+
+type StreamInfo struct {
+	StreamID   string
+	Capability string
+
+	//Orchestrator fields
+	Sender         ethcommon.Address
+	StreamRequest  []byte
+	pubChannel     *trickle.TrickleLocalPublisher
+	subChannel     *trickle.TrickleLocalPublisher
+	controlChannel *trickle.TrickleLocalPublisher
+	eventsChannel  *trickle.TrickleLocalPublisher
+	dataChannel    *trickle.TrickleLocalPublisher
+	//Stream fields
+	JobParams    string
+	StreamCtx    context.Context
+	CancelStream context.CancelFunc
+
+	cleanupOnce sync.Once
+	sdm         sync.Mutex
+}
+
+func (sd *StreamInfo) IsActive() bool {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	if sd.StreamCtx.Err() != nil {
+		return false
+	}
+
+	if sd.controlChannel == nil {
+		return false
+	}
+
+	return true
+}
+
+func (sd *StreamInfo) UpdateParams(params string) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.JobParams = params
+}
+
+func (sd *StreamInfo) SetChannels(pub, sub, control, events, data *trickle.TrickleLocalPublisher) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.pubChannel = pub
+	sd.subChannel = sub
+	sd.controlChannel = control
+	sd.eventsChannel = events
+	sd.dataChannel = data
+}
+
+func (sd *StreamInfo) cleanup() {
+	sd.cleanupOnce.Do(func() {
+		// Close all channels exactly once
+		if sd.pubChannel != nil {
+			sd.pubChannel.Close()
+		}
+		if sd.subChannel != nil {
+			sd.subChannel.Close()
+		}
+		if sd.controlChannel != nil {
+			sd.controlChannel.Close()
+		}
+		if sd.eventsChannel != nil {
+			sd.eventsChannel.Close()
+		}
+		if sd.dataChannel != nil {
+			sd.dataChannel.Close()
+		}
+	})
 }
 
 type ExternalCapabilities struct {
 	capm         sync.Mutex
 	Capabilities map[string]*ExternalCapability
+	Streams      map[string]*StreamInfo
 }
 
 func NewExternalCapabilities() *ExternalCapabilities {
-	return &ExternalCapabilities{Capabilities: make(map[string]*ExternalCapability)}
+	return &ExternalCapabilities{Capabilities: make(map[string]*ExternalCapability),
+		Streams: make(map[string]*StreamInfo),
+	}
+}
+
+func (extCaps *ExternalCapabilities) AddStream(streamID string, capability string, streamReq []byte) (*StreamInfo, error) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+	_, ok := extCaps.Streams[streamID]
+	if ok {
+		return nil, fmt.Errorf("stream already exists: %s", streamID)
+	}
+
+	//add to streams
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := StreamInfo{
+		StreamID:      streamID,
+		Capability:    capability,
+		StreamRequest: streamReq,
+		StreamCtx:     ctx,
+		CancelStream:  cancel,
+	}
+	extCaps.Streams[streamID] = &stream
+
+	//clean up when stream ends
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		defer stream.cleanup()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Periodically check if stream still exists in map
+				extCaps.capm.Lock()
+				_, exists := extCaps.Streams[streamID]
+				extCaps.capm.Unlock()
+				if !exists {
+					return
+				}
+			}
+		}
+	}()
+
+	return &stream, nil
+}
+
+func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	streamInfo, ok := extCaps.Streams[streamID]
+	if ok {
+		//confirm stream context is canceled before deleting
+		if streamInfo.StreamCtx.Err() == nil {
+			streamInfo.CancelStream()
+		}
+	}
+
+	delete(extCaps.Streams, streamID)
+}
+
+func (extCaps *ExternalCapabilities) GetStream(streamID string) (*StreamInfo, bool) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	streamInfo, ok := extCaps.Streams[streamID]
+	return streamInfo, ok
+}
+
+func (extCaps *ExternalCapabilities) StreamExists(streamID string) bool {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	_, ok := extCaps.Streams[streamID]
+	return ok
 }
 
 func (extCaps *ExternalCapabilities) RemoveCapability(extCap string) {
@@ -76,7 +244,7 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 }
 
 func (extCap *ExternalCapability) GetPrice() *big.Rat {
-	extCap.mu.RLock()
-	defer extCap.mu.RUnlock()
+	extCap.Mu.RLock()
+	defer extCap.Mu.RUnlock()
 	return extCap.price.Value()
 }

@@ -22,6 +22,8 @@ cd ..
 cd server
 go test -run TestSelectSession_ -race
 go test -run RegisterConnection -race
+go test -run TestRunStream_RunAndCancel -race
+go test -run TestRunStream_OrchestratorFailover -race
 cd ..
 
 cd media
