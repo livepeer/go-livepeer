@@ -2,6 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+	"time"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/core"
@@ -9,10 +17,6 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"net/http"
-	"testing"
-	"time"
 )
 
 func TestSendPayment(t *testing.T) {
@@ -139,4 +143,83 @@ func TestAccountPayment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRemoteLivePaymentSender_BasicFlow verifies that remoteLivePaymentSender forwards
+// remote-generated payments to the orchestrator.
+func TestRemoteLivePaymentSender_BasicFlow(t *testing.T) {
+	require := require.New(t)
+
+	// Stub Orchestrator
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	tr := &net.PaymentResult{
+		Info: &net.OrchestratorInfo{
+			Transcoder:   ts.URL,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			AuthToken:    stubAuthToken,
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	mux.HandleFunc("/payment", func(w http.ResponseWriter, r *http.Request) {
+		// Expect payment + segCreds headers from remote signer
+		if r.Header.Get(paymentHeader) == "" {
+			t.Errorf("missing payment header")
+		}
+		if r.Header.Get(segmentHeader) == "" {
+			t.Errorf("missing segment header")
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	// Stub remote signer
+	remoteResp := RemotePaymentResponse{
+		Payment:  "dummy-payment",
+		SegCreds: "dummy-segcreds",
+		State:    HexBytes([]byte{0x01}),
+		// Signature value is not validated by the sender
+		StateSignature: HexBytes([]byte{0x02}),
+	}
+	remoteBody, err := json.Marshal(remoteResp)
+	require.Nil(err)
+
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(remoteBody)
+	}))
+	defer remoteTS.Close()
+
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.Nil(err)
+
+	// Stub session
+	sess := StubBroadcastSession(ts.URL)
+	sess.Sender = nil
+	sess.Balances = nil
+
+	// Livepeer node with RemoteSignerAddr configured
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+
+	// Create remote payment sender and segment info
+	paymentSender := NewRemotePaymentProcessor(node)
+	segmentInfo := &SegmentInfoSender{
+		sess:     sess,
+		inPixels: 1000000,
+		priceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+		mid: "mid1",
+	}
+
+	// when
+	err = paymentSender.SendPayment(context.TODO(), segmentInfo)
+
+	// then
+	require.Nil(err)
 }

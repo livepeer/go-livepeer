@@ -1092,7 +1092,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 		}
-		if n.NodeType == core.BroadcasterNode {
+		if n.NodeType == core.BroadcasterNode || n.NodeType == core.RemoteSignerNode {
 			maxEV, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
 			if maxEV == nil {
 				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
