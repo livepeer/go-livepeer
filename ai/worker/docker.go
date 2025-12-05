@@ -72,6 +72,8 @@ var livePipelineToImage = map[string]string{
 	"streamdiffusion": "livepeer/ai-runner:live-app-streamdiffusion",
 	// streamdiffusion-sd15 is a utility image that uses an SD1.5 model on the default config of the pipeline. Optimizes startup time.
 	"streamdiffusion-sd15": "livepeer/ai-runner:live-app-streamdiffusion-sd15",
+	// streamdiffusion-sd15-v2v is a utility image that uses an SD1.5 model with cached attention enabled by default. Optimizes startup time for cached-attention inference.
+	"streamdiffusion-sd15-v2v": "livepeer/ai-runner:live-app-streamdiffusion-sd15-v2v",
 	// streamdiffusion-sdxl is a utility image that uses an SDXL model on the default config of the pipeline. Optimizes startup time.
 	"streamdiffusion-sdxl": "livepeer/ai-runner:live-app-streamdiffusion-sdxl",
 	// streamdiffusion-sdxl-faceid is a utility image that uses an SDXL model with a FaceID IP Adapter on the default config of the pipeline. Optimizes startup time.
