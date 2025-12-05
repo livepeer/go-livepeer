@@ -14,7 +14,8 @@
 
 #### Orchestrator
 
-* [#3814](https://github.com/livepeer/go-livepeer/pull/3814) Sai/worker: Add scope pipeline support to worker and build scripts (@victorges)
+* [#3814](https://github.com/livepeer/go-livepeer/pull/3814) ai/worker: Add scope pipeline support to worker and build scripts (@victorges)
+* [#3823](https://github.com/livepeer/go-livepeer/pull/3823) ai/worker: Add sd15-v2v image support (@victorges)
 
 #### Transcoder
 
