@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"testing"
 )
 
@@ -81,4 +82,47 @@ func TestLocalSubscriber_OverrunSeq(t *testing.T) {
 	require.Equal("mno", string(data))
 	require.Nil(err)
 
+}
+
+func TestLocalSubscriber_PreconnectOnEmpty(t *testing.T) {
+	// Checks that the channel seq still increments even on zero-byte writes
+	require, url, server := makeServerWithServer(t)
+
+	pub, err := NewTricklePublisher(url)
+	require.Nil(err)
+	defer pub.Close()
+
+	sub := NewLocalSubscriber(server, "testest")
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		require.Nil(pub.Write(bytes.NewReader([]byte("hello"))))
+		require.Nil(pub.Close())
+	}()
+
+	setSeqCount := 0
+
+	for i := 0; ; i++ {
+		sub.SetSeq(-1)
+		td, err := sub.Read()
+		if err != nil {
+			break
+		}
+		require.Equal(strconv.Itoa(setSeqCount), td.Metadata["Lp-Trickle-Seq"])
+
+		n, err := io.Copy(io.Discard, td.Reader)
+		require.Nil(err)
+		if i == 0 {
+			require.Equal(5, int(n)) // first write - "hello"
+		} else {
+			// second write latches on after first completes, but cancelled
+			// third write (preconnect after second) also cancelled
+			require.Equal(0, int(n))
+		}
+		setSeqCount++
+	}
+
+	<-done
+	require.Equal(2, setSeqCount)
 }
