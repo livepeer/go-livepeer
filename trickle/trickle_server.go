@@ -415,6 +415,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 				if totalRead <= 0 {
 					s.mutex.Lock()
 					isClosed := s.closed
+					// increment seq anyway: avoids clients erroring out on next seq
+					s.nextWrite = idx + 1
+					s.writeTime = time.Now()
 					s.mutex.Unlock()
 					if isClosed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")

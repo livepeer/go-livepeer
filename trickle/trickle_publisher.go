@@ -127,14 +127,6 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 
 func (c *TricklePublisher) Close() error {
 
-	// Close any pending writers
-	c.writeLock.Lock()
-	pp := c.pendingPost
-	if pp != nil {
-		pp.writer.Close()
-	}
-	c.writeLock.Unlock()
-
 	req, err := http.NewRequest("DELETE", c.baseURL, nil)
 	if err != nil {
 		return err
@@ -149,6 +141,15 @@ func (c *TricklePublisher) Close() error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Failed to delete stream: %v - %s", resp.Status, string(body))
 	}
+
+	// Close any pending writers
+	c.writeLock.Lock()
+	pp := c.pendingPost
+	if pp != nil {
+		pp.writer.Close()
+	}
+	c.writeLock.Unlock()
+
 	return nil
 }
 
