@@ -178,7 +178,7 @@ type LivepeerConfig struct {
 	KafkaPassword              *string
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
-	LiveAIAuthApiKey           *string
+	LiveAIAuthSecret           *string
 	LiveAIHeartbeatURL         *string
 	LiveAIHeartbeatHeaders     *string
 	LiveAIHeartbeatInterval    *time.Duration
@@ -1735,8 +1735,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.MediaMTXApiPassword != nil {
 		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
 	}
-	if cfg.LiveAIAuthApiKey != nil {
-		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
+	if cfg.LiveAIAuthSecret != nil {
+		n.LiveAIAuthSecret = *cfg.LiveAIAuthSecret
 	}
 	if cfg.LiveAIHeartbeatURL != nil {
 		n.LiveAIHeartbeatURL = *cfg.LiveAIHeartbeatURL

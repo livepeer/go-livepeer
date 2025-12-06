@@ -10,6 +10,10 @@ import (
 	"net/url"
 	"time"
 
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/monitor"
 )
@@ -133,7 +137,7 @@ type AIAuthResponse struct {
 	paramsMap      map[string]interface{} // unmarshaled params
 }
 
-func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*AIAuthResponse, error) {
+func authenticateAIStream(authURL *url.URL, secret string, req AIAuthRequest) (*AIAuthResponse, error) {
 	req.StreamKey = req.Stream
 	if authURL == nil {
 		return nil, fmt.Errorf("No auth URL configured")
@@ -151,8 +155,14 @@ func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("x-api-key", apiKey)
-	request.Header.Set("Authorization", apiKey)
+	
+	ts := time.Now().UTC().Format(time.RFC3339Nano)
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte(ts))
+	m.Write(jsonValue)
+	sig := hex.EncodeToString(m.Sum(nil))
+	request.Header.Set("x-timestamp", ts)
+	request.Header.Set("x-signature", sig)
 
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
