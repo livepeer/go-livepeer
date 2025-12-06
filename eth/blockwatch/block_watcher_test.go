@@ -199,8 +199,7 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 	config.Client = fakeClient
 	watcher := New(config)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 2)
@@ -231,8 +230,7 @@ func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {
 	config.Client = fakeClient
 	watcher := New(config)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 0)
@@ -257,8 +255,7 @@ func TestGetMissedEventsToBackfill_NOOP(t *testing.T) {
 	config.Client = fakeClient
 	watcher := New(config)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 1)
@@ -487,8 +484,7 @@ func TestGetLogsInBlockRange(t *testing.T) {
 
 	config.Store = &stubMiniHeaderStore{}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	for _, testCase := range testCases {
 		fakeLogClient, err := newFakeLogClient(testCase.RangeToFilterLogsResponse)
