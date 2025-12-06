@@ -1,6 +1,6 @@
 ARG MEDIAMTX_VERSION="1.11.2-livepeer-3"
 
-FROM golang:1.23 AS builder
+FROM golang:1.25.4 AS builder
 
 # Install any build dependencies (e.g., git)
 RUN apt-get update && apt-get install -y --no-install-recommends \
