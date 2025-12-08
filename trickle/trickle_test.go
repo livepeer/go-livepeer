@@ -97,6 +97,87 @@ func TestTrickle_Close(t *testing.T) {
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
 
+func TestTrickle_DelayedClose(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	clock := MockClock{}
+	server := ConfigureServer(TrickleServerConfig{
+		Mux:           mux,
+		DelayCleanup:  true,
+		Now:           clock.Now,
+		SweepInterval: 5 * time.Millisecond,
+	})
+
+	// Check:
+	// 1. reading after close
+	// 2. writing after close
+
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	defer stop()
+	lp := NewLocalPublisher(server, "testest", "text/plain")
+	lp.CreateChannel()
+
+	// Write to a channel and close it
+	channelURL := ts.URL + "/testest"
+	segs := []string{"012", "345", "678", "901"}
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	for _, c := range segs {
+		require.Nil(pub.Write(bytes.NewReader([]byte(c))), "pub.Write")
+	}
+
+	// Now close the stream
+	pub.Close()
+
+	//
+	// NB: we set the "Connection: close" header on the server after close
+	// If the client is under load and slow this could lead to premature
+	// termination of the preconnect before the response is finished reading.
+	// Easily triggered with eg, `go test -race -count 100`
+	//
+	// Check repeatedly to run out preconnects, and allow for a couple of
+	// preconnect failures, but most re-connect attempts should succeed.
+	gotEOS := 0
+	for i := 0; i < 10; i++ {
+		err = pub.Write(bytes.NewReader([]byte("234")))
+		if errors.Is(err, EOS) {
+			gotEOS++
+		}
+	}
+	require.GreaterOrEqual(gotEOS, 8, "did not have enough EOS writes")
+
+	// Check reads
+	sub, err := NewTrickleSubscriber(subConfig(channelURL))
+	require.Nil(err)
+	sub.SetSeq(0)
+	for _, s := range segs {
+		resp, err := sub.Read()
+		require.Nil(err, "sub.Read")
+		buf, err := io.ReadAll(resp.Body)
+		require.Nil(err)
+		require.Equal(s, string(buf))
+		resp.Body.Close()
+	}
+	// check for EOS multiple times to flush out read preconnects
+	for i := 0; i < 5; i++ {
+		_, err = sub.Read()
+		require.ErrorIs(err, EOS)
+	}
+
+	// check for sweep
+	clock.Set(time.Now())
+	time.Sleep(20 * time.Millisecond)
+	pub, err = NewTricklePublisher(channelURL)
+	require.Nil(err)
+	require.ErrorIs(pub.Write(bytes.NewReader([]byte("invalid"))), StreamNotFoundErr)
+	sub, err = NewTrickleSubscriber(subConfig(channelURL))
+	require.Nil(err)
+	_, err = sub.Read()
+	require.ErrorIs(err, StreamNotFoundErr)
+}
+
 func TestTrickle_SetSeq(t *testing.T) {
 	require, channelURL := makeServer(t)
 
@@ -423,4 +504,20 @@ func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
 
 func subConfig(t *testing.T, url string) TrickleSubscriberConfig {
 	return TrickleSubscriberConfig{URL: url, Ctx: t.Context()}
+}
+
+type MockClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (mc *MockClock) Now() time.Time {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	return mc.now
+}
+func (mc *MockClock) Set(now time.Time) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.now = now
 }

@@ -160,7 +160,7 @@ func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close() // Ensure we close the body to avoid leaking connections
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == 470 {
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == StatusNoSegment {
 			return resp, nil
 		}
 		return nil, fmt.Errorf("failed GET segment, status code: %d, msg: %s", resp.StatusCode, string(body))
@@ -249,7 +249,7 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 		return nil, StreamNotFoundErr
 	}
 
-	if conn.StatusCode == 470 {
+	if conn.StatusCode == StatusNoSegment {
 		// stream exists but segment dosn't
 		return nil, &SequenceNonexistent{Seq: GetSeq(conn), Latest: GetLatest(conn)}
 	}
