@@ -470,8 +470,8 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 }
 
 func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
+	s.mutex.Lock() // Lock instead of RLock since we may precreate the segment
+	defer s.mutex.Unlock()
 	exists := func(seg *Segment, i int) bool {
 		return seg != nil && seg.idx == i
 	}
