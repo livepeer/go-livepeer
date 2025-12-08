@@ -81,18 +81,22 @@ func TestMediaStateStats(t *testing.T) {
 				456: {},
 			},
 		}
-		tracks := []RTPTrack{
-			&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo},
-			&mockRTPTrack{ssrc: 999, kind: webrtc.RTPCodecTypeAudio}, // will not be found
-			&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo},
+		tracks := []SegmenterTrack{
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo}),
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 999, kind: webrtc.RTPCodecTypeAudio}), // will not be found
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo}),
 		}
 		mockState.SetTracks(msGetter, tracks)
+		tracks[0].SetLastMpegtsTS(90_000)
+		tracks[2].SetLastMpegtsTS(180_000)
 
 		statsResult, err := mockState.Stats()
 		require.NoError(t, err)
 		assert.NotNil(t, statsResult)
 		assert.NotNil(t, statsResult.TrackStats, "Expected TrackStats slice to be non-nil")
 		assert.Equal(t, 2, len(statsResult.TrackStats), "Only two tracks should have been found in statsMap")
+		assert.Equal(t, 1.0, statsResult.TrackStats[0].LastInputTS)
+		assert.Equal(t, 2.0, statsResult.TrackStats[1].LastInputTS)
 	})
 
 	t.Run("ReturnsConnectionWarnings", func(t *testing.T) {
@@ -113,9 +117,9 @@ func TestMediaStateStats(t *testing.T) {
 				456: {},
 			},
 		}
-		tracks := []RTPTrack{
-			&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo},
-			&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo},
+		tracks := []SegmenterTrack{
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo}),
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo}),
 		}
 		mockState.SetTracks(msGetter, tracks)
 
@@ -134,8 +138,8 @@ func TestMediaStateStats(t *testing.T) {
 		msGetter := &mockStatsGetter{
 			statsMap: map[uint32]*stats.Stats{},
 		}
-		tracks := []RTPTrack{
-			&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo},
+		tracks := []SegmenterTrack{
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo}),
 		}
 		mockState.SetTracks(msGetter, tracks)
 
@@ -156,9 +160,9 @@ func TestMediaStateStats(t *testing.T) {
 				222: {},
 			},
 		}
-		tracks := []RTPTrack{
-			&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo},
-			&mockRTPTrack{ssrc: 222, kind: webrtc.RTPCodecTypeAudio},
+		tracks := []SegmenterTrack{
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo}),
+			NewSegmenterTrack(&mockRTPTrack{ssrc: 222, kind: webrtc.RTPCodecTypeAudio}),
 		}
 		mockState.SetTracks(msGetter, tracks)
 

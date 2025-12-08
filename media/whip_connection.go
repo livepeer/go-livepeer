@@ -109,6 +109,7 @@ type TrackStats struct {
 	PacketsReceived int64         `json:"packets_received"`
 	PacketLossPct   float64       `json:"packet_loss_pct"`
 	RTT             time.Duration `json:"rtt"`
+	LastInputTS     float64       `json:"last_input_ts"`
 	Warnings        []string      `json:"warnings,omitempty"`
 }
 
@@ -147,7 +148,7 @@ type MediaStats struct {
 type MediaState struct {
 	pc     WHIPPeerConnection
 	getter stats.Getter
-	tracks []RTPTrack
+	tracks []SegmenterTrack
 	mu     *sync.Mutex
 	cond   *sync.Cond
 	closed bool
@@ -164,7 +165,7 @@ func NewMediaState(pc WHIPPeerConnection) *MediaState {
 	}
 }
 
-func (m *MediaState) SetTracks(getter stats.Getter, tracks []RTPTrack) {
+func (m *MediaState) SetTracks(getter stats.Getter, tracks []SegmenterTrack) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getter = getter
@@ -273,6 +274,8 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			warnings = append(warnings, fmt.Sprintf("packet loss greater than %d%%", acceptablePacketLossPct))
 		}
 
+		lastInputTS := float64(t.LastMpegtsTS()) / 90000.0
+
 		trackStats = append(trackStats, TrackStats{
 			Type:            trackType,
 			Jitter:          jitterMs,
@@ -280,6 +283,7 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			PacketsReceived: packetsReceived,
 			PacketLossPct:   packetLossPct,
 			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
+			LastInputTS:     lastInputTS,
 			Warnings:        warnings,
 		})
 	}
