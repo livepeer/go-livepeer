@@ -30,7 +30,7 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
 
-RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
+RUN FFMPEG_SHA=894da5ca7d742e4429ffb2af534fcda0103ef593 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
 	&& git checkout ${FFMPEG_SHA} \
 	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
