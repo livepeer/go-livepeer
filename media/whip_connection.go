@@ -110,6 +110,8 @@ type TrackStats struct {
 	PacketLossPct   float64       `json:"packet_loss_pct"`
 	RTT             time.Duration `json:"rtt"`
 	LastInputTS     float64       `json:"last_input_ts"`
+	LastOutputTS    float64       `json:"last_output_ts"`
+	Latency         float64       `json:"latency"`
 	Warnings        []string      `json:"warnings,omitempty"`
 }
 

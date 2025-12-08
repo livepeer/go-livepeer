@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 
+	"github.com/bluenviron/mediacommon/v2/pkg/formats/mpegts"
 	"github.com/dustin/go-humanize"
 )
 
@@ -240,6 +241,10 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		return
 	}
 	setOutWriter(ctx, outWriter, params) // for WHEP
+
+	// Start output stats collection goroutine
+	go startOutputStatsCollection(ctx, outWriter.MakeReader(), params.liveParams.requestID)
+
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
 		go ffmpegOutput(ctx, outURL, outWriter, params)
@@ -508,6 +513,58 @@ func setOutWriter(ctx context.Context, writer *media.RingBuffer, params aiReques
 	}
 	sess.OutWriter = writer
 	sess.OutCond.Broadcast()
+}
+
+// Collect output timestamp stats by parsing the MPEG-TS stream
+func startOutputStatsCollection(ctx context.Context, mediaReader io.ReadCloser, requestID string) {
+	defer mediaReader.Close()
+	mpegtsReader := mpegts.Reader{
+		R: mediaReader,
+	}
+
+	// Initialize the MPEG-TS reader
+	if err := mpegtsReader.Initialize(); err != nil {
+		// This can happen if orchs swap before producing output or if
+		// the stream ends before any data is written. Log and exit gracefully.
+		clog.V(common.VERBOSE).Infof(ctx, "Failed to initialize mpegts reader for stats collection: %v", err)
+		return
+	}
+
+	tracks := mpegtsReader.Tracks()
+
+	// Register callbacks for each track type to collect PTS values
+	for _, track := range tracks {
+		switch track.Codec.(type) {
+		case *mpegts.CodecH264:
+			videoStats := media.GetOutputStats(requestID + "-video")
+			mpegtsReader.OnDataH264(track, func(pts, dts int64, au [][]byte) error {
+				videoStats.UpdateLastOutputTS(pts)
+				return nil
+			})
+		case *mpegts.CodecOpus:
+			audioStats := media.GetOutputStats(requestID + "-audio")
+			mpegtsReader.OnDataOpus(track, func(pts int64, packets [][]byte) error {
+				audioStats.UpdateLastOutputTS(pts)
+				return nil
+			})
+		}
+	}
+
+	// Start reading the stream. The mpegts.Reader.Read() method will parse the stream
+	// and trigger our callbacks as data arrives.
+	for {
+		select {
+		case <-ctx.Done():
+			clog.Info(ctx, "Output stats collection stopped: context canceled")
+			return
+		default:
+			err := mpegtsReader.Read()
+			if err != nil {
+				clog.Info(ctx, "Output stats collection complete", "err", err)
+				return
+			}
+		}
+	}
 }
 
 func registerControl(ctx context.Context, params aiRequestParams) {
