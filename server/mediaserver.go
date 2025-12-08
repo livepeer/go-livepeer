@@ -67,7 +67,6 @@ const AISessionManagerTTL = 10 * time.Minute
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
-var LiveAIAuthWebhookURL *url.URL
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
@@ -126,10 +125,11 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
 
-	mediaMTXApiPassword string
-	liveAIAuthApiKey    string
-	livePaymentInterval time.Duration
-	outSegmentTimeout   time.Duration
+	mediaMTXApiPassword  string
+	liveAIAuthWebhookURL *url.URL
+	liveAIAuthApiKey     string
+	livePaymentInterval  time.Duration
+	outSegmentTimeout    time.Duration
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -196,6 +196,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
+		liveAIAuthWebhookURL:    lpNode.LiveAIAuthWebhookURL,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
 		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,

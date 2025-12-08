@@ -163,6 +163,7 @@ type LivepeerNode struct {
 
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
+	LiveAIAuthWebhookURL       *url.URL
 	LiveAIAuthApiKey           string
 	LiveAIHeartbeatURL         string
 	LiveAIHeartbeatHeaders     map[string]string

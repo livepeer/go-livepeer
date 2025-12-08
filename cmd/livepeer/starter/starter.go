@@ -1550,7 +1550,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Error setting live AI auth webhook URL ", err)
 		}
 		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
-		server.LiveAIAuthWebhookURL = parsedUrl
+		n.LiveAIAuthWebhookURL = parsedUrl
 	}
 
 	httpIngest := true
