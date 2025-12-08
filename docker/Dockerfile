@@ -32,8 +32,10 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 
 RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
-	&& git checkout ${FFMPEG_SHA} \
-	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
+	&& git checkout ${FFMPEG_SHA}
+RUN ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build
+RUN make -j"$(nproc)"
+RUN make install
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
