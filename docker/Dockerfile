@@ -12,7 +12,8 @@ ENV	GOARCH="$TARGETARCH" \
 	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm=2.14.02-1 \
+	&& apt-mark hold nasm \
 	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
