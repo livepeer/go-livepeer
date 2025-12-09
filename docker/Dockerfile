@@ -32,14 +32,14 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 
 # nasm needed for ffmpeg
 RUN curl -o /nasm-3.01.tar.gz "https://www.nasm.us/pub/nasm/releasebuilds/3.01/nasm-3.01.tar.gz" \
-    && echo "aea120d4adb0241f08ae24d6add09e4a993bc1c4d9f754dbfc8020d6916c9be1 nasm-3.01.tar.gz" > /nasm-3.01.tar.gz.sha256 \
-    && sha256sum -c /nasm-3.01.tar.gz.sha256 \
-    && tar xf /nasm-3.01.tar.gz \
-    && rm /nasm-3.01.tar.gz /nasm-3.01.tar.gz.sha256 \
-    && cd /nasm-3.01 \
-    && ./configure \
-    && make \
-    && make install
+	&& echo "aea120d4adb0241f08ae24d6add09e4a993bc1c4d9f754dbfc8020d6916c9be1 nasm-3.01.tar.gz" > /nasm-3.01.tar.gz.sha256 \
+	&& sha256sum -c /nasm-3.01.tar.gz.sha256 \
+	&& tar xf /nasm-3.01.tar.gz \
+	&& rm /nasm-3.01.tar.gz /nasm-3.01.tar.gz.sha256 \
+	&& cd /nasm-3.01 \
+	&& ./configure \
+	&& make \
+	&& make install
 
 RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
