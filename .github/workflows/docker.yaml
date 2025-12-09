@@ -79,6 +79,8 @@ jobs:
 
       - name: Build and push livepeer docker image
         uses: docker/build-push-action@v6
+        env:
+          BUILDKIT_PROGRESS: plain
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
