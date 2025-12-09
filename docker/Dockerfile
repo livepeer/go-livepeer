@@ -12,7 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
 	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
@@ -30,7 +30,18 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
 
-RUN FFMPEG_SHA=894da5ca7d742e4429ffb2af534fcda0103ef593 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
+# nasm needed for ffmpeg
+RUN curl -o /nasm-3.01.tar.gz "https://www.nasm.us/pub/nasm/releasebuilds/3.01/nasm-3.01.tar.gz" \
+    && echo "aea120d4adb0241f08ae24d6add09e4a993bc1c4d9f754dbfc8020d6916c9be1 nasm-3.01.tar.gz" > /nasm-3.01.tar.gz.sha256 \
+    && sha256sum -c /nasm-3.01.tar.gz.sha256 \
+    && tar xf /nasm-3.01.tar.gz \
+    && rm /nasm-3.01.tar.gz /nasm-3.01.tar.gz.sha256 \
+    && cd /nasm-3.01 \
+    && ./configure \
+    && make \
+    && make install
+
+RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
 	&& git checkout ${FFMPEG_SHA} \
 	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
