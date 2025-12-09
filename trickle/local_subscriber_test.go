@@ -106,18 +106,19 @@ func TestLocalSubscriber_PreconnectOnEmpty(t *testing.T) {
 	for i := 0; ; i++ {
 		sub.SetSeq(-1)
 		td, err := sub.Read()
-		if err != nil {
+		if err != nil && err.Error() == "stream not found" {
+			// would be better if this would be EOS but roll with it for now
 			break
 		}
+		require.Nil(err)
 		require.Equal(strconv.Itoa(setSeqCount), td.Metadata["Lp-Trickle-Seq"])
 
 		n, err := io.Copy(io.Discard, td.Reader)
 		require.Nil(err)
 		if i == 0 {
-			require.Equal(5, int(n)) // first write - "hello"
+			require.Equal(5, int(n)) // first post - "hello"
 		} else {
-			// second write latches on after first completes, but cancelled
-			// third write (preconnect after second) also cancelled
+			// second post (preconnect) is cancelled, completed as a zero-byte segment
 			require.Equal(0, int(n))
 		}
 		setSeqCount++
