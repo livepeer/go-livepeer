@@ -12,8 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm=2.14.02-1 \
-	&& apt-mark hold nasm \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release yasm \
 	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
@@ -34,7 +33,9 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
 	&& git checkout ${FFMPEG_SHA} \
-	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
+	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --x86asmexe=yasm --prefix=build \
+	&& make -j"$(nproc)" \
+	&& make install
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
