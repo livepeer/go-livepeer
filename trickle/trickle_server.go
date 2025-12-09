@@ -415,6 +415,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 				if totalRead <= 0 {
 					s.mutex.Lock()
 					isClosed := s.closed
+					// increment seq anyway: avoids clients erroring out on next seq
+					s.nextWrite = idx + 1
+					s.writeTime = time.Now()
 					s.mutex.Unlock()
 					if isClosed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
@@ -467,8 +470,8 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 }
 
 func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
+	s.mutex.Lock() // Lock instead of RLock since we may precreate the segment
+	defer s.mutex.Unlock()
 	exists := func(seg *Segment, i int) bool {
 		return seg != nil && seg.idx == i
 	}
