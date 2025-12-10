@@ -233,7 +233,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 	var frame rtp.Depacketizer
 	var tsCorrector *TimestampCorrector
 	codec := track.Codec().MimeType
-	webrtcTrack := track.(*segmenterTrack).track.(*webrtc.TrackRemote)
+	webrtcTrack := track.(*segmenterTrack).RTPTrack.(*webrtc.TrackRemote)
 	incomingTrack := &IncomingTrack{track: webrtcTrack}
 	isAudio := false
 	switch codec {

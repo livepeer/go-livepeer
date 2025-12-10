@@ -26,24 +26,12 @@ type SegmenterTrack interface {
 }
 
 type segmenterTrack struct {
-	track  RTPTrack
+	RTPTrack
 	lastTS int64
 }
 
 func NewSegmenterTrack(tr RTPTrack) SegmenterTrack {
-	return &segmenterTrack{track: tr}
-}
-
-func (t *segmenterTrack) Codec() webrtc.RTPCodecParameters {
-	return t.track.Codec()
-}
-
-func (t *segmenterTrack) Kind() webrtc.RTPCodecType {
-	return t.track.Kind()
-}
-
-func (t *segmenterTrack) SSRC() webrtc.SSRC {
-	return t.track.SSRC()
+	return &segmenterTrack{RTPTrack: tr}
 }
 
 func (t *segmenterTrack) LastMpegtsTS() int64 {
