@@ -400,9 +400,6 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 }
 
 func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
-	if !monitor.Enabled {
-		return
-	}
 	// Build structured capacity data
 	modelCapacities := make(map[string]*monitor.ModelAICapacities)
 
