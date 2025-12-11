@@ -59,6 +59,11 @@ func TestMediaWriterReadersAfterClose(t *testing.T) {
 	assert.Nil(err, "Write failed")
 	mw.Close()
 
+	// Writes after a read should error.
+	n, err := mw.Write([]byte("should error"))
+	assert.Equal(0, n)
+	assert.Equal(io.ErrClosedPipe, err)
+
 	// Any new readers created after close should read the data already present, then EOF
 	r1 := mw.MakeReader()
 	buf, err := io.ReadAll(r1)

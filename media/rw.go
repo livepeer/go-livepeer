@@ -37,6 +37,10 @@ func (mw *MediaWriter) Write(data []byte) (int, error) {
 	mw.mu.Lock()
 	defer mw.mu.Unlock()
 
+	if mw.closed {
+		return 0, io.ErrClosedPipe
+	}
+
 	// Write to buffer
 	n, err := mw.buffer.Write(data)
 
