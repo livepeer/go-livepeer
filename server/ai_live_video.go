@@ -583,10 +583,11 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
-		RequestID: params.liveParams.requestID,
-		Pipeline:  params.liveParams.pipeline,
-		StreamID:  params.liveParams.streamID,
-		OutCond:   sync.NewCond(params.node.LiveMu),
+		RequestID:       params.liveParams.requestID,
+		Pipeline:        params.liveParams.pipeline,
+		StreamID:        params.liveParams.streamID,
+		OutCond:         sync.NewCond(params.node.LiveMu),
+		InSegmentReader: params.liveParams.segmentReader,
 	}
 }
 

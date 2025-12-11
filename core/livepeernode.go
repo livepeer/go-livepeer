@@ -188,6 +188,8 @@ type LivePipeline struct {
 	OutCond      *sync.Cond
 	OutWriter    *media.RingBuffer
 	Closed       bool
+	// InSegmentReader is the SwitchableSegmentReader for WHIP input playback via WHEP
+	InSegmentReader *media.SwitchableSegmentReader
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

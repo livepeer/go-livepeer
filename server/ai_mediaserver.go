@@ -1162,24 +1162,84 @@ func (ls *LivepeerServer) CreateWhep(server *media.WHEPServer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.PathValue("path")
 		parts := strings.Split(path, "-")
-		if len(parts) != 3 || parts[2] != "out" {
-			if len(parts) != 2 || parts[1] != "out" {
-				http.Error(w, "Malformed stream ID", http.StatusNotFound)
-				return
+		
+		// Support both -out (processed output) and -in (WHIP input) paths
+		var isInput bool
+		var stream, requestID string
+		
+		if len(parts) >= 3 {
+			// Format: stream-requestId-out or stream-requestId-in
+			lastPart := parts[len(parts)-1]
+			if lastPart == "out" {
+				isInput = false
+				stream = strings.Join(parts[:len(parts)-2], "-")
+				requestID = parts[len(parts)-2]
+			} else if lastPart == "in" {
+				isInput = true
+				stream = strings.Join(parts[:len(parts)-2], "-")
+				requestID = parts[len(parts)-2]
+			} else {
+				// Try legacy format: stream-out (2 parts)
+				if len(parts) == 2 && parts[1] == "out" {
+					isInput = false
+					stream = parts[0]
+					requestID = ""
+				} else {
+					http.Error(w, "Malformed stream ID", http.StatusNotFound)
+					return
+				}
 			}
-			parts[1] = ""
-		}
-		stream, requestID := parts[0], parts[1]
-		ctx := r.Context()
-		ctx = clog.AddVal(ctx, "stream", stream)
-		outWriter, rid := getOutWriter(stream, ls.LivepeerNode)
-		if outWriter == nil || (requestID != rid && requestID != "") {
-			http.Error(w, "Stream not found", http.StatusNotFound)
+		} else if len(parts) == 2 && parts[1] == "out" {
+			// Format: stream-out (legacy, no requestID)
+			isInput = false
+			stream = parts[0]
+			requestID = ""
+		} else {
+			http.Error(w, "Malformed stream ID", http.StatusNotFound)
 			return
 		}
-		ctx = clog.AddVal(ctx, "request_id", rid)
-		corsHeaders(w, r.Method)
-		server.CreateWHEP(ctx, w, r, outWriter.MakeReader(), stream)
+		
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", stream)
+		
+		if isInput {
+			// Handle WHIP input playback
+			ls.LivepeerNode.LiveMu.RLock()
+			pipeline, exists := ls.LivepeerNode.LivePipelines[stream]
+			ls.LivepeerNode.LiveMu.RUnlock()
+			
+			if !exists || pipeline.Closed {
+				http.Error(w, "Stream not found", http.StatusNotFound)
+				return
+			}
+			
+			if requestID != "" && pipeline.RequestID != requestID {
+				http.Error(w, "Stream not found", http.StatusNotFound)
+				return
+			}
+			
+			if pipeline.InSegmentReader == nil {
+				http.Error(w, "Stream not found", http.StatusNotFound)
+				return
+			}
+			
+			ctx = clog.AddVal(ctx, "request_id", pipeline.RequestID)
+			corsHeaders(w, r.Method)
+			
+			// Create a continuous reader from the segment reader
+			streamReader := media.NewSegmentStreamReader(pipeline.InSegmentReader)
+			server.CreateWHEP(ctx, w, r, streamReader, stream)
+		} else {
+			// Handle processed output playback (existing behavior)
+			outWriter, rid := getOutWriter(stream, ls.LivepeerNode)
+			if outWriter == nil || (requestID != rid && requestID != "") {
+				http.Error(w, "Stream not found", http.StatusNotFound)
+				return
+			}
+			ctx = clog.AddVal(ctx, "request_id", rid)
+			corsHeaders(w, r.Method)
+			server.CreateWHEP(ctx, w, r, outWriter.MakeReader(), stream)
+		}
 	})
 }
 
