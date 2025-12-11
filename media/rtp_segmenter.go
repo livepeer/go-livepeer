@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bluenviron/mediacommon/v2/pkg/formats/mpegts"
@@ -16,6 +17,29 @@ type RTPTrack interface {
 	Codec() webrtc.RTPCodecParameters
 	Kind() webrtc.RTPCodecType
 	SSRC() webrtc.SSRC
+}
+
+type SegmenterTrack interface {
+	RTPTrack
+	LastMpegtsTS() int64
+	SetLastMpegtsTS(ts int64)
+}
+
+type segmenterTrack struct {
+	RTPTrack
+	lastTS int64
+}
+
+func NewSegmenterTrack(tr RTPTrack) SegmenterTrack {
+	return &segmenterTrack{RTPTrack: tr}
+}
+
+func (t *segmenterTrack) LastMpegtsTS() int64 {
+	return atomic.LoadInt64(&t.lastTS)
+}
+
+func (t *segmenterTrack) SetLastMpegtsTS(ts int64) {
+	atomic.StoreInt64(&t.lastTS, ts)
 }
 
 type MpegtsWriter interface {
@@ -58,13 +82,13 @@ type videoPacket struct {
 }
 
 type trackWriter struct {
-	rtpTrack    RTPTrack
+	rtpTrack    SegmenterTrack
 	mpegtsTrack *mpegts.Track
 	writeAudio  func(pts int64, data [][]byte) error
 	writeVideo  func(pts, dts int64, data [][]byte) error
 }
 
-func NewRTPSegmenter(tracks []RTPTrack, ssr *SwitchableSegmentReader, segDur time.Duration) *RTPSegmenter {
+func NewRTPSegmenter(tracks []SegmenterTrack, ssr *SwitchableSegmentReader, segDur time.Duration) *RTPSegmenter {
 	s := &RTPSegmenter{
 		ssr:          ssr,
 		maxQueueSize: 64,
@@ -120,7 +144,7 @@ func (s *RTPSegmenter) ShouldStartSegment(pts int64, tb uint32) bool {
 	return true
 }
 
-func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) error {
+func (s *RTPSegmenter) WriteVideo(source SegmenterTrack, pts, dts int64, au [][]byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, t := range s.tracks {
@@ -135,12 +159,14 @@ func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) 
 			// Add new packet
 			s.videoQueue = append(s.videoQueue, &videoPacket{t, pts, dts, au})
 
+			source.SetLastMpegtsTS(dts)
+
 			return s.interleaveAndWrite()
 		}
 	}
 	return errors.New("no matching video track found")
 }
-func (s *RTPSegmenter) WriteAudio(source RTPTrack, pts int64, au [][]byte) error {
+func (s *RTPSegmenter) WriteAudio(source SegmenterTrack, pts int64, au [][]byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, t := range s.tracks {
@@ -156,6 +182,8 @@ func (s *RTPSegmenter) WriteAudio(source RTPTrack, pts int64, au [][]byte) error
 
 			// Add new packet
 			s.audioQueue = append(s.audioQueue, &audioPacket{t, rescaledPts, au})
+
+			source.SetLastMpegtsTS(rescaledPts)
 
 			return s.interleaveAndWrite()
 		}
@@ -176,7 +204,7 @@ func (s *RTPSegmenter) IsReady() bool {
 	return s.started
 }
 
-func (s *RTPSegmenter) setupTracks(rtpTracks []RTPTrack) []*trackWriter {
+func (s *RTPSegmenter) setupTracks(rtpTracks []SegmenterTrack) []*trackWriter {
 	tracks := []*trackWriter{}
 	for _, t := range rtpTracks {
 		codec := t.Codec()
