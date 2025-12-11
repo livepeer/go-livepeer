@@ -518,8 +518,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		whepURL := generateWhepUrl(streamName, requestID)
-		if LiveAIAuthWebhookURL != nil {
-			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+		if ls.liveAIAuthWebhookURL != nil {
+			authResp, err := authenticateAIStream(ls.liveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
@@ -994,8 +994,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
-			if LiveAIAuthWebhookURL != nil {
-				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+			if ls.liveAIAuthWebhookURL != nil {
+				authResp, err := authenticateAIStream(ls.liveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 					Stream:      streamName,
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
