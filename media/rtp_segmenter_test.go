@@ -28,10 +28,29 @@ func (m *mockTrackRemote) Codec() webrtc.RTPCodecParameters {
 	}
 }
 
+func (m *mockTrackRemote) Kind() webrtc.RTPCodecType {
+	switch m.codecType {
+	case webrtc.MimeTypeH264:
+		return webrtc.RTPCodecTypeVideo
+	case webrtc.MimeTypeOpus:
+		return webrtc.RTPCodecTypeAudio
+	default:
+		return webrtc.RTPCodecTypeVideo
+	}
+}
+
+func (m *mockTrackRemote) SSRC() webrtc.SSRC {
+	return 0
+}
+
 var (
 	// Create mock tracks
-	videoTrack = &mockTrackRemote{codecType: webrtc.MimeTypeH264}
-	audioTrack = &mockTrackRemote{codecType: webrtc.MimeTypeOpus, channels: 2}
+	newVideoTrack = func() SegmenterTrack {
+		return NewSegmenterTrack(&mockTrackRemote{codecType: webrtc.MimeTypeH264})
+	}
+	newAudioTrack = func() SegmenterTrack {
+		return NewSegmenterTrack(&mockTrackRemote{codecType: webrtc.MimeTypeOpus, channels: 2})
+	}
 )
 
 // Add this stub to capture writes
@@ -67,7 +86,8 @@ func TestRTPSegmenterQueueLimit(t *testing.T) {
 
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 	seg.StartSegment(0)
 
 	// Override maxQueueSize for testing
@@ -114,7 +134,8 @@ func TestRTPSegmenterQueueLimit(t *testing.T) {
 func TestRTPSegmenterVideoOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
 	ssr.SwitchReader(func(reader CloneableReader) {
@@ -152,7 +173,8 @@ func TestRTPSegmenterVideoOnly(t *testing.T) {
 func TestRTPSegmenterAudioOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{audioTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
 	ssr.SwitchReader(func(reader CloneableReader) {
@@ -190,7 +212,8 @@ func TestRTPSegmenterAudioOnly(t *testing.T) {
 func TestRTPSegmenterConcurrency(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 
 	// Start a segment
 	seg.StartSegment(0)
@@ -239,7 +262,8 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 	seg.mpegtsInit = newStubTSWriter
 	var segment CloneableReader
 	ssr.SwitchReader(func(reader CloneableReader) {
@@ -307,7 +331,8 @@ func TestRTPSegmenterMinSegmentDurationWallClock(t *testing.T) {
 	ssr := NewSwitchableSegmentReader()
 	// Use a short minSegDur so we don't slow tests too much
 	minSegDur := 100 * time.Millisecond
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, minSegDur)
+	videoTrack := newVideoTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack}, ssr, minSegDur)
 
 	// Initially no segment
 	require.False(seg.IsReady(), "No active segment yet")
@@ -339,7 +364,8 @@ func TestRTPSegmenterMinSegmentDurationPTS(t *testing.T) {
 
 	// 1 second min
 	minSegDur := 10 * time.Millisecond
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, minSegDur)
+	videoTrack := newVideoTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack}, ssr, minSegDur)
 
 	// Start initial segment at pts=0
 	seg.StartSegment(0)
@@ -362,7 +388,8 @@ func TestRTPSegmenterMixedOrder(t *testing.T) {
 	require := require.New(t)
 	// Create a new segmenter using both a video and an audio track.
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 
 	seg.mpegtsInit = newStubTSWriter
 
@@ -411,7 +438,8 @@ func TestRTPSegmenterDropKeyframe(t *testing.T) {
 	require := require.New(t)
 	// Create a new segmenter using both a video and an audio track.
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
 
 	seg.mpegtsInit = newStubTSWriter
 	seg.maxQueueSize = 3
@@ -458,4 +486,75 @@ func TestRTPSegmenterDropKeyframe(t *testing.T) {
 	// Check results.
 	expected := "V0 A1 A3 A4 A5 A6 / V2 A8 A9 A10 A12 A13 V7 V11 "
 	require.Equal(expected, out)
+}
+
+func TestRTPSegmenterLastMpegtsTS(t *testing.T) {
+	require := require.New(t)
+
+	ssr := NewSwitchableSegmentReader()
+	videoTrack, audioTrack := newVideoTrack(), newAudioTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack, audioTrack}, ssr, 0)
+	seg.mpegtsInit = newStubTSWriter
+
+	// Start a segment so writes are accepted
+	seg.StartSegment(0)
+
+	// Video: we expect LastMpegtsTS to be set to the DTS we pass in.
+	vPTS := int64(9000)
+	vDTS := int64(8000)
+	require.NoError(seg.WriteVideo(videoTrack, vPTS, vDTS, [][]byte{{0x01}}))
+	require.Equal(vDTS, videoTrack.LastMpegtsTS(), "video LastMpegtsTS should match DTS")
+
+	// Audio: clock rate in the mock is 90kHz, so rescaled PTS == input PTS.
+	aPTS := int64(4500)
+	require.NoError(seg.WriteAudio(audioTrack, aPTS, [][]byte{{0x02}}))
+	require.Equal(aPTS, audioTrack.LastMpegtsTS(), "audio LastMpegtsTS should match rescaled PTS")
+}
+
+func TestRTPSegmenterConcurrentLastMpegtsTS(t *testing.T) {
+	require := require.New(t)
+
+	ssr := NewSwitchableSegmentReader()
+	videoTrack := newVideoTrack()
+	seg := NewRTPSegmenter([]SegmenterTrack{videoTrack}, ssr, 0)
+	seg.mpegtsInit = newStubTSWriter
+	seg.StartSegment(0)
+
+	const (
+		readers    = 8
+		iterations = 500
+	)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	// Writers: call WriteVideo with increasing DTS
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for j := 0; j < iterations; j++ {
+			ts := int64(j) * 3000 // simulate ~30fps
+			require.NoError(seg.WriteVideo(videoTrack, ts, ts, [][]byte{{0x01}}))
+		}
+	}()
+
+	// Readers: sample LastMpegtsTS
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			var last int64
+			for j := 0; j < iterations; j++ {
+				v := videoTrack.LastMpegtsTS()
+				require.GreaterOrEqual(v, last)
+				last = v
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	require.Greater(videoTrack.LastMpegtsTS(), int64(0))
 }

@@ -194,9 +194,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
-		tracks := []RTPTrack{videoTrack}
+		tracks := []SegmenterTrack{NewSegmenterTrack(videoTrack)}
 		if audioTrack != nil {
-			tracks = append(tracks, audioTrack)
+			tracks = append(tracks, NewSegmenterTrack(audioTrack))
 		}
 		minSegDur := 1 * time.Second
 		segDurEnv := os.Getenv("LIVE_AI_MIN_SEG_DUR")
@@ -214,7 +214,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleRTP(ctx, segmenter, timeDecoder, track.(*webrtc.TrackRemote), userAgent)
+				handleRTP(ctx, segmenter, timeDecoder, track, userAgent)
 			}()
 		}
 		gatherDuration := time.Since(gatherStartTime)
@@ -229,11 +229,12 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	return mediaState
 }
 
-func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote, userAgent string) {
+func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track SegmenterTrack, userAgent string) {
 	var frame rtp.Depacketizer
 	var tsCorrector *TimestampCorrector
 	codec := track.Codec().MimeType
-	incomingTrack := &IncomingTrack{track: track}
+	webrtcTrack := track.(*segmenterTrack).RTPTrack.(*webrtc.TrackRemote)
+	incomingTrack := &IncomingTrack{track: webrtcTrack}
 	isAudio := false
 	switch codec {
 	case webrtc.MimeTypeH264:
@@ -255,7 +256,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 	au := [][]byte{}
 	currentTS := uint32(0)
 	for {
-		pkt, _, err := track.ReadRTP()
+		pkt, _, err := webrtcTrack.ReadRTP()
 		if err != nil {
 			clog.Info(ctx, "Track read complete or error", "track", codec, "err", err)
 			return
