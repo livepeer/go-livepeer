@@ -670,9 +670,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					"url":     "",
 				},
 			})
-			ssr.Close()
 			<-orchSelection // wait for selection to complete
 			cleanupControl(ctx, params)
+			ssr.Close()
 			orchCancel()
 		}()
 

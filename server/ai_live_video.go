@@ -508,7 +508,11 @@ func setOutWriter(ctx context.Context, writer *media.RingBuffer, params aiReques
 	stream, requestID := params.liveParams.stream, params.liveParams.requestID
 	sess, exists := params.node.LivePipelines[stream]
 	if !exists || sess.RequestID != requestID {
-		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID", "exists", exists, "requestID", requestID, "session-requestID", sess.RequestID)
+		sessRID := "nonexistent"
+		if sess != nil {
+			sessRID = sess.RequestID
+		}
+		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID", "exists", exists, "requestID", requestID, "session-requestID", sessRID)
 		return
 	}
 	sess.OutWriter = writer
@@ -882,7 +886,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 	a.node.LiveMu.RLock()
 	defer a.node.LiveMu.RUnlock()
 	p, ok := a.node.LivePipelines[a.liveParams.stream]
-	return ok && p.RequestID == a.liveParams.requestID
+	return ok && p.RequestID == a.liveParams.requestID && !p.Closed
 }
 
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
