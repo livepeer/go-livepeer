@@ -135,6 +135,8 @@ func (c *TrickleSubscriber) SetSeq(seq int) {
 	c.cancelCtx()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Reset client in case SetSeq is called due to slow reads falling too far behind
+	c.client = httpClient()
 	c.idx = seq
 	c.ctx, c.cancelCtx = context.WithCancel(c.baseCtx)
 	c.pendingGet = nil
