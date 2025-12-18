@@ -880,7 +880,7 @@ func chargeForCompute(start time.Time, price *net.PriceInfo, orch Orchestrator, 
 }
 
 func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
-	//check balance and return remaning balance in header of response
+	//check balance and return remaining balance in header of response
 	senderBalance := getPaymentBalance(orch, sender, jobId)
 	if senderBalance != nil {
 		w.Header().Set("Livepeer-Payment-Balance", senderBalance.FloatString(0))
@@ -892,7 +892,7 @@ func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender et
 }
 
 func getPaymentBalance(orch Orchestrator, sender ethcommon.Address, jobId string) *big.Rat {
-	//check balance and return remaning balance in header of response
+	//check balance and return remaining balance in header of response
 	senderBalance := orch.Balance(sender, core.ManifestID(jobId))
 	if senderBalance == nil {
 		senderBalance = big.NewRat(0, 1)
