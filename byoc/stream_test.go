@@ -776,7 +776,7 @@ func TestStartStreamHandler(t *testing.T) {
 			Params:     "{}",
 		}
 		body, _ := json.Marshal(startReq)
-		req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewBuffer(body))
+		req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		req.Header.Set("Livepeer", base64TestJobRequest(10, true, true, true))
@@ -812,7 +812,7 @@ func TestStopStreamHandler(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			// Test case 1: Stream doesn't exist - should return 404
 			bsg := newTestBYOCGatewayServer(nil)
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/stop", nil)
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/stop", nil)
 			req.SetPathValue("streamId", "non-existent-stream")
 			w := httptest.NewRecorder()
 
@@ -894,7 +894,7 @@ func TestStopStreamHandler(t *testing.T) {
 			assert.NoError(t, err)
 			jobReqB64 := base64.StdEncoding.EncodeToString(jobReqB)
 
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/stop", strings.NewReader(`{"reason": "test stop"}`))
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/stop", strings.NewReader(`{"reason": "test stop"}`))
 			req.SetPathValue("streamId", streamID)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set(jobRequestHdr, jobReqB64)
@@ -976,7 +976,7 @@ func TestStopStreamHandler(t *testing.T) {
 			assert.NoError(t, err)
 			jobReqB64 := base64.StdEncoding.EncodeToString(jobReqB)
 
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/stop", nil)
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/stop", nil)
 			req.SetPathValue("streamId", streamID)
 			req.Header.Set(jobRequestHdr, jobReqB64)
 
@@ -1033,7 +1033,7 @@ func TestStartStreamWhipIngestHandler(t *testing.T) {
 			Params:     "{}",
 		}
 		body, _ := json.Marshal(startReq)
-		req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		urls, code, err := bsg.setupStream(context.Background(), req, gatewayJob)
@@ -1060,7 +1060,7 @@ func TestStartStreamWhipIngestHandler(t *testing.T) {
 		// Blank SDP offer to test through creating WHIP connection
 		sdpOffer1 := ""
 
-		whipReq := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/whip", strings.NewReader(sdpOffer1))
+		whipReq := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/whip", strings.NewReader(sdpOffer1))
 		whipReq.SetPathValue("streamId", "teststream-streamid")
 		whipReq.Header.Set("Content-Type", "application/sdp")
 
@@ -1086,7 +1086,7 @@ func TestGetStreamDataHandler(t *testing.T) {
 			// Test with missing stream ID - should return 400
 			bsg := newTestBYOCGatewayServer(nil)
 			handler := bsg.UpdateStream()
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update", nil)
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/update", nil)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1123,7 +1123,7 @@ func TestGetStreamDataHandler(t *testing.T) {
 				Params:     "{}",
 			}
 			body, _ := json.Marshal(startReq)
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 
 			urls, code, err := bsg.setupStream(context.Background(), req, gatewayJob)
@@ -1147,7 +1147,7 @@ func TestGetStreamDataHandler(t *testing.T) {
 			writer.Close()
 
 			handler := bsg.StreamData()
-			dataReq := httptest.NewRequest(http.MethodGet, "/ai/stream/{streamId}/data", nil)
+			dataReq := httptest.NewRequest(http.MethodGet, "/process/stream/{streamId}/data", nil)
 			dataReq.SetPathValue("streamId", "teststream-streamid")
 
 			// Create a context with timeout to prevent infinite blocking
@@ -1202,7 +1202,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 			// Test with missing stream ID - should return 400
 			bsg := newTestBYOCGatewayServer(nil)
 			handler := bsg.UpdateStream()
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update", nil)
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/update", nil)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1216,7 +1216,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 			node := mockJobLivepeerNode()
 			bsg := newTestBYOCGatewayServer(node)
 
-			req := httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/update",
 				strings.NewReader(`{"param1": "value1", "param2": "value2"}`))
 			req.SetPathValue("streamId", "non-existent-stream")
 			req.Header.Set("Content-Type", "application/json")
@@ -1250,7 +1250,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 			drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 			// Test 1: Wrong HTTP method
-			req := httptest.NewRequest(http.MethodGet, "/ai/stream/{streamId}/update", nil)
+			req := httptest.NewRequest(http.MethodGet, "/process/stream/{streamId}/update", nil)
 			req.SetPathValue("streamId", "test-stream")
 			w := httptest.NewRecorder()
 			bsg.UpdateStream().ServeHTTP(w, req)
@@ -1289,7 +1289,7 @@ func TestUpdateStreamHandler(t *testing.T) {
 
 			// Create a body larger than 10MB
 			largeData := bytes.Repeat([]byte("a"), 10*1024*1024+1)
-			req = httptest.NewRequest(http.MethodPost, "/ai/stream/{streamId}/update",
+			req = httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/update",
 				bytes.NewReader(largeData))
 			req.SetPathValue("streamId", streamID)
 			req.Header.Set(jobRequestHdr, jobReqB64)
@@ -1310,7 +1310,7 @@ func TestGetStreamStatusHandler(t *testing.T) {
 		bsg.statusStore.Clear("any-stream")
 		handler := bsg.StreamStatus()
 		// stream does not exist
-		req := httptest.NewRequest(http.MethodGet, "/ai/stream/{streamId}/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/process/stream/{streamId}/status", nil)
 		req.SetPathValue("streamId", "any-stream")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
@@ -1321,7 +1321,7 @@ func TestGetStreamStatusHandler(t *testing.T) {
 		bsg.node = node
 		bsg.newStreamPipeline("req-1", "any-stream", "test-capability", byocAIRequestParams{}, nil)
 		bsg.statusStore.StoreKey("any-stream", "test", "test")
-		req = httptest.NewRequest(http.MethodGet, "/ai/stream/{streamId}/status", nil)
+		req = httptest.NewRequest(http.MethodGet, "/process/stream/{streamId}/status", nil)
 		req.SetPathValue("streamId", "any-stream")
 		w = httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
