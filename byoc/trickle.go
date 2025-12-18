@@ -568,7 +568,13 @@ func (bsg *BYOCGatewayServer) startControlPublish(ctx context.Context, control *
 
 const clearStreamDelay = 1 * time.Minute
 
-func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url.URL, params byocAIRequestParams, orchAddr string, orchUrl string) {
+func (bsg *BYOCGatewayServer) startEventsSubscribe(
+	ctx context.Context,
+	url *url.URL,
+	params byocAIRequestParams,
+	orchAddr string,
+	orchUrl string,
+) {
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 		URL: url.String(),
 		Ctx: ctx,
@@ -577,32 +583,47 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
 		return
 	}
+
 	streamId := params.liveParams.streamID
 
-	// vars to check events periodically to ensure liveness
-	var (
+	const (
 		eventCheckInterval = 10 * time.Second
 		maxEventGap        = 30 * time.Second
-		eventTicker        = time.NewTicker(eventCheckInterval)
-		eventsDone         = make(chan bool)
-		// remaining vars in this block must be protected by mutex
-		lastEventMu = &sync.Mutex{}
+		maxRetries         = 5
+		retryPause         = 300 * time.Millisecond
+	)
+
+	eventTicker := time.NewTicker(eventCheckInterval)
+	eventsDone := make(chan struct{}, 1)
+
+	var (
+		lastEventMu sync.Mutex
 		lastEvent   = time.Now()
 	)
 
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
+	// Clear stream state after delay unless canceled
 	go func() {
-		defer time.AfterFunc(clearStreamDelay, func() {
+		select {
+		case <-time.After(clearStreamDelay):
 			bsg.statusStore.Clear(streamId)
-		})
+		case <-ctx.Done():
+		}
+	}()
+
+	// Event reader goroutine
+	go func() {
 		defer func() {
 			eventTicker.Stop()
-			eventsDone <- true
+			select {
+			case eventsDone <- struct{}{}:
+			default:
+			}
 		}()
-		const maxRetries = 5
-		const retryPause = 300 * time.Millisecond
+
 		retries := 0
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -610,34 +631,42 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 				return
 			default:
 			}
+
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
-			if err == nil {
-				retries = 0
-			} else {
-				// handle errors from event read
+			if err != nil {
 				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
 					clog.Infof(ctx, "Stopping subscription due to %s", err)
 					return
 				}
+
 				var seqErr *trickle.SequenceNonexistent
 				if errors.As(err, &seqErr) {
-					// stream exists but segment doesn't, so skip to leading edge
 					subscriber.SetSeq(seqErr.Latest)
 				}
-				if retries > maxRetries {
-					stopProcessing(ctx, params, fmt.Errorf("too many errors reading events; stopping subscription, err=%w", err))
+
+				if retries >= maxRetries {
+					stopProcessing(ctx, params, fmt.Errorf(
+						"too many errors reading events; stopping subscription: %w", err,
+					))
 					return
 				}
+
 				clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
 				retries++
-				time.Sleep(retryPause)
+
+				select {
+				case <-time.After(retryPause):
+				case <-ctx.Done():
+					return
+				}
 				continue
 			}
 
+			retries = 0
+
 			body, err := io.ReadAll(segment.Body)
 			segment.Body.Close()
-
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription body: %s", err)
 				continue
@@ -655,7 +684,6 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 			event := eventWrapper.Event
 			queueEventType := eventWrapper.QueueEventType
 			if event == nil {
-				// revert this once push to prod -- If no "event" field found, treat the entire body as the event
 				event = make(map[string]interface{})
 				if err := json.Unmarshal(body, &event); err != nil {
 					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
@@ -672,9 +700,10 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 				"url":     orchUrl,
 			}
 
-			clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v", trickle.GetSeq(segment), event)
+			clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v",
+				trickle.GetSeq(segment), event,
+			)
 
-			// record the event time
 			lastEventMu.Lock()
 			lastEvent = time.Now()
 			lastEventMu.Unlock()
@@ -682,28 +711,29 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 			eventType, ok := event["type"].(string)
 			if !ok {
 				eventType = "unknown"
-				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", streamId, event)
+				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v",
+					streamId, event,
+				)
 			}
 
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
-				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
-				// incoming status with the last non-null value that we received on such fields for the status API.
-				lastStreamStatus, _ := bsg.statusStore.Get(streamId)
 
-				// Check if inference_status exists in both current and last status
+				lastStreamStatus, _ := bsg.statusStore.Get(streamId)
 				inferenceStatus, hasInference := event["inference_status"].(map[string]interface{})
 				lastInferenceStatus, hasLastInference := lastStreamStatus["inference_status"].(map[string]interface{})
 
 				if hasInference {
 					if logs, ok := inferenceStatus["last_restart_logs"]; !ok || logs == nil {
 						if hasLastInference {
-							inferenceStatus["last_restart_logs"] = lastInferenceStatus["last_restart_logs"]
+							inferenceStatus["last_restart_logs"] =
+								lastInferenceStatus["last_restart_logs"]
 						}
 					}
 					if params, ok := inferenceStatus["last_params"]; !ok || params == nil {
 						if hasLastInference {
-							inferenceStatus["last_params"] = lastInferenceStatus["last_params"]
+							inferenceStatus["last_params"] =
+								lastInferenceStatus["last_params"]
 						}
 					}
 				}
@@ -715,22 +745,23 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(ctx context.Context, url *url
 		}
 	}()
 
-	// Use events as a heartbeat of sorts:
-	// if no events arrive for too long, abort the job
+	// Heartbeat watchdog
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
+			case <-eventsDone:
+				return
 			case <-eventTicker.C:
 				lastEventMu.Lock()
 				eventTime := lastEvent
 				lastEventMu.Unlock()
-				if time.Now().Sub(eventTime) > maxEventGap {
+
+				if time.Since(eventTime) > maxEventGap {
 					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for events"))
-					eventTicker.Stop()
 					return
 				}
-			case <-eventsDone:
-				return
 			}
 		}
 	}()
