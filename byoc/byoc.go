@@ -183,17 +183,17 @@ func (bsg *BYOCGatewayServer) streamPipelineRequest(streamId string) []byte {
 // registerRoutes registers all BYOC related routes
 func (bsg *BYOCGatewayServer) registerRoutes() {
 	// CORS preflight
-	bsg.httpMux.Handle("OPTIONS /ai/stream/", bsg.withCORS(http.StatusNoContent))
+	bsg.httpMux.Handle("OPTIONS /process/stream/", bsg.withCORS(http.StatusNoContent))
 
 	// Stream routes
-	bsg.httpMux.Handle("POST /ai/stream/start", bsg.StartStream())
-	bsg.httpMux.Handle("POST /ai/stream/{streamId}/update", bsg.UpdateStream())
-	bsg.httpMux.Handle("GET /ai/stream/{streamId}/status", bsg.StreamStatus())
-	bsg.httpMux.Handle("POST /ai/stream/{streamId}/stop", bsg.StopStream())
-	bsg.httpMux.Handle("GET /ai/stream/{streamId}/data", bsg.StreamData())
-	bsg.httpMux.Handle("POST /ai/stream/{streamId}/rtmp", bsg.StartStreamRTMPIngest())
+	bsg.httpMux.Handle("POST /process/stream/start", bsg.StartStream())
+	bsg.httpMux.Handle("POST /process/stream/{streamId}/update", bsg.UpdateStream())
+	bsg.httpMux.Handle("GET /process/stream/{streamId}/status", bsg.StreamStatus())
+	bsg.httpMux.Handle("POST /process/stream/{streamId}/stop", bsg.StopStream())
+	bsg.httpMux.Handle("GET /process/stream/{streamId}/data", bsg.StreamData())
+	bsg.httpMux.Handle("POST /process/stream/{streamId}/rtmp", bsg.StartStreamRTMPIngest())
 	if bsg.whipServer != nil {
-		bsg.httpMux.Handle("POST /ai/stream/{streamId}/whip", bsg.StartStreamWhipIngest(bsg.whipServer))
+		bsg.httpMux.Handle("POST /process/stream/{streamId}/whip", bsg.StartStreamWhipIngest(bsg.whipServer))
 	}
 
 	//TODO: add WHEP support
