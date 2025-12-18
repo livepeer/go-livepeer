@@ -493,19 +493,19 @@ func (bsg *BYOCGatewayServer) setupStream(ctx context.Context, r *http.Request, 
 		dataURL string
 	)
 
-	updateURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", bsg.node.GatewayHost, streamID, "update")
-	statusURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", bsg.node.GatewayHost, streamID, "status")
-	stopURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", bsg.node.GatewayHost, streamID, "stop")
+	updateURL := fmt.Sprintf("https://%s/process/stream/%s/%s", bsg.node.GatewayHost, streamID, "update")
+	statusURL := fmt.Sprintf("https://%s/process/stream/%s/%s", bsg.node.GatewayHost, streamID, "status")
+	stopURL := fmt.Sprintf("https://%s/process/stream/%s/%s", bsg.node.GatewayHost, streamID, "stop")
 
 	if job.Job.Params.EnableVideoIngress {
-		whipURL = fmt.Sprintf("https://%s/ai/stream/%s/%s", bsg.node.GatewayHost, streamID, "whip")
+		whipURL = fmt.Sprintf("https://%s/process/stream/%s/%s", bsg.node.GatewayHost, streamID, "whip")
 		rtmpURL = mediaMTXInputURL
 	}
 	if job.Job.Params.EnableVideoEgress {
 		whepURL = generateWhepUrl(streamID, requestID)
 	}
 	if job.Job.Params.EnableDataOutput {
-		dataURL = fmt.Sprintf("https://%s/ai/stream/%s/%s", bsg.node.GatewayHost, streamID, "data")
+		dataURL = fmt.Sprintf("https://%s/process/stream/%s/%s", bsg.node.GatewayHost, streamID, "data")
 	}
 
 	//if set this will overwrite settings above
