@@ -233,6 +233,8 @@ func (p *pendingPost) Write(data io.Reader) (int64, error) {
 
 		// Close the pipe writer to signal end of data for the current POST request
 		closeErr = writer.Close()
+	} else {
+		writer.Close()
 	}
 
 	// check for errors after write, eg >=400 status codes

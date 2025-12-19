@@ -142,19 +142,7 @@ func TestTrickle_Reset(t *testing.T) {
 	// codifying some awful behavior for now
 	// concurrent writes will stomp over one another
 	// and subscriber has no way to distinguish
-	require := require.New(t)
-	mux := http.NewServeMux()
-	server := ConfigureServer(TrickleServerConfig{
-		Mux:        mux,
-		Autocreate: true,
-	})
-	stop := server.Start()
-	ts := httptest.NewServer(mux)
-	//defer goleak.VerifyNone(t)
-	defer ts.Close()
-	defer stop()
-
-	channelURL := ts.URL + "/testest"
+	require, channelURL := makeServer(t)
 
 	pub, err := NewTricklePublisher(channelURL)
 	require.Nil(err)
@@ -198,10 +186,11 @@ func TestTrickle_Reset(t *testing.T) {
 	readCh := make(chan bool)
 	go func() {
 		defer close(readCh)
-		n, err := io.ReadFull(resp.Body, buf[5:11])
+		d := make([]byte, 11)
+		n, err := io.ReadFull(resp.Body, d)
 		require.Nil(err)
-		require.Equal(6, int(n))
-		require.Equal("yWorld", string(buf[5:11]))
+		require.Equal(11, int(n))
+		require.Equal("GoodbyWorld", string(d))
 	}()
 
 	// give the above goroutine time to spin up
@@ -226,7 +215,7 @@ func TestTrickle_Reset(t *testing.T) {
 	// this is horrible because existing read heads
 	// on the server is not reset during segment re-writes
 	// but thats the behavior right now so codify it here
-	require.Equal("HelloyWorld", string(buf[0:11]))
+	require.Equal("Hello\x00\x00\x00\x00\x00", string(buf[0:10]))
 
 	// now check a fresh read
 	sub.SetSeq(0)
@@ -234,7 +223,7 @@ func TestTrickle_Reset(t *testing.T) {
 	require.Nil(err)
 	data, err := io.ReadAll(resp2.Body)
 	defer resp2.Body.Close()
-	require.Equal("GoodbyWorld", string(data))
+	require.Equal("HelloGoodbyWorld", string(data))
 
 	wg.Wait()
 }
