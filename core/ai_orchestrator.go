@@ -1163,8 +1163,8 @@ func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) 
 func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string) error {
 	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
 	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
+		cap.Mu.Lock()
+		defer cap.Mu.Unlock()
 
 		cap.Load++
 		return nil
@@ -1176,8 +1176,8 @@ func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string
 func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) error {
 	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
 	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
+		cap.Mu.Lock()
+		defer cap.Mu.Unlock()
 
 		cap.Load--
 		return nil
@@ -1198,6 +1198,12 @@ func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability s
 	jobPrice, err := orch.jobPriceInfo(sender, jobCapability)
 	if err != nil {
 		return nil, err
+	}
+
+	//ensure price numerator and denominator can be int64
+	jobPrice, err = common.PriceToInt64(jobPrice)
+	if err != nil {
+		return nil, fmt.Errorf("invalid job price: %w", err)
 	}
 
 	return &net.PriceInfo{

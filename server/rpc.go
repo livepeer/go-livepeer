@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -196,6 +197,7 @@ type lphttp struct {
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
 	trickleSrv   *trickle.Server
+	byocSrv      *byoc.BYOCOrchestratorServer
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
@@ -250,10 +252,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
 	//API for dynamic capabilities
-	lp.transRPC.HandleFunc("/process/request/", lp.ProcessJob)
-	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
-	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)
-	lp.transRPC.HandleFunc("/capability/unregister", lp.UnregisterCapability)
+	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
