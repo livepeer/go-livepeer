@@ -18,6 +18,12 @@ import (
 
 const CHANGEFEED = "_changes"
 
+// Stream exists but segment doesn't
+const StatusNoSegment = 470
+
+// Stream exists but is closed
+const StatusStreamClosed = 471
+
 type TrickleServerConfig struct {
 	// Base HTTP path for the server
 	BasePath string
@@ -36,6 +42,14 @@ type TrickleServerConfig struct {
 
 	// How often to sweep for idle channels (default 1 minute)
 	SweepInterval time.Duration
+
+	// Return the current time. Used mostly for testing.
+	Now func() time.Time
+
+	// Whether to delay cleanup of channel contents after closing.
+	// Writes are not allowed after closing, but reads are.
+	// Closed channels are cleared after IdleTimeout.
+	DelayCleanup bool
 }
 
 type Server struct {
@@ -50,6 +64,7 @@ type Server struct {
 
 type Stream struct {
 	mutex     sync.RWMutex
+	config    TrickleServerConfig
 	segments  []*Segment
 	name      string
 	mimeType  string
@@ -96,6 +111,9 @@ func applyDefaults(config *TrickleServerConfig) {
 	}
 	if config.SweepInterval == 0 {
 		config.SweepInterval = time.Minute
+	}
+	if config.Now == nil {
+		config.Now = time.Now
 	}
 }
 
@@ -160,9 +178,10 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	if !exists && (isLocal || sm.config.Autocreate) {
 		stream = &Stream{
 			segments:  make([]*Segment, maxSegmentsPerStream),
+			config:    sm.config,
 			name:      streamName,
 			mimeType:  mimeType,
-			writeTime: time.Now(),
+			writeTime: sm.config.Now(),
 			canReset:  !isLocal,
 		}
 		sm.streams[streamName] = stream
@@ -201,7 +220,7 @@ func (sm *Server) sweepIdleChannels() {
 	sm.mutex.Lock()
 	streams := slices.Collect(maps.Values(sm.streams))
 	sm.mutex.Unlock()
-	now := time.Now()
+	now := sm.config.Now()
 	for _, s := range streams {
 		// skip internal channels for now, eg changefeed
 		if strings.HasPrefix(s.name, "_") {
@@ -226,7 +245,9 @@ func (s *Stream) close() {
 	for _, segment := range s.segments {
 		segment.close()
 	}
-	s.segments = make([]*Segment, maxSegmentsPerStream)
+	if !s.config.DelayCleanup {
+		s.segments = make([]*Segment, maxSegmentsPerStream)
+	}
 	s.closed = true
 }
 
@@ -240,7 +261,9 @@ func (sm *Server) closeStream(streamName string) error {
 
 	stream.close()
 	sm.mutex.Lock()
-	delete(sm.streams, streamName)
+	if !sm.config.DelayCleanup || sm.config.Now().Sub(stream.writeTime) > sm.config.IdleTimeout {
+		delete(sm.streams, streamName)
+	}
 	sm.mutex.Unlock()
 	slog.Info("Deleted stream", "streamName", streamName)
 
@@ -373,7 +396,14 @@ func (tr *timeoutReader) Close() error {
 
 // Handle post requests for a given index
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
-	segment, _ := s.getForWrite(idx)
+	segment, _, closed := s.getForWrite(idx)
+
+	if closed {
+		w.Header().Set("Connection", "close") // wakes up gotrickle preconnects
+		w.Header().Set("Lp-Trickle-Closed", "terminated")
+		http.Error(w, "Stream closed", http.StatusNotFound)
+		return
+	}
 
 	// Wrap the request body with the custom timeoutReader so we can send
 	// provisional headers (keepalives) until receiving the first byte
@@ -394,7 +424,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 			if totalRead == 0 {
 				s.mutex.Lock()
 				s.nextWrite = idx + 1
-				s.writeTime = time.Now()
+				s.writeTime = s.config.Now()
 				s.mutex.Unlock()
 			}
 			segment.writeData(buf[:n])
@@ -441,9 +471,12 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment.close()
 }
 
-func (s *Stream) getForWrite(idx int) (*Segment, bool) {
+func (s *Stream) getForWrite(idx int) (*Segment, bool, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	if s.closed {
+		return nil, false, true
+	}
 	if idx == -1 {
 		idx = s.nextWrite
 	}
@@ -456,9 +489,9 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 				if reset > 0 {
 					slog.Warn("Reset an existing segment", "stream", s.name, "idx", idx, "bytes", reset)
 				}
-				return segment, reset > 0
+				return segment, reset > 0, false
 			}
-			return segment, !segment.isFresh()
+			return segment, !segment.isFresh(), false
 		}
 		// something exists here but its not the expected segment
 		// probably an old segment so overwrite it
@@ -466,7 +499,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	}
 	segment := newSegment(idx)
 	s.segments[segmentPos] = segment
-	return segment, false
+	return segment, false, false
 }
 
 func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
@@ -521,7 +554,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			w.Header().Set("Lp-Trickle-Closed", "terminated")
 		} else {
 			// Special status to indicate "stream exists but segment doesn't"
-			w.WriteHeader(470)
+			w.WriteHeader(StatusNoSegment)
 		}
 		w.Write([]byte("Entry not found"))
 		return
@@ -580,7 +613,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 						// other times, the subscriber is slow and the segment falls out of the live window
 						// send over latest seq so slow clients can grab leading edge
 						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
-						w.WriteHeader(470)
+						w.WriteHeader(StatusNoSegment)
 					}
 				}
 				return totalWrites, nil
