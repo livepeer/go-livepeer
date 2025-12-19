@@ -69,19 +69,7 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 	//send the request to the Orchestrator(s)
 	//the loop ends on Gateway error and bad request errors
 	for _, orchToken := range gatewayJob.Orchs {
-
-		// Extract the worker resource route from the URL path
-		// The prefix is "/process/request/"
-		// if the request does not include the last / of the prefix no additional url path is added
-		workerRoute := orchToken.ServiceAddr + "/process/request"
-		prefix := "/process/request/"
 		workerResourceRoute := r.URL.Path
-		if strings.HasPrefix(workerResourceRoute, prefix) {
-			workerResourceRoute = workerResourceRoute[len(prefix):]
-		}
-		if workerResourceRoute != "" {
-			workerRoute = workerRoute + "/" + workerResourceRoute
-		}
 
 		err := gatewayJob.sign()
 		if err != nil {
