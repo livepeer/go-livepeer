@@ -31,7 +31,7 @@ if [ "${PIPELINE}" = "noop" ]; then
 elif [[ "${PIPELINE}" == "streamdiffusion" || "${PIPELINE}" =~ ^streamdiffusion- ]]; then
   DOCKERFILE_PATH="live/streamdiffusion/Dockerfile"
 
-  SUBVARIANT="sdturbo"
+  SUBVARIANT=""
   if [[ "$PIPELINE" =~ ^streamdiffusion- ]]; then
     SUBVARIANT="${PIPELINE#streamdiffusion-}"
   fi
