@@ -443,25 +443,11 @@ func (bso *BYOCOrchestratorServer) setupOrchJob(ctx context.Context, r *http.Req
 	if err != nil {
 		return nil, errors.New("Could not get job price")
 	}
-	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 
-	//no payment included, confirm if balance remains
-	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-	orchBal := big.NewRat(0, 1)
-	// if price is 0, no payment required
-	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-		minBal := new(big.Rat).Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
-		//process payment if included
-		orchBal, pmtErr := bso.processPayment(ctx, sender, jobReq.Capability, r.Header.Get(jobPaymentHeaderHdr))
-		if pmtErr != nil {
-			//log if there are payment errors but continue, balance will runout and clean up
-			clog.Infof(ctx, "job payment error: %v", pmtErr)
-		}
-
-		if orchBal.Cmp(minBal) < 0 {
-			orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-			return nil, errInsufficientBalance
-		}
+	pmtErr := bso.confirmPayment(ctx, sender, jobReq.Capability, jobPrice, r.Header.Get(jobPaymentHeaderHdr))
+	if pmtErr != nil {
+		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+		return nil, pmtErr
 	}
 
 	var jobDetails JobRequestDetails
@@ -470,9 +456,33 @@ func (bso *BYOCOrchestratorServer) setupOrchJob(ctx context.Context, r *http.Req
 		return nil, fmt.Errorf("Unable to unmarshal job request details err=%v", err)
 	}
 
-	clog.Infof(ctx, "job request verified id=%v sender=%v capability=%v timeout=%v price=%v balance=%v", jobReq.ID, jobReq.Sender, jobReq.Capability, jobReq.Timeout, jobPriceRat.FloatString(0), orchBal.FloatString(0))
+	clog.Infof(ctx, "job request verified id=%v sender=%v capability=%v timeout=%v", jobReq.ID, jobReq.Sender, jobReq.Capability, jobReq.Timeout)
 
 	return &orchJob{Req: jobReq, Sender: sender, JobPrice: jobPrice, Details: &jobDetails}, nil
+}
+
+func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender ethcommon.Address, capability string, jobPrice *net.PriceInfo, paymentHdr string) error {
+
+	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+
+	//no payment included, confirm if balance remains
+	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+	// if price is 0, no payment required
+	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+		minBal := new(big.Rat).Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+		//process payment if included
+		orchBal, pmtErr := bso.processPayment(ctx, sender, capability, paymentHdr)
+		if pmtErr != nil {
+			//log if there are payment errors but continue, balance will runout and clean up
+			clog.Infof(ctx, "job payment error: %v", pmtErr)
+		}
+
+		if orchBal.Cmp(minBal) < 0 {
+			return errInsufficientBalance
+		}
+	}
+
+	return nil
 }
 
 // process payment and return balance
