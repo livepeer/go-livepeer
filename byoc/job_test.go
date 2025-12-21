@@ -23,14 +23,11 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/protobuf/proto"
-	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
-	"github.com/livepeer/go-tools/drivers"
-	"github.com/livepeer/lpms/stream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -74,10 +71,10 @@ func (r *mockJobOrchestrator) ServiceURI() *url.URL {
 	return url
 }
 
+// Nodes, ExtraNodes and Sign methods needed because the mockJobOrchestrator is reused as a stubGateway
 func (r *mockJobOrchestrator) Nodes() []string {
 	return nil
 }
-
 func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 	if r.offchain {
 		return nil, nil
@@ -101,12 +98,11 @@ func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 
 	return append(sig[:64], v), nil
 }
-
-func (r *mockJobOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
-	return r.verifySignature(addr, msg, sig)
-}
 func (r *mockJobOrchestrator) ExtraNodes() int {
 	return r.extraNodes
+}
+func (r *mockJobOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	return r.verifySignature(addr, msg, sig)
 }
 func (r *mockJobOrchestrator) Address() ethcommon.Address {
 	if r.offchain {
@@ -114,42 +110,20 @@ func (r *mockJobOrchestrator) Address() ethcommon.Address {
 	}
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *mockJobOrchestrator) TranscodeSeg(ctx context.Context, md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
-	return r.res, nil
-}
-func (r *mockJobOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
-	return []core.StreamID{}, nil
-}
-
 func (r *mockJobOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
 	if r.processPayment != nil {
 		return r.processPayment(ctx, payment, manifestID)
 	}
 	return nil
 }
-
 func (r *mockJobOrchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error) {
 	return r.ticketParams(sender, priceInfo)
 }
-
-func (r *mockJobOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error) {
-	return r.priceInfo, nil
-}
-
-func (r *mockJobOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
-	return []*net.PriceInfo{}, nil
-}
-
-func (r *mockJobOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
-	return true
-}
-
 func (r *mockJobOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 	if r.debitFees != nil {
 		r.debitFees(addr, manifestID, price, pixels)
 	}
 }
-
 func (r *mockJobOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
 	if r.balance != nil {
 		return r.balance(addr, manifestID)
@@ -157,87 +131,8 @@ func (r *mockJobOrchestrator) Balance(addr ethcommon.Address, manifestID core.Ma
 		return big.NewRat(0, 1)
 	}
 }
-
-func (r *mockJobOrchestrator) Capabilities() *net.Capabilities {
-	if r.caps != nil {
-		return r.caps.ToNetCapabilities()
-	}
-	return core.NewCapabilities(nil, nil).ToNetCapabilities()
-}
-func (r *mockJobOrchestrator) LegacyOnly() bool {
-	return true
-}
-
-func (r *mockJobOrchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
-	if r.authToken != nil {
-		return r.authToken
-	}
-	return &net.AuthToken{Token: []byte("foo"), SessionId: sessionID, Expiration: expiration}
-}
-
-func (r *mockJobOrchestrator) CheckCapacity(mid core.ManifestID) error {
-	return r.sessCapErr
-}
-func (r *mockJobOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
-}
-func (r *mockJobOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
-}
 func (r *mockJobOrchestrator) TranscoderSecret() string {
 	return "secret"
-}
-func (r *mockJobOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
-	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
-}
-func (r *mockJobOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-
-func (r *mockJobOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-
-func (r *mockJobOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
-	return true, nil
-}
-func (r *mockJobOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-}
-func (r *mockJobOrchestrator) CreateStorageForRequest(requestID string) error {
-	return nil
-}
-func (r *mockJobOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
-	return drivers.NewMockOSSession(), true
-}
-func (r *mockJobOrchestrator) WorkerHardware() []worker.HardwareInformation {
-	return []worker.HardwareInformation{}
-}
-func (r *mockJobOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
-}
-func (r *mockJobOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
-	return worker.Capacity{}
 }
 func (r *mockJobOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
 	return r.registerExternalCapability(extCapabilitySettings)
@@ -362,7 +257,6 @@ func mockJobLivepeerNode() *core.LivepeerNode {
 	return node
 }
 
-// Tests for RegisterCapability
 func TestRegisterCapability_MethodNotAllowed(t *testing.T) {
 	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
@@ -546,7 +440,6 @@ func TestUnregisterCapability(t *testing.T) {
 	})
 }
 
-// Tests for GetJobToken
 func TestGetJobToken_MethodNotAllowed(t *testing.T) {
 	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
@@ -913,7 +806,6 @@ func TestGetJobToken_Success(t *testing.T) {
 	assert.Equal(t, int64(1000), token.Balance)
 }
 
-// Tests for ProcessJob
 func TestProcessJob_MethodNotAllowed(t *testing.T) {
 	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
@@ -930,7 +822,6 @@ func TestProcessJob_MethodNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 }
 
-// Tests for SubmitJob handler
 func TestSubmitJob_MethodNotAllowed(t *testing.T) {
 	bsg := &BYOCGatewayServer{
 		node: mockJobLivepeerNode(),
