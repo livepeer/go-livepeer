@@ -45,7 +45,7 @@ func (bsg *BYOCGatewayServer) StartStream() http.Handler {
 		//setup body size limit, will error if too large
 		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 		streamUrls, code, err := bsg.setupStream(ctx, r, gatewayJob)
-		if err != nil {
+		if err != nil || streamUrls == nil {
 			clog.Errorf(ctx, "Error setting up stream: %s", err)
 			http.Error(w, err.Error(), code)
 			return
@@ -55,15 +55,10 @@ func (bsg *BYOCGatewayServer) StartStream() http.Handler {
 
 		go bsg.monitorStream(gatewayJob.Job.Req.ID)
 
-		if streamUrls != nil {
-			// Stream started successfully
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(streamUrls)
-		} else {
-			//case where we are subscribing to own streams in setupStream
-			w.WriteHeader(http.StatusNoContent)
-		}
+		// Stream started successfully
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(streamUrls)
 	})
 }
 
