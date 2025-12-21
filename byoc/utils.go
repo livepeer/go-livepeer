@@ -1,5 +1,8 @@
 package byoc
 
+// NOTE: with this exception of the sign() function for gatewayJob, all methods in this file are
+// duplicated from server package with minimal changes to be used with byoc package.
+
 import (
 	"context"
 	"encoding/base64"
@@ -26,6 +29,26 @@ import (
 )
 
 var sendJobReqWithTimeout = sendReqWithTimeout
+
+func (g *gatewayJob) sign() error {
+	//sign the request
+	gateway := g.node.OrchestratorPool.Broadcaster()
+	sig, err := gateway.Sign([]byte(g.Job.Req.Request + g.Job.Req.Parameters))
+	if err != nil {
+		return errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
+	}
+	g.Job.Req.Sender = gateway.Address().Hex()
+	g.Job.Req.Sig = "0x" + hex.EncodeToString(sig)
+
+	//create the job request header with the signature
+	jobReqEncoded, err := json.Marshal(g.Job.Req)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
+	}
+	g.SignedJobReq = base64.StdEncoding.EncodeToString(jobReqEncoded)
+
+	return nil
+}
 
 func parseJobRequest(jobReq string) (*JobRequest, error) {
 	buf, err := base64.StdEncoding.DecodeString(jobReq)
@@ -65,6 +88,19 @@ func getRemoteAddr(r *http.Request) string {
 	return host
 }
 
+func parseBalance(line string) *big.Rat {
+	balanceStr := strings.Replace(line, "balance:", "", 1)
+	balanceStr = strings.Replace(line, "data:", "", 1)
+	balanceStr = strings.TrimSpace(balanceStr)
+
+	balance, ok := new(big.Rat).SetString(balanceStr)
+	if ok {
+		return balance
+	} else {
+		return big.NewRat(0, 1)
+	}
+}
+
 func getRemoteHost(remoteAddr string) (string, error) {
 	if remoteAddr == "" {
 		return "", errors.New("remoteAddr is empty")
@@ -84,39 +120,6 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	}
 
 	return host, nil
-}
-
-func parseBalance(line string) *big.Rat {
-	balanceStr := strings.Replace(line, "balance:", "", 1)
-	balanceStr = strings.Replace(line, "data:", "", 1)
-	balanceStr = strings.TrimSpace(balanceStr)
-
-	balance, ok := new(big.Rat).SetString(balanceStr)
-	if ok {
-		return balance
-	} else {
-		return big.NewRat(0, 1)
-	}
-}
-
-func (g *gatewayJob) sign() error {
-	//sign the request
-	gateway := g.node.OrchestratorPool.Broadcaster()
-	sig, err := gateway.Sign([]byte(g.Job.Req.Request + g.Job.Req.Parameters))
-	if err != nil {
-		return errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
-	}
-	g.Job.Req.Sender = gateway.Address().Hex()
-	g.Job.Req.Sig = "0x" + hex.EncodeToString(sig)
-
-	//create the job request header with the signature
-	jobReqEncoded, err := json.Marshal(g.Job.Req)
-	if err != nil {
-		return errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
-	}
-	g.SignedJobReq = base64.StdEncoding.EncodeToString(jobReqEncoded)
-
-	return nil
 }
 
 func sendReqWithTimeout(req *http.Request, timeout time.Duration) (*http.Response, error) {

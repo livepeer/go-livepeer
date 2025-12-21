@@ -52,10 +52,6 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 
 	clog.Infof(ctx, "Job request setup complete details=%v params=%v", gatewayJob.Job.Details, gatewayJob.Job.Params)
 
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Unable to setup job err=%v", err), http.StatusBadRequest)
-		return
-	}
 	ctx = clog.AddVal(ctx, "job_id", gatewayJob.Job.Req.ID)
 	ctx = clog.AddVal(ctx, "capability", gatewayJob.Job.Req.Capability)
 	// Read the original request body
@@ -87,12 +83,12 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 		//error response from Orchestrator
 		if code > 399 {
 			data, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			if err != nil {
 				clog.Errorf(ctx, "Unable to read response err=%v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				continue
 			}
-			resp.Body.Close()
 
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 			//nonretryable error
@@ -118,12 +114,12 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 		if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 			//non streaming response
 			data, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			if err != nil {
 				clog.Errorf(ctx, "Unable to read response err=%v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				continue
 			}
-			resp.Body.Close()
 
 			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance)
@@ -204,7 +200,8 @@ func (bsg *BYOCGatewayServer) sendJobToOrch(ctx context.Context, r *http.Request
 		return nil, http.StatusInternalServerError, err
 	}
 
-	// set the headers
+	// set the headers from the incoming request if present
+	// byoc requests start with being passthrough oriented so reuse what we can when we can
 	if r != nil {
 		req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
 		req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
@@ -350,13 +347,14 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	getOrchJobToken := func(ctx context.Context, orchUrl *url.URL, reqSender JobSender, respTimeout time.Duration, tokenCh chan JobToken, errCh chan error) {
 		start := time.Now()
 		tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl.String()+"/process/token", nil)
-		reqSenderStr, _ := json.Marshal(reqSender)
-		tokenReq.Header.Set(jobEthAddressHdr, base64.StdEncoding.EncodeToString(reqSenderStr))
-		tokenReq.Header.Set(jobCapabilityHdr, capability)
 		if err != nil {
 			clog.Errorf(ctx, "Failed to create request for Orchestrator to verify job token request err=%v", err)
 			return
 		}
+
+		reqSenderStr, _ := json.Marshal(reqSender)
+		tokenReq.Header.Set(jobEthAddressHdr, base64.StdEncoding.EncodeToString(reqSenderStr))
+		tokenReq.Header.Set(jobCapabilityHdr, capability)
 
 		resp, err := sendJobReqWithTimeout(tokenReq, respTimeout)
 		if err != nil {
@@ -482,10 +480,10 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 			continue
 		}
 		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			clog.Errorf(ctx, "Failed to read token response from Orchestrator %v err=%v", orchUrl, err)
 		}
-		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			clog.Errorf(ctx, "Failed to get token from Orchestrator %v status=%v (attempt %d)", orchUrl, resp.StatusCode, attempt+1)

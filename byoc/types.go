@@ -46,7 +46,7 @@ var (
 	errSegSig               = errors.New("ErrSegSig")
 )
 
-// Orchestrator is an interface for orchestrator operations
+// Orchestrator is a subset of the Orchestrator interface for orchestrator operations needed by BYOC
 type Orchestrator interface {
 	TranscoderSecret() string
 	VerifySig(addr ethcommon.Address, msg string, sig []byte) bool
@@ -64,6 +64,7 @@ type Orchestrator interface {
 	DebitFees(sender ethcommon.Address, manifestID core.ManifestID, priceInfo *net.PriceInfo, units int64)
 }
 
+// interface to interact with streamStatusStore passed to BYOCGatewayServer at initialization
 type StatusStore interface {
 	Store(streamID string, status map[string]interface{})
 	StoreKey(streamID, key string, status interface{})

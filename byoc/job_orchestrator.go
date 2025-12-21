@@ -117,6 +117,7 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 
 		if bso.node.NodeType != core.OrchestratorNode {
 			http.Error(w, "request not allowed", http.StatusBadRequest)
+			return
 		}
 
 		remoteAddr := getRemoteAddr(r)
@@ -266,6 +267,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 	if err != nil {
 		clog.Errorf(ctx, "Unable to create request err=%v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	// set the headers
 	req.Header.Add("Content-Length", r.Header.Get("Content-Length"))

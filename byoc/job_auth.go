@@ -1,5 +1,8 @@
 package byoc
 
+//NOTE: methods in this file are duplicated from server package.  The auth webhook methods are not
+// exported from server package and cannot be imported directly.  Not changes have been made to the logic.
+
 import (
 	"bytes"
 	"encoding/json"

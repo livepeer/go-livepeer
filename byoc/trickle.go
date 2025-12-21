@@ -1,5 +1,8 @@
 package byoc
 
+//NOTE: This file is largely duplicated code from server/ai_live_video.go.  Main modifications are to interact directly
+// with BYOC server structures rather than core LivepeerNode structures.
+
 import (
 	"bufio"
 	"bytes"
