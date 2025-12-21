@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -194,21 +193,6 @@ func base64TestJobRequest(timeout int, enableVideoIngress, enableVideoEgress, en
 	b, _ := json.Marshal(jr)
 
 	return base64.StdEncoding.EncodeToString(b)
-}
-
-func orchAIStreamStartHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/ai/stream/start" {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Publish-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, "/ai/trickle/", "test-stream"))
-	w.Header().Set("X-Subscribe-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, "/ai/trickle/", "test-stream-out"))
-	w.Header().Set("X-Control-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, "/ai/trickle/", "test-stream-control"))
-	w.Header().Set("X-Events-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, "/ai/trickle/", "test-stream-events"))
-	w.Header().Set("X-Data-Url", fmt.Sprintf("%s%s%s", stubOrchServerUrl, "/ai/trickle/", "test-stream-data"))
-	w.WriteHeader(http.StatusOK)
 }
 
 func orchAIStreamStartNoUrlsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1682,70 +1666,4 @@ func TestGetStreamRequestParams(t *testing.T) {
 		_, err := bsg.streamPipelineParams("")
 		assert.Error(t, err)
 	})
-}
-
-// createMockMediaMTXServer creates a simple mock MediaMTX server that returns 200 OK to all requests
-func createMockMediaMTXServer(t *testing.T) *httptest.Server {
-	// Track which IDs have been kicked
-	kickedIDs := make(map[string]bool)
-	var kickedMu sync.Mutex
-
-	mux := http.NewServeMux()
-
-	// Handler that tracks kicked IDs and returns 400 for get requests on kicked IDs
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		t.Logf("Mock MediaMTX: %s %s", r.Method, r.URL.Path)
-
-		// Check if this is a kick request
-		if strings.Contains(r.URL.Path, "/kick/") {
-			parts := strings.Split(r.URL.Path, "/")
-			if len(parts) > 0 {
-				id := parts[len(parts)-1]
-				kickedMu.Lock()
-				kickedIDs[id] = true
-				kickedMu.Unlock()
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-			return
-		}
-
-		// Check if this is a get request for a kicked ID
-		if strings.Contains(r.URL.Path, "/get/") {
-			parts := strings.Split(r.URL.Path, "/")
-			if len(parts) > 0 {
-				id := parts[len(parts)-1]
-				kickedMu.Lock()
-				wasKicked := kickedIDs[id]
-				kickedMu.Unlock()
-
-				if wasKicked {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte("Connection not found"))
-					return
-				}
-			}
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	// Create a listener on port 9997 specifically
-	listener, err := net.Listen("tcp", ":9997")
-	if err != nil {
-		t.Fatalf("Failed to listen on port 9997: %v", err)
-	}
-
-	server := &httptest.Server{
-		Listener: listener,
-		Config:   &http.Server{Handler: mux},
-	}
-	server.Start()
-
-	t.Cleanup(func() {
-		server.Close()
-	})
-
-	return server
 }
