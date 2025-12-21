@@ -24,13 +24,11 @@ import (
 
 func (bsg *BYOCGatewayServer) StartStream() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			corsHeaders(w, r.Method)
-			w.WriteHeader(http.StatusNoContent)
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Create fresh context instead of using r.Context() since ctx will outlive the request
 		ctx := r.Context()
 
 		corsHeaders(w, r.Method)
@@ -116,7 +114,10 @@ func (bsg *BYOCGatewayServer) sendStopStreamToOrch(ctx context.Context, streamID
 		},
 		node: bsg.node,
 	}
-	stopJob.sign()
+	err = stopJob.sign()
+	if err != nil {
+		return nil, fmt.Errorf("error signing stop job: %w", err)
+	}
 
 	jobSender, err := getJobSender(ctx, bsg.node)
 	if err != nil {
@@ -178,12 +179,7 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 		clog.Infof(ctx, "Starting stream processing")
 		//refresh the token if not first Orch to confirm capacity and new ticket params
 		if firstProcessed {
-			newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
-			if err != nil {
-				clog.Errorf(ctx, "Error getting token for orch=%v err=%v", orch.ServiceAddr, err)
-				continue
-			}
-			orch = *newToken
+			orch = bsg.refreshToken(ctx, streamID, orch, gatewayJob)
 		}
 
 		ctx = clog.AddVal(ctx, "orch", hexutil.Encode(orch.TicketParams.Recipient))
@@ -210,8 +206,9 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orch.ServiceAddr, err.Error())
 			continue
 		}
-		defer orchResp.Body.Close()
+		//discard response and close
 		io.Copy(io.Discard, orchResp.Body)
+		orchResp.Body.Close()
 
 		bsg.statusStore.StoreKey(streamID, "orchestrator", orch.ServiceAddr)
 		orchUrls := orchTrickleUrls{
@@ -254,6 +251,7 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 			break
 		}
 		if firstProcessed {
+			lastSwap = time.Now()
 			swapCnt++
 		} else {
 			firstProcessed = true
@@ -281,6 +279,17 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 	//all orchestrators tried or stream ended, stop the stream
 	// stream stop called in defer above
 	exitErr = errors.New("All Orchestrators exhausted, restart the stream")
+}
+
+func (bsg *BYOCGatewayServer) refreshToken(ctx context.Context, streamID string, orch JobToken, gatewayJob *gatewayJob) JobToken {
+	clog.Infof(ctx, "Refreshing token for orchestrator %v", orch.ServiceAddr)
+	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
+	if err != nil {
+		clog.Errorf(ctx, "Error getting token for orch=%v err=%v", orch.ServiceAddr, err)
+		return orch
+	}
+
+	return *newToken
 }
 
 func (bsg *BYOCGatewayServer) monitorStream(streamId string) {
