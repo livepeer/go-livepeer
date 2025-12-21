@@ -86,13 +86,14 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 
 		//error response from Orchestrator
 		if code > 399 {
-			defer resp.Body.Close()
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				clog.Errorf(ctx, "Unable to read response err=%v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				continue
 			}
+			resp.Body.Close()
+
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 			//nonretryable error
 			if code < 500 {
@@ -116,13 +117,13 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 
 		if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 			//non streaming response
-			defer resp.Body.Close()
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				clog.Errorf(ctx, "Unable to read response err=%v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				continue
 			}
+			resp.Body.Close()
 
 			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance)
@@ -480,11 +481,11 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 			clog.Errorf(ctx, "failed to get token from Orchestrator (attempt %d) err=%v", attempt+1, err)
 			continue
 		}
-		defer resp.Body.Close()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			clog.Errorf(ctx, "Failed to read token response from Orchestrator %v err=%v", orchUrl, err)
 		}
+		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			clog.Errorf(ctx, "Failed to get token from Orchestrator %v status=%v (attempt %d)", orchUrl, resp.StatusCode, attempt+1)

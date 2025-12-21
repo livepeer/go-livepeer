@@ -138,11 +138,11 @@ func (bsg *BYOCGatewayServer) sendStopStreamToOrch(ctx context.Context, streamID
 	if err != nil {
 		return nil, fmt.Errorf("error sending stop job to orchestrator: %w", err)
 	}
-	defer resp.Body.Close()
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading stop response body: %w", err)
 	}
+	resp.Body.Close()
 
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("orchestrator returned status %d", code)
@@ -895,7 +895,6 @@ func (bsg *BYOCGatewayServer) StreamData() http.Handler {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
