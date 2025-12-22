@@ -134,11 +134,12 @@ func (bsg *BYOCGatewayServer) sendStopStreamToOrch(ctx context.Context, streamID
 	if err != nil {
 		return nil, fmt.Errorf("error sending stop job to orchestrator: %w", err)
 	}
+	defer resp.Body.Close()
+
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading stop response body: %w", err)
 	}
-	resp.Body.Close()
 
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("orchestrator returned status %d", code)
@@ -875,7 +876,7 @@ func (bsg *BYOCGatewayServer) StreamData() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamId := r.PathValue("streamId")
 		if streamId == "" {
-			http.Error(w, "stream name is required", http.StatusBadRequest)
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
 
@@ -1023,11 +1024,9 @@ func (bsg *BYOCGatewayServer) UpdateStream() http.Handler {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			// Call reportUpdate callback if available
-			if reportUpdate != nil {
-				reportUpdate(data)
-			}
+		// Call reportUpdate callback if available
+		if reportUpdate != nil {
+			reportUpdate(data)
 		}
 
 		clog.Infof(ctx, "stream params updated for stream=%s, but orchestrator returned status %d", streamId, resp.StatusCode)
@@ -1113,9 +1112,4 @@ func (bsg *BYOCGatewayServer) runStats(ctx context.Context, whipConn *media.WHIP
 			})
 		}
 	}
-}
-
-func stopProcessing(ctx context.Context, params byocAIRequestParams, err error) {
-	clog.InfofErr(ctx, "Stopping processing", err)
-	params.liveParams.kickOrch(err)
 }

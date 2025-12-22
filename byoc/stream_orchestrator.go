@@ -113,7 +113,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		//parse the request body json to add to the request to the runner
 		var bodyJSON map[string]interface{}
 		if err := json.Unmarshal(body, &bodyJSON); err != nil {
-			clog.Errorf(ctx, "Failed to parse body as JSON, using as string: %v", err)
+			clog.Errorf(ctx, "Failed to parse body as JSON: %v", err)
 			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
@@ -178,96 +178,106 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 
 		stream.SetChannels(pubCh, subCh, controlPubCh, eventsCh, dataCh)
 
-		//start payment monitoring
-		go func() {
-			stream, exists := bso.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
-			if !exists {
-				clog.Infof(ctx, "Stream not found for payment monitoring, exiting monitoring stream_id=%s", orchJob.Req.ID)
-				return
-			}
-
-			ctx := context.Background()
-			ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
-			ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
-
-			pmtCheckDur := 23 * time.Second //run slightly faster than gateway so can return updated balance
-			pmtTicker := time.NewTicker(pmtCheckDur)
-			defer pmtTicker.Stop()
-			shouldStopStreamNextRound := false
-			for {
-				select {
-				case <-stream.StreamCtx.Done():
-					bso.orch.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
-					clog.Infof(ctx, "Stream ended, stopping payment monitoring and released capacity")
-					return
-				case <-pmtTicker.C:
-					// Check payment status
-					extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]
-					if !ok {
-						clog.Errorf(ctx, "Capability not found for payment monitoring, exiting monitoring capability=%s", orchJob.Req.Capability)
-						return
-					}
-					jobPriceRat := big.NewRat(orchJob.JobPrice.PricePerUnit, orchJob.JobPrice.PixelsPerUnit)
-					if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-						//lock during balance update to complete balance update
-						extCap.Mu.Lock()
-						bso.orch.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, int64(pmtCheckDur.Seconds()))
-						senderBalance := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
-						extCap.Mu.Unlock()
-						if senderBalance != nil {
-							if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
-								if !shouldStopStreamNextRound {
-									//warn once
-									clog.Warningf(ctx, "Insufficient balance for stream capability, will stop stream next round if not replenished sender=%s capability=%s balance=%s", orchJob.Sender, orchJob.Req.Capability, senderBalance.FloatString(0))
-									shouldStopStreamNextRound = true
-									continue
-								}
-
-								clog.Infof(ctx, "Insufficient balance, stopping stream %s for sender %s", orchJob.Req.ID, orchJob.Sender)
-								_, exists := bso.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
-								if exists {
-									bso.node.ExternalCapabilities.RemoveStream(orchJob.Req.ID)
-								}
-
-								return
-							}
-
-							clog.V(8).Infof(ctx, "Payment balance for stream capability is good balance=%v", senderBalance.FloatString(0))
-						}
-					}
-
-					//check if stream still exists
-					// if not, send stop to worker and exit monitoring
-					stream, exists := bso.node.ExternalCapabilities.GetStream(orchJob.Req.ID)
-					if !exists {
-						req, err := http.NewRequestWithContext(ctx, "POST", orchJob.Req.CapabilityUrl+"/stream/stop", nil)
-						// set the headers
-						resp, err = sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
-						if err != nil {
-							clog.Errorf(ctx, "Error sending request to worker %v: %v", orchJob.Req.CapabilityUrl, err)
-							respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
-							return
-						}
-						defer resp.Body.Close()
-						io.Copy(io.Discard, resp.Body)
-
-						//end monitoring of stream
-						return
-					}
-
-					//check if control channel is still open, end if not
-					if !stream.IsActive() {
-						// Stop the stream and free capacity
-						bso.node.ExternalCapabilities.RemoveStream(orchJob.Req.ID)
-						return
-					}
-				}
-			}
-		}()
+		//start stream monitoring
+		go bso.monitorOrchStream(orchJob)
 
 		//send back the trickle urls set in header
 		w.WriteHeader(http.StatusOK)
 	})
+}
+
+func (bso *BYOCOrchestratorServer) monitorOrchStream(job *orchJob) {
+	if job == nil {
+		return
+	}
+
+	ctx := context.Background()
+	streamID := job.Req.ID
+	capability := job.Req.Capability
+	sender := job.Req.Sender
+
+	stream, exists := bso.node.ExternalCapabilities.GetStream(streamID)
+	if !exists {
+		clog.Infof(ctx, "Stream not found for payment monitoring, exiting monitoring stream_id=%s", streamID)
+		return
+	}
+
+	ctx = clog.AddVal(ctx, "stream_id", streamID)
+	ctx = clog.AddVal(ctx, "capability", capability)
+
+	pmtCheckDur := 23 * time.Second //run slightly faster than gateway so can return updated balance
+	pmtTicker := time.NewTicker(pmtCheckDur)
+	senderAddr := ethcommon.HexToAddress(sender)
+	defer pmtTicker.Stop()
+	shouldStopStreamNextRound := false
+	for {
+		select {
+		case <-stream.StreamCtx.Done():
+			bso.orch.FreeExternalCapabilityCapacity(capability)
+			clog.Infof(ctx, "Stream ended, stopping payment monitoring and released capacity")
+			return
+		case <-pmtTicker.C:
+			// Check payment status
+			extCap, ok := bso.node.ExternalCapabilities.Capabilities[capability]
+			if !ok {
+				clog.Errorf(ctx, "Capability not found for payment monitoring, exiting monitoring capability=%s", capability)
+				return
+			}
+			jobPriceRat := big.NewRat(job.JobPrice.PricePerUnit, job.JobPrice.PixelsPerUnit)
+			if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+				//lock during balance update to complete balance update
+				extCap.Mu.Lock()
+				bso.orch.DebitFees(senderAddr, core.ManifestID(capability), job.JobPrice, int64(pmtCheckDur.Seconds()))
+				senderBalance := bso.getPaymentBalance(senderAddr, capability)
+				extCap.Mu.Unlock()
+				if senderBalance != nil {
+					if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
+						if !shouldStopStreamNextRound {
+							//warn once
+							clog.Warningf(ctx, "Insufficient balance for stream capability, will stop stream next round if not replenished sender=%s capability=%s balance=%s", sender, capability, senderBalance.FloatString(0))
+							shouldStopStreamNextRound = true
+							continue
+						}
+
+						clog.Infof(ctx, "Insufficient balance, stopping stream %s for sender %s", streamID, sender)
+						_, exists := bso.node.ExternalCapabilities.GetStream(streamID)
+						if exists {
+							bso.node.ExternalCapabilities.RemoveStream(streamID)
+						}
+
+						return
+					}
+
+					clog.V(8).Infof(ctx, "Payment balance for stream capability is good balance=%v", senderBalance.FloatString(0))
+				}
+			}
+
+			//check if stream still exists
+			// if not, send stop to worker and exit monitoring
+			stream, exists := bso.node.ExternalCapabilities.GetStream(streamID)
+			if !exists {
+				req, err := http.NewRequestWithContext(ctx, "POST", job.Req.CapabilityUrl+"/stream/stop", nil)
+				// set the headers
+				resp, err := sendReqWithTimeout(req, time.Duration(job.Req.Timeout)*time.Second)
+				if err != nil {
+					clog.Errorf(ctx, "Error sending request to worker %v: %v", job.Req.CapabilityUrl, err)
+					return
+				}
+				defer resp.Body.Close()
+				io.Copy(io.Discard, resp.Body)
+
+				//end monitoring of stream
+				return
+			}
+
+			//check if control channel is still open, end if not
+			if !stream.IsActive() {
+				// Stop the stream and free capacity
+				bso.node.ExternalCapabilities.RemoveStream(streamID)
+				return
+			}
+		}
+	}
 }
 
 func (bso *BYOCOrchestratorServer) StopStream() http.Handler {

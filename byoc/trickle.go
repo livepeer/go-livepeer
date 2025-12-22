@@ -945,3 +945,8 @@ func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, req
 		}
 	}()
 }
+
+func stopProcessing(ctx context.Context, params byocAIRequestParams, err error) {
+	clog.InfofErr(ctx, "Stopping processing", err)
+	params.liveParams.kickOrch(err)
+}

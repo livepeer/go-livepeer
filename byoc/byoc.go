@@ -57,7 +57,7 @@ func (bsg *BYOCGatewayServer) newStreamPipeline(requestID, streamID, pipeline st
 
 	//ensure streamRequest is not nil or empty to avoid json unmarshal issues on Orchestrator failover
 	//sends the request bytes to next Orchestrator
-	if streamRequest == nil || len(streamRequest) == 0 {
+	if len(streamRequest) == 0 {
 		streamRequest = []byte("{}")
 	}
 

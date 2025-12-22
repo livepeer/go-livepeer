@@ -1069,8 +1069,8 @@ func TestGetStreamDataHandler(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			// Test with missing stream ID - should return 400
 			bsg := newTestBYOCGatewayServer(nil)
-			handler := bsg.UpdateStream()
-			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/update", nil)
+			handler := bsg.StreamData()
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/{streamId}/data", nil)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusBadRequest, w.Code)
