@@ -18,7 +18,7 @@
 
 * [#3814](https://github.com/livepeer/go-livepeer/pull/3814) ai/worker: Add scope pipeline support to worker and build scripts (@victorges)
 * [#3823](https://github.com/livepeer/go-livepeer/pull/3823) ai/worker: Add sd15-v2v image support (@victorges)
-* ai/worker: Add sdxl-v2v image support
+* [#3843](https://github.com/livepeer/go-livepeer/pull/3843) ai/worker: Add sdxl-v2v image support (@victorges)
 
 #### Transcoder
 
