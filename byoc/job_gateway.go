@@ -144,7 +144,8 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 			w.WriteHeader(http.StatusOK)
 			// Read from upstream and forward to client
 			respChan := make(chan string, 100)
-			respCtx, _ := context.WithTimeout(ctx, time.Duration(gatewayJob.Job.Req.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
+			respCtx, respCancel := context.WithTimeout(ctx, time.Duration(gatewayJob.Job.Req.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
+			defer respCancel()
 
 			go func() {
 				defer resp.Body.Close()
