@@ -12,24 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
+	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/protobuf/proto"
-	"github.com/livepeer/go-livepeer/ai/worker"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
-	"github.com/livepeer/go-tools/drivers"
-	"github.com/livepeer/lpms/stream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -47,6 +40,7 @@ type mockJobOrchestrator struct {
 	caps                 *core.Capabilities
 	authToken            *net.AuthToken
 	externalCapabilities map[string]*core.ExternalCapability
+	extraNodes           int
 
 	registerExternalCapability      func(string) (*core.ExternalCapability, error)
 	unregisterExternalCapability    func(string) error
@@ -55,10 +49,13 @@ type mockJobOrchestrator struct {
 	reserveCapacity                 func(string) error
 	getUrlForCapability             func(string) string
 	balance                         func(ethcommon.Address, core.ManifestID) *big.Rat
+	processPayment                  func(context.Context, net.Payment, core.ManifestID) error
 	debitFees                       func(ethcommon.Address, core.ManifestID, *net.PriceInfo, int64)
 	freeCapacity                    func(string) error
 	jobPriceInfo                    func(ethcommon.Address, string) (*net.PriceInfo, error)
 	ticketParams                    func(ethcommon.Address, *net.PriceInfo) (*net.TicketParams, error)
+
+	mock.Mock
 }
 
 func (r *mockJobOrchestrator) ServiceURI() *url.URL {
@@ -69,10 +66,10 @@ func (r *mockJobOrchestrator) ServiceURI() *url.URL {
 	return url
 }
 
+// Nodes, ExtraNodes and Sign methods needed because the mockJobOrchestrator is reused as a stubGateway
 func (r *mockJobOrchestrator) Nodes() []string {
 	return nil
 }
-
 func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 	if r.offchain {
 		return nil, nil
@@ -96,47 +93,32 @@ func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 
 	return append(sig[:64], v), nil
 }
-
+func (r *mockJobOrchestrator) ExtraNodes() int {
+	return r.extraNodes
+}
 func (r *mockJobOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return r.verifySignature(addr, msg, sig)
 }
-
 func (r *mockJobOrchestrator) Address() ethcommon.Address {
 	if r.offchain {
 		return ethcommon.Address{}
 	}
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *mockJobOrchestrator) TranscodeSeg(ctx context.Context, md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
-	return r.res, nil
-}
-func (r *mockJobOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
-	return []core.StreamID{}, nil
-}
-
 func (r *mockJobOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
+	if r.processPayment != nil {
+		return r.processPayment(ctx, payment, manifestID)
+	}
 	return nil
 }
-
 func (r *mockJobOrchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error) {
 	return r.ticketParams(sender, priceInfo)
 }
-
-func (r *mockJobOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error) {
-	return r.priceInfo, nil
-}
-
-func (r *mockJobOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
-	return []*net.PriceInfo{}, nil
-}
-
-func (r *mockJobOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
-	return true
-}
-
 func (r *mockJobOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+	if r.debitFees != nil {
+		r.debitFees(addr, manifestID, price, pixels)
+	}
 }
-
 func (r *mockJobOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
 	if r.balance != nil {
 		return r.balance(addr, manifestID)
@@ -144,87 +126,8 @@ func (r *mockJobOrchestrator) Balance(addr ethcommon.Address, manifestID core.Ma
 		return big.NewRat(0, 1)
 	}
 }
-
-func (r *mockJobOrchestrator) Capabilities() *net.Capabilities {
-	if r.caps != nil {
-		return r.caps.ToNetCapabilities()
-	}
-	return core.NewCapabilities(nil, nil).ToNetCapabilities()
-}
-func (r *mockJobOrchestrator) LegacyOnly() bool {
-	return true
-}
-
-func (r *mockJobOrchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
-	if r.authToken != nil {
-		return r.authToken
-	}
-	return &net.AuthToken{Token: []byte("foo"), SessionId: sessionID, Expiration: expiration}
-}
-
-func (r *mockJobOrchestrator) CheckCapacity(mid core.ManifestID) error {
-	return r.sessCapErr
-}
-func (r *mockJobOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
-}
-func (r *mockJobOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
-}
 func (r *mockJobOrchestrator) TranscoderSecret() string {
 	return "secret"
-}
-func (r *mockJobOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
-	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
-}
-func (r *mockJobOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockJobOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-
-func (r *mockJobOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-
-func (r *mockJobOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
-	return true, nil
-}
-func (r *mockJobOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-}
-func (r *mockJobOrchestrator) CreateStorageForRequest(requestID string) error {
-	return nil
-}
-func (r *mockJobOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
-	return drivers.NewMockOSSession(), true
-}
-func (r *mockJobOrchestrator) WorkerHardware() []worker.HardwareInformation {
-	return []worker.HardwareInformation{}
-}
-func (r *mockJobOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
-}
-func (r *mockJobOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
-	return worker.Capacity{}
 }
 func (r *mockJobOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
 	return r.registerExternalCapability(extCapabilitySettings)
@@ -276,87 +179,25 @@ func newMockJobOrchestrator() *mockJobOrchestrator {
 	node.OrchSecret = "verbigsecret"
 	mockOrch.node = node
 
-	return &mockJobOrchestrator{priv: pk, block: big.NewInt(5)}
-}
-
-// stubJobOrchestratorPool is a stub implementation of the OrchestratorPool interface
-type stubJobOrchestratorPool struct {
-	uris  []*url.URL
-	infos []common.OrchestratorLocalInfo
-	node  *core.LivepeerNode
-}
-
-func newStubOrchestratorPool(node *core.LivepeerNode, uris []string) *stubJobOrchestratorPool {
-	var urlList []*url.URL
-	var infos []common.OrchestratorLocalInfo
-	for _, uri := range uris {
-		if u, err := url.Parse(uri); err == nil {
-			urlList = append(urlList, u)
-			infos = append(infos, common.OrchestratorLocalInfo{URL: u, Score: 1.0})
-		}
-	}
-	return &stubJobOrchestratorPool{
-		uris:  urlList,
-		infos: infos,
-		node:  mockJobLivepeerNode(),
-	}
-}
-
-func (s *stubJobOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
-	var infos []common.OrchestratorLocalInfo
-	for _, uri := range s.uris {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri})
-	}
-	return infos
-}
-func (s *stubJobOrchestratorPool) GetOrchestrators(ctx context.Context, max int, suspender common.Suspender, comparator common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
-	var ods common.OrchestratorDescriptors
-	for _, uri := range s.uris {
-		ods = append(ods, common.OrchestratorDescriptor{
-			LocalInfo: &common.OrchestratorLocalInfo{URL: uri, Score: 1.0},
-			RemoteInfo: &net.OrchestratorInfo{
-				Transcoder: uri.String(),
-			},
-		})
-	}
-	return ods, nil
-}
-func (s *stubJobOrchestratorPool) Size() int {
-	return len(s.uris)
-}
-func (s *stubJobOrchestratorPool) SizeWith(scorePred common.ScorePred) int {
-	if scorePred == nil {
-		return len(s.infos)
-	}
-	count := 0
-	for _, info := range s.infos {
-		if scorePred(info.Score) {
-			count++
-		}
-	}
-	return count
-}
-func (s *stubJobOrchestratorPool) Broadcaster() common.Broadcaster {
-	return core.NewBroadcaster(s.node)
+	return mockOrch
 }
 
 func mockJobLivepeerNode() *core.LivepeerNode {
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.NodeType = core.OrchestratorNode
 	node.OrchSecret = "verbigsecret"
+	node.LiveMu = &sync.RWMutex{}
 	return node
 }
 
-// Tests for RegisterCapability
 func TestRegisterCapability_MethodNotAllowed(t *testing.T) {
-	h := &BYOCOrchestratorServer{
-		orch: newMockJobOrchestrator(),
+	bso := &BYOCOrchestratorServer{
+		node: mockJobLivepeerNode(),
 	}
-
-	req := httptest.NewRequest("GET", "/capability", nil)
+	req := httptest.NewRequest("GET", "/capability/register", nil)
 	w := httptest.NewRecorder()
 
-	handler := h.RegisterCapability()
+	handler := bso.RegisterCapability()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -364,17 +205,17 @@ func TestRegisterCapability_MethodNotAllowed(t *testing.T) {
 }
 
 func TestRegisterCapability_InvalidAuthorization(t *testing.T) {
-
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
+		node: mockJobLivepeerNode(),
 		orch: newMockJobOrchestrator(),
 	}
-	h.orch.TranscoderSecret()
+	bso.orch.TranscoderSecret()
 
-	req := httptest.NewRequest("POST", "/capability", nil)
+	req := httptest.NewRequest("POST", "/capability/register", nil)
 	req.Header.Set("Authorization", "invalid-secret")
 	w := httptest.NewRecorder()
 
-	handler := h.RegisterCapability()
+	handler := bso.RegisterCapability()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -392,7 +233,7 @@ func TestRegisterCapability_Success(t *testing.T) {
 		}, nil
 	}
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		orch: mockJobOrch,
 	}
 
@@ -400,7 +241,7 @@ func TestRegisterCapability_Success(t *testing.T) {
 	req.Header.Set("Authorization", mockJobOrch.TranscoderSecret())
 	w := httptest.NewRecorder()
 
-	handler := h.RegisterCapability()
+	handler := bso.RegisterCapability()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -413,7 +254,7 @@ func TestRegisterCapability_Error(t *testing.T) {
 		return nil, errors.New("registration failed")
 	}
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		orch: mockJobOrch,
 	}
 
@@ -421,7 +262,7 @@ func TestRegisterCapability_Error(t *testing.T) {
 	req.Header.Set("Authorization", mockJobOrch.TranscoderSecret())
 	w := httptest.NewRecorder()
 
-	handler := h.RegisterCapability()
+	handler := bso.RegisterCapability()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -438,7 +279,9 @@ func TestUnregisterCapability(t *testing.T) {
 	mockOrch.externalCapabilities[capName] = &core.ExternalCapability{Name: capName}
 
 	// Create handler with our mock orchestrator
-	h := &BYOCOrchestratorServer{orch: mockOrch}
+	bso := &BYOCOrchestratorServer{
+		orch: mockOrch,
+	}
 
 	t.Run("SuccessfulUnregister", func(t *testing.T) {
 
@@ -449,7 +292,7 @@ func TestUnregisterCapability(t *testing.T) {
 
 		// Execute request
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		// Verify results
@@ -468,7 +311,7 @@ func TestUnregisterCapability(t *testing.T) {
 		req.Header.Set("Authorization", secret)
 
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		assert.Equal(t, http.StatusMethodNotAllowed, recorder.Result().StatusCode)
@@ -480,7 +323,7 @@ func TestUnregisterCapability(t *testing.T) {
 		req.Header.Set("Authorization", "wrong-secret")
 
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
@@ -491,7 +334,7 @@ func TestUnregisterCapability(t *testing.T) {
 			bytes.NewBufferString(capName))
 
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
@@ -508,7 +351,7 @@ func TestUnregisterCapability(t *testing.T) {
 		req.Header.Set("Authorization", secret)
 
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
@@ -522,7 +365,7 @@ func TestUnregisterCapability(t *testing.T) {
 		req.Header.Set("Authorization", secret)
 
 		recorder := httptest.NewRecorder()
-		handler := h.UnregisterCapability()
+		handler := bso.UnregisterCapability()
 		handler.ServeHTTP(recorder, req)
 
 		// Should still work, but will attempt to remove an empty string capability
@@ -530,17 +373,16 @@ func TestUnregisterCapability(t *testing.T) {
 	})
 }
 
-// Tests for GetJobToken
 func TestGetJobToken_MethodNotAllowed(t *testing.T) {
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: &mockJobOrchestrator{},
 	}
 
-	req := httptest.NewRequest("POST", "/token", nil)
+	req := httptest.NewRequest("POST", "/process/token", nil)
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -548,15 +390,15 @@ func TestGetJobToken_MethodNotAllowed(t *testing.T) {
 }
 
 func TestGetJobToken_NotOrchestrator(t *testing.T) {
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: &mockJobOrchestrator{},
 	}
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -564,15 +406,15 @@ func TestGetJobToken_NotOrchestrator(t *testing.T) {
 }
 
 func TestGetJobToken_MissingEthAddressHeader(t *testing.T) {
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
-		orch: newMockJobOrchestrator(),
+		orch: &mockJobOrchestrator{},
 	}
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -586,7 +428,7 @@ func TestGetJobToken_InvalidEthAddressHeader(t *testing.T) {
 
 	mockJobOrch := newMockJobOrchestrator()
 	mockJobOrch.verifySignature = mockVerifySig
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -599,11 +441,11 @@ func TestGetJobToken_InvalidEthAddressHeader(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -616,7 +458,7 @@ func TestGetJobToken_MissingCapabilityHeader(t *testing.T) {
 	}
 	mockJobOrch := newMockJobOrchestrator()
 	mockJobOrch.verifySignature = mockVerifySig
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -629,11 +471,11 @@ func TestGetJobToken_MissingCapabilityHeader(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -657,7 +499,7 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	mockJobOrch.checkExternalCapabilityCapacity = mockCheckExternalCapabilityCapacity
 	mockJobOrch.reserveCapacity = mockReserveCapacity
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -672,12 +514,12 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	req.Header.Set(jobCapabilityHdr, "test-cap")
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -701,7 +543,7 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 	mockJobOrch.verifySignature = mockVerifySig
 	mockJobOrch.reserveCapacity = mockReserveCapacity
 	mockJobOrch.jobPriceInfo = mockJobPriceInfo
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -716,12 +558,12 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	req.Header.Set(jobCapabilityHdr, "test-cap")
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -746,7 +588,7 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 	mockJobOrch.reserveCapacity = mockReserveCapacity
 	mockJobOrch.jobPriceInfo = mockJobPriceInfo
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -761,12 +603,12 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	req.Header.Set(jobCapabilityHdr, "test-cap")
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -798,7 +640,7 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 	mockJobOrch.jobPriceInfo = mockJobPriceInfo
 	mockJobOrch.ticketParams = mockTicketParams
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -813,12 +655,12 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	req.Header.Set(jobCapabilityHdr, "test-cap")
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -863,7 +705,7 @@ func TestGetJobToken_Success(t *testing.T) {
 	mockJobOrch.ticketParams = mockTicketParams
 	mockJobOrch.balance = mockBalance
 
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
 		orch: mockJobOrch,
 	}
@@ -878,12 +720,12 @@ func TestGetJobToken_Success(t *testing.T) {
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
 
-	req := httptest.NewRequest("GET", "/token", nil)
+	req := httptest.NewRequest("GET", "/process/token", nil)
 	req.Header.Set(jobEthAddressHdr, jsBase64)
 	req.Header.Set(jobCapabilityHdr, "test-cap")
 	w := httptest.NewRecorder()
 
-	handler := h.GetJobToken()
+	handler := bso.GetJobToken()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
@@ -897,271 +739,120 @@ func TestGetJobToken_Success(t *testing.T) {
 	assert.Equal(t, int64(1000), token.Balance)
 }
 
-// Tests for ProcessJob
 func TestProcessJob_MethodNotAllowed(t *testing.T) {
-	h := &BYOCOrchestratorServer{
+	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
-		orch: newMockJobOrchestrator(),
+		orch: &mockJobOrchestrator{},
 	}
 
-	req := httptest.NewRequest("GET", "/process", nil)
+	req := httptest.NewRequest("GET", "/process/request/gg", nil)
 	w := httptest.NewRecorder()
 
-	handler := h.ProcessJob()
+	handler := bso.ProcessJob()
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 }
 
-// Tests for SubmitJob handler
-func TestSubmitJob_MethodNotAllowed(t *testing.T) {
-	ls := &BYOCGatewayServer{
-		node: mockJobLivepeerNode(),
-	}
+func TestProcessPayment(t *testing.T) {
 
-	handler := ls.SubmitJob()
+	ctx := context.Background()
+	sender := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	req := httptest.NewRequest("GET", "/submit", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	resp := w.Result()
-	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
-}
-
-func TestCreatePayment(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx := context.TODO()
-		node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
-		mockSender := pm.MockSender{}
-		mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
-		node.Sender = &mockSender
-
-		node.Balances = core.NewAddressBalances(5 * time.Second)
-		defer node.Balances.StopCleanup()
-
-		jobReq := JobRequest{
-			Capability: "test-payment-cap",
-		}
-		sender := JobSender{
-			Addr: "0x1111111111111111111111111111111111111111",
-			Sig:  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-		}
-
-		orchTocken := JobToken{
-			TicketParams: &net.TicketParams{
-				Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
-				FaceValue:         big.NewInt(1000).Bytes(),
-				WinProb:           big.NewInt(1).Bytes(),
-				RecipientRandHash: []byte("hash"),
-				Seed:              big.NewInt(1234).Bytes(),
-				ExpirationBlock:   big.NewInt(100000).Bytes(),
-			},
-			SenderAddress: &sender,
-			Balance:       0,
-			Price: &net.PriceInfo{
-				PricePerUnit:  10,
-				PixelsPerUnit: 1,
-			},
-		}
-
-		var pmTickets net.Payment
-
-		//payment with one ticket
-		jobReq.Timeout = 1
-		mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-		payment, err := createPayment(ctx, &jobReq, orchTocken, node)
-		assert.Nil(t, err)
-		pmPayment, err := base64.StdEncoding.DecodeString(payment)
-		assert.Nil(t, err)
-		err = proto.Unmarshal(pmPayment, &pmTickets)
-		assert.Nil(t, err)
-		assert.Equal(t, 1, len(pmTickets.TicketSenderParams))
-
-		//test 2 tickets
-		jobReq.Timeout = 2
-		mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-		payment, err = createPayment(ctx, &jobReq, orchTocken, node)
-		assert.Nil(t, err)
-		pmPayment, err = base64.StdEncoding.DecodeString(payment)
-		assert.Nil(t, err)
-		err = proto.Unmarshal(pmPayment, &pmTickets)
-		assert.Nil(t, err)
-		assert.Equal(t, 2, len(pmTickets.TicketSenderParams))
-
-		//test 600 tickets
-		jobReq.Timeout = 600
-		mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-		payment, err = createPayment(ctx, &jobReq, orchTocken, node)
-		assert.Nil(t, err)
-		pmPayment, err = base64.StdEncoding.DecodeString(payment)
-		assert.Nil(t, err)
-		err = proto.Unmarshal(pmPayment, &pmTickets)
-		assert.Nil(t, err)
-		assert.Equal(t, 600, len(pmTickets.TicketSenderParams))
-	})
-}
-
-func mockTicketBatch(count int) *pm.TicketBatch {
-	senderParams := make([]*pm.TicketSenderParams, count)
-	for i := 0; i < count; i++ {
-		senderParams[i] = &pm.TicketSenderParams{
-			SenderNonce: uint32(i + 1),
-			Sig:         pm.RandBytes(42),
-		}
-	}
-
-	return &pm.TicketBatch{
-		TicketParams: &pm.TicketParams{
-			Recipient:       pm.RandAddress(),
-			FaceValue:       big.NewInt(1234),
-			WinProb:         big.NewInt(5678),
-			Seed:            big.NewInt(7777),
-			ExpirationBlock: big.NewInt(1000),
-		},
-		TicketExpirationParams: &pm.TicketExpirationParams{},
-		Sender:                 pm.RandAddress(),
-		SenderParams:           senderParams,
-	}
-}
-
-func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
-	// Create mock HTTP servers for orchestrators
-	mockServers := make([]*httptest.Server, 5)
-	orchURLs := make([]string, 5)
-
-	// Create a handler that returns a valid job token
-	tokenHandler := func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/process/token" {
-			http.NotFound(w, r)
-			return
-		}
-
-		token := &JobToken{
-			ServiceAddr: "http://" + r.Host, // Use the server's host as the service address
-			SenderAddress: &JobSender{
-				Addr: "0x1234567890abcdef1234567890abcdef123456",
-				Sig:  "0x456",
-			},
-			TicketParams: nil,
-			Price: &net.PriceInfo{
-				PricePerUnit:  100,
-				PixelsPerUnit: 1,
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(token)
-	}
-
-	// Start HTTP test servers
-	for i := 0; i < 5; i++ {
-		server := httptest.NewServer(http.HandlerFunc(tokenHandler))
-		mockServers[i] = server
-		orchURLs[i] = server.URL
-		t.Logf("Mock server %d started at %s", i, orchURLs[i])
-	}
-
-	// Clean up servers when test completes
-	defer func() {
-		for _, server := range mockServers {
-			server.Close()
-		}
-	}()
-
-	node := mockJobLivepeerNode()
-	pool := newStubOrchestratorPool(node, orchURLs)
-	node.OrchestratorPool = pool
-
-	// Define test cases
-	testCases := []struct {
-		name          string
-		include       []string
-		exclude       []string
-		expectedCount int
+	cases := []struct {
+		name        string
+		capability  string
+		expectDelta bool
 	}{
-		{
-			name:          "No filtering",
-			include:       []string{},
-			exclude:       []string{},
-			expectedCount: 5, // All orchestrators
-		},
-		{
-			name:          "Include specific orchestrators",
-			include:       []string{orchURLs[0], orchURLs[2]}, // First and third servers
-			exclude:       []string{},
-			expectedCount: 2,
-		},
-		{
-			name:          "Exclude specific orchestrators",
-			include:       []string{},
-			exclude:       []string{orchURLs[1], orchURLs[3]}, // Second and fourth servers
-			expectedCount: 3,
-		},
-		{
-			name:          "Both include and exclude",
-			include:       []string{orchURLs[0], orchURLs[1], orchURLs[2]}, // First three servers
-			exclude:       []string{orchURLs[1]},                           // Exclude second server
-			expectedCount: 2,                                               // Should have first and third servers
-		},
-		{
-			name:          "Include non-existent orchestrators",
-			include:       []string{"http://nonexistent.example.com"},
-			exclude:       []string{},
-			expectedCount: 0,
-		},
-		{
-			name:          "Exclude all orchestrators",
-			include:       []string{},
-			exclude:       orchURLs, // Exclude all servers
-			expectedCount: 0,
-		},
+		{"empty header", "testcap", false},
+		{"empty capability", "", false},
+		{"random capability", "randomcap", false},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create JobParameters with the test case's filters
-			params := JobParameters{
-				Orchestrators: JobOrchestratorsFilter{
-					Include: tc.include,
-					Exclude: tc.exclude,
-				},
+			// Simulate a mutable balance for the test
+			testBalance := big.NewRat(100, 1)
+			balanceCalled := 0
+			paymentCalled := 0
+			orch := newMockJobOrchestrator()
+			bso := &BYOCOrchestratorServer{node: orch.node, orch: orch, sharedBalMtx: &sync.Mutex{}}
+
+			orch.node.Balances = core.NewAddressBalances(1 * time.Second)
+			defer orch.node.Balances.StopCleanup()
+			orch.balance = func(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+				balanceCalled++
+				return new(big.Rat).Set(testBalance)
+			}
+			orch.processPayment = func(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
+				paymentCalled++
+				// Simulate payment by increasing balance
+				testBalance = testBalance.Add(testBalance, big.NewRat(50, 1))
+				return nil
 			}
 
-			// Call getJobOrchestrators
-			tokens, err := getJobOrchestrators(
-				context.Background(),
-				node,
-				"test-capability",
-				params,
-				100*time.Millisecond, // Short timeout for testing
-				50*time.Millisecond,
-			)
+			testPmtHdr, err := createTestPayment(tc.capability)
+			if err != nil {
+				t.Fatalf("Failed to create test payment: %v", err)
+			}
 
-			if tc.expectedCount == 0 {
-				// If we expect no orchestrators, we should still get a nil error
-				// because the function should return an empty list, not an error
-				assert.NoError(t, err)
-				assert.Len(t, tokens, 0)
+			before := orch.Balance(sender, core.ManifestID(tc.capability)).FloatString(0)
+			bal, err := bso.processPayment(ctx, sender, tc.capability, testPmtHdr)
+			after := orch.Balance(sender, core.ManifestID(tc.capability)).FloatString(0)
+			t.Logf("Balance before: %s, after: %s", before, after)
+			assert.NoError(t, err)
+			assert.NotNil(t, bal)
+			if testPmtHdr != "" {
+				assert.NotEqual(t, before, after, "Balance should change if payment header is not empty")
+				assert.Equal(t, 1, paymentCalled, "ProcessPayment should be called once for non-empty header")
 			} else {
-				assert.NoError(t, err)
-				assert.Len(t, tokens, tc.expectedCount)
-
-				if len(tc.include) > 0 {
-					for _, token := range tokens {
-						assert.True(t, slices.Contains(tc.include, token.ServiceAddr))
-					}
-				}
-
-				if len(tc.exclude) > 0 {
-					for _, token := range tokens {
-						assert.False(t, slices.Contains(tc.exclude, token.ServiceAddr))
-					}
-				}
+				assert.Equal(t, before, after, "Balance should not change if payment header is empty")
+				assert.Equal(t, 0, paymentCalled, "ProcessPayment should not be called for empty header")
 			}
 		})
 	}
+}
 
+// marshalToString is a helper to marshal a struct to a JSON string
+func marshalToString(t *testing.T, v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshalToString failed: %v", err)
+	}
+	return string(b)
+}
+
+func orchTokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/process/token" {
+		http.NotFound(w, r)
+		return
+	}
+
+	token := createMockJobToken("http://" + r.Host)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(token)
+
+}
+
+func createMockJobToken(hostUrl string) *JobToken {
+	maxWinProb := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	winProb10 := new(big.Int).Div(maxWinProb, big.NewInt(10))
+	return &JobToken{
+		ServiceAddr: hostUrl,
+		SenderAddress: &JobSender{
+			Addr: "0x1234567890abcdef1234567890abcdef123456",
+			Sig:  "0x456",
+		},
+		TicketParams: &net.TicketParams{
+			Recipient: ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
+			FaceValue: big.NewInt(1000).Bytes(),
+			WinProb:   winProb10.Bytes(),
+		},
+		Price: &net.PriceInfo{
+			PricePerUnit:  100,
+			PixelsPerUnit: 1,
+		},
+	}
 }
