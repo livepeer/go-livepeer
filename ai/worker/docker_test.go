@@ -343,6 +343,14 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			expectError:   false,
 		},
 		{
+			name:          "live-video-to-video with cached attention sdxl modelID",
+			setup:         func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
+			pipeline:      "live-video-to-video",
+			modelID:       "streamdiffusion-sdxl-v2v",
+			expectedImage: "livepeer/ai-runner:live-app-streamdiffusion-sdxl-v2v",
+			expectError:   false,
+		},
+		{
 			name:        "live-video-to-video with invalid modelID",
 			setup:       func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
 			pipeline:    "live-video-to-video",
