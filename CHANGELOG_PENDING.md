@@ -10,6 +10,8 @@
 
 #### General
 
+* [#3841](https://github.com/livepeer/go-livepeer/pull/3814) byoc/streaming: add streaming workload processing capability to BYOC (@ad-astra-video)
+
 #### Broadcaster
 
 #### Orchestrator
