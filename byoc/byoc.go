@@ -92,9 +92,6 @@ func (bsg *BYOCGatewayServer) streamPipelineExists(streamId string) bool {
 }
 
 func (bsg *BYOCGatewayServer) stopStreamPipeline(streamId string, err error) {
-	p, err := bsg.streamPipeline(streamId)
-	if err == nil {
-func (bsg *BYOCGatewayServer) stopStreamPipeline(streamId string, err error) {
 	stream, serr := bsg.streamPipeline(streamId)
 	if serr != nil {
 		return
@@ -116,18 +113,6 @@ func (bsg *BYOCGatewayServer) stopStreamPipeline(streamId string, err error) {
 		stopCtrl()
 	}
 	stream.streamCancel(err)
-}
-		if p.ControlPub != nil {
-			if err := p.ControlPub.Close(); err != nil {
-				glog.Errorf("Error closing trickle publisher", err)
-			}
-			if p.StopControl != nil {
-				p.StopControl()
-			}
-		}
-		p.streamCancel(err)
-		p.Closed = true
-	}
 }
 
 func (bsg *BYOCGatewayServer) removeStreamPipeline(streamId string) {

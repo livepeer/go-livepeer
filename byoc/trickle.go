@@ -771,7 +771,6 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(
 }
 
 func (bsg *BYOCGatewayServer) getOutWriter(streamId string) (*media.RingBuffer, string) {
-func (bsg *BYOCGatewayServer) getOutWriter(streamId string) (*media.RingBuffer, string) {
 	stream, err := bsg.streamPipeline(streamId) // streamPipeline handles locking
 	if err != nil || stream.Closed {
 		return nil, ""
@@ -780,20 +779,6 @@ func (bsg *BYOCGatewayServer) getOutWriter(streamId string) (*media.RingBuffer, 
 	stream.OutCond.L.Lock()
 	defer stream.OutCond.L.Unlock()
 
-	for stream.OutWriter == nil {
-		stream.OutCond.Wait()
-		if stream.Closed {
-			return nil, ""
-		}
-	}
-	return stream.OutWriter, stream.RequestID
-}
-	defer bsg.mu.Unlock()
-	stream, err := bsg.streamPipeline(streamId)
-	if err != nil || stream.Closed {
-		return nil, ""
-	}
-	// could be nil if we haven't gotten an orchestrator yet
 	for stream.OutWriter == nil {
 		stream.OutCond.Wait()
 		if stream.Closed {
