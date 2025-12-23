@@ -1,11 +1,11 @@
- # BYOC AI Stream API Documentation
+# BYOC AI Stream API Documentation
 
 The AI Stream API provides real‑time video streaming with AI processing capabilities.
 All endpoints are rooted at **`/process/stream`** and are served by the Livepeer Gateway.
 
 **Base URL:** `https://{gateway-host}/process/stream`
 
-## Authentication
+## Stream Setup
 
 ___Start___ stream requests must include a `Livepeer` HTTP header containing a Base64‑encoded 
 JSON object (the *Livepeer Header*). The header includes the job request, parameters, 
@@ -132,7 +132,8 @@ The fields are defined as follows:
 - *Environment*: `LIVE_AI_WHIP_ADDR` must be set.  
 - *Response*: HTTP 200.
 
-### POST `/process/stream/{streamId}/rtmp`
+### POST `/process/stream/{streamId}/rtmp` 
+- NOTE: this is called by MediaMTX to signal an RTMP stream is being received.  Client should use RTMP URL received in `/process/stream/start` response in streaming software.
 - *Path*: `streamId` must reference an existing stream.  
 - *Response*: HTTP 200.
 
