@@ -1,8 +1,9 @@
 package pm
 
 import (
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"math/big"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 // TicketStore is an interface which describes an object capable
