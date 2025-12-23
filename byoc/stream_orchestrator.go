@@ -160,6 +160,24 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 			//return error response from the worker
 			w.WriteHeader(resp.StatusCode)
 			w.Write(respBody)
+
+			//free capacity if not fatal (500 error)
+			if resp.StatusCode != http.StatusInternalServerError {
+				bso.orch.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
+			}
+			//close the trickle channels
+			if pubCh != nil {
+				pubCh.Close()
+			}
+			if subCh != nil {
+				subCh.Close()
+			}
+			if dataCh != nil {
+				dataCh.Close()
+			}
+			controlPubCh.Close()
+			eventsCh.Close()
+
 			return
 		}
 
