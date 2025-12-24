@@ -28,6 +28,7 @@ if [ "${PIPELINE}" = "scope" ]; then
     exit 1
   fi
   USE_LATEST_BASE=1 bash $SCOPE_RUNNER_DIR/build-docker.sh
+  docker stop live-video-to-video_${PIPELINE}_8900 || true
   exit 0
 fi
 
