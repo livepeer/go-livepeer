@@ -455,7 +455,7 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			},
 			pipeline:      "live-video-to-video",
 			modelID:       "scope",
-			expectedImage: "livepeer/ai-runner:live-app-scope",
+			expectedImage: "daydreamlive/scope-runner",
 			expectError:   false,
 		},
 	}
