@@ -365,13 +365,14 @@ func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.Cap
 
 	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
 	for _, od := range allOrchInfo {
-		pricePerUnit := od.RemoteInfo.PriceInfo.PricePerUnit
-		pixelsPerUnit := od.RemoteInfo.PriceInfo.PixelsPerUnit
-		pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
-		monitor.LiveAIPricePerPixel(od.LocalInfo.URL.String(), pricePerPixel)
-
 		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
 		if od.RemoteInfo != nil {
+			if od.RemoteInfo.PriceInfo != nil {
+				pricePerUnit := od.RemoteInfo.PriceInfo.PricePerUnit
+				pixelsPerUnit := od.RemoteInfo.PriceInfo.PixelsPerUnit
+				pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
+				monitor.LiveAIPricePerPixel(od.LocalInfo.URL.String(), pricePerPixel)
+			}
 			models = getModelCaps(od.RemoteInfo.Capabilities)
 		}
 
