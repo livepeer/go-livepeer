@@ -45,6 +45,7 @@ type NodeStatus struct {
 type Broadcaster interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+	OrchInfoSig() []byte
 	ExtraNodes() int
 }
 
