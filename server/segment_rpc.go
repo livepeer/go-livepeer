@@ -874,7 +874,7 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 			requestID := clog.GetVal(ctx, "request_id")
 			capability := clog.GetVal(ctx, "capability")
 
-			monitor.SendQueueEventAsync("create_new_payment", map[string]string{
+			monitor.QueueEvent("create_new_payment", map[string]string{
 				"clientIP":     clientIP,
 				"requestID":    requestID,
 				"capability":   capability,
