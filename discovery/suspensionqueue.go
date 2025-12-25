@@ -2,8 +2,8 @@ package discovery
 
 import (
 	"container/heap"
-	"github.com/livepeer/go-livepeer/common"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
 
