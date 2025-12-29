@@ -48,10 +48,18 @@ else
     GPU_FLAG="--gpus all"
   fi
 
+  # If AI_MODELS_JSON points to a file, set up Docker volume mount for it
+  AI_MODELS_JSON_MOUNT=""
+  if [[ -f "$AI_MODELS_JSON" ]]; then
+    AI_MODELS_JSON_MOUNT="-v ${AI_MODELS_JSON}:/config/aiModels.json:ro"
+    AI_MODELS_JSON="/config/aiModels.json"
+  fi
+
   docker run --rm --name orchestrator \
     --network host \
     ${GPU_FLAG} \
     -v /var/run/docker.sock:/var/run/docker.sock \
+    ${AI_MODELS_JSON_MOUNT} \
   livepeer/go-livepeer \
     -orchestrator \
     -aiWorker \
