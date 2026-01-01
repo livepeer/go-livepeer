@@ -29,7 +29,7 @@ jobs:
         target:
           - GOOS: linux
             GOARCH: amd64
-            container: ubuntu:20.04
+            container: ubuntu:22.04
             type: cpu
 
           - GOOS: linux
@@ -58,7 +58,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev libz-mingw-w64-dev yasm
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev yasm
 
       - name: Check out code
         uses: actions/checkout@v4
@@ -120,6 +120,19 @@ jobs:
           GOARCH= GOOS= go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
           GOARCH= GOOS= go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
+      - name: Install zlib for windows
+        if: matrix.target.GOOS == 'windows'
+        env:
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          apt install -yqq wget
+          wget https://zlib.net/fossils/zlib-1.2.11.tar.gz
+          tar -xzf zlib-1.2.11.tar.gz
+          cd zlib-1.2.11
+          ./configure --prefix=/usr/x86_64-w64-mingw32 --static
+          make
+          make install
+
       - name: Install ffmpeg
         run: ./install_ffmpeg.sh
 
@@ -147,7 +160,7 @@ jobs:
           tar -czvf "../releases/$LP_BUILD_DIR.tar.gz" ./
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -255,7 +268,7 @@ jobs:
           tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -289,7 +302,7 @@ jobs:
           update-environment: true
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: release-artifacts-*
           path: releases/
