@@ -1760,6 +1760,7 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 			// running in synctest confirms that no trickle channels remain open
 
 			statusCodeReturned = http.StatusBadRequest
+			freeCapacityCalled = false
 
 			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -1789,6 +1790,7 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 	t.Run("WorkerReturns503_Unavailable", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			statusCodeReturned = http.StatusServiceUnavailable
+			freeCapacityCalled = false
 
 			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -1817,6 +1819,7 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 	t.Run("WorkerReturns500_FatalError", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			statusCodeReturned = http.StatusInternalServerError
+			freeCapacityCalled = false
 
 			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
