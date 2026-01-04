@@ -21,6 +21,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/go-tools/drivers"
@@ -1665,5 +1666,179 @@ func TestGetStreamRequestParams(t *testing.T) {
 		bsg := newTestBYOCGatewayServer(nil)
 		_, err := bsg.streamPipelineParams("")
 		assert.Error(t, err)
+	})
+}
+
+// TestStartStreamWorkerErrorResponse tests the error response handling from worker
+// when worker returns status code > 399 (lines 154-182 in stream_orchestrator.go)
+func TestStartStreamWorkerErrorResponse(t *testing.T) {
+	// Mock worker that returns 400 Bad Request
+	statusCodeReturned := http.StatusBadRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/stream/start" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(statusCodeReturned)
+			w.Write([]byte(`{"error": "invalid request parameters"}`))
+			return
+		}
+	}))
+	defer server.Close()
+
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
+		return true
+	}
+	mockGetUrlForCapability := func(capability string) string {
+		return server.URL
+	}
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
+		return &net.PriceInfo{
+			PricePerUnit:  0,
+			PixelsPerUnit: 1,
+		}, nil
+	}
+
+	var freeCapacityCalled bool
+	mockFreeExternalCapabilityCapacity := func(string) error {
+		freeCapacityCalled = true
+		return nil
+	}
+
+	mockOrch := newMockJobOrchestrator()
+	mockOrch.verifySignature = mockVerifySig
+	mockOrch.getUrlForCapability = mockGetUrlForCapability
+	mockOrch.jobPriceInfo = mockJobPriceInfo
+	mockOrch.freeCapacity = mockFreeExternalCapabilityCapacity
+
+	bso := &BYOCOrchestratorServer{
+		orch:    mockOrch,
+		httpMux: http.NewServeMux(),
+		node:    mockOrch.node,
+		trickleSrv: trickle.ConfigureServer(trickle.TrickleServerConfig{
+			Mux:      http.NewServeMux(),
+			BasePath: "/ai/trickle/",
+		}),
+	}
+
+	// Set up mock sender
+	mockSender := pm.MockSender{}
+	mockSender.On("StartSession", mock.Anything).Return("foo")
+	mockSender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(mockTicketBatch(70), nil)
+	mockOrch.node.Sender = &mockSender
+	mockOrch.node.Balances = core.NewAddressBalances(10 * time.Second)
+	defer mockOrch.node.Balances.StopCleanup()
+
+	// Prepare job request
+	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+	paramsStr := marshalToString(t, jobParams)
+	jobReq := &JobRequest{
+		ID:         "test-stream",
+		Capability: "test-capability",
+		Parameters: paramsStr,
+		Timeout:    70,
+		Request:    "{}",
+	}
+
+	orchJob := &orchJob{Req: jobReq, Params: &jobParams}
+	gatewayJob := &gatewayJob{Job: orchJob, node: mockOrch.node}
+
+	//setup signing, sign, reset
+	mockOrch.node.OrchestratorPool = newStubOrchestratorPool(mockOrch.node, []string{server.URL})
+	gatewayJob.sign()
+	mockOrch.node.OrchestratorPool = nil
+
+	// Prepare stream start request
+	startReq := StartRequest{
+		Stream:   "teststream",
+		StreamId: "test-stream",
+		Params:   "{}",
+	}
+	body, _ := json.Marshal(startReq)
+
+	t.Run("WorkerReturns400_BadRequest", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			// running in synctest confirms that no trickle channels remain open
+
+			statusCodeReturned = http.StatusBadRequest
+
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Set up job request header
+			req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+			w := httptest.NewRecorder()
+			handler := bso.StartStream()
+			handler.ServeHTTP(w, req)
+
+			// Verify error response is forwarded
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "invalid request parameters")
+
+			// Verify freeCapacity was called for non-500 errors
+			assert.True(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should have been called")
+
+			server.CloseClientConnections()
+
+			// no stream created
+			assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
+
+		})
+	})
+
+	t.Run("WorkerReturns503_Unavailable", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			statusCodeReturned = http.StatusServiceUnavailable
+
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Set up job request header
+			req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+			w := httptest.NewRecorder()
+			handler := bso.StartStream()
+			handler.ServeHTTP(w, req)
+
+			// Verify error response is forwarded
+			assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+			assert.Contains(t, w.Body.String(), "invalid request parameters")
+
+			// Verify freeCapacity was called for non-500 errors
+			assert.True(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should have been called")
+
+			server.CloseClientConnections()
+
+			// no stream created
+			assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
+		})
+	})
+
+	t.Run("WorkerReturns500_FatalError", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			statusCodeReturned = http.StatusInternalServerError
+
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Set up job request header
+			req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+			w := httptest.NewRecorder()
+			handler := bso.StartStream()
+			handler.ServeHTTP(w, req)
+
+			// Verify error response is forwarded
+			assert.Equal(t, http.StatusInternalServerError, w.Code)
+			assert.Contains(t, w.Body.String(), "invalid request parameters")
+
+			// Verify freeCapacity was called for non-500 errors
+			assert.False(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should NOT have been called")
+
+			server.CloseClientConnections()
+
+			// no stream created
+			assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
+		})
 	})
 }
