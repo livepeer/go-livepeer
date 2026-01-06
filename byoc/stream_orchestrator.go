@@ -70,6 +70,26 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 			eventsCh     *trickle.TrickleLocalPublisher
 			dataCh       *trickle.TrickleLocalPublisher
 		)
+		failedToStartStream := false
+
+		// reset trickle channels and release capacity on failure
+		defer func() {
+			if failedToStartStream {
+				bso.orch.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
+				//close the trickle channels
+				if pubCh != nil {
+					pubCh.Close()
+				}
+				if subCh != nil {
+					subCh.Close()
+				}
+				if dataCh != nil {
+					dataCh.Close()
+				}
+				controlPubCh.Close()
+				eventsCh.Close()
+			}
+		}()
 
 		reqBodyForRunner := make(map[string]interface{})
 		reqBodyForRunner["gateway_request_id"] = mid
@@ -115,6 +135,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		if err := json.Unmarshal(body, &bodyJSON); err != nil {
 			clog.Errorf(ctx, "Failed to parse body as JSON: %v", err)
 			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			failedToStartStream = true
 			return
 		}
 		for key, value := range bodyJSON {
@@ -125,6 +146,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		if err != nil {
 			clog.Errorf(ctx, "Failed to marshal request body err=%v", err)
 			http.Error(w, "Failed to marshal request body", http.StatusInternalServerError)
+			failedToStartStream = true
 			return
 		}
 
@@ -140,6 +162,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		if err != nil {
 			clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
 			respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
+			failedToStartStream = true
 			return
 		}
 
@@ -147,6 +170,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		if err != nil {
 			clog.Errorf(ctx, "Error reading response body: %v", err)
 			respondWithError(w, "Error reading response body", http.StatusInternalServerError)
+			failedToStartStream = true
 			return
 		}
 		defer resp.Body.Close()
@@ -160,24 +184,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 			//return error response from the worker
 			w.WriteHeader(resp.StatusCode)
 			w.Write(respBody)
-
-			//free capacity if not fatal (500 error)
-			if resp.StatusCode != http.StatusInternalServerError {
-				bso.orch.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
-			}
-			//close the trickle channels
-			if pubCh != nil {
-				pubCh.Close()
-			}
-			if subCh != nil {
-				subCh.Close()
-			}
-			if dataCh != nil {
-				dataCh.Close()
-			}
-			controlPubCh.Close()
-			eventsCh.Close()
-
+			failedToStartStream = true
 			return
 		}
 
@@ -191,6 +198,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		if err != nil {
 			clog.Errorf(ctx, "Error adding stream to external capabilities: %v", err)
 			respondWithError(w, "Error adding stream to external capabilities", http.StatusInternalServerError)
+			failedToStartStream = true
 			return
 		}
 
