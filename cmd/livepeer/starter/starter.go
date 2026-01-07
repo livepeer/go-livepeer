@@ -167,6 +167,8 @@ type LivepeerConfig struct {
 	OrchBlacklist              *string
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
+	RemoteSigner               *bool
+	RemoteSignerAddr           *string
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -300,6 +302,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 	// Flags
 	defaultTestOrchAvail := true
+	defaultRemoteSigner := false
+	defaultRemoteSignerAddr := ""
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -419,7 +423,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail: &defaultTestOrchAvail,
+		TestOrchAvail:    &defaultTestOrchAvail,
+		RemoteSigner:     &defaultRemoteSigner,
+		RemoteSignerAddr: &defaultRemoteSignerAddr,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -676,8 +682,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
+	// Validate remote signer mode
+	if *cfg.RemoteSigner {
+		if *cfg.Network == "offchain" {
+			exit("Remote signer mode requires on-chain network")
+		}
+	}
+
 	if *cfg.Redeemer {
 		n.NodeType = core.RedeemerNode
+	} else if *cfg.RemoteSigner {
+		n.NodeType = core.RemoteSignerNode
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
 		if !*cfg.Transcoder {
@@ -1564,6 +1579,32 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		bcast := core.NewBroadcaster(n)
+
+		// Populate infoSig with remote signer if configured
+		if *cfg.RemoteSignerAddr != "" {
+			url, err := url.Parse(*cfg.RemoteSignerAddr)
+			if err != nil {
+				glog.Exit("Invalid remote signer addr: ", err)
+			}
+
+			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
+			fields, err := server.GetOrchInfoSig(url)
+			if err != nil {
+				glog.Exit("Unable to query remote signer: ", err)
+			}
+			n.RemoteSignerAddr = url
+			n.RemoteEthAddr = ethcommon.BytesToAddress(fields.Address)
+			n.InfoSig = fields.Signature
+			glog.Info("Using Ethereum address from remote signer: ", n.RemoteEthAddr)
+		} else {
+			// Use local signing
+			infoSig, err := bcast.Sign([]byte(fmt.Sprintf("%v", bcast.Address().Hex())))
+			if err != nil {
+				glog.Exit("Unable to generate info sig: ", err)
+			}
+			n.InfoSig = infoSig
+		}
+
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
@@ -1787,6 +1828,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if n.NodeType != core.RedeemerNode {
 		go func() {
 			ec <- s.StartMediaServer(msCtx, *cfg.HttpAddr)
+		}()
+	}
+
+	// Start remote signer server if in remote signer mode
+	if n.NodeType == core.RemoteSignerNode {
+		go func() {
+			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
+			err := server.StartRemoteSignerServer(s, *cfg.HttpAddr)
+			if err != nil {
+				exit("Error starting remote signer server: err=%q", err)
+			}
 		}()
 	}
 
