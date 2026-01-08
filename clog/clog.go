@@ -137,7 +137,7 @@ func GetVal(ctx context.Context, key string) string {
 	return val
 }
 
-func Warningf(ctx context.Context, format string, args ...interface{}) {
+func Warningf(ctx context.Context, format string, args ...any) {
 	if !glog.V(2) {
 		return
 	}
@@ -145,7 +145,7 @@ func Warningf(ctx context.Context, format string, args ...interface{}) {
 	glog.WarningDepth(1, msg)
 }
 
-func Errorf(ctx context.Context, format string, args ...interface{}) {
+func Errorf(ctx context.Context, format string, args ...any) {
 	if !glog.V(1) {
 		return
 	}
@@ -153,12 +153,12 @@ func Errorf(ctx context.Context, format string, args ...interface{}) {
 	glog.ErrorDepth(1, msg)
 }
 
-func Infof(ctx context.Context, format string, args ...interface{}) {
+func Infof(ctx context.Context, format string, args ...any) {
 	infof(ctx, false, false, format, args...)
 }
 
 // InfofErr if last argument is not nil it will be printed as " err=%q"
-func InfofErr(ctx context.Context, format string, args ...interface{}) {
+func InfofErr(ctx context.Context, format string, args ...any) {
 	infof(ctx, true, false, format, args...)
 }
 
@@ -168,14 +168,14 @@ func V(level glog.Level) Verbose {
 
 // Infof is equivalent to the global Infof function, guarded by the value of v.
 // See the documentation of V for usage.
-func (v Verbose) Infof(ctx context.Context, format string, args ...interface{}) {
+func (v Verbose) Infof(ctx context.Context, format string, args ...any) {
 	if v {
 		infof(ctx, false, false, format, args...)
 	}
 }
 
-func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{}) {
-	var err interface{}
+func (v Verbose) InfofErr(ctx context.Context, format string, args ...any) {
+	var err any
 	if len(args) > 0 {
 		err = args[len(args)-1]
 	}
@@ -184,7 +184,7 @@ func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{
 	}
 }
 
-func infof(ctx context.Context, lastErr bool, publicLog bool, format string, args ...interface{}) {
+func infof(ctx context.Context, lastErr bool, publicLog bool, format string, args ...any) {
 	msg, isErr := formatMessage(ctx, lastErr, publicLog, format, args...)
 	if bool(glog.V(2)) && isErr {
 		glog.ErrorDepth(2, msg)
@@ -196,7 +196,7 @@ func infof(ctx context.Context, lastErr bool, publicLog bool, format string, arg
 // Info logs a message with key-value pairs in a slog-like style.
 // Example: Info(ctx, "hello", "key1", value1, "key2", value2)
 // This will log: "hello key1=value1 key2=value2"
-func Info(ctx context.Context, msg string, keyvals ...interface{}) {
+func Info(ctx context.Context, msg string, keyvals ...any) {
 	if len(keyvals)%2 != 0 {
 		keyvals = append(keyvals[:len(keyvals)-1], "MISSING", keyvals[len(keyvals)-1])
 	}
@@ -229,7 +229,7 @@ func Info(ctx context.Context, msg string, keyvals ...interface{}) {
 }
 
 // V returns a Verbose instance for conditional logging at the specified level
-func (v Verbose) Info(ctx context.Context, msg string, keyvals ...interface{}) {
+func (v Verbose) Info(ctx context.Context, msg string, keyvals ...any) {
 	if v {
 		Info(ctx, msg, keyvals...)
 	}
@@ -263,13 +263,13 @@ func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	cmap.mu.RUnlock()
 }
 
-func formatMessage(ctx context.Context, lastErr bool, publicLog bool, format string, args ...interface{}) (string, bool) {
+func formatMessage(ctx context.Context, lastErr bool, publicLog bool, format string, args ...any) (string, bool) {
 	var sb strings.Builder
 	if publicLog {
 		sb.WriteString(publicLogTag)
 	}
 	messageFromContext(ctx, &sb)
-	var err interface{}
+	var err any
 	if lastErr && len(args) > 0 {
 		err = args[len(args)-1]
 		args = args[:len(args)-1]
@@ -281,7 +281,7 @@ func formatMessage(ctx context.Context, lastErr bool, publicLog bool, format str
 	return sb.String(), err != nil
 }
 
-func PublicInfof(ctx context.Context, format string, args ...interface{}) {
+func PublicInfof(ctx context.Context, format string, args ...any) {
 	publicCtx := context.Background()
 
 	publicCtx = PublicCloneCtx(ctx, publicCtx, publicLogKeys)
