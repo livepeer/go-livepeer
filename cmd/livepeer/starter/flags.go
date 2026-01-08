@@ -143,6 +143,11 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.KafkaUsername = fs.String("kafkaUser", *cfg.KafkaUsername, "Kafka Username")
 	cfg.KafkaPassword = fs.String("kafkaPassword", *cfg.KafkaPassword, "Kafka Password")
 	cfg.KafkaGatewayTopic = fs.String("kafkaGatewayTopic", *cfg.KafkaGatewayTopic, "Kafka Topic used to send gateway logs")
+	cfg.EventSinkURIs = fs.String("eventSinks", *cfg.EventSinkURIs, "List of outbound event sink URIs (comma/semicolon/newline delimited). Scheme selects backend, e.g. kafka://, https://, wss://, grpc://, mqtt://")
+	cfg.EventSinkHeaders = fs.String("eventSinkHeader", *cfg.EventSinkHeaders, "Extra headers for HTTP/WebSocket/gRPC sinks, format Key=Value; applied to every matching sink")
+	cfg.EventSinkQueueDepth = fs.Int("eventSinkQueueDepth", *cfg.EventSinkQueueDepth, "Publisher queue size before new events are dropped (default 100)")
+	cfg.EventSinkBatchSize = fs.Int("eventSinkBatchSize", *cfg.EventSinkBatchSize, "Max events per flush to each sink (default 100)")
+	cfg.EventSinkFlushInterval = fs.Duration("eventSinkFlushInterval", *cfg.EventSinkFlushInterval, "Max buffering time before flushing a partial batch (default 1s)")
 
 	return cfg
 }

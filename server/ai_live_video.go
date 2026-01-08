@@ -157,7 +157,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					// no error, all done, let's leave
 					if monitor.Enabled && firstSegment {
 						firstSegment = false
-						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+						monitor.QueueEvent("stream_trace", map[string]interface{}{
 							"type":        "gateway_send_first_ingest_segment",
 							"timestamp":   time.Now().UnixMilli(),
 							"stream_id":   params.liveParams.streamID,
@@ -341,7 +341,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
 				if monitor.Enabled {
 					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
-					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					monitor.QueueEvent("stream_trace", map[string]interface{}{
 						"type":        "gateway_receive_first_processed_segment",
 						"timestamp":   time.Now().UnixMilli(),
 						"stream_id":   params.liveParams.streamID,
@@ -359,7 +359,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if segmentsReceived == 3 && monitor.Enabled {
 				// We assume that after receiving 3 segments, the runner started successfully
 				// and we should be able to start the playback
-				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				monitor.QueueEvent("stream_trace", map[string]interface{}{
 					"type":        "gateway_receive_few_processed_segments",
 					"timestamp":   time.Now().UnixMilli(),
 					"stream_id":   params.liveParams.streamID,
@@ -616,7 +616,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	reportUpdate := func(data []byte) {
 		// send the param update to kafka
-		monitor.SendQueueEventAsync("ai_stream_events", map[string]interface{}{
+		monitor.QueueEvent("ai_stream_events", map[string]interface{}{
 			"type":        "params_update",
 			"stream_id":   params.liveParams.streamID,
 			"request_id":  params.liveParams.requestID,
@@ -837,7 +837,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				StreamStatusStore.Store(streamId, event)
 			}
 
-			monitor.SendQueueEventAsync(queueEventType, event)
+			monitor.QueueEvent(queueEventType, event)
 		}
 	}()
 
@@ -948,7 +948,7 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 		ev := maps.Clone(event)
 		ev["capability"] = clog.GetVal(ctx, "capability")
 		ev["message"] = err.Error()
-		monitor.SendQueueEventAsync("ai_stream_events", ev)
+		monitor.QueueEvent("ai_stream_events", ev)
 	}
 }
 
