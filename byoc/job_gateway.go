@@ -260,7 +260,7 @@ func (bsg *BYOCGatewayServer) setupGatewayJob(ctx context.Context, jobReqHdr str
 	var orchs []JobToken
 
 	clog.Infof(ctx, "processing job request req=%v", jobReqHdr)
-	jobReq, err := bsg.verifyJobCreds(ctx, jobReqHdr, true)
+	jobReq, err := bsg.verifyJobCreds(jobReqHdr)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Unable to parse job request, err=%v", err))
 	}
@@ -321,7 +321,7 @@ func getOrchSearchTimeouts(ctx context.Context, searchTimeoutHdr, respTimeoutHdr
 	return timeout, respTimeout
 }
 
-func (bsg *BYOCGatewayServer) verifyJobCreds(ctx context.Context, jobCreds string, reserveCapacity bool) (*JobRequest, error) {
+func (bsg *BYOCGatewayServer) verifyJobCreds(jobCreds string) (*JobRequest, error) {
 	//Gateway needs JobRequest parsed and verification of required fields
 	jobData, err := parseJobRequest(jobCreds)
 	if err != nil {
