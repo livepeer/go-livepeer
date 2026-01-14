@@ -201,7 +201,7 @@ func (f *ServerlessWorker) GetLiveAICapacity(pipeline, modelID string) Capacity 
 	// TODO implement
 	return Capacity{
 		ContainersInUse: 0,
-		ContainersIdle:  0,
+		ContainersIdle:  1,
 	}
 }
 
