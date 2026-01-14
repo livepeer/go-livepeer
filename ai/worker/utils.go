@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/livepeer/go-livepeer/clog"
 )
