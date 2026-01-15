@@ -3,12 +3,16 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 
 	"github.com/gorilla/websocket"
+	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/trickle"
 )
 
 type ServerlessWorker struct {
@@ -69,17 +73,59 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		}
 
 		// Connect to websocket
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+		websocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			slog.Error("Failed to connect to websocket", "error", err)
 			return
 		}
-		defer conn.Close()
+		defer websocketConn.Close()
+
+		// Subscribe to the events trickle stream to detect when stream ends
+		if req.EventsUrl != nil && *req.EventsUrl != "" {
+			go func() {
+				eventsUrl := *req.EventsUrl
+				slog.Info("Subscribing to events stream", "url", eventsUrl)
+
+				subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+					URL: eventsUrl,
+					Ctx: context.Background(),
+				})
+				if err != nil {
+					slog.Error("Failed to create events subscriber", "error", err)
+					return
+				}
+
+				for {
+					segment, err := subscriber.Read()
+					if err != nil {
+						if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
+							slog.Info("Events stream closed, closing websocket", "reason", err)
+							websocketConn.Close() // This will cause ReadMessage to return an error
+							return
+						}
+						slog.Warn("Error reading events stream", "error", err)
+						// Continue on other errors (like SequenceNonexistent)
+						continue
+					}
+
+					// Read and print the event data for debugging
+					data, err := io.ReadAll(segment.Body)
+					segment.Body.Close()
+					if err != nil {
+						slog.Warn("Error reading event body", "error", err)
+						continue
+					}
+					slog.Info("Received event from trickle stream", "data", string(data))
+				}
+			}()
+		} else {
+			slog.Warn("No events URL provided, cannot detect stream end via trickle")
+		}
 
 		slog.Info("Connected to websocket successfully")
 
 		// Wait for connection_established message from server
-		_, readyMsg, err := conn.ReadMessage()
+		_, readyMsg, err := websocketConn.ReadMessage()
 		if err != nil {
 			slog.Error("Failed to read ready message", "error", err)
 			return
@@ -100,7 +146,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		}
 
 		// Marshal request to JSON and send
-		req.ModelId = nil // TODO remove this
 		reqJSON, err := json.Marshal(req)
 		if err != nil {
 			slog.Error("Failed to marshal request", "error", err)
@@ -110,7 +155,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		slog.Info("Sending request to websocket", "request", string(reqJSON))
 
 		// TODO check response message and retry on failure
-		err = conn.WriteMessage(websocket.TextMessage, reqJSON)
+		err = websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
 		if err != nil {
 			slog.Error("Failed to send message", "error", err)
 			return
@@ -118,14 +163,11 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 		slog.Info("Sent request to websocket", "request", string(reqJSON))
 
-		// Track status transitions: wait for OK, then wait for IDLE
-		seenOK := false
-
-		// Receive and print messages indefinitely
+		// Receive and print messages indefinitely (or until events stream closes)
 		for {
-			messageType, message, err := conn.ReadMessage()
+			messageType, message, err := websocketConn.ReadMessage()
 			if err != nil {
-				slog.Error("Error reading message", "error", err)
+				slog.Info("Websocket read ended", "error", err)
 				return
 			}
 
@@ -140,24 +182,18 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				continue
 			}
 
+			// TODO overall long timeout for websocket connection as a fail safe to avoid big bills
+
 			// Check if this is a health_check message
+			// TODO handle the states like docker.go watchContainer i.e. anything else apart from ERROR to handle?
 			if msgType, ok := msgData["type"].(string); ok && msgType == "health_check" {
 				// Extract the nested data.status field
 				if data, ok := msgData["data"].(map[string]interface{}); ok {
 					if status, ok := data["status"].(string); ok {
 						slog.Info("Health check status", "status", status)
 
-						// TODO timeout for first OK
-						// TODO can we detect the input trickle stream finishing
-						// Wait for OK status first
-						if status == "OK" {
-							seenOK = true
-							slog.Info("Runner status is OK")
-						}
-
-						// After seeing OK, wait for IDLE
-						if seenOK && status == "IDLE" {
-							slog.Info("Runner status is IDLE, closing websocket")
+						if status == "ERROR" {
+							slog.Info("Runner status is ERROR, closing websocket")
 							return
 						}
 					}
@@ -182,6 +218,7 @@ func (f *ServerlessWorker) Stop(ctx context.Context) error {
 func (f *ServerlessWorker) HasCapacity(pipeline string, modelID string) bool {
 	// Serverless workers always have capacity
 	// TODO implement max capacity
+	clog.Info(context.Background(), "HasCapacity", "pipeline", pipeline, "modelID", modelID)
 	return true
 }
 
@@ -197,7 +234,7 @@ func (f *ServerlessWorker) HardwareInformation() []HardwareInformation {
 
 func (f *ServerlessWorker) GetLiveAICapacity(pipeline, modelID string) Capacity {
 	// Return unlimited capacity for serverless workers
-
+	clog.Info(context.Background(), "GetLiveAICapacity", "pipeline", pipeline, "modelID", modelID)
 	// TODO implement
 	return Capacity{
 		ContainersInUse: 0,

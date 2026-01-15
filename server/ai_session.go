@@ -559,7 +559,7 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return sess, err
 	}
 
-	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
+	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s warm=%v", sess.Transcoder(), sess.Warm)
 
 	return sess, nil
 }
