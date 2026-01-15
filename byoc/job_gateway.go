@@ -418,7 +418,9 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	for nbResp < numAvailableOrchs && len(jobTokens) < numAvailableOrchs && !timedOut {
 		select {
 		case token := <-tokenCh:
-			jobTokens = append(jobTokens, token)
+			if token.AvailableCapacity > 0 {
+				jobTokens = append(jobTokens, token)
+			}
 			nbResp++
 		case <-errCh:
 			nbResp++
