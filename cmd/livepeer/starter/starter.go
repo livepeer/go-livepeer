@@ -185,6 +185,7 @@ type LivepeerConfig struct {
 	LiveAIHeartbeatInterval    *time.Duration
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
+	LiveAICapReportInterval    *time.Duration
 	LiveAICapRefreshModels     *string
 	LiveAISaveNSegments        *int
 }
@@ -243,6 +244,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
 	defaultLiveAIHeartbeatInterval := 5 * time.Second
+	defaultLiveAICapReportInterval := 25 * time.Minute
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -362,6 +364,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
 		LiveAIHeartbeatInterval:  &defaultLiveAIHeartbeatInterval,
+		LiveAICapReportInterval:  &defaultLiveAICapReportInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1602,7 +1605,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.Network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout, *cfg.LiveAICapReportInterval)
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -1768,7 +1771,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
-		n.LiveAICapRefreshModels = strings.Split(*cfg.LiveAICapRefreshModels, ",")
+		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
 	}
 	n.LiveAISaveNSegments = cfg.LiveAISaveNSegments
 
