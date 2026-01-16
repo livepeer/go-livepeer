@@ -272,7 +272,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
-			RequestId:    &requestID,
 			ManifestId:   &mid,
 		})
 		if err != nil {
