@@ -1205,7 +1205,8 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
 			}
 			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent)
-			for _, s := range stats.TrackStats {
+			for i := range stats.TrackStats {
+				s := &stats.TrackStats[i] // pointer because underlying object is being updated
 				outputStats := media.GetOutputStats(requestID + "-" + s.Type.String())
 				s.LastOutputTS = float64(outputStats.GetLastOutputTS()) / 90000.0
 				s.Latency = s.LastInputTS - s.LastOutputTS
