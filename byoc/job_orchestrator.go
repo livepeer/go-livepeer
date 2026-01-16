@@ -147,60 +147,58 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		jobToken := JobToken{SenderAddress: nil, TicketParams: nil, Balance: 0, Price: nil}
 
-		if !orch.CheckExternalCapabilityCapacity(jobCapsHdr) {
-			//send response indicating no capacity available
-			w.WriteHeader(http.StatusServiceUnavailable)
-		} else {
-			senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)
+		capacity := orch.CheckExternalCapabilityCapacity(jobCapsHdr)
 
-			jobPrice, err := orch.JobPriceInfo(senderAddr, jobCapsHdr)
-			if err != nil {
-				statusCode := http.StatusBadRequest
-				if err.Error() == "insufficient sender reserve" {
-					statusCode = http.StatusServiceUnavailable
-				}
-				glog.Errorf("could not get price err=%v", err.Error())
-				http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), statusCode)
-				return
-			}
-			ticketParams, err := orch.TicketParams(senderAddr, jobPrice)
-			if err != nil {
-				glog.Errorf("could not get ticket params err=%v", err.Error())
-				http.Error(w, fmt.Sprintf("Could not get ticket params err=%v", err.Error()), http.StatusBadRequest)
-				return
-			}
+		senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)
 
-			capBal := orch.Balance(senderAddr, core.ManifestID(jobCapsHdr))
-			if capBal != nil {
-				capBal, err = common.PriceToInt64(capBal)
-				if err != nil {
-					clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
-					capBal = big.NewRat(0, 1)
-				}
-			} else {
+		jobPrice, err := orch.JobPriceInfo(senderAddr, jobCapsHdr)
+		if err != nil {
+			statusCode := http.StatusBadRequest
+			if err.Error() == "insufficient sender reserve" {
+				statusCode = http.StatusServiceUnavailable
+			}
+			glog.Errorf("could not get price err=%v", err.Error())
+			http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), statusCode)
+			return
+		}
+		ticketParams, err := orch.TicketParams(senderAddr, jobPrice)
+		if err != nil {
+			glog.Errorf("could not get ticket params err=%v", err.Error())
+			http.Error(w, fmt.Sprintf("Could not get ticket params err=%v", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		capBal := orch.Balance(senderAddr, core.ManifestID(jobCapsHdr))
+		if capBal != nil {
+			capBal, err = common.PriceToInt64(capBal)
+			if err != nil {
+				clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
 				capBal = big.NewRat(0, 1)
 			}
-			//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
-			capBalInt, err := common.PriceToFixed(capBal)
-			if err != nil {
-				glog.Errorf("could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
-				capBalInt = 0
-			} else {
-				// Remove the last three digits from capBalInt
-				capBalInt = capBalInt / 1000
-			}
-
-			jobToken = JobToken{
-				SenderAddress: jobSenderAddr,
-				TicketParams:  ticketParams,
-				Balance:       capBalInt,
-				Price:         jobPrice,
-				ServiceAddr:   orch.ServiceURI().String(),
-			}
-
-			//send response indicating compatible
-			w.WriteHeader(http.StatusOK)
+		} else {
+			capBal = big.NewRat(0, 1)
 		}
+		//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
+		capBalInt, err := common.PriceToFixed(capBal)
+		if err != nil {
+			glog.Errorf("could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
+			capBalInt = 0
+		} else {
+			// Remove the last three digits from capBalInt
+			capBalInt = capBalInt / 1000
+		}
+
+		jobToken = JobToken{
+			SenderAddress:     jobSenderAddr,
+			TicketParams:      ticketParams,
+			Balance:           capBalInt,
+			Price:             jobPrice,
+			ServiceAddr:       orch.ServiceURI().String(),
+			AvailableCapacity: capacity,
+		}
+
+		//send response indicating compatible
+		w.WriteHeader(http.StatusOK)
 
 		json.NewEncoder(w).Encode(jobToken)
 	})

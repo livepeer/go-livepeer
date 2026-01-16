@@ -19,14 +19,13 @@ import (
 
 var getNewTokenTimeout = 3 * time.Second
 
-// StartStream handles the POST /stream/start endpoint for the Orchestrator
 func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := bso.orch
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		orchJob, err := bso.setupOrchJob(ctx, r, false)
+		orchJob, err := bso.setupOrchJob(ctx, r, true)
 		if err != nil {
 			code := http.StatusBadRequest
 			if err == errInsufficientBalance {

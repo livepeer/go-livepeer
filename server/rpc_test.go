@@ -266,8 +266,8 @@ func (r *stubOrchestrator) RegisterExternalCapability(extCapabilitySettings stri
 func (r *stubOrchestrator) RemoveExternalCapability(extCapability string) error {
 	return nil
 }
-func (r *stubOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
-	return true
+func (r *stubOrchestrator) CheckExternalCapabilityCapacity(extCap string) int64 {
+	return 1
 }
 func (r *stubOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
 	return nil
@@ -1623,8 +1623,8 @@ func (o *mockOrchestrator) RegisterExternalCapability(extCapabilitySettings stri
 func (o *mockOrchestrator) RemoveExternalCapability(extCapability string) error {
 	return nil
 }
-func (o *mockOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
-	return true
+func (o *mockOrchestrator) CheckExternalCapabilityCapacity(extCap string) int64 {
+	return 1
 }
 func (o *mockOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
 	return nil
