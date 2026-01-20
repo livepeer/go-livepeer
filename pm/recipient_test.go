@@ -25,7 +25,7 @@ func newRecipientFixtureOrFatal(_ *testing.T) (ethcommon.Address, *stubBroker, *
 	v := &stubValidator{}
 	v.SetIsValidTicket(true)
 
-	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100)}
+	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100), avgPrice: big.NewInt(100)}
 	sm := newStubSenderMonitor()
 	sm.maxFloat = big.NewInt(10000000000)
 	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1), blkHash: RandHash(), preBlkHash: RandHash()}
@@ -532,9 +532,11 @@ func TestTicketParams(t *testing.T) {
 
 	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue > txCostWithGasPrice(avg gasPrice)
 	// Set current gasPrice higher than avg gasPrice
+	avgGasPrice := big.NewInt(200)
+	gm.avgPrice = new(big.Int).Set(avgGasPrice)
 	gm.gasPrice = new(big.Int).Add(avgGasPrice, big.NewInt(1))
 	txCost := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.gasPrice)
-	txCostAvgGasPrice := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), avgGasPrice)
+	txCostAvgGasPrice := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.avgPrice)
 	sm.maxFloat = new(big.Int).Sub(txCost, big.NewInt(1))
 	require.True(sm.maxFloat.Cmp(txCost) < 0)
 	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) > 0)
