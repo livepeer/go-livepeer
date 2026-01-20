@@ -585,7 +585,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		GatewayStatus.Clear(streamID)
 		GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
-		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+		monitor.QueueEvent("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
 			"timestamp":   streamRequestTime,
 			"stream_id":   streamID,
@@ -660,7 +660,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
 			sendErrorEvent(errors.New("mediamtx ingest disconnected"))
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			monitor.QueueEvent("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),
 				"stream_id":   streamID,
@@ -739,7 +739,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				err = errors.New("unknown swap reason")
 			}
 			// report the swap
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			monitor.QueueEvent("stream_trace", map[string]interface{}{
 				"type":        "orchestrator_swap",
 				"stream_id":   params.liveParams.streamID,
 				"request_id":  params.liveParams.requestID,
@@ -1059,7 +1059,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			GatewayStatus.Clear(streamID)
 			GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			monitor.QueueEvent("stream_trace", map[string]interface{}{
 				"type":        "gateway_receive_stream_request",
 				"timestamp":   streamRequestTime,
 				"stream_id":   streamID,
@@ -1086,7 +1086,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					err = errors.New("whip disconnected")
 				}
 				sendErrorEvent(err)
-				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				monitor.QueueEvent("stream_trace", map[string]interface{}{
 					"type":        "gateway_ingest_stream_closed",
 					"timestamp":   time.Now().UnixMilli(),
 					"stream_id":   streamID,
@@ -1225,7 +1225,7 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 				"stats": stats,
 			})
 
-			monitor.SendQueueEventAsync("stream_ingest_metrics", map[string]interface{}{
+			monitor.QueueEvent("stream_ingest_metrics", map[string]interface{}{
 				"timestamp":   time.Now().UnixMilli(),
 				"stream_id":   streamID,
 				"pipeline_id": pipelineID,
