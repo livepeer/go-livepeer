@@ -59,11 +59,7 @@ func (m *NonceManager) Next(addr ethcommon.Address) (uint64, error) {
 	// If remote nonce > local nonce, another client was likely used
 	// to submit transactions such that the local nonce does not capture
 	// transactions submitted by other clients
-	if remoteNonce > localNonce {
-		return remoteNonce, nil
-	}
-
-	return localNonce, nil
+	return max(remoteNonce, localNonce), nil
 }
 
 // Update uses the last nonce for the provided address to update the next transaction nonce
