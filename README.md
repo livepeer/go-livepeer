@@ -8,6 +8,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/livepeer/go-livepeer)](https://goreportcard.com/report/github.com/livepeer/go-livepeer)
 [![Discord](https://img.shields.io/discord/423160867534929930.svg?style=flat-square)](https://discord.gg/livepeer)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/tag/livepeer/go-livepeer?sort=semver)](https://github.com/livepeer/go-livepeer/releases/latest)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=flat-square)](CONTRIBUTING.md)
 
 The Livepeer project aims to deliver a live video-streaming network protocol
