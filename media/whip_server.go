@@ -385,12 +385,19 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 	VideoTimeout := time.Duration(videoTimeoutSec) * time.Second
 	AudioOnlyTimeout := VideoTimeout
 	AudioTimeout := 500 * time.Millisecond
-	videoTimer := time.NewTimer(time.Duration(VideoTimeout))
-	audioTimer := time.NewTimer(time.Duration(AudioOnlyTimeout))
+	videoTimer := time.NewTimer(VideoTimeout)
+	audioTimer := time.NewTimer(AudioOnlyTimeout)
 	sdp, err := pc.RemoteDescription().Unmarshal()
 	if err != nil {
 		clog.InfofErr(ctx, "error unmarshaling remote sdp", err)
 		return nil, nil, fmt.Errorf("error unmarshaling sdp: %w", err)
+	}
+	for _, md := range sdp.MediaDescriptions {
+		for _, attr := range md.Attributes {
+			if attr.Key == "rtpmap" {
+				log.Println("CODEC ", attr.Value) // e.g. H264/90000
+			}
+		}
 	}
 	expectVideo := getMediaDescriptionByType(*sdp, "video") != nil
 	expectAudio := getMediaDescriptionByType(*sdp, "audio") != nil
