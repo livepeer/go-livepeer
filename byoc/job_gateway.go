@@ -392,13 +392,13 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	}
 
 	var jobTokens []JobToken
-	timedOut := false
 	nbResp := 0
 	numAvailableOrchs := node.OrchestratorPool.Size()
 	tokenCh := make(chan JobToken, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
 	tokensCtx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
+	defer cancel()
 	// Shuffle and get job tokens
 	for _, i := range rand.Perm(len(orchs)) {
 		//do not send to excluded Orchestrators
@@ -412,10 +412,10 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 			continue
 		}
 
-		go getOrchJobToken(ctx, orchs[i].URL, *reqSender, 500*time.Millisecond, tokenCh, errCh)
+		go getOrchJobToken(ctx, orchs[i].URL, *reqSender, respTimeout, tokenCh, errCh)
 	}
 
-	for nbResp < numAvailableOrchs && len(jobTokens) < numAvailableOrchs && !timedOut {
+	for nbResp < numAvailableOrchs && len(jobTokens) < numAvailableOrchs {
 		select {
 		case token := <-tokenCh:
 			if token.AvailableCapacity > 0 {
@@ -425,11 +425,12 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 		case <-errCh:
 			nbResp++
 		case <-tokensCtx.Done():
-			break
+			//searchTimeout reached, return tokens received
+			return jobTokens, nil
 		}
 	}
-	cancel()
 
+	// received enough tokens or all responses arrived
 	return jobTokens, nil
 }
 
