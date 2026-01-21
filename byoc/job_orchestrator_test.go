@@ -45,7 +45,7 @@ type mockJobOrchestrator struct {
 	registerExternalCapability      func(string) (*core.ExternalCapability, error)
 	unregisterExternalCapability    func(string) error
 	verifySignature                 func(ethcommon.Address, string, []byte) bool
-	checkExternalCapabilityCapacity func(string) bool
+	checkExternalCapabilityCapacity func(string) int64
 	reserveCapacity                 func(string) error
 	getUrlForCapability             func(string) string
 	balance                         func(ethcommon.Address, core.ManifestID) *big.Rat
@@ -142,9 +142,9 @@ func (r *mockJobOrchestrator) RemoveExternalCapability(extCapability string) err
 
 	return nil
 }
-func (r *mockJobOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
+func (r *mockJobOrchestrator) CheckExternalCapabilityCapacity(extCap string) int64 {
 	if r.checkExternalCapabilityCapacity == nil {
-		return true
+		return 1
 	} else {
 		return r.checkExternalCapabilityCapacity(extCap)
 	}
@@ -486,18 +486,33 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
-	mockCheckExternalCapabilityCapacity := func(extCap string) bool {
-		return false
+	mockCheckExternalCapabilityCapacity := func(extCap string) int64 {
+		return 0
 	}
 
-	mockReserveCapacity := func(cap string) error {
-		return errors.New("no capacity")
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
+		return &net.PriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+		}, nil
+	}
+
+	mockTicketParams := func(addr ethcommon.Address, price *net.PriceInfo) (*net.TicketParams, error) {
+		return &net.TicketParams{
+			Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
+			FaceValue:         big.NewInt(1000).Bytes(),
+			WinProb:           big.NewInt(1).Bytes(),
+			RecipientRandHash: []byte("hash"),
+			Seed:              big.NewInt(1234).Bytes(),
+			ExpirationBlock:   big.NewInt(100000).Bytes(),
+		}, nil
 	}
 
 	mockJobOrch := newMockJobOrchestrator()
 	mockJobOrch.verifySignature = mockVerifySig
 	mockJobOrch.checkExternalCapabilityCapacity = mockCheckExternalCapabilityCapacity
-	mockJobOrch.reserveCapacity = mockReserveCapacity
+	mockJobOrch.jobPriceInfo = mockJobPriceInfo
+	mockJobOrch.ticketParams = mockTicketParams
 
 	bso := &BYOCOrchestratorServer{
 		node: mockJobLivepeerNode(),
@@ -523,7 +538,11 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	var jobToken JobToken
+	json.Unmarshal(body, &jobToken)
+	assert.Equal(t, int64(0), jobToken.AvailableCapacity)
 }
 
 func TestGetJobToken_JobPriceInfoError(t *testing.T) {
@@ -854,5 +873,6 @@ func createMockJobToken(hostUrl string) *JobToken {
 			PricePerUnit:  100,
 			PixelsPerUnit: 1,
 		},
+		AvailableCapacity: 1,
 	}
 }

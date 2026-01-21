@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -2040,5 +2041,79 @@ func TestStartStreamError_OtherScenarios(t *testing.T) {
 			// Clean up pre-created stream
 			mockOrch.node.ExternalCapabilities.RemoveStream(jobReq.ID)
 		})
+	})
+}
+
+func TestStartStreamHandler_ReserveCapacity(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var reserveCapacityCalled bool
+		node := mockJobLivepeerNode()
+
+		// Create mock orchestrator with ReserveExternalCapabilityCapacity expectation
+		mockOrch := newMockJobOrchestrator()
+		mockOrch.verifySignature = func(addr ethcommon.Address, msg string, sig []byte) bool {
+			return true
+		}
+		mockOrch.reserveCapacity = func(extCap string) error {
+			reserveCapacityCalled = true
+			return nil
+		}
+		mockOrch.freeCapacity = func(extCap string) error {
+			return nil
+		}
+		mockOrch.getUrlForCapability = func(capability string) string {
+			return "http://127.0.0.1:1234"
+		}
+		mockOrch.jobPriceInfo = func(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+			return &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, nil
+		}
+		mockOrch.balance = func(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+			return new(big.Rat).SetInt64(0)
+		}
+
+		// Set up an lphttp-based orchestrator test server with trickle endpoints
+		mux := http.NewServeMux()
+		bso := &BYOCOrchestratorServer{orch: mockOrch, httpMux: mux, node: node}
+
+		// Configure trickle server on the mux
+		bso.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+			Mux:        mux,
+			BasePath:   "/ai/trickle/",
+			Autocreate: true,
+		})
+
+		// Setup Orch server stub
+		mux.HandleFunc("/process/token", orchTokenHandler)
+		mux.HandleFunc("/ai/stream/start", orchAIStreamStartNoUrlsHandler)
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		node.OrchestratorPool = newStubOrchestratorPool(node, []string{server.URL})
+		drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+
+		// Prepare a valid StartRequest body
+		startReq := StartRequest{
+			Stream:     "teststream",
+			RtmpOutput: "rtmp://output",
+			StreamId:   "streamid",
+			Params:     "{}",
+		}
+		body, _ := json.Marshal(startReq)
+		req := httptest.NewRequest(http.MethodPost, "/ai/stream/start", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		req.Header.Set("Livepeer", base64TestJobRequest(10, true, true, true))
+
+		w := httptest.NewRecorder()
+
+		handler := bso.StartStream()
+		handler.ServeHTTP(w, req)
+
+		// Verify ReserveExternalCapabilityCapacity was called
+		assert.True(t, reserveCapacityCalled, "ReserveExternalCapabilityCapacity should have been called")
+
+		// no stream created
+		assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
 	})
 }
