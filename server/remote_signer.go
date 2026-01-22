@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,10 +24,6 @@ import (
 )
 
 const HTTPStatusRefreshSession = 480
-const RemoteType_LiveVideoToVideo = "lv2v"
-
-// overridable for tests
-var remoteGetOrchInfo = GetOrchestratorInfo
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
@@ -153,14 +148,11 @@ type RemotePaymentRequest struct {
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
 	ManifestID string
 
-	// Number of pixels to generate a ticket for. Required if `type` is not set.
+	// Number of pixels to generate a ticket for (used when price is capability-derived).
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
-	Type string `json:"type"`
-
-	// Model ID to use for pricing. Optional.
-	ModelID string `json:"modelID"`
+	// Optional price information selected by the caller (gateway).
+	PriceInfo *net.PriceInfo `json:"priceInfo,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -235,20 +227,26 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	oInfo := info.Info // OrchestratorInfo
 
-	// For LV2V, refresh orchestrator info with capability-scoped request so
-	// price and ticket params stay aligned for the requested model.
-	if req.Type == RemoteType_LiveVideoToVideo && req.ModelID != "" && oInfo != nil && oInfo.Transcoder != "" {
-		refreshed := refreshOrchInfoForLV2V(ctx, ls.LivepeerNode, oInfo.Transcoder, req.ModelID)
-		if refreshed != nil {
-			oInfo = refreshed
-		}
+	priceInfo := req.PriceInfo
+	if priceInfo == nil {
+		priceInfo = oInfo.PriceInfo
+	}
+	if priceInfo == nil {
+		priceInfo = &net.PriceInfo{}
+	}
+	// Default LV2V capability if none provided but a constraint/model is present.
+	if priceInfo.Capability == 0 && priceInfo.Constraint != "" {
+		priceInfo.Capability = uint32(core.Capability_LiveVideoToVideo)
+	}
+	// Re-evaluate LV2V after ensuring capability.
+	jobIsLV2V := priceInfo.Capability == uint32(core.Capability_LiveVideoToVideo)
+	if jobIsLV2V && priceInfo.Constraint == "" && len(oInfo.CapabilitiesPrices) > 0 {
+		priceInfo.Constraint = oInfo.CapabilitiesPrices[0].Constraint
 	}
 
-	priceInfo := oInfo.PriceInfo
-
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
-		err := fmt.Errorf("missing or zero priceInfo for capability=%d model=%s (found %d capability prices)",
-			core.Capability_LiveVideoToVideo, req.ModelID, len(oInfo.CapabilitiesPrices))
+		err := fmt.Errorf("missing or zero priceInfo for capability=%d constraint=%s (found %d capability prices)",
+			priceInfo.GetCapability(), priceInfo.GetConstraint(), len(oInfo.CapabilitiesPrices))
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -361,7 +359,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	pixels := req.InPixels
-	if req.Type == RemoteType_LiveVideoToVideo {
+	if jobIsLV2V {
 		info := defaultSegInfo
 		now := time.Now()
 		lastUpdate := state.LastUpdate
@@ -372,12 +370,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
 		pixels = int64(pixelsPerSec * secSinceLastProcessed)
-	} else if req.Type != "" {
-		err = errors.New("invalid job type")
-		respondJsonError(ctx, w, err, http.StatusBadRequest)
 	}
 	if pixels <= 0 {
-		err = errors.New("missing pixels or job type")
+		err = errors.New("missing pixels or capability-derived job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -391,6 +386,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		err = fmt.Errorf("Failed to update balance: %w", err)
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
 		return
+	}
+	if balUpdate.NumTickets == 0 {
+		balUpdate.NumTickets = 1 // ensure initial ticket issuance to fund session
 	}
 	balUpdate.Debit = fee
 	balUpdate.Status = ReceivedChange
@@ -457,52 +455,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func lv2vCapabilities(modelID string) *net.Capabilities {
-	if modelID == "" {
-		return nil
-	}
-	return &net.Capabilities{
-		Capacities: map[uint32]uint32{
-			uint32(core.Capability_LiveVideoToVideo): 1,
-		},
-		Constraints: &net.Capabilities_Constraints{
-			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
-				uint32(core.Capability_LiveVideoToVideo): {
-					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
-						modelID: {},
-					},
-				},
-			},
-		},
-	}
-}
-
-func refreshOrchInfoForLV2V(ctx context.Context, node *core.LivepeerNode, transcoderURL string, modelID string) *net.OrchestratorInfo {
-	if node == nil || transcoderURL == "" {
-		return nil
-	}
-	caps := lv2vCapabilities(modelID)
-	if caps == nil {
-		return nil
-	}
-	uri, err := url.Parse(transcoderURL)
-	if err != nil {
-		clog.Infof(ctx, "Failed to parse transcoder URL for refresh url=%s err=%v", transcoderURL, err)
-		return nil
-	}
-
-	bcast := core.NewBroadcaster(node)
-	info, err := remoteGetOrchInfo(ctx, bcast, uri, GetOrchestratorInfoParams{
-		Caps:                caps,
-		IgnoreCapacityCheck: true,
-	})
-	if err != nil {
-		clog.Infof(ctx, "Could not refresh LV2V orch info url=%s modelID=%s err=%v", transcoderURL, modelID, err)
-		return nil
-	}
-	return info
 }
 
 // Calls the remote signer service to get a signature for GetOrchInfo

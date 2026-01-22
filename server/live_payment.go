@@ -216,13 +216,20 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 	state := r.state
 	r.mu.Unlock()
 
+	priceInfo := segmentInfo.priceInfo
+	if priceInfo != nil && priceInfo.Capability == 0 && sess.OrchestratorInfo.PriceInfo != nil {
+		priceInfo.Capability = sess.OrchestratorInfo.PriceInfo.Capability
+	}
+	if priceInfo != nil && priceInfo.Capability == uint32(core.Capability_LiveVideoToVideo) && priceInfo.Constraint == "" {
+		priceInfo.Constraint = segmentInfo.modelID
+	}
+
 	// Build remote payment request
 	reqPayload := RemotePaymentRequest{
 		ManifestID:   segmentInfo.mid,
 		Orchestrator: oInfoBytes,
 		State:        state,
-		Type:         RemoteType_LiveVideoToVideo,
-		ModelID:      segmentInfo.modelID,
+		PriceInfo:    priceInfo,
 	}
 
 	body, err := json.Marshal(reqPayload)
