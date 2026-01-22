@@ -29,10 +29,17 @@ func TestSendPayment(t *testing.T) {
 	defer ts.Close()
 	tr := &net.PaymentResult{
 		Info: &net.OrchestratorInfo{
-			Transcoder:   ts.URL,
-			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
-			AuthToken:    stubAuthToken,
+			Transcoder: ts.URL,
+			PriceInfo:  &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{
+				Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
+				FaceValue:         big.NewInt(1_000_000_000_000_000_000).Bytes(), // 1 ETH
+				WinProb:           big.NewInt(1).Bytes(),
+				RecipientRandHash: ethcommon.HexToHash("0x2222222222222222222222222222222222222222").Bytes(),
+				Seed:              big.NewInt(1234).Bytes(),
+				ExpirationBlock:   big.NewInt(100).Bytes(),
+			},
+			AuthToken: stubAuthToken,
 		},
 	}
 	buf, err := proto.Marshal(tr)
@@ -155,10 +162,17 @@ func TestRemoteLivePaymentSender_BasicFlow(t *testing.T) {
 	defer ts.Close()
 	tr := &net.PaymentResult{
 		Info: &net.OrchestratorInfo{
-			Transcoder:   ts.URL,
-			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
-			AuthToken:    stubAuthToken,
+			Transcoder: ts.URL,
+			PriceInfo:  &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{
+				Recipient:         ethcommon.HexToAddress("0x3333333333333333333333333333333333333333").Bytes(),
+				FaceValue:         big.NewInt(1_000_000_000_000_000_000).Bytes(), // 1 ETH
+				WinProb:           big.NewInt(1).Bytes(),
+				RecipientRandHash: ethcommon.HexToHash("0x4444444444444444444444444444444444444444").Bytes(),
+				Seed:              big.NewInt(5678).Bytes(),
+				ExpirationBlock:   big.NewInt(100).Bytes(),
+			},
+			AuthToken: stubAuthToken,
 		},
 	}
 	buf, err := proto.Marshal(tr)

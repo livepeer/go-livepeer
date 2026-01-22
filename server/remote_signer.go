@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,9 @@ import (
 
 const HTTPStatusRefreshSession = 480
 const RemoteType_LiveVideoToVideo = "lv2v"
+
+// overridable for tests
+var remoteGetOrchInfo = GetOrchestratorInfo
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +158,9 @@ type RemotePaymentRequest struct {
 
 	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
 	Type string `json:"type"`
+
+	// Model ID to use for pricing. Optional.
+	ModelID string `json:"modelID"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -227,12 +234,32 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	oInfo := info.Info // OrchestratorInfo
+
+	// For LV2V, refresh orchestrator info with capability-scoped request so
+	// price and ticket params stay aligned for the requested model.
+	if req.Type == RemoteType_LiveVideoToVideo && req.ModelID != "" && oInfo != nil && oInfo.Transcoder != "" {
+		refreshed := refreshOrchInfoForLV2V(ctx, ls.LivepeerNode, oInfo.Transcoder, req.ModelID)
+		if refreshed != nil {
+			oInfo = refreshed
+		}
+	}
+
 	priceInfo := oInfo.PriceInfo
+
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
-		err := fmt.Errorf("missing or zero priceInfo")
+		err := fmt.Errorf("missing or zero priceInfo for capability=%d model=%s (found %d capability prices)",
+			core.Capability_LiveVideoToVideo, req.ModelID, len(oInfo.CapabilitiesPrices))
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
+	if priceInfo.PixelsPerUnit == 0 {
+		err := fmt.Errorf("invalid priceInfo: pixelsPerUnit is zero")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	// Update oInfo.PriceInfo so downstream code uses the correct price
+	oInfo.PriceInfo = priceInfo
 	if oInfo.TicketParams == nil {
 		err := fmt.Errorf("missing ticketParams in OrchestratorInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -289,6 +316,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
+
 	sessionBalance := core.NewBalance(orchAddr, stateID, balances)
 
 	// Restore balance
@@ -429,6 +457,52 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func lv2vCapabilities(modelID string) *net.Capabilities {
+	if modelID == "" {
+		return nil
+	}
+	return &net.Capabilities{
+		Capacities: map[uint32]uint32{
+			uint32(core.Capability_LiveVideoToVideo): 1,
+		},
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID: {},
+					},
+				},
+			},
+		},
+	}
+}
+
+func refreshOrchInfoForLV2V(ctx context.Context, node *core.LivepeerNode, transcoderURL string, modelID string) *net.OrchestratorInfo {
+	if node == nil || transcoderURL == "" {
+		return nil
+	}
+	caps := lv2vCapabilities(modelID)
+	if caps == nil {
+		return nil
+	}
+	uri, err := url.Parse(transcoderURL)
+	if err != nil {
+		clog.Infof(ctx, "Failed to parse transcoder URL for refresh url=%s err=%v", transcoderURL, err)
+		return nil
+	}
+
+	bcast := core.NewBroadcaster(node)
+	info, err := remoteGetOrchInfo(ctx, bcast, uri, GetOrchestratorInfoParams{
+		Caps:                caps,
+		IgnoreCapacityCheck: true,
+	})
+	if err != nil {
+		clog.Infof(ctx, "Could not refresh LV2V orch info url=%s modelID=%s err=%v", transcoderURL, modelID, err)
+		return nil
+	}
+	return info
 }
 
 // Calls the remote signer service to get a signature for GetOrchInfo

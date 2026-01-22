@@ -30,6 +30,7 @@ type SegmentInfoSender struct {
 	inPixels  int64
 	priceInfo *net.PriceInfo
 	mid       string
+	modelID   string
 	callCount int
 }
 
@@ -221,6 +222,7 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		Orchestrator: oInfoBytes,
 		State:        state,
 		Type:         RemoteType_LiveVideoToVideo,
+		ModelID:      segmentInfo.modelID,
 	}
 
 	body, err := json.Marshal(reqPayload)
