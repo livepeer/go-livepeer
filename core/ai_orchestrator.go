@@ -1148,14 +1148,14 @@ func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
 	return ""
 }
 
-func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
+func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) int64 {
 	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
-		return false
+		return 0
 	} else {
 		if cap.Load < cap.Capacity {
-			return true
+			return int64(cap.Capacity - cap.Load)
 		} else {
-			return false
+			return 0
 		}
 	}
 }

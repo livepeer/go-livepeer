@@ -12,6 +12,8 @@
 
 #### Orchestrator
 
+* [#3857](https://github.com/livepeer/go-livepeer/pull/3857) byoc: fix orchestrator streaming reserve capacity (@ad-astra-video)
+
 #### Transcoder
 
 ### Bug Fixes 🐞

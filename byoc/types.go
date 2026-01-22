@@ -55,7 +55,7 @@ type Orchestrator interface {
 	JobPriceInfo(sender ethcommon.Address, capability string) (*net.PriceInfo, error)
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	Balance(sender ethcommon.Address, manifestID core.ManifestID) *big.Rat
-	CheckExternalCapabilityCapacity(capability string) bool
+	CheckExternalCapabilityCapacity(capability string) int64
 	RemoveExternalCapability(extCapName string) error
 	RegisterExternalCapability(extCapSettings string) (*core.ExternalCapability, error)
 	FreeExternalCapabilityCapacity(capability string) error
@@ -132,11 +132,12 @@ type JobOrchestratorsFilter struct {
 }
 
 type JobToken struct {
-	SenderAddress *JobSender        `json:"sender_address,omitempty"`
-	TicketParams  *net.TicketParams `json:"ticket_params,omitempty"`
-	Balance       int64             `json:"balance,omitempty"`
-	Price         *net.PriceInfo    `json:"price,omitempty"`
-	ServiceAddr   string            `json:"service_addr,omitempty"`
+	SenderAddress     *JobSender        `json:"sender_address,omitempty"`
+	TicketParams      *net.TicketParams `json:"ticket_params,omitempty"`
+	Balance           int64             `json:"balance,omitempty"`
+	Price             *net.PriceInfo    `json:"price,omitempty"`
+	ServiceAddr       string            `json:"service_addr,omitempty"`
+	AvailableCapacity int64             `json:"available_capacity,omitempty"`
 
 	LastNonce uint32
 }

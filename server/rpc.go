@@ -87,7 +87,7 @@ type Orchestrator interface {
 	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
 	RemoveExternalCapability(extCapability string) error
 	GetUrlForCapability(extCapability string) string
-	CheckExternalCapabilityCapacity(extCapability string) bool
+	CheckExternalCapabilityCapacity(extCapability string) int64
 	ReserveExternalCapabilityCapacity(extCapability string) error
 	FreeExternalCapabilityCapacity(extCapability string) error
 	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
