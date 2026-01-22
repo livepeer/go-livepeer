@@ -168,7 +168,7 @@ type LivepeerConfig struct {
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
-	RemoteSignerAddr           *string
+	RemoteSignerUrl            *string
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -305,7 +305,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
-	defaultRemoteSignerAddr := ""
+	defaultRemoteSignerUrl := ""
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -426,9 +426,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail:    &defaultTestOrchAvail,
-		RemoteSigner:     &defaultRemoteSigner,
-		RemoteSignerAddr: &defaultRemoteSignerAddr,
+		TestOrchAvail:   &defaultTestOrchAvail,
+		RemoteSigner:    &defaultRemoteSigner,
+		RemoteSignerUrl: &defaultRemoteSignerUrl,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1584,10 +1584,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		bcast := core.NewBroadcaster(n)
 
 		// Populate infoSig with remote signer if configured
-		if *cfg.RemoteSignerAddr != "" {
-			url, err := url.Parse(*cfg.RemoteSignerAddr)
+		if *cfg.RemoteSignerUrl != "" {
+			url, err := url.Parse(*cfg.RemoteSignerUrl)
 			if err != nil {
-				glog.Exit("Invalid remote signer addr: ", err)
+				glog.Exit("Invalid remote signer URL: ", err)
 			}
 
 			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
@@ -1595,7 +1595,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err != nil {
 				glog.Exit("Unable to query remote signer: ", err)
 			}
-			n.RemoteSignerAddr = url
+			n.RemoteSignerUrl = url
 			n.RemoteEthAddr = ethcommon.BytesToAddress(fields.Address)
 			n.InfoSig = fields.Signature
 			glog.Info("Using Ethereum address from remote signer: ", n.RemoteEthAddr)

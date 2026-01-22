@@ -139,7 +139,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// flags
 	cfg.TestOrchAvail = fs.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
 	cfg.RemoteSigner = fs.Bool("remoteSigner", *cfg.RemoteSigner, "Set to true to run remote signer service")
-	cfg.RemoteSignerAddr = fs.String("remoteSignerAddr", *cfg.RemoteSignerAddr, "URL of remote signer service to use (e.g., http://localhost:8935). Gateway only.")
+	cfg.RemoteSignerUrl = fs.String("remoteSignerUrl", *cfg.RemoteSignerUrl, "URL of remote signer service to use (e.g., http://localhost:8935). Gateway only.")
 
 	// Gateway metrics
 	cfg.KafkaBootstrapServers = fs.String("kafkaBootstrapServers", *cfg.KafkaBootstrapServers, "URL of Kafka Bootstrap Servers")

@@ -149,7 +149,7 @@ type LivepeerNode struct {
 	ExtraNodes int
 
 	// Gateway fields for remote signers
-	RemoteSignerAddr *url.URL
+	RemoteSignerUrl *url.URL
 	RemoteEthAddr    ethcommon.Address // eth address of the remote signer
 	InfoSig          []byte            // sig over eth address for the OrchestratorInfo request
 
