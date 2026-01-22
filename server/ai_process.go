@@ -1059,8 +1059,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, errors.New("remote sender was not the correct type")
 		}
 		res, err := rpp.RequestPayment(ctx, &SegmentInfoSender{
-			sess:    sess.BroadcastSession,
-			modelID: sess.ModelID,
+			sess:      sess.BroadcastSession,
+			priceInfo: sess.OrchestratorInfo.PriceInfo,
 		})
 		if err != nil {
 			return nil, err

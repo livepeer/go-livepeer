@@ -30,7 +30,6 @@ type SegmentInfoSender struct {
 	inPixels  int64
 	priceInfo *net.PriceInfo
 	mid       string
-	modelID   string
 	callCount int
 }
 
@@ -217,12 +216,6 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 	r.mu.Unlock()
 
 	priceInfo := segmentInfo.priceInfo
-	if priceInfo != nil && priceInfo.Capability == 0 && sess.OrchestratorInfo.PriceInfo != nil {
-		priceInfo.Capability = sess.OrchestratorInfo.PriceInfo.Capability
-	}
-	if priceInfo != nil && priceInfo.Capability == uint32(core.Capability_LiveVideoToVideo) && priceInfo.Constraint == "" {
-		priceInfo.Constraint = segmentInfo.modelID
-	}
 
 	// Build remote payment request
 	reqPayload := RemotePaymentRequest{
