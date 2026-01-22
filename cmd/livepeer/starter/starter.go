@@ -1772,9 +1772,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		exit("Error creating Livepeer server: err=%q", err)
 	}
 
-	ec := make(chan error)
-	tc := make(chan struct{})
-	wc := make(chan struct{})
+	ec := make(chan error, 1)
+	tc := make(chan struct{}, 1)
+	wc := make(chan struct{}, 1)
 	msCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
