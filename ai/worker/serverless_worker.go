@@ -9,18 +9,30 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/trickle"
 )
 
+const (
+	// Maximum number of concurrent streams allowed
+	maxConcurrentStreams = 5
+)
+
 type ServerlessWorker struct {
+	mu               sync.Mutex
+	activeStreams    int
+	maxActiveStreams int
 }
 
 // NewServerlessWorker creates a new ServerlessWorker instance
 func NewServerlessWorker() (*ServerlessWorker, error) {
-	return &ServerlessWorker{}, nil
+	return &ServerlessWorker{
+		maxActiveStreams: maxConcurrentStreams,
+	}, nil
 }
 
 func (f *ServerlessWorker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
@@ -60,8 +72,24 @@ func (f *ServerlessWorker) TextToSpeech(ctx context.Context, req GenTextToSpeech
 }
 
 func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVideoToVideoJSONRequestBody) (*LiveVideoToVideoResponse, error) {
+	// Increment active stream count
+	f.mu.Lock()
+	f.activeStreams++
+	currentStreams := f.activeStreams
+	f.mu.Unlock()
+
+	slog.Info("Starting new stream", "activeStreams", currentStreams, "maxStreams", f.maxActiveStreams)
+
 	// Start websocket connection in a goroutine
 	go func() {
+		// Ensure we decrement the counter when this goroutine exits
+		defer func() {
+			f.mu.Lock()
+			f.activeStreams--
+			remainingStreams := f.activeStreams
+			f.mu.Unlock()
+			slog.Info("Stream ended", "activeStreams", remainingStreams, "maxStreams", f.maxActiveStreams)
+		}()
 		wsURL := "wss://fal.run/Daydream/scope-runner-app/live-video-to-video"
 		slog.Info("Connecting to websocket", "url", wsURL)
 
@@ -73,6 +101,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		}
 
 		// Connect to websocket
+		// TODO do this outside of the goroutine to be able to return an error to the caller?
 		websocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			slog.Error("Failed to connect to websocket", "error", err)
@@ -163,38 +192,68 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 		slog.Info("Sent request to websocket", "request", string(reqJSON))
 
-		// Receive and print messages indefinitely (or until events stream closes)
+		// Create a 1-hour timeout as a fail-safe to avoid big bills
+		timeout := time.NewTimer(1 * time.Hour)
+		defer timeout.Stop()
+
+		// Create a channel to receive messages
+		messageChan := make(chan struct {
+			messageType int
+			message     []byte
+			err         error
+		})
+
+		// Start goroutine to read websocket messages
+		go func() {
+			for {
+				messageType, message, err := websocketConn.ReadMessage()
+				messageChan <- struct {
+					messageType int
+					message     []byte
+					err         error
+				}{messageType, message, err}
+				if err != nil {
+					return
+				}
+			}
+		}()
+
+		// Receive and print messages indefinitely (or until events stream closes or timeout)
 		for {
-			messageType, message, err := websocketConn.ReadMessage()
-			if err != nil {
-				slog.Info("Websocket read ended", "error", err)
+			select {
+			case <-timeout.C:
+				slog.Info("Websocket connection timeout reached (1 hour), closing connection")
 				return
-			}
 
-			slog.Info("Received message from websocket",
-				"type", messageType,
-				"message", string(message))
+			case msg := <-messageChan:
+				if msg.err != nil {
+					slog.Info("Websocket read ended", "error", msg.err)
+					return
+				}
 
-			// Parse the message to check for health_check status
-			var msgData map[string]interface{}
-			if err := json.Unmarshal(message, &msgData); err != nil {
-				slog.Warn("Failed to parse message", "error", err)
-				continue
-			}
+				slog.Info("Received message from websocket",
+					"type", msg.messageType,
+					"message", string(msg.message))
 
-			// TODO overall long timeout for websocket connection as a fail safe to avoid big bills
+				// Parse the message to check for health_check status
+				var msgData map[string]interface{}
+				if err := json.Unmarshal(msg.message, &msgData); err != nil {
+					slog.Warn("Failed to parse message", "error", err)
+					continue
+				}
 
-			// Check if this is a health_check message
-			// TODO handle the states like docker.go watchContainer i.e. anything else apart from ERROR to handle?
-			if msgType, ok := msgData["type"].(string); ok && msgType == "health_check" {
-				// Extract the nested data.status field
-				if data, ok := msgData["data"].(map[string]interface{}); ok {
-					if status, ok := data["status"].(string); ok {
-						slog.Info("Health check status", "status", status)
+				// Check if this is a health_check message
+				// TODO handle the states like docker.go watchContainer i.e. anything else apart from ERROR to handle?
+				if msgType, ok := msgData["type"].(string); ok && msgType == "health_check" {
+					// Extract the nested data.status field
+					if data, ok := msgData["data"].(map[string]interface{}); ok {
+						if status, ok := data["status"].(string); ok {
+							slog.Info("Health check status", "status", status)
 
-						if status == "ERROR" {
-							slog.Info("Runner status is ERROR, closing websocket")
-							return
+							if status == "ERROR" {
+								slog.Info("Runner status is ERROR, closing websocket")
+								return
+							}
 						}
 					}
 				}
@@ -216,10 +275,18 @@ func (f *ServerlessWorker) Stop(ctx context.Context) error {
 }
 
 func (f *ServerlessWorker) HasCapacity(pipeline string, modelID string) bool {
-	// Serverless workers always have capacity
-	// TODO implement max capacity
-	clog.Info(context.Background(), "HasCapacity", "pipeline", pipeline, "modelID", modelID)
-	return true
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	hasCapacity := f.activeStreams < f.maxActiveStreams
+	clog.Info(context.Background(), "HasCapacity",
+		"pipeline", pipeline,
+		"modelID", modelID,
+		"activeStreams", f.activeStreams,
+		"maxStreams", f.maxActiveStreams,
+		"hasCapacity", hasCapacity)
+
+	return hasCapacity
 }
 
 func (f *ServerlessWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
@@ -233,12 +300,23 @@ func (f *ServerlessWorker) HardwareInformation() []HardwareInformation {
 }
 
 func (f *ServerlessWorker) GetLiveAICapacity(pipeline, modelID string) Capacity {
-	// Return unlimited capacity for serverless workers
-	clog.Info(context.Background(), "GetLiveAICapacity", "pipeline", pipeline, "modelID", modelID)
-	// TODO implement
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	idleCapacity := f.maxActiveStreams - f.activeStreams
+	if idleCapacity < 0 {
+		idleCapacity = 0
+	}
+
+	clog.Info(context.Background(), "GetLiveAICapacity",
+		"pipeline", pipeline,
+		"modelID", modelID,
+		"activeStreams", f.activeStreams,
+		"idleCapacity", idleCapacity)
+
 	return Capacity{
-		ContainersInUse: 0,
-		ContainersIdle:  1,
+		ContainersInUse: f.activeStreams,
+		ContainersIdle:  idleCapacity,
 	}
 }
 
