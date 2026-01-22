@@ -1589,6 +1589,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err != nil {
 				glog.Exit("Invalid remote signer URL: ", err)
 			}
+			if url.Scheme == "" || url.Host == "" {
+				// Usually something like `host:port` or just plain `host`
+				// Prepend https:// for convenience
+				url, err = url.Parse("https://" + *cfg.RemoteSignerUrl)
+				if err != nil {
+					glog.Exit("Adding HTTPS to remote signer URL failed: ", err)
+				}
+			}
 
 			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
 			fields, err := server.GetOrchInfoSig(url)
