@@ -60,7 +60,7 @@ To get a full idea of what Livepeer is about, be sure to take a look at these
 other resources:
 
 - 🌐 [The Livepeer Website](https://livepeer.org)
-- 📖 [The Livepeer Docs](https://livepeer.org/docs)
+- 📖 [The Livepeer Docs](https://docs.livepeer.org/developers/introduction)
 - 🔭 [The 10-Minute Primer](https://livepeer.org/primer/)
 - ✍ [The Livepeer Blog](https://medium.com/livepeer-blog)
 - 💬 [The Livepeer Chat](https://discord.gg/livepeer)
