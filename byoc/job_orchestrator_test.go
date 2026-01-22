@@ -96,6 +96,16 @@ func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 func (r *mockJobOrchestrator) ExtraNodes() int {
 	return r.extraNodes
 }
+func (r *mockJobOrchestrator) OrchInfoSig() []byte {
+	if r.node != nil && len(r.node.InfoSig) > 0 {
+		return r.node.InfoSig
+	}
+	sig, err := r.Sign([]byte(r.Address().Hex()))
+	if err != nil {
+		return nil
+	}
+	return sig
+}
 func (r *mockJobOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return r.verifySignature(addr, msg, sig)
 }
