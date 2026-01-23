@@ -108,7 +108,7 @@ type OrchInfoSigResponse struct {
 	Signature HexBytes `json:"signature"`
 }
 
-// Calls the remote signer service to get a signature for GetOrchInfo
+// Gateway helper that calls the remote signer service for the GetOrchestratorInfo signature
 func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 
 	url := remoteSignerHost.ResolveReference(&url.URL{Path: "/sign-orchestrator-info"})
