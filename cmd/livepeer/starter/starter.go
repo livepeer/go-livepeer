@@ -1845,6 +1845,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	// Start remote signer server if in remote signer mode
 	if n.NodeType == core.RemoteSignerNode {
 		go func() {
+			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
 			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
 			err := server.StartRemoteSignerServer(s, *cfg.HttpAddr)
 			if err != nil {
