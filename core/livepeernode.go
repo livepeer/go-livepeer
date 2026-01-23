@@ -150,8 +150,8 @@ type LivepeerNode struct {
 
 	// Gateway fields for remote signers
 	RemoteSignerUrl *url.URL
-	RemoteEthAddr    ethcommon.Address // eth address of the remote signer
-	InfoSig          []byte            // sig over eth address for the OrchestratorInfo request
+	RemoteEthAddr   ethcommon.Address // eth address of the remote signer
+	InfoSig         []byte            // sig over eth address for the OrchestratorInfo request
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
