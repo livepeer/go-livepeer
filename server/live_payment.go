@@ -181,9 +181,14 @@ type remotePaymentSender struct {
 	node   *core.LivepeerNode
 	client *http.Client
 
-	// access to all fields below  must be protected by the mutex mu
+	// access to fields in this block must be protected by the mutex mu
 	mu    sync.Mutex
 	state RemotePaymentStateSig
+
+	// Fields in this block are for testing convenience only
+
+	// avoids a grpc call
+	refreshSession func(context.Context, *BroadcastSession, bool) error
 }
 
 func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
@@ -192,12 +197,16 @@ func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
 		client: &http.Client{
 			Timeout: paymentRequestTimeout,
 		},
+		refreshSession: refreshSession,
 	}
 }
 
 func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *SegmentInfoSender) (*RemotePaymentResponse, error) {
 	if r == nil || r.node == nil || r.node.RemoteSignerAddr == nil {
 		return nil, fmt.Errorf("remote signer not configured")
+	}
+	if segmentInfo == nil {
+		return nil, fmt.Errorf("segment info missing")
 	}
 
 	sess := segmentInfo.sess
@@ -244,7 +253,7 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		if segmentInfo.callCount > 3 {
 			return nil, errors.New("too many consecutive session refreshes")
 		}
-		if err := refreshSession(ctx, sess, true); err != nil {
+		if err := r.refreshSession(ctx, sess, true); err != nil {
 			return nil, fmt.Errorf("could not refresh session for remote signer: %w", err)
 		}
 		segmentInfo.callCount += 1
