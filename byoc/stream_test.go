@@ -1061,7 +1061,6 @@ func TestStartStreamWhipIngestHandler(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, newParams.liveParams.kickInput)
 
-		bsg.updateStreamPipelineParams(stream.StreamID, newParams)
 		newParams.liveParams.kickInput(errors.New("test complete"))
 	})
 }
