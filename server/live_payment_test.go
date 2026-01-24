@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -145,81 +147,301 @@ func TestAccountPayment(t *testing.T) {
 	}
 }
 
-// TestRemoteLivePaymentSender_BasicFlow verifies that remoteLivePaymentSender forwards
-// remote-generated payments to the orchestrator.
-func TestRemoteLivePaymentSender_BasicFlow(t *testing.T) {
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRemotePaymentSender_RequestPayment_ValidateReq(t *testing.T) {
 	require := require.New(t)
 
-	// Stub Orchestrator
-	ts, mux := stubTLSServer()
-	defer ts.Close()
-	tr := &net.PaymentResult{
-		Info: &net.OrchestratorInfo{
-			Transcoder:   ts.URL,
-			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
-			AuthToken:    stubAuthToken,
-		},
-	}
-	buf, err := proto.Marshal(tr)
-	require.Nil(err)
-
-	mux.HandleFunc("/payment", func(w http.ResponseWriter, r *http.Request) {
-		// Expect payment + segCreds headers from remote signer
-		if r.Header.Get(paymentHeader) == "" {
-			t.Errorf("missing payment header")
-		}
-		if r.Header.Get(segmentHeader) == "" {
-			t.Errorf("missing segment header")
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write(buf)
+	t.Run("remote signer not configured - nil receiver", func(t *testing.T) {
+		var r *remotePaymentSender
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{})
+		require.Contains(err.Error(), "remote signer not configured")
 	})
 
-	// Stub remote signer
-	remoteResp := RemotePaymentResponse{
-		Payment:  "dummy-payment",
-		SegCreds: "dummy-segcreds",
-		State:    HexBytes([]byte{0x01}),
-		// Signature value is not validated by the sender
-		StateSignature: HexBytes([]byte{0x02}),
-	}
-	remoteBody, err := json.Marshal(remoteResp)
-	require.Nil(err)
+	t.Run("remote signer not configured - nil node", func(t *testing.T) {
+		r := &remotePaymentSender{}
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{})
+		require.Contains(err.Error(), "remote signer not configured")
+	})
 
+	t.Run("remote signer not configured - nil RemoteSignerAddr", func(t *testing.T) {
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = nil
+		r := NewRemotePaymentSender(node)
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{})
+		require.Contains(err.Error(), "remote signer not configured")
+	})
+
+	t.Run("segment info missing", func(t *testing.T) {
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = &url.URL{Scheme: "http", Host: "example.com"}
+		r := NewRemotePaymentSender(node)
+		_, err := r.RequestPayment(context.Background(), nil)
+		require.Contains(err.Error(), "segment info missing")
+	})
+
+	t.Run("missing session", func(t *testing.T) {
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = &url.URL{Scheme: "http", Host: "example.com"}
+		r := NewRemotePaymentSender(node)
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{sess: nil})
+		require.Contains(err.Error(), "missing session or OrchestratorInfo")
+	})
+
+	t.Run("missing OrchestratorInfo", func(t *testing.T) {
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = &url.URL{Scheme: "http", Host: "example.com"}
+		r := NewRemotePaymentSender(node)
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{sess: &BroadcastSession{}})
+		require.Contains(err.Error(), "missing session or OrchestratorInfo")
+	})
+
+	t.Run("missing PriceInfo", func(t *testing.T) {
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = &url.URL{Scheme: "http", Host: "example.com"}
+		r := NewRemotePaymentSender(node)
+		_, err := r.RequestPayment(context.Background(), &SegmentInfoSender{
+			sess: &BroadcastSession{OrchestratorInfo: &net.OrchestratorInfo{}},
+		})
+		require.Contains(err.Error(), "missing session or OrchestratorInfo")
+	})
+}
+
+func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedPayload(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Stub remote signer
+	var gotReq RemotePaymentRequest
 	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal("/generate-live-payment", r.URL.Path)
+		require.Equal("application/json", r.Header.Get("Content-Type"))
+
+		require.NoError(json.NewDecoder(r.Body).Decode(&gotReq))
+
+		// Decode orchestrator blob back into a proto and sanity-check
+		var pr net.PaymentResult
+		require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
+		require.NotNil(pr.Info)
+
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(remoteBody)
+		_ = json.NewEncoder(w).Encode(RemotePaymentResponse{
+			Payment:  "dummy-payment",
+			SegCreds: "dummy-segcreds",
+			State:    RemotePaymentStateSig{State: []byte{0xAA}, Sig: []byte{0xBB}},
+		})
 	}))
 	defer remoteTS.Close()
-
 	remoteURL, err := url.Parse(remoteTS.URL)
-	require.Nil(err)
+	require.NoError(err)
 
-	// Stub session
-	sess := StubBroadcastSession(ts.URL)
-	sess.Sender = nil
-	sess.Balances = nil
-
-	// Livepeer node with RemoteSignerAddr configured
+	// Session + node configured
+	sess := StubBroadcastSession("http://orch.example")
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.RemoteSignerAddr = remoteURL
 
-	// Create remote payment sender and segment info
-	paymentSender := NewRemotePaymentProcessor(node)
+	r := NewRemotePaymentSender(node)
+	r.state = RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}
+
 	segmentInfo := &SegmentInfoSender{
-		sess:     sess,
-		inPixels: 1000000,
-		priceInfo: &net.PriceInfo{
-			PricePerUnit:  1,
-			PixelsPerUnit: 1,
-		},
-		mid: "mid1",
+		sess: sess,
+		mid:  "mid1",
 	}
 
 	// when
-	err = paymentSender.SendPayment(context.TODO(), segmentInfo)
+	resp, err := r.RequestPayment(context.Background(), segmentInfo)
 
 	// then
-	require.Nil(err)
+	require.NoError(err)
+	require.NotNil(resp)
+	assert.Equal("dummy-payment", resp.Payment)
+	assert.Equal("dummy-segcreds", resp.SegCreds)
+	assert.Equal(RemotePaymentStateSig{State: []byte{0xAA}, Sig: []byte{0xBB}}, resp.State)
+
+	// Request payload checks
+	assert.Equal("mid1", gotReq.ManifestID)
+	assert.Equal(RemoteType_LiveVideoToVideo, gotReq.Type)
+	assert.Equal(RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}, gotReq.State)
+
+	var pr net.PaymentResult
+	require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
+	require.NotNil(pr.Info)
+	assert.Equal(sess.OrchestratorInfo.Transcoder, pr.Info.Transcoder)
+	assert.Equal(sess.OrchestratorInfo.PriceInfo.PricePerUnit, pr.Info.PriceInfo.PricePerUnit)
+	assert.Equal(sess.OrchestratorInfo.PriceInfo.PixelsPerUnit, pr.Info.PriceInfo.PixelsPerUnit)
+
+	// Check cached state
+	assert.Equal(RemotePaymentStateSig{State: []byte{0xAA}, Sig: []byte{0xBB}}, r.state)
+}
+
+func TestRemotePaymentSender_RequestPayment_RemoteSignerCallError(t *testing.T) {
+	require := require.New(t)
+
+	remoteURL, err := url.Parse("gopher://example")
+	require.NoError(err)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+
+	r := NewRemotePaymentSender(node)
+	r.client = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		}),
+	}
+
+	sess := StubBroadcastSession("http://orch.example")
+	_, err = r.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess, mid: "mid1"})
+	require.Error(err)
+	require.Contains(err.Error(), "failed to call remote signer")
+}
+
+func TestRemotePaymentSender_RequestPayment_RefreshSession(t *testing.T) {
+	require := require.New(t)
+
+	t.Run("guard triggers when callCount > 3", func(t *testing.T) {
+		remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(HTTPStatusRefreshSession)
+		}))
+		defer remoteTS.Close()
+		remoteURL, err := url.Parse(remoteTS.URL)
+		require.NoError(err)
+
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = remoteURL
+		r := NewRemotePaymentSender(node)
+		r.refreshSession = func(context.Context, *BroadcastSession, bool) error {
+			t.Fatal("refreshSession should not be called when callCount > 3")
+			return nil
+		}
+
+		sess := StubBroadcastSession("http://orch.example")
+		segmentInfo := &SegmentInfoSender{sess: sess, mid: "mid1", callCount: 4}
+		_, err = r.RequestPayment(context.Background(), segmentInfo)
+		require.Equal("too many consecutive session refreshes", err.Error())
+	})
+
+	t.Run("refresh fails", func(t *testing.T) {
+		remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(HTTPStatusRefreshSession)
+		}))
+		defer remoteTS.Close()
+		remoteURL, err := url.Parse(remoteTS.URL)
+		require.NoError(err)
+
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = remoteURL
+		r := NewRemotePaymentSender(node)
+		r.refreshSession = func(context.Context, *BroadcastSession, bool) error {
+			return errors.New("refresh failed")
+		}
+
+		sess := StubBroadcastSession("http://orch.example")
+		segmentInfo := &SegmentInfoSender{sess: sess, mid: "mid1"}
+		_, err = r.RequestPayment(context.Background(), segmentInfo)
+		require.Contains(err.Error(), "could not refresh session for remote signer")
+	})
+
+	t.Run("refresh succeeds then retry succeeds", func(t *testing.T) {
+		var callCount int
+		var transcoderSeen []string
+
+		remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+
+			var req RemotePaymentRequest
+			require.NoError(json.NewDecoder(r.Body).Decode(&req))
+
+			var pr net.PaymentResult
+			require.NoError(proto.Unmarshal(req.Orchestrator, &pr))
+			require.NotNil(pr.Info)
+			transcoderSeen = append(transcoderSeen, pr.Info.Transcoder)
+
+			if callCount == 1 {
+				w.WriteHeader(HTTPStatusRefreshSession)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(RemotePaymentResponse{
+				Payment:  "dummy-payment",
+				SegCreds: "dummy-segcreds",
+				State:    RemotePaymentStateSig{State: []byte{0x03}, Sig: []byte{0x04}},
+			})
+		}))
+		defer remoteTS.Close()
+		remoteURL, err := url.Parse(remoteTS.URL)
+		require.NoError(err)
+
+		node, _ := core.NewLivepeerNode(nil, "", nil)
+		node.RemoteSignerAddr = remoteURL
+		r := NewRemotePaymentSender(node)
+
+		refreshCalls := 0
+		r.refreshSession = func(_ context.Context, sess *BroadcastSession, _ bool) error {
+			refreshCalls++
+			// Mutate sess so we can observe the new info in the second request payload
+			sess.OrchestratorInfo.Transcoder = "http://orch.refreshed"
+			return nil
+		}
+
+		sess := StubBroadcastSession("http://orch.initial")
+		segmentInfo := &SegmentInfoSender{sess: sess, mid: "mid1"}
+
+		resp, err := r.RequestPayment(context.Background(), segmentInfo)
+		require.NoError(err)
+		require.NotNil(resp)
+		require.Equal("dummy-payment", resp.Payment)
+		require.Equal(1, refreshCalls)
+		require.Equal(1, segmentInfo.callCount)
+		require.Equal(2, callCount)
+		require.Len(transcoderSeen, 2)
+		require.Equal("http://orch.initial", transcoderSeen[0])
+		require.Equal("http://orch.refreshed", transcoderSeen[1])
+	})
+}
+
+func TestRemotePaymentSender_RequestPayment_RemoteSignerNon200(t *testing.T) {
+	require := require.New(t)
+
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer remoteTS.Close()
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+	r := NewRemotePaymentSender(node)
+
+	sess := StubBroadcastSession("http://orch.example")
+	_, err = r.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess, mid: "mid1"})
+	require.Error(err)
+	require.Contains(err.Error(), "remote signer returned status 500: boom")
+}
+
+func TestRemotePaymentSender_RequestPayment_RemoteSignerDecodeError(t *testing.T) {
+	require := require.New(t)
+
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{not-json"))
+	}))
+	defer remoteTS.Close()
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+	r := NewRemotePaymentSender(node)
+
+	sess := StubBroadcastSession("http://orch.example")
+	_, err = r.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess, mid: "mid1"})
+	require.Error(err)
+	require.Contains(err.Error(), "failed to decode remote signer response")
 }
