@@ -14,7 +14,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -247,6 +246,9 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 
 	r := NewRemotePaymentSender(node)
 	r.state = RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}
+	r.refreshSession = func(ctx context.Context, bs *BroadcastSession, ignore bool) error {
+		return nil
+	}
 
 	segmentInfo := &SegmentInfoSender{
 		sess: sess,
@@ -331,6 +333,9 @@ func TestRemotePaymentSender_RequestPayment_UsesCapabilityPrice(t *testing.T) {
 	node.RemoteSignerAddr = remoteURL
 
 	sender := NewRemotePaymentSender(node)
+	sender.refreshSession = func(ctx context.Context, bs *BroadcastSession, ignore bool) error {
+		return nil
+	}
 	_, err = sender.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess})
 	require.NoError(err)
 
@@ -386,19 +391,16 @@ func TestRemotePaymentSender_RequestPayment_RefreshFallbacksToCachedPrice(t *tes
 	node.RemoteSignerAddr = remoteURL
 
 	sender := NewRemotePaymentSender(node)
-
-	origGetter := sender.getOrchInfo
-	sender.getOrchInfo = func(ctx context.Context, _ common.Broadcaster, _ *url.URL, _ GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		// refreshed info is missing price info; should fall back to cached price
-		return &net.OrchestratorInfo{
+	sender.refreshSession = func(ctx context.Context, bs *BroadcastSession, ignore bool) error {
+		bs.OrchestratorInfo = &net.OrchestratorInfo{
 			Transcoder: sess.OrchestratorInfo.Transcoder,
 			TicketParams: &net.TicketParams{
 				Recipient: pm.RandAddress().Bytes(),
 			},
 			AuthToken: stubAuthToken,
-		}, nil
+		}
+		return nil
 	}
-	defer func() { sender.getOrchInfo = origGetter }()
 
 	_, err = sender.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess, mid: "mid1"})
 	require.NoError(err)
@@ -425,6 +427,9 @@ func TestRemotePaymentSender_RequestPayment_RemoteSignerCallError(t *testing.T) 
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("network down")
 		}),
+	}
+	r.refreshSession = func(ctx context.Context, bs *BroadcastSession, ignore bool) error {
+		return nil
 	}
 
 	sess := StubBroadcastSession("http://orch.example")

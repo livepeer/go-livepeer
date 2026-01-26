@@ -189,7 +189,6 @@ type remotePaymentSender struct {
 
 	// avoids a grpc call
 	refreshSession func(context.Context, *BroadcastSession, bool) error
-	getOrchInfo    func(context.Context, common.Broadcaster, *url.URL, GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
 }
 
 func selectCapabilityPrice(info *net.OrchestratorInfo, caps *core.Capabilities) *net.PriceInfo {
@@ -227,7 +226,6 @@ func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
 			Timeout: paymentRequestTimeout,
 		},
 		refreshSession: refreshSession,
-		getOrchInfo:    getOrchestratorInfoRPC,
 	}
 }
 
@@ -252,15 +250,8 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 	}
 
 	infoForSigner := origInfo
-	if caps != nil {
-		uri, err := url.Parse(sess.OrchestratorInfo.Transcoder)
-		if err == nil {
-			ctxGet, cancel := context.WithTimeout(ctx, refreshTimeout)
-			defer cancel()
-			if refreshed, err := r.getOrchInfo(ctxGet, sess.Broadcaster, uri, GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities(), IgnoreCapacityCheck: true}); err == nil {
-				infoForSigner = refreshed
-			}
-		}
+	if err := r.refreshSession(ctx, sess, true); err == nil && sess.OrchestratorInfo != nil {
+		infoForSigner = sess.OrchestratorInfo
 	}
 
 	priceInfo := selectCapabilityPrice(infoForSigner, caps)
