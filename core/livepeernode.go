@@ -26,6 +26,8 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -48,6 +50,7 @@ const (
 	TranscoderNode
 	RedeemerNode
 	AIWorkerNode
+	RemoteSignerNode
 )
 
 var nodeTypeStrs = map[NodeType]string{
@@ -57,6 +60,7 @@ var nodeTypeStrs = map[NodeType]string{
 	TranscoderNode:   "transcoder",
 	RedeemerNode:     "redeemer",
 	AIWorkerNode:     "aiworker",
+	RemoteSignerNode: "remotesigner",
 }
 
 func (t NodeType) String() string {
@@ -143,6 +147,11 @@ type LivepeerNode struct {
 	// Broadcaster public fields
 	Sender     pm.Sender
 	ExtraNodes int
+
+	// Gateway fields for remote signers
+	RemoteSignerUrl *url.URL
+	RemoteEthAddr   ethcommon.Address // eth address of the remote signer
+	InfoSig         []byte            // sig over eth address for the OrchestratorInfo request
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex

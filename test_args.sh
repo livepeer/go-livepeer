@@ -216,6 +216,15 @@ res=0
 $TMPDIR/livepeer -gateway -verifierUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
 
+# Check remote signer URL handling
+$TMPDIR/livepeer -gateway -remoteSignerUrl abc:65535 2>&1 | grep -e "Retrieving OrchestratorInfo fields from remote signer: https://abc:65535"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl http://127.0.0.1:65535 2>&1 | grep -e "Retrieving OrchestratorInfo fields from remote signer: http://127.0.0.1:65535"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl "http://[::1" 2>&1 | grep -e "Invalid remote signer URL"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl abc:def 2>&1 | grep -e 'Adding HTTPS to remote signer URL failed: parse "https://abc:def": invalid port ":def"'
+
 # Check that verifier shared path is required
 $TMPDIR/livepeer -gateway -verifierUrl http://host 2>&1 | grep "Requires a path to the"
 

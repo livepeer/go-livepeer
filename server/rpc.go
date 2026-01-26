@@ -362,11 +362,7 @@ func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.Orchestrato
 }
 
 func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) (*net.OrchestratorRequest, error) {
-	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
-	if err != nil {
-		return nil, err
-	}
-	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: b.OrchInfoSig(), Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {

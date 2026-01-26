@@ -36,6 +36,7 @@ type stubBroadcaster struct{}
 func (s *stubBroadcaster) Sign(msg []byte) ([]byte, error) { return []byte{}, nil }
 func (s *stubBroadcaster) Address() ethcommon.Address      { return ethcommon.Address{} }
 func (s *stubBroadcaster) ExtraNodes() int                 { return 0 }
+func (s *stubBroadcaster) OrchInfoSig() []byte             { return nil }
 
 func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
 	assert := assert.New(t)
