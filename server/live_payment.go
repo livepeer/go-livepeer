@@ -189,6 +189,35 @@ type remotePaymentSender struct {
 
 	// avoids a grpc call
 	refreshSession func(context.Context, *BroadcastSession, bool) error
+	getOrchInfo    func(context.Context, common.Broadcaster, *url.URL, GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
+}
+
+func selectCapabilityPrice(info *net.OrchestratorInfo, caps *core.Capabilities) *net.PriceInfo {
+	if info == nil {
+		return nil
+	}
+
+	if caps != nil {
+		if perCap := caps.PerCapability(); perCap != nil {
+			for capID, constraint := range perCap {
+				if constraint == nil || constraint.Models == nil {
+					continue
+				}
+				for modelID := range constraint.Models {
+					for _, pi := range info.CapabilitiesPrices {
+						if pi == nil {
+							continue
+						}
+						if pi.Capability == uint32(capID) && pi.Constraint == modelID && pi.PricePerUnit > 0 && pi.PixelsPerUnit > 0 {
+							return pi
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return info.PriceInfo
 }
 
 func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
@@ -198,6 +227,7 @@ func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
 			Timeout: paymentRequestTimeout,
 		},
 		refreshSession: refreshSession,
+		getOrchInfo:    getOrchestratorInfoRPC,
 	}
 }
 
@@ -210,12 +240,46 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 	}
 
 	sess := segmentInfo.sess
-	if sess == nil || sess.OrchestratorInfo == nil || sess.OrchestratorInfo.PriceInfo == nil {
+	if sess == nil || sess.OrchestratorInfo == nil {
+		clog.Errorf(ctx, "remote payment: missing session/orchInfo manifestID=%s", segmentInfo.mid)
 		return nil, fmt.Errorf("missing session or OrchestratorInfo")
 	}
 
+	origInfo := sess.OrchestratorInfo
+	var caps *core.Capabilities
+	if sess.Params != nil {
+		caps = sess.Params.Capabilities
+	}
+
+	infoForSigner := origInfo
+	if caps != nil {
+		uri, err := url.Parse(sess.OrchestratorInfo.Transcoder)
+		if err == nil {
+			ctxGet, cancel := context.WithTimeout(ctx, refreshTimeout)
+			defer cancel()
+			if refreshed, err := r.getOrchInfo(ctxGet, sess.Broadcaster, uri, GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities(), IgnoreCapacityCheck: true}); err == nil {
+				infoForSigner = refreshed
+			}
+		}
+	}
+
+	priceInfo := selectCapabilityPrice(infoForSigner, caps)
+	if (priceInfo == nil || priceInfo.PricePerUnit == 0) && infoForSigner != origInfo {
+		priceInfo = selectCapabilityPrice(origInfo, caps)
+	}
+	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
+		priceInfo = origInfo.PriceInfo
+	}
+	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
+		clog.Errorf(ctx, "remote payment: missing price info manifestID=%s orch=%s caps_set=%t", segmentInfo.mid, infoForSigner.Transcoder, caps != nil)
+		return nil, fmt.Errorf("missing session price info")
+	}
+
+	infoForSigner = proto.Clone(infoForSigner).(*net.OrchestratorInfo)
+	infoForSigner.PriceInfo = priceInfo
+
 	// Marshal OrchestratorInfo
-	oInfoBytes, err := proto.Marshal(&net.PaymentResult{Info: sess.OrchestratorInfo})
+	oInfoBytes, err := proto.Marshal(&net.PaymentResult{Info: infoForSigner})
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling OrchestratorInfo for remote signer: %w", err)
 	}

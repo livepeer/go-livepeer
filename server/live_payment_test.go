@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -275,6 +277,138 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 
 	// Check cached state
 	assert.Equal(RemotePaymentStateSig{State: []byte{0xAA}, Sig: []byte{0xBB}}, r.state)
+}
+
+func TestRemotePaymentSender_RequestPayment_UsesCapabilityPrice(t *testing.T) {
+	require := require.New(t)
+
+	var gotReq RemotePaymentRequest
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(json.NewDecoder(r.Body).Decode(&gotReq))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RemotePaymentResponse{Payment: "p", SegCreds: "s"})
+	}))
+	defer remoteTS.Close()
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	caps := core.NewCapabilities([]core.Capability{core.Capability_LiveVideoToVideo}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		core.Capability_LiveVideoToVideo: {
+			Models: map[string]*core.ModelConstraint{
+				"model-x": {},
+			},
+		},
+	})
+
+	sess := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		Params: &core.StreamParameters{
+			ManifestID:   core.RandomManifestID(),
+			Capabilities: caps,
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			Transcoder: "http://orch.example",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
+			CapabilitiesPrices: []*net.PriceInfo{
+				{
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-x",
+					PricePerUnit:  999,
+					PixelsPerUnit: 3,
+				},
+			},
+			TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
+			AuthToken:    stubAuthToken,
+		},
+		lock: &sync.RWMutex{},
+	}
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+
+	sender := NewRemotePaymentSender(node)
+	_, err = sender.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess})
+	require.NoError(err)
+
+	var pr net.PaymentResult
+	require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
+	require.NotNil(pr.Info)
+	require.Equal(int64(999), pr.Info.PriceInfo.PricePerUnit)
+	require.Equal(int64(3), pr.Info.PriceInfo.PixelsPerUnit)
+	require.Equal("model-x", pr.Info.PriceInfo.Constraint)
+}
+
+func TestRemotePaymentSender_RequestPayment_RefreshFallbacksToCachedPrice(t *testing.T) {
+	require := require.New(t)
+
+	var gotReq RemotePaymentRequest
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(json.NewDecoder(r.Body).Decode(&gotReq))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RemotePaymentResponse{Payment: "p", SegCreds: "s"})
+	}))
+	defer remoteTS.Close()
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	caps := core.NewCapabilities([]core.Capability{core.Capability_LiveVideoToVideo}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		core.Capability_LiveVideoToVideo: {
+			Models: map[string]*core.ModelConstraint{
+				"model-y": {},
+			},
+		},
+	})
+
+	sess := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		Params: &core.StreamParameters{
+			ManifestID:   core.RandomManifestID(),
+			Capabilities: caps,
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			Transcoder: "http://orch.example",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  7,
+				PixelsPerUnit: 5,
+			},
+			TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
+			AuthToken:    stubAuthToken,
+		},
+		lock: &sync.RWMutex{},
+	}
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.RemoteSignerAddr = remoteURL
+
+	sender := NewRemotePaymentSender(node)
+
+	origGetter := sender.getOrchInfo
+	sender.getOrchInfo = func(ctx context.Context, _ common.Broadcaster, _ *url.URL, _ GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		// refreshed info is missing price info; should fall back to cached price
+		return &net.OrchestratorInfo{
+			Transcoder: sess.OrchestratorInfo.Transcoder,
+			TicketParams: &net.TicketParams{
+				Recipient: pm.RandAddress().Bytes(),
+			},
+			AuthToken: stubAuthToken,
+		}, nil
+	}
+	defer func() { sender.getOrchInfo = origGetter }()
+
+	_, err = sender.RequestPayment(context.Background(), &SegmentInfoSender{sess: sess, mid: "mid1"})
+	require.NoError(err)
+
+	var pr net.PaymentResult
+	require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
+	require.NotNil(pr.Info)
+	require.Equal(int64(7), pr.Info.PriceInfo.PricePerUnit)
+	require.Equal(int64(5), pr.Info.PriceInfo.PixelsPerUnit)
+	require.Equal("", pr.Info.PriceInfo.Constraint)
 }
 
 func TestRemotePaymentSender_RequestPayment_RemoteSignerCallError(t *testing.T) {
