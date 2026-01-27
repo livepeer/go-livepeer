@@ -41,6 +41,9 @@ type SenderMonitor interface {
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
 
+	// SenderFunds returns the broadcaster's spendable balance (deposit + total reserve - pending tickets)
+	SenderFunds(addr ethcommon.Address) (*big.Int, error)
+
 	// ValidateSender checks whether a sender's unlock period ends the round after the next round
 	ValidateSender(addr ethcommon.Address) error
 }
@@ -160,6 +163,35 @@ func (sm *LocalSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error)
 	sm.ensureCache(addr)
 
 	return sm.maxFloat(addr)
+}
+
+// SenderFunds returns the sender's deposit plus total reserve minus pending tickets
+func (sm *LocalSenderMonitor) SenderFunds(addr ethcommon.Address) (*big.Int, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.ensureCache(addr)
+
+	info, err := sm.smgr.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	totalReserve := new(big.Int).Set(info.Reserve.FundsRemaining)
+	if info.Reserve.ClaimedInCurrentRound != nil {
+		totalReserve.Add(totalReserve, info.Reserve.ClaimedInCurrentRound)
+	}
+
+	available := new(big.Int).Set(totalReserve)
+	if info.Deposit != nil {
+		available.Add(available, info.Deposit)
+	}
+	available.Sub(available, sm.senders[addr].pendingAmount)
+	if available.Sign() < 0 {
+		available = big.NewInt(0)
+	}
+
+	return available, nil
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender
