@@ -253,7 +253,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// watchdog that gets reset on every segment to catch output stalls
 	segmentTimeout := params.liveParams.outSegmentTimeout
 	if segmentTimeout <= 0 {
-		segmentTimeout = 30 * time.Second
+		segmentTimeout = 30 * time.Minute
 	}
 	segmentTicker := time.NewTicker(segmentTimeout)
 
@@ -705,7 +705,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	// vars to check events periodically to ensure liveness
 	var (
 		eventCheckInterval = 10 * time.Second
-		maxEventGap        = 30 * time.Second
+		maxEventGap        = 30 * time.Minute
 		eventTicker        = time.NewTicker(eventCheckInterval)
 		eventsDone         = make(chan bool)
 		// remaining vars in this block must be protected by mutex
