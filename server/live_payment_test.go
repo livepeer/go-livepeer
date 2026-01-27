@@ -2,6 +2,11 @@ package server
 
 import (
 	"context"
+	"math/big"
+	"net/http"
+	"testing"
+	"time"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/core"
@@ -9,10 +14,6 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"net/http"
-	"testing"
-	"time"
 )
 
 func TestSendPayment(t *testing.T) {

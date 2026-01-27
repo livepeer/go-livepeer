@@ -2,9 +2,10 @@ package e2e
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
 	"os/exec"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMistJson(t *testing.T) {
