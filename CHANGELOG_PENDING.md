@@ -8,6 +8,10 @@
 
 #### General
 
+#### CLI
+
+- \#3852 Add warning when orchestrator attempts to unbond full stake, requiring confirmation to prevent accidental deactivation (@moudi-network)
+
 #### Broadcaster
 
 #### Orchestrator
