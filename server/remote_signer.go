@@ -256,6 +256,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		if err := json.Unmarshal(reqState, &state); err != nil {
 			err = errors.New("invalid state")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
 		}
 		if state.OrchestratorAddress != orchAddr {
 			err := fmt.Errorf("orchestratorAddress mismatch")
@@ -347,6 +348,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
 	}
 	if pixels <= 0 {
 		err = errors.New("missing pixels or job type")
