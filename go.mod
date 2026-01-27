@@ -19,7 +19,7 @@ require (
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
-	github.com/livepeer/lpms v0.0.0-20250905152032-a53e20a33466
+	github.com/livepeer/lpms v0.0.0-20260127221648-e8530933f832
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/oapi-codegen/nethttp-middleware v1.0.1
