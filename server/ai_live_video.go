@@ -211,9 +211,6 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 	}
 	// Remove the session from the current pool
 	sel.Remove(params.liveParams.sess)
-	sel.warmPool.mu.Lock()
-	sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
-	sel.warmPool.mu.Unlock()
 	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
 	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
