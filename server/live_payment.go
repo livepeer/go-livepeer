@@ -202,7 +202,7 @@ func NewRemotePaymentSender(node *core.LivepeerNode) *remotePaymentSender {
 }
 
 func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *SegmentInfoSender) (*RemotePaymentResponse, error) {
-	if r == nil || r.node == nil || r.node.RemoteSignerAddr == nil {
+	if r == nil || r.node == nil || r.node.RemoteSignerUrl == nil {
 		return nil, fmt.Errorf("remote signer not configured")
 	}
 	if segmentInfo == nil {
@@ -237,7 +237,7 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		return nil, fmt.Errorf("error marshaling request payload for remote signer: %w", err)
 	}
 
-	remoteURL := r.node.RemoteSignerAddr.ResolveReference(&url.URL{Path: "/generate-live-payment"})
+	remoteURL := r.node.RemoteSignerUrl.ResolveReference(&url.URL{Path: "/generate-live-payment"})
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", remoteURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err

@@ -1698,5 +1698,5 @@ func encodeReqMetadata(metadata map[string]string) string {
 }
 
 func hasRemoteSigner(params aiRequestParams) bool {
-	return params.node != nil && params.node.RemoteSignerAddr != nil
+	return params.node != nil && params.node.RemoteSignerUrl != nil
 }
