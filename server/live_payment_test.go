@@ -78,10 +78,13 @@ func TestSendPayment(t *testing.T) {
 func mockSender() pm.Sender {
 	sender := &pm.MockSender{}
 	sender.On("StartSession", mock.Anything).Return("foo")
+	sender.On("StartSessionWithNonce", mock.Anything, mock.Anything).Return("foo")
+	sender.On("CleanupSession", mock.Anything).Maybe()
 	sender.On("StopSession", mock.Anything).Times(3)
 	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+	sender.On("Nonce", mock.Anything).Return(0, nil)
 	return sender
 }
 
@@ -453,7 +456,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler(t *testing.T) 
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = newStubSender(nil)
+	signerNode.Sender = mockSender()
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
@@ -497,7 +500,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler_Refresh(t *tes
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = newStubSender(nil)
+	signerNode.Sender = mockSender()
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
