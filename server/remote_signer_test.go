@@ -229,6 +229,17 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "missing pixels or job type",
 		},
+		{
+			name: "invalid capabilities protobuf",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_LiveVideoToVideo
+				r.Capabilities = []byte("not-valid-protobuf")
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "cannot parse invalid wire-format data",
+		},
 	}
 
 	for _, tt := range tests {

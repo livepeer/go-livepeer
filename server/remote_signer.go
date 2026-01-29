@@ -154,6 +154,9 @@ type RemotePaymentRequest struct {
 
 	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
 	Type string `json:"type"`
+
+	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
+	Capabilities []byte `json:"capabilities"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -345,6 +348,15 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
 		pixels = int64(pixelsPerSec * secSinceLastProcessed)
+		if len(req.Capabilities) > 0 {
+			var caps net.Capabilities
+			if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
+				clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
+			streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+		}
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)

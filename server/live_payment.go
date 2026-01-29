@@ -214,10 +214,14 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		return nil, fmt.Errorf("missing session or OrchestratorInfo")
 	}
 
-	// Marshal OrchestratorInfo
+	// Marshal protobufs
 	oInfoBytes, err := proto.Marshal(&net.PaymentResult{Info: sess.OrchestratorInfo})
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling OrchestratorInfo for remote signer: %w", err)
+	}
+	capsBytes, err := proto.Marshal(sess.Params.Capabilities.ToNetCapabilities())
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling caps for remote signer: %w", err)
 	}
 
 	r.mu.Lock()
@@ -230,6 +234,7 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		Orchestrator: oInfoBytes,
 		State:        state,
 		Type:         RemoteType_LiveVideoToVideo,
+		Capabilities: capsBytes,
 	}
 
 	body, err := json.Marshal(reqPayload)
