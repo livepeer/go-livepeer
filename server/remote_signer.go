@@ -225,7 +225,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	priceInfo := oInfo.PriceInfo
-	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
+	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return

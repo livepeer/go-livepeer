@@ -156,6 +156,16 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "missing or zero priceInfo",
 		},
 		{
+			name: "zero pixels per unit",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0}
+				return RemotePaymentRequest{Orchestrator: makeOrchBlob(oInfo), InPixels: 1}
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "missing or zero priceInfo",
+		},
+		{
 			name: "missing ticket params",
 			req: func() RemotePaymentRequest {
 				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
