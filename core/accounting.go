@@ -31,6 +31,11 @@ func (b *Balance) Credit(amount *big.Rat) {
 	b.balances.Credit(b.addr, b.manifestID, amount)
 }
 
+// Reserve zeroes the balance and returns the current balance
+func (b *Balance) Reserve() *big.Rat {
+	return b.balances.Reserve(b.addr, b.manifestID)
+}
+
 // StageUpdate prepares a balance update by reserving the current balance and returning the number of tickets
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
