@@ -94,7 +94,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	}
 
 	makeOrchBlob := func(oInfo *net.OrchestratorInfo) []byte {
-		b, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
+		b, err := proto.Marshal(oInfo)
 		require.NoError(err)
 		return b
 	}
@@ -134,15 +134,6 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			},
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "proto:",
-		},
-		{
-			name: "payment result missing info",
-			req: func() RemotePaymentRequest {
-				// Unknown field to keep non-empty payload while Info stays nil.
-				return RemotePaymentRequest{Orchestrator: []byte{0x10, 0x01}, InPixels: 1}
-			}(),
-			wantStatus: http.StatusBadRequest,
-			wantMsg:    "Missing orch info",
 		},
 		{
 			name: "missing price info",
@@ -350,7 +341,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
 			oInfo.Address = tt.orchAddr
-			orchBlob, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
+			orchBlob, err := proto.Marshal(oInfo)
 			require.NoError(err)
 
 			reqBody, err := json.Marshal(RemotePaymentRequest{
@@ -391,7 +382,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		},
 		AuthToken: stubAuthToken,
 	}
-	orchBlob, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
+	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
 
 	reqBody, err := json.Marshal(RemotePaymentRequest{

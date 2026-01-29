@@ -215,13 +215,16 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 	}
 
 	// Marshal protobufs
-	oInfoBytes, err := proto.Marshal(&net.PaymentResult{Info: sess.OrchestratorInfo})
+	oInfoBytes, err := proto.Marshal(sess.OrchestratorInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling OrchestratorInfo for remote signer: %w", err)
 	}
-	capsBytes, err := proto.Marshal(sess.Params.Capabilities.ToNetCapabilities())
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling caps for remote signer: %w", err)
+	var capsBytes []byte
+	if sess.Params != nil && sess.Params.Capabilities != nil {
+		capsBytes, err = proto.Marshal(sess.Params.Capabilities.ToNetCapabilities())
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling caps for remote signer: %w", err)
+		}
 	}
 
 	r.mu.Lock()

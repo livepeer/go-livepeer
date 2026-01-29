@@ -143,7 +143,7 @@ type RemotePaymentRequest struct {
 	// State is an opaque, signed blob previously returned by the remote signer.
 	State RemotePaymentStateSig `json:"state,omitempty"`
 
-	// protobuf bytes of net.PaymentResult containing OrchestratorInfo. Required
+	// protobuf bytes of net.OrchestratorInfo. Required
 	Orchestrator []byte `json:"orchestrator"`
 
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
@@ -218,18 +218,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var info net.PaymentResult
-	if err := proto.Unmarshal(req.Orchestrator, &info); err != nil {
+	var oInfo net.OrchestratorInfo
+	if err := proto.Unmarshal(req.Orchestrator, &oInfo); err != nil {
 		clog.Errorf(ctx, "Failed to unmarshal orch info err=%q", err)
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	if info.Info == nil {
-		err := errors.New("Missing orch info")
-		respondJsonError(ctx, w, err, http.StatusBadRequest)
-		return
-	}
-	oInfo := info.Info // OrchestratorInfo
 	priceInfo := oInfo.PriceInfo
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
@@ -319,7 +313,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		Balances:         balances,
 		Balance:          sessionBalance,
 		lock:             &sync.RWMutex{},
-		OrchestratorInfo: oInfo,
+		OrchestratorInfo: &oInfo,
 		CleanupSession:   sender.CleanupSession,
 		PMSessionID:      sender.StartSessionWithNonce(*pmParams, nonce),
 		InitialPrice:     oInfo.PriceInfo,

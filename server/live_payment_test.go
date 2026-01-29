@@ -226,9 +226,9 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 		require.NoError(json.NewDecoder(r.Body).Decode(&gotReq))
 
 		// Decode orchestrator blob back into a proto and sanity-check
-		var pr net.PaymentResult
-		require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
-		require.NotNil(pr.Info)
+		var oInfo net.OrchestratorInfo
+		require.NoError(proto.Unmarshal(gotReq.Orchestrator, &oInfo))
+		require.NotNil(oInfo.PriceInfo)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -270,12 +270,11 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 	assert.Equal(RemoteType_LiveVideoToVideo, gotReq.Type)
 	assert.Equal(RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}, gotReq.State)
 
-	var pr net.PaymentResult
-	require.NoError(proto.Unmarshal(gotReq.Orchestrator, &pr))
-	require.NotNil(pr.Info)
-	assert.Equal(sess.OrchestratorInfo.Transcoder, pr.Info.Transcoder)
-	assert.Equal(sess.OrchestratorInfo.PriceInfo.PricePerUnit, pr.Info.PriceInfo.PricePerUnit)
-	assert.Equal(sess.OrchestratorInfo.PriceInfo.PixelsPerUnit, pr.Info.PriceInfo.PixelsPerUnit)
+	var oInfo net.OrchestratorInfo
+	require.NoError(proto.Unmarshal(gotReq.Orchestrator, &oInfo))
+	assert.Equal(sess.OrchestratorInfo.Transcoder, oInfo.Transcoder)
+	assert.Equal(sess.OrchestratorInfo.PriceInfo.PricePerUnit, oInfo.PriceInfo.PricePerUnit)
+	assert.Equal(sess.OrchestratorInfo.PriceInfo.PixelsPerUnit, oInfo.PriceInfo.PixelsPerUnit)
 
 	// Check cached state
 	assert.Equal(RemotePaymentStateSig{State: []byte{0xAA}, Sig: []byte{0xBB}}, r.state)
@@ -359,10 +358,9 @@ func TestRemotePaymentSender_RequestPayment_RefreshSession(t *testing.T) {
 			var req RemotePaymentRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 
-			var pr net.PaymentResult
-			require.NoError(proto.Unmarshal(req.Orchestrator, &pr))
-			require.NotNil(pr.Info)
-			transcoderSeen = append(transcoderSeen, pr.Info.Transcoder)
+			var oInfo net.OrchestratorInfo
+			require.NoError(proto.Unmarshal(req.Orchestrator, &oInfo))
+			transcoderSeen = append(transcoderSeen, oInfo.Transcoder)
 
 			if callCount == 1 {
 				w.WriteHeader(HTTPStatusRefreshSession)
