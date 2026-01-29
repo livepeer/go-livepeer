@@ -24,6 +24,7 @@ import (
 )
 
 const HTTPStatusRefreshSession = 480
+const HTTPStatusPriceExceeded = 481
 const RemoteType_LiveVideoToVideo = "lv2v"
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
@@ -336,6 +337,16 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	} else if err != nil {
 		err = fmt.Errorf("remote signer could not check whether to refresh session: %w", err)
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	// Validate orchestrator price against configured max price
+	orchPrice := new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
+	maxPrice := BroadcastCfg.GetCapabilitiesMaxPrice(streamParams.Capabilities)
+	if maxPrice != nil && orchPrice.Cmp(maxPrice) > 0 {
+		err := fmt.Errorf("orchestrator price %v exceeds maximum price %v", orchPrice.FloatString(3), maxPrice.FloatString(3))
+		clog.Warningf(ctx, "Rejecting payment request: %v", err)
+		respondJsonError(ctx, w, err, HTTPStatusPriceExceeded)
 		return
 	}
 

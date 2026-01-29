@@ -84,6 +84,13 @@ func newMockSender(t *testing.T, validateErr error) *pm.MockSender {
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	require := require.New(t)
 
+	// Set default max price for all tests
+	maxPrice := big.NewRat(500, 1) // 500 wei per pixel
+	autoPrice, err := core.NewAutoConvertedPrice("", maxPrice, nil)
+	require.NoError(err)
+	BroadcastCfg.SetMaxPrice(autoPrice)
+	defer BroadcastCfg.SetMaxPrice(nil) // Clean up
+
 	baseOrchInfo := &net.OrchestratorInfo{
 		Address:   ethcommon.HexToAddress("0x0000000000000000000000000000000000000001").Bytes(),
 		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
@@ -240,6 +247,20 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			}(),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "cannot parse invalid wire-format data",
+		},
+		{
+			name: "orchestrator price exceeds max price",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				// Set orchestrator price to 1000 wei per pixel (will exceed max price of 500)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					InPixels:     1,
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "orchestrator price",
 		},
 	}
 
