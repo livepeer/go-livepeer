@@ -280,6 +280,15 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
 	}
+	if len(req.Capabilities) > 0 {
+		var caps net.Capabilities
+		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
 	if pmParams == nil {
@@ -342,15 +351,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
 		pixels = int64(pixelsPerSec * secSinceLastProcessed)
-		if len(req.Capabilities) > 0 {
-			var caps net.Capabilities
-			if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-				clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
-		}
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
