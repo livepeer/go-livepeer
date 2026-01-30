@@ -2,7 +2,6 @@ package watchers
 
 import (
 	"fmt"
-	"github.com/livepeer/go-livepeer/eth/contracts"
 	"math/big"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

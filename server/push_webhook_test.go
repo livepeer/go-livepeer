@@ -4,12 +4,13 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/golang/glog"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/golang/glog"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPush_WebhookRequestURL(t *testing.T) {

@@ -2,13 +2,14 @@ package eth
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 const DefaultMaxDecimals = 18
