@@ -102,6 +102,9 @@ func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityCompar
 		return cfg.MaxPrice()
 	}
 	netCaps := caps.ToNetCapabilities()
+	if netCaps == nil || netCaps.Constraints == nil {
+		return cfg.MaxPrice()
+	}
 	price := big.NewRat(0, 1)
 	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
 		for modelID := range constraints.Models {
