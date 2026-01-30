@@ -89,6 +89,23 @@ Example:
   -v 6
 ```
 
+### Pricing checks (gateway vs remote signer)
+
+When running a gateway in offchain mode (ie, with `-remoteSignerUrl` and no Ethereum flags), the gateway does not check orchestrator pricing. Instead, price checks happen in the remote signer during payment generation.
+
+- **Remote signer configuration**: configure the signer with the same pricing and PM knobs you would normally configure on a gateway, e.g.:
+  - `-maxPricePerUnit`, `-pixelsPerUnit`
+  - `-maxPricePerCapability` (optional, capability/model pricing config)
+  - `-maxTicketEV`, `-maxTotalEV`, etc.
+- **Selection behavior**: if an orchestrator’s price is above the signer’s configured limits, the signer rejects the request (HTTP 481) and the gateway will retry with a different orchestrator session.
+- **LV2V session price is fixed**: like a traditional gateway setup, Live Video-to-Video (LV2V) jobs treat price as fixed for the lifetime of the session, captured at session initialization time.
+
+### Tuning ticket EV to avoid “too many tickets” errors
+
+If there are errors about too many tickets (eg `numTickets ... exceeds maximum of 100`), increase the ticket EV on the remote signer so each signing call produces fewer tickets. A good target is ~1–3 tickets per remote signer call.
+
+For PM configuration details and how these knobs interact, see `doc/payments.md`.
+
 ## Operational + security guidance
 
 For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service.
