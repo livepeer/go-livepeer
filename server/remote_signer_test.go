@@ -68,19 +68,6 @@ func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 	return []byte("stub"), nil
 }
 
-func newMockSender(t *testing.T, validateErr error) *pm.MockSender {
-	t.Helper()
-
-	sender := &pm.MockSender{}
-	sender.On("StartSessionWithNonce", mock.Anything, mock.Anything).Return("pmSession")
-	sender.On("CleanupSession", mock.Anything).Return()
-	sender.On("ValidateTicketParams", mock.Anything).Return(validateErr)
-	sender.On("EV", mock.Anything).Return(big.NewRat(1, 1), nil)
-	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
-	sender.On("Nonce", mock.Anything).Return(7, nil)
-	return sender
-}
-
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	require := require.New(t)
 
@@ -220,7 +207,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				r.InPixels = 1
 				return r
 			}(),
-			sender:     newMockSender(t, pm.ErrTicketParamsExpired),
+			sender:     newMockSender(mockSenderConfig{validateErr: pm.ErrTicketParamsExpired}),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
 		},
@@ -307,7 +294,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			if tt.sender != nil {
 				node.Sender = tt.sender
 			} else {
-				node.Sender = newMockSender(t, nil)
+				node.Sender = newMockSender(mockSenderConfig{})
 			}
 			ls := &LivepeerServer{LivepeerNode: node}
 
@@ -341,7 +328,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 
 	node, _ := core.NewLivepeerNode(&eth.StubClient{TranscoderAddress: addr}, "", nil)
 	node.Balances = core.NewAddressBalances(1 * time.Minute)
-	node.Sender = newMockSender(t, nil)
+	node.Sender = newMockSender(mockSenderConfig{})
 	ls := &LivepeerServer{LivepeerNode: node}
 
 	orchInfo := &net.OrchestratorInfo{
@@ -471,24 +458,10 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	ethClient := newTestEthClient(t)
 	node, _ := core.NewLivepeerNode(ethClient, "", nil)
 	node.Balances = core.NewAddressBalances(1 * time.Minute)
-	sender := newMockSender(t, nil)
-	// Local overrides to keep this test fast (fewer tickets) and ensure ticket
-	// count reflected in the payment matches the requested batch size.
-	{
-		var totalTickets uint32
-		filteredCalls := make([]*mock.Call, 0, len(sender.ExpectedCalls))
-		for _, call := range sender.ExpectedCalls {
-			if call.Method == "EV" || call.Method == "CreateTicketBatch" {
-				continue
-			}
-			filteredCalls = append(filteredCalls, call)
-		}
-		sender.ExpectedCalls = filteredCalls
-
-		sender.On("EV", mock.Anything).Return(big.NewRat(35, 1), nil)
-
-		batch := &pm.TicketBatch{}
-		sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil).Run(func(args mock.Arguments) {
+	var totalTickets uint32
+	sender := newMockSender(mockSenderConfig{
+		ev: big.NewRat(35, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
 			size := args.Int(1)
 			*batch = *defaultTicketBatch()
 			baseSig := []byte(nil)
@@ -503,8 +476,8 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 					Sig:         baseSig,
 				}
 			}
-		})
-	}
+		},
+	})
 	node.Sender = sender
 	ls := &LivepeerServer{LivepeerNode: node}
 

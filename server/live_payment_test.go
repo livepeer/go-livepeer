@@ -22,6 +22,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type mockSenderConfig struct {
+	ev                  *big.Rat
+	validateErr         error
+	nonce               int
+	stopSessionTimes    int
+	createTicketBatchFn func(args mock.Arguments, batch *pm.TicketBatch)
+}
+
+func mockSender(cfg mockSenderConfig) pm.Sender {
+	return newMockSender(cfg)
+}
+
+func newMockSender(cfg mockSenderConfig) *pm.MockSender {
+	ev := cfg.ev
+	if ev == nil {
+		ev = big.NewRat(1, 1)
+	}
+	nonce := cfg.nonce
+	if nonce == 0 {
+		nonce = 7
+	}
+	stopSessionTimes := cfg.stopSessionTimes
+	if stopSessionTimes == 0 {
+		stopSessionTimes = 3
+	}
+
+	sender := &pm.MockSender{}
+	sender.On("StartSession", mock.Anything).Return("foo")
+	sender.On("StartSessionWithNonce", mock.Anything, mock.Anything).Return("pmSession")
+	sender.On("CleanupSession", mock.Anything).Maybe()
+	sender.On("StopSession", mock.Anything).Times(stopSessionTimes)
+	sender.On("ValidateTicketParams", mock.Anything).Return(cfg.validateErr)
+	sender.On("EV", mock.Anything).Return(ev, nil)
+	if cfg.createTicketBatchFn != nil {
+		batch := &pm.TicketBatch{}
+		sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil).Run(func(args mock.Arguments) {
+			cfg.createTicketBatchFn(args, batch)
+		})
+	} else {
+		sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
+	}
+	sender.On("Nonce", mock.Anything).Return(nonce, nil)
+	return sender
+}
+
 func TestSendPayment(t *testing.T) {
 	require := require.New(t)
 
@@ -48,7 +93,7 @@ func TestSendPayment(t *testing.T) {
 
 	// Stub session
 	sess := StubBroadcastSession(ts.URL)
-	sess.Sender = mockSender()
+	sess.Sender = mockSender(mockSenderConfig{ev: big.NewRat(1000000, 1)})
 	sess.Balances = core.NewAddressBalances(1 * time.Minute)
 	sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 
@@ -73,19 +118,6 @@ func TestSendPayment(t *testing.T) {
 	// The balance should be 0
 	balance := sess.Balances.Balance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId))
 	require.Equal(new(big.Rat).SetInt64(0), balance)
-}
-
-func mockSender() pm.Sender {
-	sender := &pm.MockSender{}
-	sender.On("StartSession", mock.Anything).Return("foo")
-	sender.On("StartSessionWithNonce", mock.Anything, mock.Anything).Return("foo")
-	sender.On("CleanupSession", mock.Anything).Maybe()
-	sender.On("StopSession", mock.Anything).Times(3)
-	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
-	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
-	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
-	sender.On("Nonce", mock.Anything).Return(0, nil)
-	return sender
 }
 
 func TestAccountPayment(t *testing.T) {
@@ -454,7 +486,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler(t *testing.T) 
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = mockSender()
+	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(20000000, 1)})
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
@@ -498,7 +530,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler_Refresh(t *tes
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = mockSender()
+	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(20000000, 1)})
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
