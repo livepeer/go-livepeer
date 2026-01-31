@@ -243,6 +243,10 @@ func TestSetBroadcastConfigHandler_TranscodingOptionsError(t *testing.T) {
 func TestSetBroadcastConfigHandler_Success(t *testing.T) {
 	assert := assert.New(t)
 
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	defer BroadcastCfg.SetMaxPrice(nil)
+
 	handler := setBroadcastConfigHandler()
 	status, _ := postForm(handler, url.Values{
 		"maxPricePerUnit":    {"1"},
@@ -269,6 +273,7 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	//set default max price
 	basePrice, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(10, 1), nil)
 	BroadcastCfg.SetMaxPrice(basePrice)
+	defer BroadcastCfg.SetMaxPrice(nil)
 
 	//set price per unit for specific pipeline
 	p1, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(1, 1), nil)
@@ -280,6 +285,10 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	p2_pipeline := "image-to-image"
 	p2_pipeline_cap, _ := core.PipelineToCapability(p2_pipeline)
 	p2_modelID := "default"
+
+	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "default", nil)
+	defer BroadcastCfg.SetCapabilityMaxPrice(p2_pipeline_cap, "default", nil)
+	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "stabilityai/sd-turbo", nil)
 
 	status1, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
@@ -449,6 +458,10 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 
 func TestGetBroadcastConfigHandler(t *testing.T) {
 	assert := assert.New(t)
+
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	defer BroadcastCfg.SetMaxPrice(nil)
 
 	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 2)))
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{
