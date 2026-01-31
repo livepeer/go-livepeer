@@ -262,10 +262,21 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 		if err == nil {
 			err = errors.New("unknown swap reason")
 		}
+		// report the swap
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "orchestrator_swap",
+			"stream_id":   params.liveParams.streamID,
+			"request_id":  params.liveParams.requestID,
+			"pipeline":    params.liveParams.pipeline,
+			"pipeline_id": params.liveParams.pipelineID,
+			"message":     err.Error(),
+			"orchestrator_info": map[string]interface{}{
+				"address": params.liveParams.orchToken.Address(),
+				"url":     params.liveParams.orchToken.URL(),
+			},
+		})
 
 		clog.Infof(ctx, "Retrying stream with a different orchestrator err=%v", err.Error())
-
-		params.liveParams.sendErrorEvent(err)
 	}
 
 	//if there is ingress input then force off
