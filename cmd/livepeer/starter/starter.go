@@ -169,6 +169,7 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
 	RemoteSignerUrl            *string
+	RemoteOrchDiscovery        *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -306,6 +307,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
 	defaultRemoteSignerUrl := ""
+	defaultRemoteOrchDiscovery := false
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -426,9 +428,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail:   &defaultTestOrchAvail,
-		RemoteSigner:    &defaultRemoteSigner,
-		RemoteSignerUrl: &defaultRemoteSignerUrl,
+		TestOrchAvail:       &defaultTestOrchAvail,
+		RemoteSigner:        &defaultRemoteSigner,
+		RemoteSignerUrl:     &defaultRemoteSignerUrl,
+		RemoteOrchDiscovery: &defaultRemoteOrchDiscovery,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1635,6 +1638,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		} else if n.RemoteSignerUrl != nil {
+			orchDiscoveryURL := n.RemoteSignerUrl.ResolveReference(&url.URL{Path: "/discover-orchestrators"})
+			glog.Info("Using remote signer orchestrator discovery endpoint ", orchDiscoveryURL)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, orchDiscoveryURL, *cfg.DiscoveryTimeout)
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
@@ -1648,7 +1655,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
-			//if orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache as orchestrator pool
+			// If orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache.
 			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
 				n.OrchestratorPool = dbOrchPoolCache
 			}
@@ -1842,8 +1849,44 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 	}
 
-	// Start remote signer server if in remote signer mode
+	// Set up orchestrator pool for remote signer mode and start server
 	if n.NodeType == core.RemoteSignerNode {
+		bcast := core.NewBroadcaster(n)
+		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
+		n.ExtraNodes = *cfg.ExtraNodes
+
+		// Set up orchestrator discovery - same logic as BroadcasterNode
+		if *cfg.OrchWebhookURL != "" {
+			whurl, err := validateURL(*cfg.OrchWebhookURL)
+			if err != nil {
+				glog.Exit("Error setting orch webhook URL ", err)
+			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+		} else if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		}
+
+		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
+		if *cfg.Network != "offchain" && *cfg.RemoteOrchDiscovery {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout, *cfg.LiveAICapReportInterval)
+			if err != nil {
+				exit("Could not create orchestrator pool with DB cache: %v", err)
+			}
+
+			// If orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
+			}
+		}
+
+		if *cfg.RemoteOrchDiscovery && n.OrchestratorPool == nil {
+			exit("RemoteOrchDiscovery is set but no orchestrator pool could be configured")
+		}
+
+		// Start remote signer server
 		go func() {
 			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
 			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)

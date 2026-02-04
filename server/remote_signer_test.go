@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
@@ -66,6 +69,31 @@ func (c *testEthClient) Sign(msg []byte) ([]byte, error) {
 
 func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 	return []byte("stub"), nil
+}
+
+// mockOrchestratorPool implements common.OrchestratorPool for testing
+type mockOrchestratorPool struct {
+	infos []common.OrchestratorLocalInfo
+}
+
+func (m *mockOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
+	return m.infos
+}
+
+func (m *mockOrchestratorPool) GetOrchestrators(ctx context.Context, num int, suspender common.Suspender, caps common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
+	return nil, nil
+}
+
+func (m *mockOrchestratorPool) Size() int {
+	return len(m.infos)
+}
+
+func (m *mockOrchestratorPool) SizeWith(scorePred common.ScorePred) int {
+	return len(m.infos)
+}
+
+func (m *mockOrchestratorPool) Broadcaster() common.Broadcaster {
+	return nil
 }
 
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
@@ -629,4 +657,40 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+func TestRemoteSigner_Discovery_ReturnsConfiguredOrchestrators(t *testing.T) {
+	require := require.New(t)
+
+	u1, err := url.Parse("https://orch1.example.com:8935")
+	require.NoError(err)
+	u2, err := url.Parse("https://orch2.example.com:8935")
+	require.NoError(err)
+
+	mockPool := &mockOrchestratorPool{
+		infos: []common.OrchestratorLocalInfo{
+			{URL: u1, Score: 1.0},
+			{URL: u2, Score: 0.8},
+		},
+	}
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.OrchestratorPool = mockPool
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	req := httptest.NewRequest(http.MethodGet, "/orchestrators", nil)
+	rr := httptest.NewRecorder()
+
+	ls.GetOrchestrators(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	require.Equal("application/json", rr.Header().Get("Content-Type"))
+
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 2)
+	require.Equal("https://orch1.example.com:8935", resp[0].Address)
+	require.Equal(float32(1.0), resp[0].Score)
+	require.Equal("https://orch2.example.com:8935", resp[1].Address)
+	require.Equal(float32(0.8), resp[1].Score)
 }

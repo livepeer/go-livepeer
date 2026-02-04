@@ -12,8 +12,6 @@ Remote signing was designed to initially target **Live AI** (`live-video-to-vide
 
 Support for other workloads may be added in the future.
 
-The on-chain service registry is not used for Live AI workloads right now, so orchestrator discovery is not implemented as part of the remote signer. The gateway can learn about orchestrators via an orchestrator webhook (`-orchWebhookUrl`) or a static list (`-orchAddr`).
-
 This allows a gateway to run in offchain mode while still working with on-chain orchestrators.
 
 ## Architecture
@@ -54,6 +52,8 @@ The remote signer must have typical Ethereum flags configured (examples: `-netwo
 
 The remote signer listens to the standard go-livepeer HTTP port (8935) by default. To change the listening port or interface, use the `-httpAddr` flag.
 
+The remote signer optionally supports orchestrator discovery via the `-remoteOrchDiscovery` flag. If set, it will fetch orchestrators from the on-chain registry, but this can be overriden via the `-orchWebhookUrl` or the `-orchAddr` flags.
+
 Example (fill in the placeholders for your environment):
 
 ```bash
@@ -77,6 +77,8 @@ If `-remoteSignerUrl` is set, the gateway will query the signer at startup and f
 **No Ethereum flags are necessary on the gateway** in this mode. Omit the `-network` flag entirely here; this makes the gateway run in offchain mode, but it will still be able to send work to on-chain orchestrators with the `-remoteSignerUrl` flag enabled.
 
 By default, if no URL scheme is provided, https is assumed and prepended to the remote signer URL. To override this (eg, to use a http:// URL) then include the scheme, eg `-remoteSignerUrl http://signer-host:port`
+
+If the gateway is configured with a remote signer URL but no orchestrators (`-orchWebhookUrl` or `-orchAddr`) then it will attempt to use the remote signer's discovery endpoint.
 
 Example:
 

@@ -68,9 +68,12 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
-	// Register the remote signer endpoint
+	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	if ls.LivepeerNode.OrchestratorPool != nil {
+		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(ls.GetOrchestrators))
+	}
 
 	// Start the HTTP server
 	glog.Info("Starting Remote Signer server on ", bind)
@@ -511,4 +514,34 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 	}
 
 	return &signerResp, nil
+}
+
+type discoveryResponse struct {
+	Address string  `json:"address,omitempty"`
+	Score   float32 `json:"score,omitempty"`
+}
+
+// GetOrchestrators returns the configured orchestrators in webhook-compatible format
+func (ls *LivepeerServer) GetOrchestrators(w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "Get orchestrators request", "ip", remoteAddr)
+
+	pool := ls.LivepeerNode.OrchestratorPool
+	if pool == nil {
+		respondJsonError(ctx, w, errors.New("no orchestrator pool configured"), http.StatusServiceUnavailable)
+		return
+	}
+
+	infos := pool.GetInfos()
+	resp := make([]discoveryResponse, 0, len(infos))
+	for _, info := range infos {
+		resp = append(resp, discoveryResponse{
+			Address: info.URL.String(),
+			Score:   info.Score,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
