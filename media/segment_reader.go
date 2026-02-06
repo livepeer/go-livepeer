@@ -21,15 +21,29 @@ func (r *EOSReader) Clone() CloneableReader {
 }
 
 type SwitchableSegmentReader struct {
-	mu     sync.RWMutex
-	reader SegmentHandler
-	seg    CloneableReader
+	mu       sync.RWMutex
+	reader   SegmentHandler
+	seg      CloneableReader
+	hasVideo bool
 }
 
 func NewSwitchableSegmentReader() *SwitchableSegmentReader {
 	return &SwitchableSegmentReader{
-		reader: NoopReader,
+		reader:   NoopReader,
+		hasVideo: true, // default to true; updated when tracks are detected
 	}
+}
+
+func (sr *SwitchableSegmentReader) SetHasVideo(hasVideo bool) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.hasVideo = hasVideo
+}
+
+func (sr *SwitchableSegmentReader) HasVideo() bool {
+	sr.mu.RLock()
+	defer sr.mu.RUnlock()
+	return sr.hasVideo
 }
 
 func (sr *SwitchableSegmentReader) SwitchReader(newReader SegmentHandler) {

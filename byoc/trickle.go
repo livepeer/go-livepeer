@@ -385,14 +385,18 @@ func (bsg *BYOCGatewayServer) ffmpegOutput(ctx context.Context, outputUrl string
 			acodec = "libfdk_aac"
 		}
 
-		cmd := exec.CommandContext(ctx, "ffmpeg",
+		args := []string{
 			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
 			"-c:a", acodec,
-			"-c:v", "copy",
-			"-f", "flv",
-			outputUrl,
-		)
+		}
+		if params.liveParams.segmentReader.HasVideo() {
+			args = append(args, "-c:v", "copy")
+		} else {
+			args = append(args, "-vn")
+		}
+		args = append(args, "-f", "flv", outputUrl)
+		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		// Change Cancel function to send a SIGTERM instead of SIGKILL. Still send a SIGKILL after 5s (WaitDelay) if it's stuck.
 		cmd.Cancel = func() error {
 			return cmd.Process.Signal(syscall.SIGTERM)

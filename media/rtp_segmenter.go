@@ -204,6 +204,12 @@ func (s *RTPSegmenter) IsReady() bool {
 	return s.started
 }
 
+func (s *RTPSegmenter) HasVideo() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasVideo
+}
+
 func (s *RTPSegmenter) setupTracks(rtpTracks []SegmenterTrack) []*trackWriter {
 	tracks := []*trackWriter{}
 	for _, t := range rtpTracks {

@@ -184,20 +184,24 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(fmt.Errorf("error gathering tracks: %w", err))
 			return
 		}
-		if videoTrack == nil {
-			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
-			mediaState.CloseError(errors.New("missing video"))
+		if videoTrack == nil && audioTrack == nil {
+			clog.Info(ctx, "no tracks received! disconnecting", "took", time.Since(gatherStartTime))
+			mediaState.CloseError(errors.New("no tracks received"))
 			return
 		}
-		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
-			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
-			mediaState.CloseError(errors.New("non-h264 video"))
-			return
+		var tracks []SegmenterTrack
+		if videoTrack != nil {
+			if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
+				clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
+				mediaState.CloseError(errors.New("non-h264 video"))
+				return
+			}
+			tracks = append(tracks, NewSegmenterTrack(videoTrack))
 		}
-		tracks := []SegmenterTrack{NewSegmenterTrack(videoTrack)}
 		if audioTrack != nil {
 			tracks = append(tracks, NewSegmenterTrack(audioTrack))
 		}
+		ssr.SetHasVideo(videoTrack != nil)
 		minSegDur := 1 * time.Second
 		segDurEnv := os.Getenv("LIVE_AI_MIN_SEG_DUR")
 		if segDurEnv != "" {
@@ -279,10 +283,23 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 				continue
 			}
 			if isAudio && !segmenter.IsReady() {
-				// drop early audio packets until we have video
-				// this is a hack to force video track to lead
-				// so the time decoder automatically uses rescales audio to
-				// the 90khz video timebase which matches mpegts
+				if segmenter.HasVideo() {
+					// Video track exists but hasn't started yet; drop audio to let video lead.
+					// This forces the time decoder to use video's 90kHz timebase which matches mpegts.
+					continue
+				}
+				// Audio-only: decode PTS and start the first segment from audio
+				pts, ok := timeDecoder.Decode(incomingTrack, p)
+				if !ok {
+					clog.Info(ctx, "RTP: error decoding packet time", "track", codec)
+					continue
+				}
+				segmenter.StartSegment(pts)
+				segmenter.WriteAudio(track, pts, [][]byte{d})
+				if !gotAudio {
+					clog.Info(ctx, "First packet type=audio (audio-only)", "pts", pts, "rtp_ts", p.Timestamp)
+					gotAudio = true
+				}
 				continue
 			}
 			pts, ok := timeDecoder.Decode(incomingTrack, p)
