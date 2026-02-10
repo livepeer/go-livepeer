@@ -566,9 +566,11 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	}
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
+	const manifestID = "lv2v-manifest"
 
 	resp, payment := doPayment(RemotePaymentRequest{
 		Orchestrator: orchBlob,
+		ManifestID:   manifestID,
 		InPixels:     inPixels,
 	})
 	require.NotEmpty(resp.Payment)
@@ -612,6 +614,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	const inPixelsUpdated int64 = 2500
 	resp2, payment2 := doPayment(RemotePaymentRequest{
 		Orchestrator: orchBlob,
+		ManifestID:   manifestID,
 		InPixels:     inPixelsUpdated,
 		State:        resp.State,
 	})
