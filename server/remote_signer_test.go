@@ -430,8 +430,8 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			name: "zero tickets returns 482",
 			stateBytes: func() []byte {
 				stateBytes, err := json.Marshal(RemotePaymentState{
-					StateID:              "state",
-					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					StateID:             "state",
+					OrchestratorAddress: ethcommon.BytesToAddress(orchInfo.Address),
 					// Existing balance large enough so StageUpdate yields NumTickets == 0.
 					Balance:              "1000",
 					InitialPricePerUnit:  1,
