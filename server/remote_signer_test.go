@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,7 +74,10 @@ func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 
 // mockOrchestratorPool implements common.OrchestratorPool for testing
 type mockOrchestratorPool struct {
-	infos []common.OrchestratorLocalInfo
+	infos                []common.OrchestratorLocalInfo
+	descriptors          common.OrchestratorDescriptors
+	getOrchestratorsErr  error
+	getOrchestratorCalls int32
 }
 
 func (m *mockOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
@@ -81,10 +85,14 @@ func (m *mockOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 }
 
 func (m *mockOrchestratorPool) GetOrchestrators(ctx context.Context, num int, suspender common.Suspender, caps common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
-	return nil, nil
+	atomic.AddInt32(&m.getOrchestratorCalls, 1)
+	return m.descriptors, m.getOrchestratorsErr
 }
 
 func (m *mockOrchestratorPool) Size() int {
+	if len(m.descriptors) > 0 {
+		return len(m.descriptors)
+	}
 	return len(m.infos)
 }
 
@@ -94,6 +102,10 @@ func (m *mockOrchestratorPool) SizeWith(scorePred common.ScorePred) int {
 
 func (m *mockOrchestratorPool) Broadcaster() common.Broadcaster {
 	return nil
+}
+
+func (m *mockOrchestratorPool) GetOrchestratorsCalls() int32 {
+	return atomic.LoadInt32(&m.getOrchestratorCalls)
 }
 
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
@@ -659,7 +671,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 
 }
 
-func TestRemoteSigner_Discovery_ReturnsConfiguredOrchestrators(t *testing.T) {
+func TestRemoteSigner_Discovery(t *testing.T) {
 	require := require.New(t)
 
 	u1, err := url.Parse("https://orch1.example.com:8935")
@@ -668,23 +680,37 @@ func TestRemoteSigner_Discovery_ReturnsConfiguredOrchestrators(t *testing.T) {
 	require.NoError(err)
 
 	mockPool := &mockOrchestratorPool{
-		infos: []common.OrchestratorLocalInfo{
-			{URL: u1, Score: 1.0},
-			{URL: u2, Score: 0.8},
+		descriptors: common.OrchestratorDescriptors{
+			{
+				LocalInfo: &common.OrchestratorLocalInfo{URL: u1, Score: 1.0},
+			},
+			{
+				LocalInfo: &common.OrchestratorLocalInfo{URL: u2, Score: 0.8},
+			},
 		},
 	}
 
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.OrchestratorPool = mockPool
-	ls := &LivepeerServer{LivepeerNode: node}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rdp := &remoteDiscoveryPool{
+		pool:         mockPool,
+		refreshEvery: time.Hour,
+		ctx:          ctx,
+		cancel:       cancel,
+	}
+	rdp.refresh()
+	ls := &LivepeerServer{}
 
-	req := httptest.NewRequest(http.MethodGet, "/orchestrators", nil)
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
 	rr := httptest.NewRecorder()
 
-	ls.GetOrchestrators(rr, req)
+	callsBefore := mockPool.GetOrchestratorsCalls()
+	ls.GetOrchestrators(rdp, rr, req)
+	callsAfter := mockPool.GetOrchestratorsCalls()
 
 	require.Equal(http.StatusOK, rr.Code)
 	require.Equal("application/json", rr.Header().Get("Content-Type"))
+	require.Equal(callsBefore, callsAfter, "handler should only read cached data")
 
 	var resp []discoveryResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
@@ -693,4 +719,10 @@ func TestRemoteSigner_Discovery_ReturnsConfiguredOrchestrators(t *testing.T) {
 	require.Equal(float32(1.0), resp[0].Score)
 	require.Equal("https://orch2.example.com:8935", resp[1].Address)
 	require.Equal(float32(0.8), resp[1].Score)
+
+	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	emptyRR := httptest.NewRecorder()
+	ls.GetOrchestrators(&remoteDiscoveryPool{}, emptyRR, emptyReq)
+	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
+	require.Equal("application/json", emptyRR.Header().Get("Content-Type"))
 }

@@ -72,7 +72,11 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
 	if ls.LivepeerNode.OrchestratorPool != nil {
-		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(ls.GetOrchestrators))
+		rdp := RemoteDiscoveryConfig{Pool: ls.LivepeerNode.OrchestratorPool}.New()
+		defer rdp.Stop()
+		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ls.GetOrchestrators(rdp, w, r)
+		}))
 	}
 
 	// Start the HTTP server
@@ -522,23 +526,27 @@ type discoveryResponse struct {
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
-func (ls *LivepeerServer) GetOrchestrators(w http.ResponseWriter, r *http.Request) {
+func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.ResponseWriter, r *http.Request) {
 	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
 	remoteAddr := getRemoteAddr(r)
 	clog.Info(ctx, "Get orchestrators request", "ip", remoteAddr)
 
-	pool := ls.LivepeerNode.OrchestratorPool
 	if pool == nil {
 		respondJsonError(ctx, w, errors.New("no orchestrator pool configured"), http.StatusServiceUnavailable)
 		return
 	}
 
-	infos := pool.GetInfos()
+	infos := pool.Orchestrators()
+	if len(infos) == 0 {
+		respondJsonError(ctx, w, errors.New("cache empty"), http.StatusServiceUnavailable)
+		return
+	}
+
 	resp := make([]discoveryResponse, 0, len(infos))
-	for _, info := range infos {
+	for _, od := range infos {
 		resp = append(resp, discoveryResponse{
-			Address: info.URL.String(),
-			Score:   info.Score,
+			Address: od.LocalInfo.URL.String(),
+			Score:   od.LocalInfo.Score,
 		})
 	}
 
