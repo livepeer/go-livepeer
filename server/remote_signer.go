@@ -249,7 +249,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		err   error
 	)
 	reqState, reqSig := req.State.State, req.State.Sig
-	if len(reqState) != 0 || len(reqSig) != 0 {
+	hasState := len(reqState) != 0 || len(reqSig) != 0
+	if hasState {
 		if err := verifyStateSignature(ls, reqState, reqSig); err != nil {
 			err = errors.New("invalid sig")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -279,6 +280,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	manifestID := req.ManifestID
 	if manifestID == "" {
+		if hasState {
+			// Required for lv2v so stateful requests stay tied to the same id.
+			err := errors.New("missing manifestID")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
 		manifestID = string(core.RandomManifestID())
 	}
 	ctx = clog.AddVal(ctx, "manifest_id", manifestID)

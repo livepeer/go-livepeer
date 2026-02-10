@@ -359,13 +359,40 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name       string
-		stateBytes []byte
-		stateSig   []byte
-		orchInfo   *net.OrchestratorInfo
-		wantStatus int
-		wantMsg    string
+		name           string
+		stateBytes     []byte
+		stateSig       []byte
+		orchInfo       *net.OrchestratorInfo
+		omitManifestID bool
+		wantStatus     int
+		wantMsg        string
 	}{
+		{
+			name: "missing manifest id with state",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			stateSig: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return sign(state)
+			}(),
+			omitManifestID: true,
+			wantStatus:     http.StatusBadRequest,
+			wantMsg:        "missing manifestID",
+		},
 		{
 			name:       "invalid state signature",
 			stateBytes: []byte(`{"stateID":"state","orchestratorAddress":"0x1"}`),
@@ -459,8 +486,14 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			orchBlob, err := proto.Marshal(oInfo)
 			require.NoError(err)
 
+			var manifestID string
+			if !tt.omitManifestID {
+				manifestID = "manifest"
+			}
+
 			reqBody, err := json.Marshal(RemotePaymentRequest{
 				Orchestrator: orchBlob,
+				ManifestID:   manifestID,
 				InPixels:     1,
 				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: tt.stateSig},
 			})
