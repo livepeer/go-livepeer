@@ -420,6 +420,34 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			wantStatus: HTTPStatusPriceExceeded,
 			wantMsg:    "Orchestrator price has more than doubled",
 		},
+		{
+			name: "zero tickets returns 482",
+			stateBytes: func() []byte {
+				stateBytes, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					// Existing balance large enough so StageUpdate yields NumTickets == 0.
+					Balance:              "1000",
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return stateBytes
+			}(),
+			stateSig: func() []byte {
+				stateBytes, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					Balance:              "1000",
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return sign(stateBytes)
+			}(),
+			wantStatus: HTTPStatusNoTickets,
+			wantMsg:    "no tickets",
+		},
 	}
 
 	for _, tt := range tests {

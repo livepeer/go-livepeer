@@ -26,6 +26,7 @@ import (
 
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
+const HTTPStatusNoTickets = 482
 const RemoteType_LiveVideoToVideo = "lv2v"
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
@@ -391,6 +392,15 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		err = fmt.Errorf("Failed to update balance: %w", err)
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+	if balUpdate.NumTickets <= 0 {
+		// No new tickets are needed when reserved balance already covers the
+		// required minimum credit (fee with ticket EV as the floor). Caller
+		// should retry once balance has been run down further.
+		err = errors.New("no tickets")
+		clog.Errorf(ctx, "No tickets")
+		respondJsonError(ctx, w, err, HTTPStatusNoTickets)
 		return
 	}
 	if balUpdate.NumTickets > 100 {
