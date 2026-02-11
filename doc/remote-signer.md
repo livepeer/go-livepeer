@@ -1,6 +1,6 @@
 # Remote signer
 
-The **remote signer** is a standalone `go-livepeer` node mode that separates **Ethereum key custody + signing** from the gateway’s **untrusted media handling**. It is intended to:
+The **remote signer** is a standalone `go-livepeer` node mode that separates Ethereum key custody + signing from the gateway’s untrusted media handling. It is intended to:
 
 - Improve security posture by removing Ethereum hot keys from the media processing path
 - Enable web3-less gateway implementations natively on additional platforms such as browser, mobile, serverless and embedded backend apps
@@ -8,15 +8,15 @@ The **remote signer** is a standalone `go-livepeer` node mode that separates **E
 
 ## Current implementation status
 
-Remote signing was designed to initially target **Live AI** (`live-video-to-video`).
+Remote signing was designed to initially target Live AI (`live-video-to-video`).
 
-Support for other workloads may be added in the future.
+Support for other pipelines may be added in the future.
 
-This allows a gateway to run in offchain mode while still working with on-chain orchestrators.
+With remote signers enabled, a gateway runs in offchain mode while still working with on-chain orchestrators.
 
 ## Architecture
 
-At a high level, the gateway uses the remote signer to handle Ethereum-related operations such as generating signatures or probabilistic micropayment tickets:
+At a high level, the gateway uses the remote signer to handle Ethereum-related operations such as generating signatures, probabilistic micropayment tickets, or discovering on-chain orchestrators and filtering them by price and capability:
 
 ```mermaid
 sequenceDiagram
@@ -28,6 +28,9 @@ sequenceDiagram
   RemoteSigner-->>Gateway: {address, signature}
   Gateway->>Orchestrator: GetOrchestratorInfo(Address=address,Sig=signature)
   Orchestrator-->>Gateway: OrchestratorInfo (incl TicketParams)
+
+  Gateway->>RemoteSigner: GET /discover-orchestrators
+  RemoteSigner->>Gateway: [ orchestrators ]
 
   Note over Gateway,RemoteSigner: Live AI payments (asynchronous)
   Gateway->>RemoteSigner: POST /generate-live-payment (orchInfo + signerState)
@@ -52,19 +55,34 @@ The remote signer must have typical Ethereum flags configured (examples: `-netwo
 
 The remote signer listens to the standard go-livepeer HTTP port (8935) by default. To change the listening port or interface, use the `-httpAddr` flag.
 
-The remote signer optionally supports orchestrator discovery via the `-remoteOrchDiscovery` flag. If set, it will fetch orchestrators from the on-chain registry, but this can be overriden via the `-orchWebhookUrl` or the `-orchAddr` flags.
+### Remote discovery
 
-Example (fill in the placeholders for your environment):
+Remote signers can offer a discovery endpoint for gateways to find what orchestrators are on the network for a given capability. Remote discovery is enabled with:
+
+- `-remoteDiscovery=true`
+
+When enabled, the signer exposes:
+
+- `GET /discover-orchestrators`
+
+The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`) in a format that is compatible with the gateway's orchestrator discovery webhook.
+
+Clients can filter for orchestrators matching a given capability via the `caps` query param. This param can be repeated to retrieve orchestrators supporting any one of the given capabilities. For example:
 
 ```bash
-./livepeer \
-  -remoteSigner \
-  -network mainnet \
-  -httpAddr 127.0.0.1:7936 \
-  -ethUrl <eth-rpc-url> \
-  -ethPassword <password-or-password-file>
-  ...
+# All available orchestrators
+curl "http://127.0.0.1:7936/discover-orchestrators"
+
+# Filter by one capability
+curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion"
+
+# Filter by multiple capabilities (OR behavior)
+curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion&caps=text-to-image/black-forest-labs/FLUX.1-dev"
 ```
+
+The remote signer periodically retrieves latest orchestrator capabilities and pricing from the network. Orchestrators are pre-filtered for pricing: orchestrators that have a price higher than what the remote signer is configured for will not be made available via discovery.
+
+Currently, remote discovery can only be enabled for nodes in remote signing mode.
 
 ### Gateway node
 
@@ -78,7 +96,7 @@ If `-remoteSignerUrl` is set, the gateway will query the signer at startup and f
 
 By default, if no URL scheme is provided, https is assumed and prepended to the remote signer URL. To override this (eg, to use a http:// URL) then include the scheme, eg `-remoteSignerUrl http://signer-host:port`
 
-If the gateway is configured with a remote signer URL but no orchestrators (`-orchWebhookUrl` or `-orchAddr`) then it will attempt to use the remote signer's discovery endpoint.
+If the gateway is configured with a remote signer URL but no orchestrators (`-orchWebhookUrl` or `-orchAddr`) then it will attempt to use the remote signer's discovery endpoint. Note that not all remote signers may be offering discovery.
 
 Example:
 
