@@ -1667,6 +1667,140 @@ func TestAllCapsPriceInfo(t *testing.T) {
 	}
 }
 
+func TestBYOCExternalCapabilityConstant(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(Capability(37), Capability_BYOCExternal)
+
+	name, ok := CapabilityNameLookup[Capability_BYOCExternal]
+	assert.True(ok, "Capability_BYOCExternal should exist in CapabilityNameLookup")
+	assert.Equal("byoc_external", name)
+}
+
+func TestBYOCExternalCapsPriceInfo(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	addr1 := "0x1000000000000000000000000000000000000000"
+
+	n.ExternalCapabilities.Capabilities["my-service"] = &ExternalCapability{Name: "my-service"}
+	n.ExternalCapabilities.Capabilities["another-service"] = &ExternalCapability{Name: "another-service"}
+	n.SetPriceForExternalCapability("default", "my-service", big.NewRat(10, 1))
+	n.SetPriceForExternalCapability("default", "another-service", big.NewRat(20, 1))
+
+	// Also set a built-in cap price so we verify both coexist
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(big.NewRat(5, 1)))
+
+	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 3) // 1 built-in + 2 BYOC external
+
+	byocPrices := map[string]*net.PriceInfo{}
+	builtInCount := 0
+	for _, p := range prices {
+		if p.Capability == uint32(Capability_BYOCExternal) {
+			byocPrices[p.Constraint] = p
+		} else {
+			builtInCount++
+		}
+	}
+	assert.Equal(t, 1, builtInCount)
+	assert.Len(t, byocPrices, 2)
+
+	myService := byocPrices["my-service"]
+	assert.NotNil(t, myService)
+	assert.Equal(t, int64(10), myService.PricePerUnit)
+	assert.Equal(t, int64(1), myService.PixelsPerUnit)
+	assert.Equal(t, uint32(Capability_BYOCExternal), myService.Capability)
+	assert.Equal(t, "my-service", myService.Constraint)
+
+	anotherService := byocPrices["another-service"]
+	assert.NotNil(t, anotherService)
+	assert.Equal(t, int64(20), anotherService.PricePerUnit)
+}
+
+func TestBYOCExternalCapsSenderPricing(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	addr1 := "0x1000000000000000000000000000000000000000"
+	addr2 := "0x2000000000000000000000000000000000000000"
+	addr3 := "0x3000000000000000000000000000000000000000"
+
+	n.ExternalCapabilities.Capabilities["my-service"] = &ExternalCapability{Name: "my-service"}
+	n.SetPriceForExternalCapability("default", "my-service", big.NewRat(10, 1))
+	n.SetPriceForExternalCapability(addr1, "my-service", big.NewRat(100, 1))
+	n.SetPriceForExternalCapability(addr2, "my-service", big.NewRat(200, 1))
+
+	getBYOCPrice := func(addr string) int64 {
+		prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr))
+		assert.Nil(t, err)
+		for _, p := range prices {
+			if p.Capability == uint32(Capability_BYOCExternal) {
+				return p.PricePerUnit
+			}
+		}
+		t.Fatalf("no BYOC price found for %s", addr)
+		return 0
+	}
+
+	assert.Equal(t, int64(100), getBYOCPrice(addr1), "sender-specific price")
+	assert.Equal(t, int64(200), getBYOCPrice(addr2), "sender-specific price")
+	assert.Equal(t, int64(10), getBYOCPrice(addr3), "falls back to default")
+}
+
+func TestBYOCExternalCapsPriceEdgeCases(t *testing.T) {
+	addr := "0x1000000000000000000000000000000000000000"
+
+	tests := []struct {
+		name          string
+		price         *big.Rat
+		nilExtCaps    bool
+		expectPresent bool
+		expectPrice   int64
+	}{
+		{"zero price included", big.NewRat(0, 1), false, true, 0},
+		{"negative price skipped", big.NewRat(-5, 1), false, false, 0},
+		{"nil ExternalCapabilities", nil, true, false, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, _ := NewLivepeerNode(nil, "", nil)
+			n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+			n.Recipient = new(pm.MockRecipient)
+
+			if tt.nilExtCaps {
+				n.ExternalCapabilities = nil
+			} else {
+				n.ExternalCapabilities.Capabilities["svc"] = &ExternalCapability{Name: "svc"}
+				n.SetPriceForExternalCapability("default", "svc", tt.price)
+			}
+
+			orch := NewOrchestrator(n, nil)
+			prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr))
+			assert.Nil(t, err)
+
+			var byocPrice *net.PriceInfo
+			for _, p := range prices {
+				if p.Capability == uint32(Capability_BYOCExternal) {
+					byocPrice = p
+				}
+			}
+
+			if tt.expectPresent {
+				assert.NotNil(t, byocPrice, "BYOC price should be present")
+				assert.Equal(t, tt.expectPrice, byocPrice.PricePerUnit)
+			} else {
+				assert.Nil(t, byocPrice, "BYOC price should not be present")
+			}
+		})
+	}
+}
+
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
