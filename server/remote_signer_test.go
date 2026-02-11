@@ -678,14 +678,99 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.NoError(err)
 	u2, err := url.Parse("https://orch2.example.com:8935")
 	require.NoError(err)
+	u3, err := url.Parse("https://orch3.example.com:8935")
+	require.NoError(err)
+
+	maxPrice, err := core.NewAutoConvertedPrice("", big.NewRat(100, 1), nil)
+	require.NoError(err)
+	BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", maxPrice)
+	defer BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", nil)
+
+	orch1Caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-a": {},
+					},
+				},
+			},
+		},
+	}
+	orch2Caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-a": {},
+					},
+				},
+				uint32(core.Capability_TextToImage): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-b": {},
+					},
+				},
+			},
+		},
+	}
 
 	mockPool := &mockOrchestratorPool{
 		descriptors: common.OrchestratorDescriptors{
 			{
 				LocalInfo: &common.OrchestratorLocalInfo{URL: u1, Score: 1.0},
+				RemoteInfo: &net.OrchestratorInfo{
+					Capabilities: orch1Caps,
+					CapabilitiesPrices: []*net.PriceInfo{
+						{
+							PricePerUnit:  80,
+							PixelsPerUnit: 1,
+							Capability:    uint32(core.Capability_LiveVideoToVideo),
+							Constraint:    "model-a",
+						},
+					},
+				},
 			},
 			{
 				LocalInfo: &common.OrchestratorLocalInfo{URL: u2, Score: 0.8},
+				RemoteInfo: &net.OrchestratorInfo{
+					Capabilities: orch2Caps,
+					CapabilitiesPrices: []*net.PriceInfo{
+						{
+							PricePerUnit:  120,
+							PixelsPerUnit: 1,
+							Capability:    uint32(core.Capability_LiveVideoToVideo),
+							Constraint:    "model-a",
+						},
+						{
+							PricePerUnit:  50,
+							PixelsPerUnit: 1,
+							Capability:    uint32(core.Capability_TextToImage),
+							Constraint:    "model-b",
+						},
+					},
+				},
+			},
+			{
+				// All capabilities are above max price; descriptor should be dropped.
+				LocalInfo: &common.OrchestratorLocalInfo{URL: u3, Score: 0.7},
+				RemoteInfo: &net.OrchestratorInfo{
+					Capabilities: orch1Caps,
+					CapabilitiesPrices: []*net.PriceInfo{
+						{
+							PricePerUnit:  200,
+							PixelsPerUnit: 1,
+							Capability:    uint32(core.Capability_LiveVideoToVideo),
+							Constraint:    "model-a",
+						},
+					},
+				},
+			},
+			{
+				// Invalid descriptor should be dropped during refresh and never returned.
+				LocalInfo: nil,
+				RemoteInfo: &net.OrchestratorInfo{
+					Capabilities: orch2Caps,
+				},
 			},
 		},
 	}
@@ -717,8 +802,53 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Len(resp, 2)
 	require.Equal("https://orch1.example.com:8935", resp[0].Address)
 	require.Equal(float32(1.0), resp[0].Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
 	require.Equal("https://orch2.example.com:8935", resp[1].Address)
 	require.Equal(float32(0.8), resp[1].Score)
+	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
+
+	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
+	capsRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, capsRR, capsReq)
+	require.Equal(http.StatusOK, capsRR.Code)
+	var capsResp []discoveryResponse
+	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
+	require.Len(capsResp, 1)
+	require.Equal("https://orch1.example.com:8935", capsResp[0].Address)
+
+	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
+	repeatedRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, repeatedRR, repeatedReq)
+	require.Equal(http.StatusOK, repeatedRR.Code)
+	var repeatedResp []discoveryResponse
+	require.NoError(json.NewDecoder(repeatedRR.Body).Decode(&repeatedResp))
+	require.Len(repeatedResp, 2)
+	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
+	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
+
+	// If refresh only receives invalid descriptors, cache should remain empty
+	// and discovery endpoint should return service unavailable.
+	invalidOnlyPool := &mockOrchestratorPool{
+		descriptors: common.OrchestratorDescriptors{
+			{
+				LocalInfo: nil,
+				RemoteInfo: &net.OrchestratorInfo{
+					Capabilities: orch1Caps,
+				},
+			},
+		},
+	}
+	invalidRDP := &remoteDiscoveryPool{
+		pool:         invalidOnlyPool,
+		refreshEvery: time.Hour,
+		ctx:          ctx,
+		cancel:       cancel,
+	}
+	invalidRDP.refresh()
+	invalidReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	invalidRR := httptest.NewRecorder()
+	ls.GetOrchestrators(invalidRDP, invalidRR, invalidReq)
+	require.Equal(http.StatusServiceUnavailable, invalidRR.Code)
 
 	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
 	emptyRR := httptest.NewRecorder()

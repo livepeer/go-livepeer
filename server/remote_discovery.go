@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"math/big"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 const remoteDiscoveryRefreshTimeout = 15 * time.Second
@@ -39,20 +43,52 @@ type remoteDiscoveryPool struct {
 	pool common.OrchestratorPool
 
 	mu     sync.RWMutex
-	cached common.OrchestratorDescriptors
+	cached []remoteDiscoveryOrchestrator
+	caps   map[string][]remoteDiscoveryOrchestrator
 
 	refreshEvery time.Duration
 	ctx          context.Context
 	cancel       context.CancelFunc
 }
 
-func (p *remoteDiscoveryPool) Orchestrators() common.OrchestratorDescriptors {
+type remoteDiscoveryOrchestrator struct {
+	OD           common.OrchestratorDescriptor
+	Capabilities []string
+}
+
+func (o remoteDiscoveryOrchestrator) clone() remoteDiscoveryOrchestrator {
+	orch := o
+	orch.Capabilities = append([]string(nil), o.Capabilities...)
+	return orch
+}
+
+func (p *remoteDiscoveryPool) Orchestrators(caps []string) []remoteDiscoveryOrchestrator {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	ods := make(common.OrchestratorDescriptors, len(p.cached))
-	copy(ods, p.cached)
-	return ods
+	if len(caps) == 0 {
+		return cloneRemoteDiscoveryOrchestrators(p.cached)
+	}
+
+	var cached []remoteDiscoveryOrchestrator
+	seen := make(map[string]bool)
+	for _, key := range caps {
+		for _, orch := range p.caps[key] {
+			u := orch.OD.LocalInfo.URL.String()
+			if seen[u] {
+				continue
+			}
+			seen[u] = true
+			cached = append(cached, orch.clone())
+		}
+	}
+	return cached
+}
+
+func (p *remoteDiscoveryPool) Size() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.cached)
 }
 
 func (p *remoteDiscoveryPool) Stop() {
@@ -87,12 +123,127 @@ func (p *remoteDiscoveryPool) refresh() {
 		common.ScoreAtLeast(common.Score_Untrusted),
 	)
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if err != nil {
 		return
 	}
 
-	p.cached = ods
+	cached := make([]remoteDiscoveryOrchestrator, 0, len(ods))
+	caps := make(map[string][]remoteDiscoveryOrchestrator)
+	for _, od := range ods {
+		if od.LocalInfo == nil || od.LocalInfo.URL == nil {
+			continue
+		}
+		entry := remoteDiscoveryOrchestrator{
+			OD: od,
+		}
+		eligibleCaps := make([]string, 0)
+		// Capabilities in discovery are price-eligible capabilities only.
+		forEachRemoteDiscoveryCapability(od.RemoteInfo, func(key string, capability core.Capability, modelID string) {
+			price := capabilityPrice(od.RemoteInfo, capability, modelID)
+			maxPrice := capabilityMaxPrice(capability, modelID)
+			if maxPrice != nil && price != nil && price.Cmp(maxPrice) > 0 {
+				return
+			}
+			eligibleCaps = append(eligibleCaps, key)
+		})
+		// Drop orchestrators if it doesn't have any eligible capabilities
+		if len(eligibleCaps) == 0 {
+			continue
+		}
+		sort.Strings(eligibleCaps)
+		entry.Capabilities = eligibleCaps
+		// Keep the capability index aligned with the orchestrator capability list.
+		for _, key := range eligibleCaps {
+			caps[key] = append(caps[key], entry.clone())
+		}
+		cached = append(cached, entry)
+	}
+
+	// Publish the cache/index snapshot atomically.
+	p.mu.Lock()
+	p.cached = cached
+	p.caps = caps
+	p.mu.Unlock()
+}
+
+func cloneRemoteDiscoveryOrchestrators(cached []remoteDiscoveryOrchestrator) []remoteDiscoveryOrchestrator {
+	cloned := make([]remoteDiscoveryOrchestrator, 0, len(cached))
+	for _, orch := range cached {
+		cloned = append(cloned, orch.clone())
+	}
+	return cloned
+}
+
+func forEachRemoteDiscoveryCapability(info *net.OrchestratorInfo, f func(key string, capability core.Capability, modelID string)) {
+	if info == nil || info.Capabilities == nil || info.Capabilities.Constraints == nil {
+		return
+	}
+
+	for capabilityInt, constraints := range info.Capabilities.Constraints.PerCapability {
+		if constraints == nil {
+			continue
+		}
+		pipeline := capabilityToPipeline(core.Capability(capabilityInt))
+		if pipeline == "" {
+			continue
+		}
+		for modelID := range constraints.Models {
+			if modelID == "" {
+				continue
+			}
+			f(pipeline+"/"+modelID, core.Capability(capabilityInt), modelID)
+		}
+	}
+}
+
+func capabilityToPipeline(capability core.Capability) string {
+	name, err := core.CapabilityToName(capability)
+	if err != nil || len(name) == 0 {
+		return ""
+	}
+	return strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+}
+
+func capabilityPrice(info *net.OrchestratorInfo, capability core.Capability, modelID string) *big.Rat {
+	if info != nil {
+		var defaultPrice *big.Rat
+		for _, capPrice := range info.CapabilitiesPrices {
+			if capPrice == nil || capPrice.PixelsPerUnit <= 0 || core.Capability(capPrice.Capability) != capability {
+				continue
+			}
+			price := new(big.Rat).SetFrac64(capPrice.PricePerUnit, capPrice.PixelsPerUnit)
+			if capPrice.Constraint == modelID {
+				return price
+			}
+			// "default" is the per-capability model fallback.
+			if capPrice.Constraint == "default" {
+				defaultPrice = price
+			}
+		}
+		if defaultPrice != nil {
+			return defaultPrice
+		}
+	}
+	// Global fallback if no per-capability price is available.
+	if info == nil || info.PriceInfo == nil || info.PriceInfo.PixelsPerUnit <= 0 {
+		return nil
+	}
+	return new(big.Rat).SetFrac64(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit)
+}
+
+func capabilityMaxPrice(capability core.Capability, modelID string) *big.Rat {
+	defer func() {
+		_ = recover()
+	}()
+
+	caps := core.NewCapabilities([]core.Capability{capability}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		capability: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				modelID: {},
+			},
+		},
+	})
+	// Broadcast config applies model-specific max price with "default" fallback.
+	return BroadcastCfg.GetCapabilitiesMaxPrice(caps)
 }

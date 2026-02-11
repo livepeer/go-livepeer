@@ -521,8 +521,9 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 }
 
 type discoveryResponse struct {
-	Address string  `json:"address,omitempty"`
-	Score   float32 `json:"score,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	Score        float32  `json:"score,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
@@ -536,17 +537,27 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 		return
 	}
 
-	infos := pool.Orchestrators()
-	if len(infos) == 0 {
+	if pool.Size() == 0 {
 		respondJsonError(ctx, w, errors.New("cache empty"), http.StatusServiceUnavailable)
 		return
 	}
 
+	caps := r.URL.Query()["caps"]
+	filteredCaps := make([]string, 0, len(caps))
+	for _, capability := range caps {
+		if capability != "" {
+			filteredCaps = append(filteredCaps, capability)
+		}
+	}
+
+	infos := pool.Orchestrators(filteredCaps)
 	resp := make([]discoveryResponse, 0, len(infos))
-	for _, od := range infos {
+	for _, cached := range infos {
+		od := cached.OD
 		resp = append(resp, discoveryResponse{
-			Address: od.LocalInfo.URL.String(),
-			Score:   od.LocalInfo.Score,
+			Address:      od.LocalInfo.URL.String(),
+			Score:        od.LocalInfo.Score,
+			Capabilities: append([]string(nil), cached.Capabilities...),
 		})
 	}
 

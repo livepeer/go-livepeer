@@ -1219,6 +1219,12 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal("https://127.0.0.1:8936", urls[0].URL.String())
 
+	// assert input with extra capabilities field remains backward compatible
+	resp = []byte(`[{"address":"https://127.0.0.1:8937","capabilities":["live-video-to-video/model-a"]}]`)
+	urls, err = deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Equal("https://127.0.0.1:8937", urls[0].URL.String())
+
 	// assert input of empty byte array returns JSON error
 	urls, err = deserializeWebhookJSON([]byte{})
 	assert.Contains(err.Error(), "unexpected end of JSON input")
