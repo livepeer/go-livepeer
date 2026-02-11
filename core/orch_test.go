@@ -1669,11 +1669,11 @@ func TestAllCapsPriceInfo(t *testing.T) {
 
 func TestBYOCExternalCapabilityConstant(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(Capability(37), Capability_BYOCExternal)
+	assert.Equal(Capability(37), Capability_BYOC)
 
-	name, ok := CapabilityNameLookup[Capability_BYOCExternal]
-	assert.True(ok, "Capability_BYOCExternal should exist in CapabilityNameLookup")
-	assert.Equal("byoc_external", name)
+	name, ok := CapabilityNameLookup[Capability_BYOC]
+	assert.True(ok, "Capability_BYOC should exist in CapabilityNameLookup")
+	assert.Equal("byoc", name)
 }
 
 func TestBYOCExternalCapsPriceInfo(t *testing.T) {
@@ -1699,7 +1699,7 @@ func TestBYOCExternalCapsPriceInfo(t *testing.T) {
 	byocPrices := map[string]*net.PriceInfo{}
 	builtInCount := 0
 	for _, p := range prices {
-		if p.Capability == uint32(Capability_BYOCExternal) {
+		if p.Capability == uint32(Capability_BYOC) {
 			byocPrices[p.Constraint] = p
 		} else {
 			builtInCount++
@@ -1712,7 +1712,7 @@ func TestBYOCExternalCapsPriceInfo(t *testing.T) {
 	assert.NotNil(t, myService)
 	assert.Equal(t, int64(10), myService.PricePerUnit)
 	assert.Equal(t, int64(1), myService.PixelsPerUnit)
-	assert.Equal(t, uint32(Capability_BYOCExternal), myService.Capability)
+	assert.Equal(t, uint32(Capability_BYOC), myService.Capability)
 	assert.Equal(t, "my-service", myService.Constraint)
 
 	anotherService := byocPrices["another-service"]
@@ -1739,7 +1739,7 @@ func TestBYOCExternalCapsSenderPricing(t *testing.T) {
 		prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr))
 		assert.Nil(t, err)
 		for _, p := range prices {
-			if p.Capability == uint32(Capability_BYOCExternal) {
+			if p.Capability == uint32(Capability_BYOC) {
 				return p.PricePerUnit
 			}
 		}
@@ -1786,7 +1786,7 @@ func TestBYOCExternalCapsPriceEdgeCases(t *testing.T) {
 
 			var byocPrice *net.PriceInfo
 			for _, p := range prices {
-				if p.Capability == uint32(Capability_BYOCExternal) {
+				if p.Capability == uint32(Capability_BYOC) {
 					byocPrice = p
 				}
 			}

@@ -306,7 +306,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 		capPrices = append(capPrices, price)
 	}
 
-	// Append BYOC external capability prices using Capability_BYOCExternal.
+	// Append BYOC external capability prices using Capability_BYOC.
 	// The registered capability name is set as the Constraint, making BYOC
 	// pricing seamless alongside built-in capabilities like LiveVideoToVideo.
 	if orch.node != nil && orch.node.ExternalCapabilities != nil {
@@ -326,7 +326,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 			capPrices = append(capPrices, &net.PriceInfo{
 				PricePerUnit:  priceInt64.Num().Int64(),
 				PixelsPerUnit: priceInt64.Denom().Int64(),
-				Capability:    uint32(Capability_BYOCExternal),
+				Capability:    uint32(Capability_BYOC),
 				Constraint:    name,
 			})
 		}
