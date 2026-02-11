@@ -169,7 +169,7 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
 	RemoteSignerUrl            *string
-	RemoteOrchDiscovery        *bool
+	RemoteDiscovery            *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -307,7 +307,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
 	defaultRemoteSignerUrl := ""
-	defaultRemoteOrchDiscovery := false
+	defaultRemoteDiscovery := false
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -431,7 +431,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestOrchAvail:       &defaultTestOrchAvail,
 		RemoteSigner:        &defaultRemoteSigner,
 		RemoteSignerUrl:     &defaultRemoteSignerUrl,
-		RemoteOrchDiscovery: &defaultRemoteOrchDiscovery,
+		RemoteDiscovery: &defaultRemoteDiscovery,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1868,7 +1868,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
-		if *cfg.Network != "offchain" && *cfg.RemoteOrchDiscovery {
+		if *cfg.Network != "offchain" && *cfg.RemoteDiscovery {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout, *cfg.LiveAICapReportInterval)
@@ -1882,8 +1882,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		if *cfg.RemoteOrchDiscovery && n.OrchestratorPool == nil {
-			exit("RemoteOrchDiscovery is set but no orchestrator pool could be configured")
+		if *cfg.RemoteDiscovery && n.OrchestratorPool == nil {
+			exit("RemoteDiscovery is set but no orchestrator pool could be configured")
 		}
 
 		// Start remote signer server
