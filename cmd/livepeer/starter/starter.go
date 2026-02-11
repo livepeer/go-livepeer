@@ -428,9 +428,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail:       &defaultTestOrchAvail,
-		RemoteSigner:        &defaultRemoteSigner,
-		RemoteSignerUrl:     &defaultRemoteSignerUrl,
+		TestOrchAvail:   &defaultTestOrchAvail,
+		RemoteSigner:    &defaultRemoteSigner,
+		RemoteSignerUrl: &defaultRemoteSignerUrl,
 		RemoteDiscovery: &defaultRemoteDiscovery,
 
 		// Gateway logs
@@ -1862,16 +1862,41 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+			n.OrchestratorPool = discovery.WebhookPoolConfig{
+				Broadcaster:         bcast,
+				Callback:            whurl,
+				DiscoveryTimeout:    *cfg.DiscoveryTimeout,
+				IgnoreCapacityCheck: true,
+			}.New()
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+			pool, err := discovery.NewOrchestratorPoolWithConfig(discovery.OrchestratorPoolConfig{
+				Broadcaster:         bcast,
+				URIs:                orchURLs,
+				Score:               common.Score_Trusted,
+				OrchBlacklist:       orchBlacklist,
+				DiscoveryTimeout:    *cfg.DiscoveryTimeout,
+				IgnoreCapacityCheck: true,
+				ExtraNodes:          *cfg.ExtraNodes,
+			})
+			if err != nil {
+				glog.Exit("Error initializing orchestrator pool ", err)
+			}
+			n.OrchestratorPool = pool
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		if *cfg.Network != "offchain" && *cfg.RemoteDiscovery {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout, *cfg.LiveAICapReportInterval)
+			dbOrchPoolCache, err := discovery.DBOrchestratorPoolCacheConfig{
+				Ctx:                     ctx,
+				Node:                    n,
+				RoundsManager:           timeWatcher,
+				OrchBlacklist:           orchBlacklist,
+				DiscoveryTimeout:        *cfg.DiscoveryTimeout,
+				LiveAICapReportInterval: *cfg.LiveAICapReportInterval,
+				IgnoreCapacityCheck:     true,
+			}.New()
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}

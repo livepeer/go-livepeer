@@ -34,10 +34,33 @@ type DBOrchestratorPoolCache struct {
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
+	ignoreCapacityCheck   bool
 	node                  *core.LivepeerNode
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration, liveAICapReportInterval time.Duration) (*DBOrchestratorPoolCache, error) {
+	return DBOrchestratorPoolCacheConfig{
+		Ctx:                     ctx,
+		Node:                    node,
+		RoundsManager:           rm,
+		OrchBlacklist:           orchBlacklist,
+		DiscoveryTimeout:        discoveryTimeout,
+		LiveAICapReportInterval: liveAICapReportInterval,
+	}.New()
+}
+
+type DBOrchestratorPoolCacheConfig struct {
+	Ctx                     context.Context
+	Node                    *core.LivepeerNode
+	RoundsManager           common.RoundsManager
+	OrchBlacklist           []string
+	DiscoveryTimeout        time.Duration
+	LiveAICapReportInterval time.Duration
+	IgnoreCapacityCheck     bool
+}
+
+func (cfg DBOrchestratorPoolCacheConfig) New() (*DBOrchestratorPoolCache, error) {
+	node := cfg.Node
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -46,10 +69,11 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		store:                 node.Database,
 		lpEth:                 node.Eth,
 		ticketParamsValidator: node.Sender,
-		rm:                    rm,
+		rm:                    cfg.RoundsManager,
 		bcast:                 core.NewBroadcaster(node),
-		orchBlacklist:         orchBlacklist,
-		discoveryTimeout:      discoveryTimeout,
+		orchBlacklist:         cfg.OrchBlacklist,
+		discoveryTimeout:      cfg.DiscoveryTimeout,
+		ignoreCapacityCheck:   cfg.IgnoreCapacityCheck,
 		node:                  node,
 	}
 
@@ -62,7 +86,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 			return err
 		}
 
-		if err := dbo.pollOrchestratorInfo(ctx, liveAICapReportInterval); err != nil {
+		if err := dbo.pollOrchestratorInfo(cfg.Ctx, cfg.LiveAICapReportInterval); err != nil {
 			return err
 		}
 		return nil
@@ -152,7 +176,19 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist, dbo.discoveryTimeout)
+	orchPool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		Broadcaster:         dbo.bcast,
+		URIs:                uris,
+		Pred:                pred,
+		Score:               common.Score_Untrusted,
+		OrchBlacklist:       dbo.orchBlacklist,
+		DiscoveryTimeout:    dbo.discoveryTimeout,
+		IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
+		ExtraNodes:          dbo.bcast.ExtraNodes(),
+	})
+	if err != nil {
+		return nil, err
+	}
 	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
@@ -323,7 +359,9 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
-		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{})
+		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
+			IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
+		})
 		if err != nil {
 			errc <- err
 			return
