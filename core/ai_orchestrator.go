@@ -1186,12 +1186,6 @@ func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) e
 	}
 }
 
-func (orch *orchestrator) ExternalCapabilities() map[string]*ExternalCapability {
-	if orch.node == nil || orch.node.ExternalCapabilities == nil {
-		return nil
-	}
-	return orch.node.ExternalCapabilities.Capabilities
-}
 
 func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {

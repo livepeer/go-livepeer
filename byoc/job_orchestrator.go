@@ -204,47 +204,6 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 	})
 }
 
-// ExternalCapabilityInfo is the JSON response structure for external capabilities
-type ExternalCapabilityInfo struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Capacity      int32  `json:"capacity"`
-	CapacityInUse int32  `json:"capacity_in_use"`
-}
-
-func (bso *BYOCOrchestratorServer) GetCapabilities() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		orch := bso.orch
-		var capabilities []ExternalCapabilityInfo
-
-		if extCapsMap := orch.ExternalCapabilities(); extCapsMap != nil {
-			for name, cap := range extCapsMap {
-				cap.Mu.RLock()
-				capInfo := ExternalCapabilityInfo{
-					Name:          name,
-					Description:   cap.Description,
-					Capacity:      int32(cap.Capacity),
-					CapacityInUse: int32(cap.Load),
-				}
-				cap.Mu.RUnlock()
-				capabilities = append(capabilities, capInfo)
-			}
-		}
-
-		if capabilities == nil {
-			capabilities = []ExternalCapabilityInfo{}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(capabilities)
-	})
-}
 
 func (bso *BYOCOrchestratorServer) ProcessJob() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

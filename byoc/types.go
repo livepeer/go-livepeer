@@ -59,7 +59,6 @@ type Orchestrator interface {
 	RemoveExternalCapability(extCapName string) error
 	RegisterExternalCapability(extCapSettings string) (*core.ExternalCapability, error)
 	FreeExternalCapabilityCapacity(capability string) error
-	ExternalCapabilities() map[string]*core.ExternalCapability
 	ServiceURI() *url.URL
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	DebitFees(sender ethcommon.Address, manifestID core.ManifestID, priceInfo *net.PriceInfo, units int64)

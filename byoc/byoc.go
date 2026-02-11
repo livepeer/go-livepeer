@@ -228,8 +228,6 @@ func (bso *BYOCOrchestratorServer) registerRoutes() {
 	bso.httpMux.Handle("/process/token", bso.GetJobToken())
 	bso.httpMux.Handle("/capability/register", bso.RegisterCapability())
 	bso.httpMux.Handle("/capability/unregister", bso.UnregisterCapability())
-	// Capability info route
-	bso.httpMux.Handle("/byoc/capabilities", bso.GetCapabilities())
 	// Stream routes
 	bso.httpMux.Handle("/ai/stream/start", bso.StartStream())
 	bso.httpMux.Handle("/ai/stream/stop", bso.StopStream())

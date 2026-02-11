@@ -91,7 +91,6 @@ type Orchestrator interface {
 	ReserveExternalCapabilityCapacity(extCapability string) error
 	FreeExternalCapabilityCapacity(extCapability string) error
 	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
-	ExternalCapabilities() map[string]*core.ExternalCapability
 }
 
 // Balance describes methods for a session's balance maintenance
