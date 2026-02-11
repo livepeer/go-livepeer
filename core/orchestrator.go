@@ -306,6 +306,32 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 		capPrices = append(capPrices, price)
 	}
 
+	// Append BYOC external capability prices using Capability_BYOCExternal.
+	// The registered capability name is set as the Constraint, making BYOC
+	// pricing seamless alongside built-in capabilities like LiveVideoToVideo.
+	if orch.node != nil && orch.node.ExternalCapabilities != nil {
+		for name := range orch.node.ExternalCapabilities.Capabilities {
+			price := orch.node.GetPriceForJob(ethAddr, name)
+			if price == nil {
+				price = orch.node.GetPriceForJob("default", name)
+			}
+			if price == nil || price.Num().Sign() < 0 {
+				continue
+			}
+			priceInt64, err := common.PriceToInt64(price)
+			if err != nil {
+				glog.Errorf("error converting external capability %q price to int64: %v", name, err)
+				continue
+			}
+			capPrices = append(capPrices, &net.PriceInfo{
+				PricePerUnit:  priceInt64.Num().Int64(),
+				PixelsPerUnit: priceInt64.Denom().Int64(),
+				Capability:    uint32(Capability_BYOCExternal),
+				Constraint:    name,
+			})
+		}
+	}
+
 	return capPrices, nil
 }
 
