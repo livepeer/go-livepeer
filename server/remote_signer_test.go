@@ -76,6 +76,7 @@ func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 type mockOrchestratorPool struct {
 	infos                []common.OrchestratorLocalInfo
 	descriptors          common.OrchestratorDescriptors
+	getOrchInfo          func(*url.URL, *net.Capabilities) (*net.OrchestratorInfo, error)
 	getOrchestratorsErr  error
 	getOrchestratorCalls int32
 }
@@ -85,7 +86,34 @@ func (m *mockOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 }
 
 func (m *mockOrchestratorPool) GetOrchestrators(ctx context.Context, num int, suspender common.Suspender, caps common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
+	_ = ctx
+	_ = num
+	_ = suspender
+	_ = scorePred
 	atomic.AddInt32(&m.getOrchestratorCalls, 1)
+	if m.getOrchInfo != nil {
+		var netCaps *net.Capabilities
+		if caps != nil {
+			netCaps = caps.ToNetCapabilities()
+		}
+		if len(m.infos) == 0 {
+			return nil, nil
+		}
+
+		ods := make(common.OrchestratorDescriptors, 0, len(m.infos))
+		for i := range m.infos {
+			localInfo := m.infos[i]
+			remoteInfo, err := m.getOrchInfo(localInfo.URL, netCaps)
+			if err != nil {
+				return nil, err
+			}
+			ods = append(ods, common.OrchestratorDescriptor{
+				LocalInfo:  &localInfo,
+				RemoteInfo: remoteInfo,
+			})
+		}
+		return ods, nil
+	}
 	return m.descriptors, m.getOrchestratorsErr
 }
 
@@ -714,64 +742,91 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 		},
 	}
 
+	// Remote discovery refresh calls into the orchestrator pool with nil capabilities in order to
+	// fetch the "capability menu" pricing (i.e. `CapabilitiesPrices`) for all capabilities.
+	//
+	// Each orchestrator below has a specific purpose:
+	// - orch1: Has a single eligible capability priced below the configured max price.
+	// - orch2: Has two capabilities, but only one is eligible (the other is filtered out).
+	// - orch3: Has capabilities priced above the max price, so it should be dropped entirely.
+	// - invalid: Has an invalid descriptor (nil URL) and should never be returned from cache.
+	//
+	// Note: Prices are returned as `CapabilitiesPrices` (capability menu pricing), not via global `PriceInfo`.
+	infoByURL := map[string]*net.OrchestratorInfo{
+		u1.String(): {
+			Capabilities: orch1Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				{
+					PricePerUnit:  80,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+			},
+		},
+		u2.String(): {
+			Capabilities: orch2Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				// This capability is above max price and should be filtered out.
+				{
+					PricePerUnit:  120,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+				// This capability remains eligible and should be exposed via discovery.
+				{
+					PricePerUnit:  50,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_TextToImage),
+					Constraint:    "model-b",
+				},
+			},
+		},
+		u3.String(): {
+			Capabilities: orch1Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				// All capabilities above max price, so the orchestrator should be dropped.
+				{
+					PricePerUnit:  200,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+			},
+		},
+	}
+
 	mockPool := &mockOrchestratorPool{
-		descriptors: common.OrchestratorDescriptors{
-			{
-				LocalInfo: &common.OrchestratorLocalInfo{URL: u1, Score: 1.0},
-				RemoteInfo: &net.OrchestratorInfo{
-					Capabilities: orch1Caps,
-					CapabilitiesPrices: []*net.PriceInfo{
-						{
-							PricePerUnit:  80,
-							PixelsPerUnit: 1,
-							Capability:    uint32(core.Capability_LiveVideoToVideo),
-							Constraint:    "model-a",
-						},
-					},
-				},
-			},
-			{
-				LocalInfo: &common.OrchestratorLocalInfo{URL: u2, Score: 0.8},
-				RemoteInfo: &net.OrchestratorInfo{
-					Capabilities: orch2Caps,
-					CapabilitiesPrices: []*net.PriceInfo{
-						{
-							PricePerUnit:  120,
-							PixelsPerUnit: 1,
-							Capability:    uint32(core.Capability_LiveVideoToVideo),
-							Constraint:    "model-a",
-						},
-						{
-							PricePerUnit:  50,
-							PixelsPerUnit: 1,
-							Capability:    uint32(core.Capability_TextToImage),
-							Constraint:    "model-b",
-						},
-					},
-				},
-			},
-			{
-				// All capabilities are above max price; descriptor should be dropped.
-				LocalInfo: &common.OrchestratorLocalInfo{URL: u3, Score: 0.7},
-				RemoteInfo: &net.OrchestratorInfo{
-					Capabilities: orch1Caps,
-					CapabilitiesPrices: []*net.PriceInfo{
-						{
-							PricePerUnit:  200,
-							PixelsPerUnit: 1,
-							Capability:    uint32(core.Capability_LiveVideoToVideo),
-							Constraint:    "model-a",
-						},
-					},
-				},
-			},
-			{
-				// Invalid descriptor should be dropped during refresh and never returned.
-				LocalInfo: nil,
-				RemoteInfo: &net.OrchestratorInfo{
-					Capabilities: orch2Caps,
-				},
-			},
+		infos: []common.OrchestratorLocalInfo{
+			// orch1: returned; advertises live-video-to-video/model-a
+			{URL: u1, Score: 1.0},
+			// orch2: returned; advertises text-to-image/model-b
+			{URL: u2, Score: 0.8},
+			// orch3: dropped; all capabilities exceed max price
+			{URL: u3, Score: 0.7},
+			// Invalid descriptor (nil URL) should be dropped during refresh and never returned.
+			{URL: nil, Score: 0.6},
+		},
+		getOrchInfo: func(orchURL *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+			require.Nil(caps, "remote discovery refresh should fetch without capabilities")
+
+			// Invalid descriptor should be dropped during refresh and never returned.
+			if orchURL == nil {
+				return &net.OrchestratorInfo{Capabilities: orch2Caps}, nil
+			}
+
+			info := infoByURL[orchURL.String()]
+			if info == nil {
+				return &net.OrchestratorInfo{Capabilities: orch2Caps}, nil
+			}
+			return info, nil
 		},
 	}
 
@@ -786,11 +841,11 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	rdp.refresh()
 	ls := &LivepeerServer{}
 
-	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	httpReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
 	rr := httptest.NewRecorder()
 
 	callsBefore := mockPool.GetOrchestratorsCalls()
-	ls.GetOrchestrators(rdp, rr, req)
+	ls.GetOrchestrators(rdp, rr, httpReq)
 	callsAfter := mockPool.GetOrchestratorsCalls()
 
 	require.Equal(http.StatusOK, rr.Code)

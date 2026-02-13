@@ -119,7 +119,7 @@ func (p *remoteDiscoveryPool) refresh() {
 		ctx,
 		p.pool.Size(),
 		newSuspender(),
-		core.NewCapabilities(nil, nil),
+		&StubCapabilityComparator{NetCaps: nil, IsLegacy: true},
 		common.ScoreAtLeast(common.Score_Untrusted),
 	)
 
@@ -206,7 +206,7 @@ func capabilityToPipeline(capability core.Capability) string {
 
 func capabilityPrice(info *net.OrchestratorInfo, capability core.Capability, modelID string) *big.Rat {
 	if info != nil {
-		var defaultPrice *big.Rat
+		// Check per-capability price if it exists
 		for _, capPrice := range info.CapabilitiesPrices {
 			if capPrice == nil || capPrice.PixelsPerUnit <= 0 || core.Capability(capPrice.Capability) != capability {
 				continue
@@ -215,13 +215,6 @@ func capabilityPrice(info *net.OrchestratorInfo, capability core.Capability, mod
 			if capPrice.Constraint == modelID {
 				return price
 			}
-			// "default" is the per-capability model fallback.
-			if capPrice.Constraint == "default" {
-				defaultPrice = price
-			}
-		}
-		if defaultPrice != nil {
-			return defaultPrice
 		}
 	}
 	// Global fallback if no per-capability price is available.
