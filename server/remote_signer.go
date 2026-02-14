@@ -522,7 +522,6 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 
 type discoveryResponse struct {
 	Address      string   `json:"address,omitempty"`
-	Score        float32  `json:"score,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
@@ -556,7 +555,6 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 		od := cached.OD
 		resp = append(resp, discoveryResponse{
 			Address:      od.LocalInfo.URL.String(),
-			Score:        od.LocalInfo.Score,
 			Capabilities: append([]string(nil), cached.Capabilities...),
 		})
 	}

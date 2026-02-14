@@ -856,10 +856,8 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp, 2)
 	require.Equal("https://orch1.example.com:8935", resp[0].Address)
-	require.Equal(float32(1.0), resp[0].Score)
 	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
 	require.Equal("https://orch2.example.com:8935", resp[1].Address)
-	require.Equal(float32(0.8), resp[1].Score)
 	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
