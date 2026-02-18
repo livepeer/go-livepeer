@@ -350,7 +350,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		return sig
 	}
 
-	priceIncreaseStateBytes, priceIncreaseStateSig := func() ([]byte, []byte) {
+	priceIncreaseStateBytes := func() []byte {
 		stateBytes, err := json.Marshal(RemotePaymentState{
 			StateID:              "state",
 			OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
@@ -358,17 +358,34 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			InitialPixelsPerUnit: 1,
 		})
 		require.NoError(err)
-		return stateBytes, sign(stateBytes)
+		return stateBytes
 	}()
 
 	tests := []struct {
-		name       string
-		stateBytes []byte
-		stateSig   []byte
-		orchInfo   *net.OrchestratorInfo
-		wantStatus int
-		wantMsg    string
+		name           string
+		stateBytes     []byte
+		stateSig       []byte
+		orchInfo       *net.OrchestratorInfo
+		omitManifestID bool
+		wantStatus     int
+		wantMsg        string
 	}{
+		{
+			name: "missing manifest id with state",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			omitManifestID: true,
+			wantStatus:     http.StatusBadRequest,
+			wantMsg:        "missing manifestID",
+		},
 		{
 			name:       "invalid state signature",
 			stateBytes: []byte(`{"stateID":"state","orchestratorAddress":"0x1"}`),
@@ -379,7 +396,6 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		{
 			name:       "invalid state json",
 			stateBytes: []byte("not-json"),
-			stateSig:   sign([]byte("not-json")),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "invalid state",
 		},
@@ -394,15 +410,6 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 				require.NoError(err)
 				return state
 			}(),
-			stateSig: sign(func() []byte {
-				state, err := json.Marshal(RemotePaymentState{
-					StateID:              "state",
-					OrchestratorAddress:  ethcommon.HexToAddress("0x1"),
-					InitialPixelsPerUnit: 1,
-				})
-				require.NoError(err)
-				return state
-			}()),
 			orchInfo: func() *net.OrchestratorInfo {
 				oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
 				oInfo.Address = ethcommon.HexToAddress("0x2").Bytes()
@@ -414,7 +421,6 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		{
 			name:       "orchestrator price increased more than 2x",
 			stateBytes: priceIncreaseStateBytes,
-			stateSig:   priceIncreaseStateSig,
 			orchInfo: func() *net.OrchestratorInfo {
 				oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
 				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 250, PixelsPerUnit: 1}
@@ -422,6 +428,23 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			}(),
 			wantStatus: HTTPStatusPriceExceeded,
 			wantMsg:    "Orchestrator price has more than doubled",
+		},
+		{
+			name: "zero tickets returns 482",
+			stateBytes: func() []byte {
+				stateBytes, err := json.Marshal(RemotePaymentState{
+					StateID:             "state",
+					OrchestratorAddress: ethcommon.BytesToAddress(orchInfo.Address),
+					// Existing balance large enough so StageUpdate yields NumTickets == 0.
+					Balance:              "1000",
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return stateBytes
+			}(),
+			wantStatus: HTTPStatusNoTickets,
+			wantMsg:    "no tickets",
 		},
 	}
 
@@ -434,10 +457,20 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			orchBlob, err := proto.Marshal(oInfo)
 			require.NoError(err)
 
+			var manifestID string
+			if !tt.omitManifestID {
+				manifestID = "manifest"
+			}
+			stateSig := tt.stateSig
+			if stateSig == nil {
+				stateSig = sign(tt.stateBytes)
+			}
+
 			reqBody, err := json.Marshal(RemotePaymentRequest{
 				Orchestrator: orchBlob,
+				ManifestID:   manifestID,
 				InPixels:     1,
-				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: tt.stateSig},
+				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: stateSig},
 			})
 			require.NoError(err)
 
@@ -536,9 +569,11 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	}
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
+	const manifestID = "lv2v-manifest"
 
 	resp, payment := doPayment(RemotePaymentRequest{
 		Orchestrator: orchBlob,
+		ManifestID:   manifestID,
 		InPixels:     inPixels,
 	})
 	require.NotEmpty(resp.Payment)
@@ -582,6 +617,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	const inPixelsUpdated int64 = 2500
 	resp2, payment2 := doPayment(RemotePaymentRequest{
 		Orchestrator: orchBlob,
+		ManifestID:   manifestID,
 		InPixels:     inPixelsUpdated,
 		State:        resp.State,
 	})
