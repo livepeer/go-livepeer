@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math/big"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -13,12 +14,11 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
-const remoteDiscoveryRefreshTimeout = 15 * time.Second
-
 var remoteDiscoveryRefreshInterval = common.WebhookDiscoveryRefreshInterval
 
 type RemoteDiscoveryConfig struct {
 	Pool     common.OrchestratorPool
+	Node     *core.LivepeerNode
 	Interval time.Duration
 }
 
@@ -31,6 +31,7 @@ func (cfg RemoteDiscoveryConfig) New() *remoteDiscoveryPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &remoteDiscoveryPool{
 		pool:         cfg.Pool,
+		node:         cfg.Node,
 		refreshEvery: refreshEvery,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -41,6 +42,7 @@ func (cfg RemoteDiscoveryConfig) New() *remoteDiscoveryPool {
 
 type remoteDiscoveryPool struct {
 	pool common.OrchestratorPool
+	node *core.LivepeerNode
 
 	mu     sync.RWMutex
 	cached []remoteDiscoveryOrchestrator
@@ -112,19 +114,32 @@ func (p *remoteDiscoveryPool) loop() {
 }
 
 func (p *remoteDiscoveryPool) refresh() {
-	ctx, cancel := context.WithTimeout(p.ctx, remoteDiscoveryRefreshTimeout)
-	defer cancel()
-
-	ods, err := p.pool.GetOrchestrators(
-		ctx,
-		p.pool.Size(),
-		newSuspender(),
-		&StubCapabilityComparator{NetCaps: nil, IsLegacy: true},
-		common.ScoreAtLeast(common.Score_Untrusted),
-	)
-
-	if err != nil {
-		return
+	var ods common.OrchestratorDescriptors
+	if p.node != nil {
+		networkCaps := p.node.GetNetworkCapabilities()
+		ods = make(common.OrchestratorDescriptors, 0, len(networkCaps))
+		for _, orchCaps := range networkCaps {
+			if orchCaps == nil || orchCaps.OrchURI == "" {
+				continue
+			}
+			orchURL, err := url.ParseRequestURI(orchCaps.OrchURI)
+			if err != nil {
+				continue
+			}
+			ods = append(ods, common.OrchestratorDescriptor{
+				LocalInfo: &common.OrchestratorLocalInfo{
+					URL:   orchURL,
+					Score: common.Score_Trusted,
+				},
+				RemoteInfo: &net.OrchestratorInfo{
+					Transcoder:         orchCaps.OrchURI,
+					Capabilities:       orchCaps.Capabilities,
+					PriceInfo:          orchCaps.PriceInfo,
+					CapabilitiesPrices: orchCaps.CapabilitiesPrices,
+					Hardware:           orchCaps.Hardware,
+				},
+			})
+		}
 	}
 
 	cached := make([]remoteDiscoveryOrchestrator, 0, len(ods))

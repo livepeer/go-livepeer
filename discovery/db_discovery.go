@@ -339,16 +339,24 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 	}
 
 	type orchPollingInfo struct {
+		level    int
 		orchInfo *net.OrchestratorInfo
 		dbOrch   *common.DBOrch
 	}
 
-	resc, errc := make(chan orchPollingInfo, len(orchs)), make(chan error, len(orchs))
+	nodesPerOrch := dbo.bcast.ExtraNodes()
+	// Each base orchestrator can contribute itself plus up to nodesPerOrch first-level advertised nodes.
+	maxOrchs := len(orchs) * (nodesPerOrch + 1)
+	resc, errc := make(chan orchPollingInfo, maxOrchs), make(chan error, maxOrchs)
 	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	getOrchInfoRPC := serverGetOrchInfo
+	if pool, ok := dbo.node.OrchestratorPool.(*orchestratorPool); ok && pool.getOrchInfo != nil {
+		getOrchInfoRPC = pool.getOrchInfo
+	}
 
-	getOrchInfo := func(orch common.OrchestratorLocalInfo) {
+	getOrchInfo := func(orch common.OrchestratorLocalInfo, level int) {
 		uri, err := parseURI(orch.URL.String())
 		if err != nil {
 			errc <- err
@@ -359,7 +367,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
-		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
+		info, err := getOrchInfoRPC(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
 			IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
 		})
 		if err != nil {
@@ -399,13 +407,30 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			}
 		}
 
-		resc <- orchPollingInfo{orchInfo: info, dbOrch: dbOrch}
+		resc <- orchPollingInfo{
+			level:    level,
+			orchInfo: info,
+			dbOrch:   dbOrch,
+		}
 	}
 
+	seen := make(map[string]bool, maxOrchs)
 	numOrchs := 0
-	for _, orch := range orchs {
+	startOrchLookup := func(orch common.OrchestratorLocalInfo, level int) {
+		if orch.URL == nil {
+			return
+		}
+		key := orch.URL.String()
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
 		numOrchs++
-		go getOrchInfo(orch)
+		go getOrchInfo(orch, level)
+	}
+
+	for _, orch := range orchs {
+		startOrchLookup(orch, 0)
 	}
 
 	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
@@ -414,6 +439,22 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		case res := <-resc:
 			//add response to network capabilities
 			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo))
+
+			// discover newly advertised nodes. only recurse the first level.
+			if res.level == 0 && len(res.orchInfo.GetNodes()) > 0 {
+				for idx, inst := range res.orchInfo.GetNodes() {
+					if idx >= nodesPerOrch {
+						break
+					}
+					u, err := parseURI(inst)
+					if err != nil {
+						glog.Errorf("Invalid node URL orch=%v node=%v err=%q", res.orchInfo.GetTranscoder(), inst, err)
+						continue
+					}
+					startOrchLookup(common.OrchestratorLocalInfo{URL: u, Score: common.Score_Untrusted}, res.level+1)
+				}
+			}
+
 			//update db with response
 			if res.dbOrch != nil {
 				if err := dbo.store.UpdateOrch(res.dbOrch); err != nil {
@@ -545,6 +586,7 @@ func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchN
 		orch.LocalAddress = ethcommon.BytesToAddress(info.GetAddress()).Hex()
 		orch.OrchURI = info.GetTranscoder()
 		orch.Capabilities = info.GetCapabilities()
+		orch.PriceInfo = info.GetPriceInfo()
 		orch.Hardware = info.GetHardware()
 		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
 		if info.GetTicketParams() != nil {

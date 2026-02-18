@@ -72,7 +72,11 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
 	if ls.LivepeerNode.OrchestratorPool != nil {
-		rdp := RemoteDiscoveryConfig{Pool: ls.LivepeerNode.OrchestratorPool}.New()
+		rdp := RemoteDiscoveryConfig{
+			Pool:     ls.LivepeerNode.OrchestratorPool,
+			Node:     ls.LivepeerNode,
+			Interval: ls.LivepeerNode.LiveAICapReportInterval,
+		}.New()
 		defer rdp.Stop()
 		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ls.GetOrchestrators(rdp, w, r)

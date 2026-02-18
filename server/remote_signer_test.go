@@ -10,8 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,70 +68,6 @@ func (c *testEthClient) Sign(msg []byte) ([]byte, error) {
 
 func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 	return []byte("stub"), nil
-}
-
-// mockOrchestratorPool implements common.OrchestratorPool for testing
-type mockOrchestratorPool struct {
-	infos                []common.OrchestratorLocalInfo
-	descriptors          common.OrchestratorDescriptors
-	getOrchInfo          func(*url.URL, *net.Capabilities) (*net.OrchestratorInfo, error)
-	getOrchestratorsErr  error
-	getOrchestratorCalls int32
-}
-
-func (m *mockOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
-	return m.infos
-}
-
-func (m *mockOrchestratorPool) GetOrchestrators(ctx context.Context, num int, suspender common.Suspender, caps common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
-	_ = ctx
-	_ = num
-	_ = suspender
-	_ = scorePred
-	atomic.AddInt32(&m.getOrchestratorCalls, 1)
-	if m.getOrchInfo != nil {
-		var netCaps *net.Capabilities
-		if caps != nil {
-			netCaps = caps.ToNetCapabilities()
-		}
-		if len(m.infos) == 0 {
-			return nil, nil
-		}
-
-		ods := make(common.OrchestratorDescriptors, 0, len(m.infos))
-		for i := range m.infos {
-			localInfo := m.infos[i]
-			remoteInfo, err := m.getOrchInfo(localInfo.URL, netCaps)
-			if err != nil {
-				return nil, err
-			}
-			ods = append(ods, common.OrchestratorDescriptor{
-				LocalInfo:  &localInfo,
-				RemoteInfo: remoteInfo,
-			})
-		}
-		return ods, nil
-	}
-	return m.descriptors, m.getOrchestratorsErr
-}
-
-func (m *mockOrchestratorPool) Size() int {
-	if len(m.descriptors) > 0 {
-		return len(m.descriptors)
-	}
-	return len(m.infos)
-}
-
-func (m *mockOrchestratorPool) SizeWith(scorePred common.ScorePred) int {
-	return len(m.infos)
-}
-
-func (m *mockOrchestratorPool) Broadcaster() common.Broadcaster {
-	return nil
-}
-
-func (m *mockOrchestratorPool) GetOrchestratorsCalls() int32 {
-	return atomic.LoadInt32(&m.getOrchestratorCalls)
 }
 
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
@@ -702,16 +636,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 func TestRemoteSigner_Discovery(t *testing.T) {
 	require := require.New(t)
 
-	u1, err := url.Parse("https://orch1.example.com:8935")
-	require.NoError(err)
-	u2, err := url.Parse("https://orch2.example.com:8935")
-	require.NoError(err)
-	u3, err := url.Parse("https://orch3.example.com:8935")
-	require.NoError(err)
-
-	maxPrice, err := core.NewAutoConvertedPrice("", big.NewRat(100, 1), nil)
-	require.NoError(err)
-	BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", maxPrice)
+	BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", core.NewFixedPrice(big.NewRat(100, 1)))
 	defer BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", nil)
 
 	orch1Caps := &net.Capabilities{
@@ -742,18 +667,20 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 		},
 	}
 
-	// Remote discovery refresh calls into the orchestrator pool with nil capabilities in order to
-	// fetch the "capability menu" pricing (i.e. `CapabilitiesPrices`) for all capabilities.
+	// Remote discovery refresh reads from the node's network capability cache.
 	//
 	// Each orchestrator below has a specific purpose:
 	// - orch1: Has a single eligible capability priced below the configured max price.
 	// - orch2: Has two capabilities, but only one is eligible (the other is filtered out).
 	// - orch3: Has capabilities priced above the max price, so it should be dropped entirely.
-	// - invalid: Has an invalid descriptor (nil URL) and should never be returned from cache.
+	// - invalid: Has an invalid URI and should never be returned from discovery.
 	//
-	// Note: Prices are returned as `CapabilitiesPrices` (capability menu pricing), not via global `PriceInfo`.
-	infoByURL := map[string]*net.OrchestratorInfo{
-		u1.String(): {
+	// Note: Prices are returned as `CapabilitiesPrices` (capability menu pricing), not via global
+	// `PriceInfo` (which is intentionally expensive in these fixtures).
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://orch1.example.com:8935",
 			Capabilities: orch1Caps,
 			// Global fallback price is intentionally expensive.
 			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
@@ -766,7 +693,8 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				},
 			},
 		},
-		u2.String(): {
+		{
+			OrchURI:      "https://orch2.example.com:8935",
 			Capabilities: orch2Caps,
 			// Global fallback price is intentionally expensive.
 			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
@@ -787,7 +715,8 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				},
 			},
 		},
-		u3.String(): {
+		{
+			OrchURI:      "https://orch3.example.com:8935",
 			Capabilities: orch1Caps,
 			// Global fallback price is intentionally expensive.
 			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
@@ -801,39 +730,18 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	mockPool := &mockOrchestratorPool{
-		infos: []common.OrchestratorLocalInfo{
-			// orch1: returned; advertises live-video-to-video/model-a
-			{URL: u1, Score: 1.0},
-			// orch2: returned; advertises text-to-image/model-b
-			{URL: u2, Score: 0.8},
-			// orch3: dropped; all capabilities exceed max price
-			{URL: u3, Score: 0.7},
-			// Invalid descriptor (nil URL) should be dropped during refresh and never returned.
-			{URL: nil, Score: 0.6},
+		// Invalid URI should be dropped during refresh and never returned from discovery.
+		{
+			OrchURI:      "://invalid-uri",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		},
-		getOrchInfo: func(orchURL *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
-			require.Nil(caps, "remote discovery refresh should fetch without capabilities")
-
-			// Invalid descriptor should be dropped during refresh and never returned.
-			if orchURL == nil {
-				return &net.OrchestratorInfo{Capabilities: orch2Caps}, nil
-			}
-
-			info := infoByURL[orchURL.String()]
-			if info == nil {
-				return &net.OrchestratorInfo{Capabilities: orch2Caps}, nil
-			}
-			return info, nil
-		},
-	}
+	}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rdp := &remoteDiscoveryPool{
-		pool:         mockPool,
+		node:         node,
 		refreshEvery: time.Hour,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -844,22 +752,19 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	httpReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
 	rr := httptest.NewRecorder()
 
-	callsBefore := mockPool.GetOrchestratorsCalls()
 	ls.GetOrchestrators(rdp, rr, httpReq)
-	callsAfter := mockPool.GetOrchestratorsCalls()
 
 	require.Equal(http.StatusOK, rr.Code)
 	require.Equal("application/json", rr.Header().Get("Content-Type"))
-	require.Equal(callsBefore, callsAfter, "handler should only read cached data")
 
 	var resp []discoveryResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp, 2)
 	require.Equal("https://orch1.example.com:8935", resp[0].Address)
-	require.Equal(float32(1.0), resp[0].Score)
+	require.Greater(resp[0].Score, float32(0))
 	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
 	require.Equal("https://orch2.example.com:8935", resp[1].Address)
-	require.Equal(float32(0.8), resp[1].Score)
+	require.Greater(resp[1].Score, float32(0))
 	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
@@ -881,20 +786,33 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
 	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
 
-	// If refresh only receives invalid descriptors, cache should remain empty
+	// If refresh only receives invalid network capability entries, cache should remain empty
 	// and discovery endpoint should return service unavailable.
-	invalidOnlyPool := &mockOrchestratorPool{
-		descriptors: common.OrchestratorDescriptors{
-			{
-				LocalInfo: nil,
-				RemoteInfo: &net.OrchestratorInfo{
-					Capabilities: orch1Caps,
+	invalidOnlyNode := &core.LivepeerNode{}
+	require.NoError(invalidOnlyNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "",
+			Capabilities: &net.Capabilities{
+				Constraints: &net.Capabilities_Constraints{
+					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+						uint32(core.Capability_LiveVideoToVideo): {
+							Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+								"model-a": {},
+							},
+						},
+					},
 				},
 			},
+			PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		},
-	}
+		{
+			OrchURI:      "://also-invalid",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		},
+	}))
 	invalidRDP := &remoteDiscoveryPool{
-		pool:         invalidOnlyPool,
+		node:         invalidOnlyNode,
 		refreshEvery: time.Hour,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -905,9 +823,24 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	ls.GetOrchestrators(invalidRDP, invalidRR, invalidReq)
 	require.Equal(http.StatusServiceUnavailable, invalidRR.Code)
 
+	emptyNode := &core.LivepeerNode{}
+	require.NoError(emptyNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://too-expensive.example.com:8935",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+		},
+	}))
+	emptyRDP := &remoteDiscoveryPool{
+		node:         emptyNode,
+		refreshEvery: time.Hour,
+		ctx:          ctx,
+		cancel:       cancel,
+	}
+	emptyRDP.refresh()
 	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
 	emptyRR := httptest.NewRecorder()
-	ls.GetOrchestrators(&remoteDiscoveryPool{}, emptyRR, emptyReq)
+	ls.GetOrchestrators(emptyRDP, emptyRR, emptyReq)
 	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
 	require.Equal("application/json", emptyRR.Header().Get("Content-Type"))
 }
