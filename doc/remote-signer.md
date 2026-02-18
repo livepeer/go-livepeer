@@ -55,6 +55,18 @@ The remote signer must have typical Ethereum flags configured (examples: `-netwo
 
 The remote signer listens to the standard go-livepeer HTTP port (8935) by default. To change the listening port or interface, use the `-httpAddr` flag.
 
+Example (fill in the placeholders for your environment):
+
+```bash
+./livepeer \
+  -remoteSigner \
+  -network mainnet \
+  -httpAddr 127.0.0.1:7936 \
+  -ethUrl <eth-rpc-url> \
+  -ethPassword <password-or-password-file>
+  ...
+```
+
 ### Remote discovery
 
 Remote signers can offer a discovery endpoint for gateways to find what orchestrators are on the network for a given capability. Remote discovery is enabled with:
