@@ -80,7 +80,7 @@ curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/stre
 curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion&caps=text-to-image/black-forest-labs/FLUX.1-dev"
 ```
 
-The remote signer periodically retrieves latest orchestrator capabilities and pricing from the network. Orchestrators are pre-filtered for pricing: orchestrators that have a price higher than what the remote signer is configured for will not be made available via discovery.
+The remote signer periodically retrieves latest orchestrator capabilities and pricing from the network. The periodicity can be configured via the `-liveAICapReportInterval` flag with a default of 25 minutes. Orchestrators are pre-filtered for pricing: orchestrators that have a price higher than what the remote signer is configured for will not be made available via discovery.
 
 Currently, remote discovery can only be enabled for nodes in remote signing mode.
 
