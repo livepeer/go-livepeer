@@ -36,7 +36,6 @@ func (cfg RemoteDiscoveryConfig) New() *remoteDiscoveryPool {
 		ctx:          ctx,
 		cancel:       cancel,
 	}
-	go p.loop()
 	return p
 }
 
@@ -44,9 +43,10 @@ type remoteDiscoveryPool struct {
 	pool common.OrchestratorPool
 	node *core.LivepeerNode
 
-	mu     sync.RWMutex
-	cached []remoteDiscoveryOrchestrator
-	caps   map[string][]remoteDiscoveryOrchestrator
+	mu          sync.RWMutex
+	cached      []remoteDiscoveryOrchestrator
+	caps        map[string][]remoteDiscoveryOrchestrator
+	lastRefresh time.Time
 
 	refreshEvery time.Duration
 	ctx          context.Context
@@ -65,6 +65,8 @@ func (o remoteDiscoveryOrchestrator) clone() remoteDiscoveryOrchestrator {
 }
 
 func (p *remoteDiscoveryPool) Orchestrators(caps []string) []remoteDiscoveryOrchestrator {
+	p.refresh()
+
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -88,6 +90,8 @@ func (p *remoteDiscoveryPool) Orchestrators(caps []string) []remoteDiscoveryOrch
 }
 
 func (p *remoteDiscoveryPool) Size() int {
+	p.refresh()
+
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.cached)
@@ -97,23 +101,19 @@ func (p *remoteDiscoveryPool) Stop() {
 	p.cancel()
 }
 
-func (p *remoteDiscoveryPool) loop() {
-	p.refresh()
-
-	t := time.NewTicker(p.refreshEvery)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			p.refresh()
-		case <-p.ctx.Done():
-			return
-		}
-	}
-}
-
 func (p *remoteDiscoveryPool) refresh() {
+	if p == nil {
+		return
+	}
+
+	// This can run on the request path when cache is stale, so keep it fast.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	if !p.lastRefresh.IsZero() && now.Sub(p.lastRefresh) <= p.refreshEvery {
+		return
+	}
+
 	var ods common.OrchestratorDescriptors
 	if p.node != nil {
 		networkCaps := p.node.GetNetworkCapabilities()
@@ -175,10 +175,9 @@ func (p *remoteDiscoveryPool) refresh() {
 	}
 
 	// Publish the cache/index snapshot atomically.
-	p.mu.Lock()
 	p.cached = cached
 	p.caps = caps
-	p.mu.Unlock()
+	p.lastRefresh = now
 }
 
 func cloneRemoteDiscoveryOrchestrators(cached []remoteDiscoveryOrchestrator) []remoteDiscoveryOrchestrator {

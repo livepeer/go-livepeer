@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -843,4 +844,90 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	ls.GetOrchestrators(emptyRDP, emptyRR, emptyReq)
 	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
 	require.Equal("application/json", emptyRR.Header().Get("Content-Type"))
+}
+
+func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+
+		capability := core.Capability_LiveVideoToVideo
+		modelA := "model-a"
+		modelB := "model-b"
+		BroadcastCfg.SetCapabilityMaxPrice(capability, modelA, core.NewFixedPrice(big.NewRat(100, 1)))
+		BroadcastCfg.SetCapabilityMaxPrice(capability, modelB, core.NewFixedPrice(big.NewRat(100, 1)))
+		defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelA, nil)
+		defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelB, nil)
+
+		capsA := core.NewCapabilities([]core.Capability{capability}, nil)
+		capsA.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+			capability: &core.CapabilityConstraints{
+				Models: map[string]*core.ModelConstraint{
+					modelA: {},
+				},
+			},
+		})
+		capsB := core.NewCapabilities([]core.Capability{capability}, nil)
+		capsB.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+			capability: &core.CapabilityConstraints{
+				Models: map[string]*core.ModelConstraint{
+					modelB: {},
+				},
+			},
+		})
+
+		node := &core.LivepeerNode{}
+		require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+			{
+				OrchURI:      "https://orch-a.example.com:8935",
+				Capabilities: capsA.ToNetCapabilities(),
+				PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			},
+		}))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		rdp := &remoteDiscoveryPool{
+			node:         node,
+			refreshEvery: time.Minute,
+			ctx:          ctx,
+			cancel:       cancel,
+		}
+		ls := &LivepeerServer{}
+
+		callDiscovery := func() []discoveryResponse {
+			req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+			rr := httptest.NewRecorder()
+			ls.GetOrchestrators(rdp, rr, req)
+			require.Equal(http.StatusOK, rr.Code)
+			var resp []discoveryResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			return resp
+		}
+
+		// First request populates cache.
+		resp := callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-a.example.com:8935", resp[0].Address)
+		require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
+
+		// Update source network capabilities, but stay within refresh interval.
+		require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+			{
+				OrchURI:      "https://orch-b.example.com:8935",
+				Capabilities: capsB.ToNetCapabilities(),
+				PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			},
+		}))
+		time.Sleep(30 * time.Second)
+		resp = callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-a.example.com:8935", resp[0].Address)
+
+		// Once interval elapses, discovery response should reflect refreshed cache.
+		time.Sleep(31 * time.Second)
+		resp = callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-b.example.com:8935", resp[0].Address)
+		require.Equal([]string{"live-video-to-video/model-b"}, resp[0].Capabilities)
+	})
 }
