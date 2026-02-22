@@ -3,9 +3,11 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
+	"path/filepath"
 	"testing"
 
 	"github.com/golang/glog"
@@ -117,6 +119,35 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Error("Did not get mismatched segments as expected")
 	}
 	tr.Profiles = p
+}
+
+func TestTranscodeSegCleansTempfileOnUnrecoverableErrorPanic(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9}
+	tr := stubTranscoderWithProfiles(p)
+	tr.TranscodeFn = func() error {
+		return NewUnrecoverableError(errors.New("boom"))
+	}
+
+	storage := drivers.NewMemoryDriver(nil).NewSession("")
+	config := transcodeConfig{LocalOS: storage, OS: storage}
+
+	workDir := t.TempDir()
+	n, err := NewLivepeerNode(nil, workDir, nil)
+	require.NoError(t, err)
+	n.Transcoder = tr
+
+	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
+	ss := StubSegment()
+
+	require.Panics(t, func() {
+		_ = n.transcodeSeg(context.TODO(), config, ss, md)
+	})
+
+	// Ensure no *.tempfile is left behind after the panic.
+	files, globErr := filepath.Glob(filepath.Join(workDir, "*.tempfile"))
+	require.NoError(t, globErr)
+	require.Len(t, files, 0)
 }
 
 func TestServiceURIChange(t *testing.T) {

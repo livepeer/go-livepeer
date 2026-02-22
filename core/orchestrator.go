@@ -675,10 +675,15 @@ func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodi
 
 func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
 	var fnamep *string
-	terr := func(err error) *TranscodeResult {
-		if fnamep != nil {
-			os.Remove(*fnamep)
+	keepInput := false
+	defer func() {
+		// Ensure the input tempfile is cleaned up on *all* exit paths, including panics.
+		// We intentionally keep the input when extremely large outputs are detected.
+		if fnamep != nil && !keepInput {
+			_ = os.Remove(*fnamep)
 		}
+	}()
+	terr := func(err error) *TranscodeResult {
 		return &TranscodeResult{Err: err}
 	}
 
@@ -786,7 +791,6 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	}
 
 	// check for big inputs
-	keepInput := false
 	for i, seg := range tData.Segments {
 		// 840x480 30fps 10 mins ~ 7.38 billion pixels, or a 1gb output
 		if seg.Pixels > 7_378_560_000 || len(seg.Data) > 1_000_000_000 {
@@ -795,9 +799,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 			clog.Info(ctx, "Extremely large output detected!", "manifestID", md.ManifestID, "seq", md.Seq, "pixels", seg.Pixels, "bytes", len(seg.Data), "profile", md.Profiles[i])
 		}
 	}
-	if !keepInput {
-		os.Remove(fname)
-	}
+	// input tempfile cleanup is handled by the deferred cleanup above
 
 	tr.OS = config.OS
 	tr.TranscodeData = tData
