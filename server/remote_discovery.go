@@ -144,8 +144,11 @@ func (p *remoteDiscoveryPool) refresh() {
 		forEachRemoteDiscoveryCapability(od.RemoteInfo, func(key string, capability core.Capability, modelID string) {
 			price := capabilityPrice(od.RemoteInfo, capability, modelID)
 			maxPrice := capabilityMaxPrice(capability, modelID)
-			if maxPrice != nil && price != nil && price.Cmp(maxPrice) > 0 {
-				return
+			if maxPrice != nil {
+				// If a max price is configured, missing price data should not be eligible.
+				if price == nil || price.Cmp(maxPrice) > 0 {
+					return
+				}
 			}
 			eligibleCaps = append(eligibleCaps, key)
 		})

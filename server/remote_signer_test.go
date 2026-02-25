@@ -818,10 +818,10 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
 	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
 
-	// If refresh only receives invalid network capability entries, cache should remain empty
-	// and discovery endpoint should return service unavailable.
-	invalidOnlyNode := &core.LivepeerNode{}
-	require.NoError(invalidOnlyNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+	// If refresh only receives invalid or ineligible network capability entries,
+	// cache should remain empty and discovery should return service unavailable.
+	ineligibleNode := &core.LivepeerNode{}
+	require.NoError(ineligibleNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
 		{
 			OrchURI: "",
 			Capabilities: &net.Capabilities{
@@ -842,35 +842,35 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 			Capabilities: orch1Caps,
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		},
-	}))
-	invalidRDP := &remoteDiscoveryPool{
-		node:         invalidOnlyNode,
-		refreshEvery: time.Hour,
-	}
-	invalidRDP.refresh()
-	invalidReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
-	invalidRR := httptest.NewRecorder()
-	ls.GetOrchestrators(invalidRDP, invalidRR, invalidReq)
-	require.Equal(http.StatusServiceUnavailable, invalidRR.Code)
-
-	emptyNode := &core.LivepeerNode{}
-	require.NoError(emptyNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
 		{
 			OrchURI:      "https://too-expensive.example.com:8935",
 			Capabilities: orch1Caps,
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
 		},
+		{
+			OrchURI:      "https://missing-price.example.com:8935",
+			Capabilities: orch1Caps,
+			// Missing global and per-capability prices should be treated as ineligible
+			// when a max price is configured for this capability/model.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0},
+		},
+		{
+			OrchURI:      "https://nil-price.example.com:8935",
+			Capabilities: orch1Caps,
+			// Explicit nil global price should also be treated as ineligible.
+			PriceInfo: nil,
+		},
 	}))
-	emptyRDP := &remoteDiscoveryPool{
-		node:         emptyNode,
+	ineligibleRDP := &remoteDiscoveryPool{
+		node:         ineligibleNode,
 		refreshEvery: time.Hour,
 	}
-	emptyRDP.refresh()
-	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
-	emptyRR := httptest.NewRecorder()
-	ls.GetOrchestrators(emptyRDP, emptyRR, emptyReq)
-	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
-	require.Equal("application/json", emptyRR.Header().Get("Content-Type"))
+	ineligibleRDP.refresh()
+	ineligibleReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	ineligibleRR := httptest.NewRecorder()
+	ls.GetOrchestrators(ineligibleRDP, ineligibleRR, ineligibleReq)
+	require.Equal(http.StatusServiceUnavailable, ineligibleRR.Code)
+	require.Equal("application/json", ineligibleRR.Header().Get("Content-Type"))
 }
 
 func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
