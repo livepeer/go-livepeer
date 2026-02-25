@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
@@ -775,13 +774,9 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 		},
 	}))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	rdp := &remoteDiscoveryPool{
 		node:         node,
 		refreshEvery: time.Hour,
-		ctx:          ctx,
-		cancel:       cancel,
 	}
 	rdp.refresh()
 	ls := &LivepeerServer{}
@@ -851,8 +846,6 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	invalidRDP := &remoteDiscoveryPool{
 		node:         invalidOnlyNode,
 		refreshEvery: time.Hour,
-		ctx:          ctx,
-		cancel:       cancel,
 	}
 	invalidRDP.refresh()
 	invalidReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
@@ -871,8 +864,6 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	emptyRDP := &remoteDiscoveryPool{
 		node:         emptyNode,
 		refreshEvery: time.Hour,
-		ctx:          ctx,
-		cancel:       cancel,
 	}
 	emptyRDP.refresh()
 	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
@@ -920,13 +911,9 @@ func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
 			},
 		}))
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		rdp := &remoteDiscoveryPool{
 			node:         node,
 			refreshEvery: time.Minute,
-			ctx:          ctx,
-			cancel:       cancel,
 		}
 		ls := &LivepeerServer{}
 

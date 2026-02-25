@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"math/big"
 	"net/url"
 	"sort"
@@ -28,19 +27,14 @@ func (cfg RemoteDiscoveryConfig) New() *remoteDiscoveryPool {
 		refreshEvery = remoteDiscoveryRefreshInterval
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	p := &remoteDiscoveryPool{
-		pool:         cfg.Pool,
 		node:         cfg.Node,
 		refreshEvery: refreshEvery,
-		ctx:          ctx,
-		cancel:       cancel,
 	}
 	return p
 }
 
 type remoteDiscoveryPool struct {
-	pool common.OrchestratorPool
 	node *core.LivepeerNode
 
 	mu          sync.RWMutex
@@ -49,8 +43,6 @@ type remoteDiscoveryPool struct {
 	lastRefresh time.Time
 
 	refreshEvery time.Duration
-	ctx          context.Context
-	cancel       context.CancelFunc
 }
 
 type remoteDiscoveryOrchestrator struct {
@@ -95,10 +87,6 @@ func (p *remoteDiscoveryPool) Size() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.cached)
-}
-
-func (p *remoteDiscoveryPool) Stop() {
-	p.cancel()
 }
 
 func (p *remoteDiscoveryPool) refresh() {

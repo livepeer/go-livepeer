@@ -78,7 +78,6 @@ func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 			Node:     ls.LivepeerNode,
 			Interval: ls.LivepeerNode.LiveAICapReportInterval,
 		}.New()
-		defer rdp.Stop()
 		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ls.GetOrchestrators(rdp, w, r)
 		}))
