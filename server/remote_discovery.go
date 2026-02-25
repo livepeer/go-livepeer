@@ -227,10 +227,6 @@ func capabilityPrice(info *net.OrchestratorInfo, capability core.Capability, mod
 }
 
 func capabilityMaxPrice(capability core.Capability, modelID string) *big.Rat {
-	defer func() {
-		_ = recover()
-	}()
-
 	caps := core.NewCapabilities([]core.Capability{capability}, nil)
 	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
 		capability: &core.CapabilityConstraints{
