@@ -1181,7 +1181,7 @@ func (ls *LivepeerServer) CreateWhep(server *media.WHEPServer) http.Handler {
 		stream, requestID := parts[0], parts[1]
 		ctx := r.Context()
 		ctx = clog.AddVal(ctx, "stream", stream)
-		outWriter, rid := getOutWriter(stream, ls.LivepeerNode)
+		outWriter, rid := getOutWriterWithContext(ctx, stream, ls.LivepeerNode)
 		if outWriter == nil || (requestID != rid && requestID != "") {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return

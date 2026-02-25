@@ -771,17 +771,52 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(
 }
 
 func (bsg *BYOCGatewayServer) getOutWriter(streamId string) (*media.RingBuffer, string) {
+	return bsg.getOutWriterWithContext(context.Background(), streamId)
+}
+
+// getOutWriterWithContext waits for OutWriter to be set, respecting context cancellation.
+// This prevents goroutine leaks when WHEP clients disconnect before OutWriter is ready.
+func (bsg *BYOCGatewayServer) getOutWriterWithContext(ctx context.Context, streamId string) (*media.RingBuffer, string) {
+	// Use a timeout-based approach since sync.Cond.Wait() doesn't support context
+	const checkInterval = 100 * time.Millisecond
+	const maxWait = 30 * time.Second
+	deadline := time.Now().Add(maxWait)
+
 	stream, err := bsg.streamPipeline(streamId) // streamPipeline handles locking
 	if err != nil || stream.Closed {
 		return nil, ""
 	}
+
 	// hold the cond lock only while waiting
 	stream.OutCond.L.Lock()
 	defer stream.OutCond.L.Unlock()
 
 	for stream.OutWriter == nil {
-		stream.OutCond.Wait()
-		if stream.Closed {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return nil, ""
+		default:
+		}
+
+		// Check if we've exceeded max wait time
+		if time.Now().After(deadline) {
+			return nil, ""
+		}
+
+		// Use a timed wait pattern: release lock, sleep briefly, reacquire
+		stream.OutCond.L.Unlock()
+		select {
+		case <-ctx.Done():
+			stream.OutCond.L.Lock()
+			return nil, ""
+		case <-time.After(checkInterval):
+		}
+		stream.OutCond.L.Lock()
+
+		// Re-check stream state after reacquiring lock
+		stream, err = bsg.streamPipeline(streamId)
+		if err != nil || stream.Closed {
 			return nil, ""
 		}
 	}

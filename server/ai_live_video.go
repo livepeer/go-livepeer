@@ -863,16 +863,54 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 }
 
 func getOutWriter(stream string, node *core.LivepeerNode) (*media.RingBuffer, string) {
+	return getOutWriterWithContext(context.Background(), stream, node)
+}
+
+// getOutWriterWithContext waits for OutWriter to be set, respecting context cancellation.
+// This prevents goroutine leaks when WHEP clients disconnect before OutWriter is ready.
+func getOutWriterWithContext(ctx context.Context, stream string, node *core.LivepeerNode) (*media.RingBuffer, string) {
+	// Use a timeout-based approach since sync.Cond.Wait() doesn't support context
+	const checkInterval = 100 * time.Millisecond
+	const maxWait = 30 * time.Second
+	deadline := time.Now().Add(maxWait)
+
 	node.LiveMu.Lock()
 	defer node.LiveMu.Unlock()
+
 	sess, exists := node.LivePipelines[stream]
 	if !exists || sess.Closed {
 		return nil, ""
 	}
-	// could be nil if we haven't gotten an orchestrator yet
+
+	// Wait for OutWriter to be set, checking context and timeout periodically
 	for sess.OutWriter == nil {
-		sess.OutCond.Wait()
-		if sess.Closed {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return nil, ""
+		default:
+		}
+
+		// Check if we've exceeded max wait time
+		if time.Now().After(deadline) {
+			clog.Infof(ctx, "getOutWriter timed out waiting for OutWriter stream=%s", stream)
+			return nil, ""
+		}
+
+		// Use a timed wait pattern: release lock, sleep briefly, reacquire
+		// This allows other goroutines to make progress and lets us check context
+		node.LiveMu.Unlock()
+		select {
+		case <-ctx.Done():
+			node.LiveMu.Lock()
+			return nil, ""
+		case <-time.After(checkInterval):
+		}
+		node.LiveMu.Lock()
+
+		// Re-check session state after reacquiring lock
+		sess, exists = node.LivePipelines[stream]
+		if !exists || sess.Closed {
 			return nil, ""
 		}
 	}
