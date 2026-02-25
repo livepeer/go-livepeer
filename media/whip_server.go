@@ -104,18 +104,34 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 	// OnTrack callback: handle incoming media
 	trackCh := make(chan *webrtc.TrackRemote)
+	var trackChClosed sync.Once
+	closeTrackCh := func() {
+		trackChClosed.Do(func() {
+			close(trackCh)
+		})
+	}
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC(), "rate", track.Codec().ClockRate)
-		trackCh <- track
+		select {
+		case trackCh <- track:
+		default:
+			// Channel closed or blocked, ignore
+		}
 	})
 
 	// PeerConnection state management
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		clog.Info(ctx, "whip ice connection state changed", "state", connectionState)
-		if connectionState == webrtc.ICEConnectionStateFailed {
-			mediaState.CloseError(errors.New("ICE connection state failed"))
-		} else if connectionState == webrtc.ICEConnectionStateClosed {
-			// Business logic when PeerConnection done
+		switch connectionState {
+		case webrtc.ICEConnectionStateFailed:
+			closeTrackCh()
+			mediaState.CloseError(errors.New("ICE connection failed"))
+		case webrtc.ICEConnectionStateDisconnected:
+			closeTrackCh()
+			mediaState.CloseError(errors.New("ICE connection disconnected"))
+		case webrtc.ICEConnectionStateClosed:
+			closeTrackCh()
+			mediaState.CloseError(errors.New("ICE connection closed"))
 		}
 	})
 
@@ -386,7 +402,9 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 	AudioOnlyTimeout := VideoTimeout
 	AudioTimeout := 500 * time.Millisecond
 	videoTimer := time.NewTimer(time.Duration(VideoTimeout))
+	defer videoTimer.Stop()
 	audioTimer := time.NewTimer(time.Duration(AudioOnlyTimeout))
+	defer audioTimer.Stop()
 	sdp, err := pc.RemoteDescription().Unmarshal()
 	if err != nil {
 		clog.InfofErr(ctx, "error unmarshaling remote sdp", err)
@@ -400,11 +418,17 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 	var videoTrack *webrtc.TrackRemote
 	for {
 		select {
+		case <-ctx.Done():
+			return audioTrack, videoTrack, fmt.Errorf("context cancelled: %w", ctx.Err())
 		case <-videoTimer.C:
-			return audioTrack, nil, nil
+			return audioTrack, nil, errors.New("timed out waiting for video track")
 		case <-audioTimer.C:
-			return nil, videoTrack, nil
-		case track := <-trackCh:
+			return nil, videoTrack, errors.New("timed out waiting for audio track")
+		case track, ok := <-trackCh:
+			if !ok {
+				// Channel closed (connection ended)
+				return audioTrack, videoTrack, errors.New("track channel closed (connection ended)")
+			}
 			switch track.Kind() {
 			case webrtc.RTPCodecTypeAudio:
 				if !awaitingAudio {
