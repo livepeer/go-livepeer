@@ -1803,6 +1803,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAICapReportInterval != nil {
 		n.LiveAICapReportInterval = *cfg.LiveAICapReportInterval
 	}
+	if cfg.RemoteDiscovery != nil {
+		n.RemoteDiscovery = *cfg.RemoteDiscovery
+	}
 	if cfg.LiveAIHeartbeatHeaders != nil {
 		n.LiveAIHeartbeatHeaders = make(map[string]string)
 		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
@@ -1910,7 +1913,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		if *cfg.RemoteDiscovery && n.OrchestratorPool == nil {
+		if n.RemoteDiscovery && n.OrchestratorPool == nil {
 			exit("RemoteDiscovery is set but no orchestrator pool could be configured")
 		}
 
