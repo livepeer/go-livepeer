@@ -69,9 +69,19 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
-	// Register the remote signer endpoint
+	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	if ls.LivepeerNode.RemoteDiscovery {
+		rdp := RemoteDiscoveryConfig{
+			Pool:     ls.LivepeerNode.OrchestratorPool,
+			Node:     ls.LivepeerNode,
+			Interval: ls.LivepeerNode.LiveAICapReportInterval,
+		}.New()
+		ls.HTTPMux.Handle("GET /discover-orchestrators", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ls.GetOrchestrators(rdp, w, r)
+		}))
+	}
 
 	// Start the HTTP server
 	glog.Info("Starting Remote Signer server on ", bind)
@@ -528,4 +538,49 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 	}
 
 	return &signerResp, nil
+}
+
+type discoveryResponse struct {
+	Address      string   `json:"address,omitempty"`
+	Score        float32  `json:"score,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+// GetOrchestrators returns the configured orchestrators in webhook-compatible format
+func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "Get orchestrators request", "ip", remoteAddr)
+
+	if pool == nil {
+		respondJsonError(ctx, w, errors.New("no orchestrator pool configured"), http.StatusServiceUnavailable)
+		return
+	}
+
+	if pool.Size() == 0 {
+		respondJsonError(ctx, w, errors.New("cache empty"), http.StatusServiceUnavailable)
+		return
+	}
+
+	caps := r.URL.Query()["caps"]
+	filteredCaps := make([]string, 0, len(caps))
+	for _, capability := range caps {
+		if capability != "" {
+			filteredCaps = append(filteredCaps, capability)
+		}
+	}
+
+	infos := pool.Orchestrators(filteredCaps)
+	resp := make([]discoveryResponse, 0, len(infos))
+	for _, cached := range infos {
+		od := cached.OD
+		resp = append(resp, discoveryResponse{
+			Address:      od.LocalInfo.URL.String(),
+			Score:        od.LocalInfo.Score,
+			Capabilities: append([]string(nil), cached.Capabilities...),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
