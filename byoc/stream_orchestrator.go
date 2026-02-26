@@ -156,6 +156,13 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		// use for routing to worker if reverse proxy in front of workers
 		req.Header.Add("X-Stream-Id", orchJob.Req.ID)
 
+		// Add Authorization header if auth token is set for this capability
+		if extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]; ok {
+			if extCap.AuthToken != "" {
+				req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+			}
+		}
+
 		start := time.Now()
 		resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 		if err != nil {
@@ -177,6 +184,12 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 		//error response from worker but assume can retry and pass along error response and status code
 		if resp.StatusCode > 399 {
 			clog.Errorf(ctx, "error processing stream start request statusCode=%d", resp.StatusCode)
+
+			// Check for 401 Unauthorized - remove capability so worker can re-register with correct token
+			if resp.StatusCode == http.StatusUnauthorized {
+				clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
+				bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
+			}
 
 			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
 			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
@@ -282,7 +295,12 @@ func (bso *BYOCOrchestratorServer) monitorOrchStream(job *orchJob) {
 			stream, exists := bso.node.ExternalCapabilities.GetStream(streamID)
 			if !exists {
 				req, err := http.NewRequestWithContext(ctx, "POST", job.Req.CapabilityUrl+"/stream/stop", nil)
-				// set the headers
+				// Add Authorization header if auth token is set for this capability
+				if extCap, ok := bso.node.ExternalCapabilities.Capabilities[job.Req.Capability]; ok {
+					if extCap.AuthToken != "" {
+						req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+					}
+				}
 				resp, err := sendReqWithTimeout(req, time.Duration(job.Req.Timeout)*time.Second)
 				if err != nil {
 					clog.Errorf(ctx, "Error sending request to worker %v: %v", job.Req.CapabilityUrl, err)
@@ -339,6 +357,12 @@ func (bso *BYOCOrchestratorServer) StopStream() http.Handler {
 		}
 		// use for routing to worker if reverse proxy in front of workers
 		req.Header.Add("X-Stream-Id", jobDetails.StreamId)
+		// Add Authorization header if auth token is set for this capability
+		if extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]; ok {
+			if extCap.AuthToken != "" {
+				req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+			}
+		}
 		resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 		if err != nil {
 			clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
@@ -402,6 +426,12 @@ func (bso *BYOCOrchestratorServer) UpdateStream() http.Handler {
 		req.Header.Add("Content-Type", "application/json")
 		// use for routing to worker if reverse proxy in front of workers
 		req.Header.Add("X-Stream-Id", jobDetails.StreamId)
+		// Add Authorization header if auth token is set for this capability
+		if extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]; ok {
+			if extCap.AuthToken != "" {
+				req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+			}
+		}
 
 		resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 		if err != nil {
