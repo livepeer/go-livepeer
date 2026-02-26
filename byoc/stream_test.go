@@ -1816,6 +1816,44 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 		})
 	})
 
+	t.Run("WorkerReturns401_Unauthorized", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			statusCodeReturned = http.StatusUnauthorized
+			freeCapacityCalled = false
+
+			var removeCapCalled bool
+			mockRemoveCap := func(string) error {
+				removeCapCalled = true
+				return nil
+			}
+			mockOrch.unregisterExternalCapability = mockRemoveCap
+
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Set up job request header
+			req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+			w := httptest.NewRecorder()
+			handler := bso.StartStream()
+			handler.ServeHTTP(w, req)
+
+			// Verify 401 response is forwarded
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+			// Verify capability was removed
+			assert.True(t, removeCapCalled, "RemoveExternalCapability should have been called for 401")
+
+			// Verify freeCapacity was called
+			assert.True(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should have been called")
+
+			server.CloseClientConnections()
+
+			// no stream created
+			assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
+		})
+	})
+
 	t.Run("WorkerReturns500_FatalError", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			statusCodeReturned = http.StatusInternalServerError
