@@ -65,7 +65,7 @@ func (bs *BYOCOrchestratorServer) RegisterCapability() http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
-		clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v", remoteAddr, cap.Name, cap.Url, big.NewRat(cap.PricePerUnit, cap.PriceScaling))
+		clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v auth_token=%v", remoteAddr, cap.Name, cap.Url, big.NewRat(cap.PricePerUnit, cap.PriceScaling), cap.AuthToken != "")
 	})
 }
 

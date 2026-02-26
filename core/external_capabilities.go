@@ -22,7 +22,7 @@ type ExternalCapability struct {
 	PricePerUnit  int64  `json:"price_per_unit"`
 	PriceScaling  int64  `json:"price_scaling"`
 	PriceCurrency string `json:"currency"`
-	AuthToken     string `json:"auth_token"`
+	AuthToken     string `json:"token"`
 
 	price *AutoConvertedPrice
 
