@@ -169,29 +169,8 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 			return
 		}
 
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			clog.Errorf(ctx, "Error reading response body: %v", err)
-			respondWithError(w, "Error reading response body", http.StatusInternalServerError)
-			failedToStartStream = true
-			return
-		}
-		defer resp.Body.Close()
-
-		//error response from worker but assume can retry and pass along error response and status code
-		statusCode := resp.StatusCode
+		statusCode, respBody := bso.processWorkerResp(ctx, orchJob.Req.Capability, resp)
 		if statusCode > 399 {
-			clog.Errorf(ctx, "error processing stream start request statusCode=%d", statusCode)
-
-			// Check for 401 Unauthorized - remove capability so worker can re-register with correct token
-			// return 500 error to the gateway so it can retry with a different worker
-			if statusCode == http.StatusUnauthorized {
-				clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
-				bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
-				statusCode = http.StatusInternalServerError
-				respBody = []byte("Orchestrator worker failure")
-			}
-
 			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
 			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			//return error response from the worker
@@ -360,18 +339,9 @@ func (bso *BYOCOrchestratorServer) StopStream() http.Handler {
 		}
 
 		var respBody []byte
-		respStatusCode := http.StatusOK // default to 200, if not nill will be overwritten
+		respStatusCode := http.StatusOK // default to 200, if not nil will be overwritten
 		if resp != nil {
-			respBody, err = io.ReadAll(resp.Body)
-			if err != nil {
-				clog.Errorf(ctx, "Error reading response body: %v", err)
-			}
-			defer resp.Body.Close()
-
-			respStatusCode = resp.StatusCode
-			if resp.StatusCode > 399 {
-				clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
-			}
+			respStatusCode, respBody = bso.processWorkerResp(ctx, orchJob.Req.Capability, resp)
 		}
 
 		// Stop the stream and free capacity
@@ -423,21 +393,61 @@ func (bso *BYOCOrchestratorServer) UpdateStream() http.Handler {
 			return
 		}
 
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			clog.Errorf(ctx, "Error reading response body: %v", err)
-			respondWithError(w, "Error reading response body", http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
+		statusCode, respBody := bso.processWorkerResp(ctx, orchJob.Req.Capability, resp)
 
-		if resp.StatusCode > 399 {
-			clog.Errorf(ctx, "error processing stream update request statusCode=%d", resp.StatusCode)
-		}
-
-		w.WriteHeader(resp.StatusCode)
+		w.WriteHeader(statusCode)
 		w.Write(respBody)
 	})
+}
+
+// createWorkerReq creates an HTTP request to send to the worker.
+// handles setting stream id and auth headers for worker
+func (bso *BYOCOrchestratorServer) createWorkerReq(ctx context.Context, workerRoute, capability, streamId string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add stream ID header for routing to worker if reverse proxy in front of workers
+	if streamId != "" {
+		req.Header.Add("X-Stream-Id", streamId)
+	}
+
+	// Add Authorization header if auth token is set for this capability
+	if extCap, ok := bso.node.ExternalCapabilities.Capabilities[capability]; ok {
+		if extCap.AuthToken != "" {
+			req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+		}
+	}
+
+	return req, nil
+}
+
+// processWorkerResp processes the worker response and returns the statusCode and respBody.
+// It handles 401 Unauthorized responses by removing the capability.
+func (bso *BYOCOrchestratorServer) processWorkerResp(ctx context.Context, capability string, resp *http.Response) (int, []byte) {
+	statusCode := resp.StatusCode
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		clog.Errorf(ctx, "Error reading response body: %v", err)
+		return http.StatusInternalServerError, []byte("Error reading response body")
+	}
+	defer resp.Body.Close()
+
+	if statusCode > 399 {
+		clog.Errorf(ctx, "error processing stream request statusCode=%d", statusCode)
+
+		// Check for 401 Unauthorized - remove capability so worker can re-register with correct token
+		// return 500 error to the gateway. Gateway will move on to another Orchestrator if available.
+		if statusCode == http.StatusUnauthorized {
+			clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", capability)
+			bso.orch.RemoveExternalCapability(capability)
+			statusCode = http.StatusInternalServerError
+			respBody = []byte("Orchestrator worker failure")
+		}
+	}
+
+	return statusCode, respBody
 }
 
 func (bso *BYOCOrchestratorServer) ProcessStreamPayment() http.Handler {
@@ -471,26 +481,4 @@ func (bso *BYOCOrchestratorServer) ProcessStreamPayment() http.Handler {
 		w.Header().Set(jobPaymentBalanceHdr, capBal.FloatString(0))
 		w.WriteHeader(http.StatusOK)
 	})
-}
-
-// createWorkerReq creates an HTTP request to send to the worker.
-func (bso *BYOCOrchestratorServer) createWorkerReq(ctx context.Context, workerRoute, capability, streamId string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add stream ID header for routing to worker if reverse proxy in front of workers
-	if streamId != "" {
-		req.Header.Add("X-Stream-Id", streamId)
-	}
-
-	// Add Authorization header if auth token is set for this capability
-	if extCap, ok := bso.node.ExternalCapabilities.Capabilities[capability]; ok {
-		if extCap.AuthToken != "" {
-			req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
-		}
-	}
-
-	return req, nil
 }
