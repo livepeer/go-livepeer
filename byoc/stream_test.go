@@ -1669,8 +1669,6 @@ func TestGetStreamRequestParams(t *testing.T) {
 	})
 }
 
-// TestStartStreamWorkerErrorResponse tests the error response handling from worker
-// when worker returns status code > 399 (lines 154-182 in stream_orchestrator.go)
 func TestStartStreamWorkerErrorResponse(t *testing.T) {
 	// Mock worker that returns 400 Bad Request
 	statusCodeReturned := http.StatusBadRequest
@@ -1838,8 +1836,8 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 			handler := bso.StartStream()
 			handler.ServeHTTP(w, req)
 
-			// Verify 401 response is forwarded
-			assert.Equal(t, http.StatusUnauthorized, w.Code)
+			// Verify 500 error received after catch/change at Orchestrator
+			assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 			// Verify capability was removed
 			assert.True(t, removeCapCalled, "RemoveExternalCapability should have been called for 401")
