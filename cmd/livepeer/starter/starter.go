@@ -180,6 +180,11 @@ type LivepeerConfig struct {
 	KafkaUsername              *string
 	KafkaPassword              *string
 	KafkaGatewayTopic          *string
+	EventSinkURIs              *string
+	EventSinkHeaders           *string
+	EventSinkQueueDepth        *int
+	EventSinkBatchSize         *int
+	EventSinkFlushInterval     *time.Duration
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
 	LiveAIHeartbeatURL         *string
@@ -314,6 +319,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultKafkaUsername := ""
 	defaultKafkaPassword := ""
 	defaultKafkaGatewayTopic := ""
+	defaultEventSinkURIs := ""
+	defaultEventSinkHeaders := ""
+	defaultEventSinkQueueDepth := 100
+	defaultEventSinkBatchSize := 100
+	defaultEventSinkFlushInterval := time.Second
 
 	return LivepeerConfig{
 		// Network & Addresses:
@@ -434,10 +444,15 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		RemoteDiscovery: &defaultRemoteDiscovery,
 
 		// Gateway logs
-		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
-		KafkaUsername:         &defaultKafkaUsername,
-		KafkaPassword:         &defaultKafkaPassword,
-		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
+		KafkaBootstrapServers:  &defaultKafkaBootstrapServers,
+		KafkaUsername:          &defaultKafkaUsername,
+		KafkaPassword:          &defaultKafkaPassword,
+		KafkaGatewayTopic:      &defaultKafkaGatewayTopic,
+		EventSinkURIs:          &defaultEventSinkURIs,
+		EventSinkHeaders:       &defaultEventSinkHeaders,
+		EventSinkQueueDepth:    &defaultEventSinkQueueDepth,
+		EventSinkBatchSize:     &defaultEventSinkBatchSize,
+		EventSinkFlushInterval: &defaultEventSinkFlushInterval,
 	}
 }
 
@@ -457,6 +472,7 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 		"MediaMTXApiPassword": true,
 		"LiveAIAuthApiKey":    true,
 		"FVfailGsKey":         true,
+		"EventSinkHeaders":    true,
 	}
 
 	for i := 0; i < cfgType.NumField(); i++ {
@@ -751,10 +767,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
 
-	// Start Kafka producer
+	// Start event publisher
 	if *cfg.Monitor {
-		if err := startKafkaProducer(cfg); err != nil {
-			exit("Error while starting Kafka producer", err)
+		if err := startEventPublisher(cfg); err != nil {
+			exit("Error while starting event publisher", err)
 		}
 	}
 
