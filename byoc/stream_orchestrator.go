@@ -428,11 +428,11 @@ func (bso *BYOCOrchestratorServer) createWorkerReq(ctx context.Context, workerRo
 func (bso *BYOCOrchestratorServer) processWorkerResp(ctx context.Context, capability string, resp *http.Response) (int, []byte) {
 	statusCode := resp.StatusCode
 	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
 		clog.Errorf(ctx, "Error reading response body: %v", err)
 		return http.StatusInternalServerError, []byte("Error reading response body")
 	}
-	defer resp.Body.Close()
 
 	if statusCode > 399 {
 		clog.Errorf(ctx, "error processing stream request statusCode=%d", statusCode)
