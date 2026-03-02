@@ -204,7 +204,6 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 	})
 }
 
-
 func (bso *BYOCOrchestratorServer) ProcessJob() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

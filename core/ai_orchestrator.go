@@ -1186,7 +1186,6 @@ func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) e
 	}
 }
 
-
 func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		//return a price of zero for offhain mode
