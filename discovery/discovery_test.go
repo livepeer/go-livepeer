@@ -296,6 +296,99 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 	assert.Nil(pool.cacheOrchInfos())
 }
 
+func TestDBOrchestratorPoolCache_cacheOrchInfos_ExtraNodes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	baseURL := "https://base-orch.example.com:8935"
+	extra1 := "https://extra-1.example.com:8935"
+	extra2 := "https://extra-2.example.com:8935"
+	extra3 := "https://extra-3.example.com:8935"
+	extra4 := "https://extra-4.example.com:8935"
+
+	// Track every lookup so the test can assert the exact expansion behavior.
+	// We expect:
+	// - base to be queried once
+	// - first two advertised nodes to be queried once each (ExtraNodes=2)
+	// - third advertised node to never be queried.
+	// - extra4 advertised by extra1 to never be queried (no second-level expansion).
+	calls := make(map[string]int)
+	var callsMu sync.Mutex
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		callsMu.Lock()
+		calls[orchestratorServer.String()]++
+		callsMu.Unlock()
+
+		info := &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
+			Transcoder: orchestratorServer.String(),
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
+			TicketParams: &net.TicketParams{
+				Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes(),
+			},
+		}
+		if orchestratorServer.String() == baseURL {
+			info.Nodes = []string{extra1, extra2, extra3}
+		}
+		if orchestratorServer.String() == extra1 {
+			info.Nodes = []string{extra4}
+		}
+		return info, nil
+	}
+
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.NoError(err)
+
+	u, err := url.Parse(baseURL)
+	require.NoError(err)
+
+	// Use the real orchestratorPool type as a source of GetInfos() data.
+	// DB cache code under test only depends on GetInfos() in this branch.
+	orchPool := &orchestratorPool{
+		infos:       []common.OrchestratorLocalInfo{{URL: u, Score: common.Score_Untrusted}},
+		getOrchInfo: getOrchInfo,
+	}
+	node := &core.LivepeerNode{
+		Database:         dbh,
+		ExtraNodes:       2,
+		OrchestratorPool: orchPool,
+	}
+	dbo := &DBOrchestratorPoolCache{
+		store:               dbh,
+		rm:                  &stubRoundsManager{round: big.NewInt(1)},
+		bcast:               core.NewBroadcaster(node),
+		node:                node,
+		ignoreCapacityCheck: true,
+	}
+
+	require.NoError(dbo.cacheOrchInfos())
+	cached := node.GetNetworkCapabilities()
+	// Cache should include base + first two advertised nodes, and exclude the third.
+	require.Len(cached, 3)
+
+	cachedURIs := make(map[string]bool, len(cached))
+	for _, orch := range cached {
+		cachedURIs[orch.OrchURI] = true
+	}
+	assert.True(cachedURIs[baseURL])
+	assert.True(cachedURIs[extra1])
+	assert.True(cachedURIs[extra2])
+	assert.False(cachedURIs[extra3])
+	assert.False(cachedURIs[extra4])
+
+	// Verify first-level expansion is bounded by ExtraNodes.
+	assert.Equal(1, calls[baseURL])
+	assert.Equal(1, calls[extra1])
+	assert.Equal(1, calls[extra2])
+	assert.Equal(0, calls[extra3])
+	assert.Equal(0, calls[extra4])
+}
+
 func sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -1218,6 +1311,12 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	urls, err := deserializeWebhookJSON(resp)
 	assert.Nil(err)
 	assert.Equal("https://127.0.0.1:8936", urls[0].URL.String())
+
+	// assert input with extra capabilities field remains backward compatible
+	resp = []byte(`[{"address":"https://127.0.0.1:8937","capabilities":["live-video-to-video/model-a"]}]`)
+	urls, err = deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Equal("https://127.0.0.1:8937", urls[0].URL.String())
 
 	// assert input of empty byte array returns JSON error
 	urls, err = deserializeWebhookJSON([]byte{})

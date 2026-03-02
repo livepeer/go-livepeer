@@ -174,6 +174,7 @@ type OrchNetworkCapabilities struct {
 	LocalAddress       string                     `json:"local_address"`
 	OrchURI            string                     `json:"orch_uri"`
 	Capabilities       *net.Capabilities          `json:"capabilities"`
+	PriceInfo          *net.PriceInfo             `json:"price_info"`
 	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
 	Hardware           []*net.HardwareInformation `json:"hardware"`
 }

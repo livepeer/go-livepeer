@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
@@ -665,4 +667,290 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+func TestRemoteSigner_Discovery(t *testing.T) {
+	require := require.New(t)
+
+	BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", core.NewFixedPrice(big.NewRat(100, 1)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(core.Capability_LiveVideoToVideo, "model-a", nil)
+
+	orch1Caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-a": {},
+					},
+				},
+			},
+		},
+	}
+	orch2Caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-a": {},
+					},
+				},
+				uint32(core.Capability_TextToImage): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"model-b": {},
+					},
+				},
+			},
+		},
+	}
+
+	// Remote discovery refresh reads from the node's network capability cache.
+	//
+	// Each orchestrator below has a specific purpose:
+	// - orch1: Has a single eligible capability priced below the configured max price.
+	// - orch2: Has two capabilities, but only one is eligible (the other is filtered out).
+	// - orch3: Has capabilities priced above the max price, so it should be dropped entirely.
+	// - invalid: Has an invalid URI and should never be returned from discovery.
+	//
+	// Note: Prices are returned as `CapabilitiesPrices` (capability menu pricing), not via global
+	// `PriceInfo` (which is intentionally expensive in these fixtures).
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://orch1.example.com:8935",
+			Capabilities: orch1Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				{
+					PricePerUnit:  80,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+			},
+		},
+		{
+			OrchURI:      "https://orch2.example.com:8935",
+			Capabilities: orch2Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				// This capability is above max price and should be filtered out.
+				{
+					PricePerUnit:  120,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+				// This capability remains eligible and should be exposed via discovery.
+				{
+					PricePerUnit:  50,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_TextToImage),
+					Constraint:    "model-b",
+				},
+			},
+		},
+		{
+			OrchURI:      "https://orch3.example.com:8935",
+			Capabilities: orch1Caps,
+			// Global fallback price is intentionally expensive.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+			CapabilitiesPrices: []*net.PriceInfo{
+				// All capabilities above max price, so the orchestrator should be dropped.
+				{
+					PricePerUnit:  200,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
+					Constraint:    "model-a",
+				},
+			},
+		},
+		// Invalid URI should be dropped during refresh and never returned from discovery.
+		{
+			OrchURI:      "://invalid-uri",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	rdp.refresh()
+	ls := &LivepeerServer{}
+
+	httpReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+
+	ls.GetOrchestrators(rdp, rr, httpReq)
+
+	require.Equal(http.StatusOK, rr.Code)
+	require.Equal("application/json", rr.Header().Get("Content-Type"))
+
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 2)
+	require.Equal("https://orch1.example.com:8935", resp[0].Address)
+	require.Greater(resp[0].Score, float32(0))
+	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
+	require.Equal("https://orch2.example.com:8935", resp[1].Address)
+	require.Greater(resp[1].Score, float32(0))
+	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
+
+	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
+	capsRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, capsRR, capsReq)
+	require.Equal(http.StatusOK, capsRR.Code)
+	var capsResp []discoveryResponse
+	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
+	require.Len(capsResp, 1)
+	require.Equal("https://orch1.example.com:8935", capsResp[0].Address)
+
+	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
+	repeatedRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, repeatedRR, repeatedReq)
+	require.Equal(http.StatusOK, repeatedRR.Code)
+	var repeatedResp []discoveryResponse
+	require.NoError(json.NewDecoder(repeatedRR.Body).Decode(&repeatedResp))
+	require.Len(repeatedResp, 2)
+	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
+	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
+
+	// If refresh only receives invalid or ineligible network capability entries,
+	// cache should remain empty and discovery should return service unavailable.
+	ineligibleNode := &core.LivepeerNode{}
+	require.NoError(ineligibleNode.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "",
+			Capabilities: &net.Capabilities{
+				Constraints: &net.Capabilities_Constraints{
+					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+						uint32(core.Capability_LiveVideoToVideo): {
+							Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+								"model-a": {},
+							},
+						},
+					},
+				},
+			},
+			PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		},
+		{
+			OrchURI:      "://also-invalid",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		},
+		{
+			OrchURI:      "https://too-expensive.example.com:8935",
+			Capabilities: orch1Caps,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
+		},
+		{
+			OrchURI:      "https://missing-price.example.com:8935",
+			Capabilities: orch1Caps,
+			// Missing global and per-capability prices should be treated as ineligible
+			// when a max price is configured for this capability/model.
+			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0},
+		},
+		{
+			OrchURI:      "https://nil-price.example.com:8935",
+			Capabilities: orch1Caps,
+			// Explicit nil global price should also be treated as ineligible.
+			PriceInfo: nil,
+		},
+	}))
+	ineligibleRDP := &remoteDiscoveryPool{
+		node:         ineligibleNode,
+		refreshEvery: time.Hour,
+	}
+	ineligibleRDP.refresh()
+	ineligibleReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	ineligibleRR := httptest.NewRecorder()
+	ls.GetOrchestrators(ineligibleRDP, ineligibleRR, ineligibleReq)
+	require.Equal(http.StatusServiceUnavailable, ineligibleRR.Code)
+	require.Equal("application/json", ineligibleRR.Header().Get("Content-Type"))
+}
+
+func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+
+		capability := core.Capability_LiveVideoToVideo
+		modelA := "model-a"
+		modelB := "model-b"
+		BroadcastCfg.SetCapabilityMaxPrice(capability, modelA, core.NewFixedPrice(big.NewRat(100, 1)))
+		BroadcastCfg.SetCapabilityMaxPrice(capability, modelB, core.NewFixedPrice(big.NewRat(100, 1)))
+		defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelA, nil)
+		defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelB, nil)
+
+		capsA := core.NewCapabilities([]core.Capability{capability}, nil)
+		capsA.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+			capability: &core.CapabilityConstraints{
+				Models: map[string]*core.ModelConstraint{
+					modelA: {},
+				},
+			},
+		})
+		capsB := core.NewCapabilities([]core.Capability{capability}, nil)
+		capsB.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+			capability: &core.CapabilityConstraints{
+				Models: map[string]*core.ModelConstraint{
+					modelB: {},
+				},
+			},
+		})
+
+		node := &core.LivepeerNode{}
+		require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+			{
+				OrchURI:      "https://orch-a.example.com:8935",
+				Capabilities: capsA.ToNetCapabilities(),
+				PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			},
+		}))
+
+		rdp := &remoteDiscoveryPool{
+			node:         node,
+			refreshEvery: time.Minute,
+		}
+		ls := &LivepeerServer{}
+
+		callDiscovery := func() []discoveryResponse {
+			req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+			rr := httptest.NewRecorder()
+			ls.GetOrchestrators(rdp, rr, req)
+			require.Equal(http.StatusOK, rr.Code)
+			var resp []discoveryResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			return resp
+		}
+
+		// First request populates cache.
+		resp := callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-a.example.com:8935", resp[0].Address)
+		require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
+
+		// Update source network capabilities, but stay within refresh interval.
+		require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+			{
+				OrchURI:      "https://orch-b.example.com:8935",
+				Capabilities: capsB.ToNetCapabilities(),
+				PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			},
+		}))
+		time.Sleep(30 * time.Second)
+		resp = callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-a.example.com:8935", resp[0].Address)
+
+		// Once interval elapses, discovery response should reflect refreshed cache.
+		time.Sleep(31 * time.Second)
+		resp = callDiscovery()
+		require.Len(resp, 1)
+		require.Equal("https://orch-b.example.com:8935", resp[0].Address)
+		require.Equal([]string{"live-video-to-video/model-b"}, resp[0].Capabilities)
+	})
 }
