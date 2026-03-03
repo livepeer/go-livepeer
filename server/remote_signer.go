@@ -218,9 +218,6 @@ type RemotePaymentRequest struct {
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
-
-	// Capability name for BYOC job type. Required when Type is "byoc".
-	Capability string `json:"capability,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -338,6 +335,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	clog.AddVal(ctx, "state_id", state.StateID)
 
 	manifestID := req.ManifestID
+	byocCapability := ""
+	if req.Type == RemoteType_BYOC {
+		if priceInfo.Capability == uint32(core.Capability_BYOC) && priceInfo.Constraint != "" {
+			byocCapability = priceInfo.Constraint
+		}
+	}
 	if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.
@@ -345,9 +348,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		if req.Type == RemoteType_BYOC && req.Capability != "" {
+		if req.Type == RemoteType_BYOC && byocCapability != "" {
 			// For BYOC, use capability name as manifest ID for shared balance tracking
-			manifestID = req.Capability
+			manifestID = byocCapability
 		} else {
 			manifestID = string(core.RandomManifestID())
 		}
@@ -437,8 +440,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	} else if req.Type == RemoteType_BYOC {
 		// BYOC uses time-based pricing: price per unit of time (typically seconds)
 		// The pixelsPerUnit in the price info represents the time scaling factor
-		if req.Capability == "" {
-			err = errors.New("missing capability for BYOC job type")
+		if byocCapability == "" {
+			err = errors.New("missing BYOC capability in OrchestratorInfo price_info.constraint")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
