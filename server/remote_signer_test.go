@@ -224,6 +224,24 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "invalid job type",
 		},
 		{
+			name: "byoc missing capability constraint",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_BYOC),
+					Constraint:    "",
+				}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					Type:         RemoteType_BYOC,
+				}
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "missing BYOC capability in OrchestratorInfo price_info.constraint",
+		},
+		{
 			name: "missing pixels without type",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
