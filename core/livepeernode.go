@@ -152,6 +152,7 @@ type LivepeerNode struct {
 	RemoteSignerUrl *url.URL
 	RemoteEthAddr   ethcommon.Address // eth address of the remote signer
 	InfoSig         []byte            // sig over eth address for the OrchestratorInfo request
+	RemoteDiscovery bool              // expose remote discovery endpoint when enabled
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -177,6 +178,7 @@ type LivepeerNode struct {
 	LiveAIHeartbeatURL         string
 	LiveAIHeartbeatHeaders     map[string]string
 	LiveAIHeartbeatInterval    time.Duration
+	LiveAICapReportInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAISaveNSegments        *int
