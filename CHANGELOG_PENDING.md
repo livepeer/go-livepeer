@@ -20,4 +20,6 @@
 
 #### General
 
+* build: install XQuartz in macOS CI to fix arm64 builds (@hjpotter92)
+
 #### CLI

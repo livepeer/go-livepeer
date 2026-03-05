@@ -219,6 +219,8 @@ jobs:
           # brew upgrade  # temporarily disabled because of the issues it's causing
           brew uninstall --ignore-dependencies --force pkg-config@0.29.2
           brew install coreutils pkgconf
+          wget https://github.com/XQuartz/XQuartz/releases/download/XQuartz-2.8.5/XQuartz-2.8.5.pkg -O XQuartz.pkg
+          sudo installer -verbose -pkg XQuartz.pkg -target /
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'

@@ -695,7 +695,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 		var err error
 		for {
 			perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
-			params.liveParams = newParams(params.liveParams, perOrchCancel)
+			params.liveParams = newLiveParams(params, perOrchCancel)
 			var resp interface{}
 			resp, err = processAIRequest(perOrchCtx, params, req)
 			if err != nil {
@@ -761,7 +761,8 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	<-firstProcessed
 }
 
-func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
+func newLiveParams(aiParams aiRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
+	params := aiParams.liveParams
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		rtmpOutputs:            params.rtmpOutputs,
@@ -778,8 +779,15 @@ func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *l
 		orchestrator:           params.orchestrator,
 		startTime:              time.Now(),
 		kickOrch:               cancelOrch,
+		paymentSender:          choosePaymentSender(aiParams),
 	}
+}
 
+func choosePaymentSender(params aiRequestParams) LivePaymentSender {
+	if hasRemoteSigner(params) {
+		return NewRemotePaymentSender(params.node)
+	}
+	return &livePaymentSender{}
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {

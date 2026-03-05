@@ -31,12 +31,13 @@ var serverGetOrchInfo = server.GetOrchestratorInfo
 
 // OrchestratorPoolConfig groups options used to construct an orchestratorPool.
 type OrchestratorPoolConfig struct {
-	Broadcaster      common.Broadcaster
-	URIs             []*url.URL
-	Pred             func(*net.OrchestratorInfo) bool
-	Score            float32
-	OrchBlacklist    []string
-	DiscoveryTimeout time.Duration
+	Broadcaster         common.Broadcaster
+	URIs                []*url.URL
+	Pred                func(*net.OrchestratorInfo) bool
+	Score               float32
+	OrchBlacklist       []string
+	DiscoveryTimeout    time.Duration
+	IgnoreCapacityCheck bool
 
 	// Limits the number of additional nodes an orchestrator
 	// can advertise within the GetOrchestratorInfo response.
@@ -45,14 +46,15 @@ type OrchestratorPoolConfig struct {
 }
 
 type orchestratorPool struct {
-	infos            []common.OrchestratorLocalInfo
-	pred             func(info *net.OrchestratorInfo) bool
-	bcast            common.Broadcaster
-	orchBlacklist    []string
-	discoveryTimeout time.Duration
-	node             core.LivepeerNode
-	extraNodes       int
-	getOrchInfo      func(context.Context, common.Broadcaster, *url.URL, server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
+	infos               []common.OrchestratorLocalInfo
+	pred                func(info *net.OrchestratorInfo) bool
+	bcast               common.Broadcaster
+	orchBlacklist       []string
+	discoveryTimeout    time.Duration
+	ignoreCapacityCheck bool
+	node                core.LivepeerNode
+	extraNodes          int
+	getOrchInfo         func(context.Context, common.Broadcaster, *url.URL, server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
 }
 
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
@@ -100,13 +102,14 @@ func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPoo
 	}
 
 	return &orchestratorPool{
-		infos:            infos,
-		pred:             cfg.Pred,
-		bcast:            cfg.Broadcaster,
-		orchBlacklist:    cfg.OrchBlacklist,
-		discoveryTimeout: cfg.DiscoveryTimeout,
-		extraNodes:       cfg.ExtraNodes,
-		getOrchInfo:      serverGetOrchInfo,
+		infos:               infos,
+		pred:                cfg.Pred,
+		bcast:               cfg.Broadcaster,
+		orchBlacklist:       cfg.OrchBlacklist,
+		discoveryTimeout:    cfg.DiscoveryTimeout,
+		ignoreCapacityCheck: cfg.IgnoreCapacityCheck,
+		extraNodes:          cfg.ExtraNodes,
+		getOrchInfo:         serverGetOrchInfo,
 	}, nil
 }
 
@@ -176,7 +179,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	getOrchInfo = func(ctx context.Context, od common.OrchestratorDescriptor, level int, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
 		start := time.Now()
-		info, err := o.getOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
+		info, err := o.getOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{
+			Caps:                caps.ToNetCapabilities(),
+			IgnoreCapacityCheck: o.ignoreCapacityCheck,
+		})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		doingWork := info != nil && info.Transcoder != ""

@@ -1742,3 +1742,27 @@ func Test_setLiveAICapacity(t *testing.T) {
 		})
 	}
 }
+
+func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPrices(t *testing.T) {
+	require := require.New(t)
+
+	oldNodeStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldNodeStorage }()
+
+	orch := &mockOrchestrator{}
+	addr := ethcommon.HexToAddress("0x1")
+
+	orch.On("Nodes").Return()
+	orch.On("Address").Return(addr)
+	orch.On("TicketParams", addr, mock.Anything).Return(&net.TicketParams{Recipient: pm.RandBytes(32)}, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{Token: []byte("tok"), SessionId: "sess", Expiration: time.Now().Add(time.Hour).Unix()})
+
+	nonNilEmptyCaps := core.NewCapabilities(nil, nil).ToNetCapabilities()
+	info, err := orchestratorInfoWithCaps(orch, addr, "https://orch.example.com", "", nonNilEmptyCaps)
+	require.NoError(err)
+	require.Nil(info.CapabilitiesPrices, "non-nil (even if empty) caps should not return capabilities prices")
+
+	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
+	orch.AssertNotCalled(t, "PriceInfo", mock.Anything)
+}

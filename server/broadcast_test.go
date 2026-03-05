@@ -1895,6 +1895,14 @@ func TestGetCapabilitiesMaxPrice(t *testing.T) {
 	cfg.SetMaxPrice(price)
 	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(nil))
 
+	// Should return the max price if net capabilities are nil.
+	capabilitiesNilNet := &StubCapabilityComparator{NetCaps: nil}
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesNilNet))
+
+	// Should return the max price if constraints are nil.
+	capabilitiesNilConstraints := &StubCapabilityComparator{NetCaps: &net.Capabilities{}}
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesNilConstraints))
+
 	// Create capabilities object.
 	capability1 := core.Capability(1)
 	modelID1 := "model1"

@@ -102,6 +102,9 @@ func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityCompar
 		return cfg.MaxPrice()
 	}
 	netCaps := caps.ToNetCapabilities()
+	if netCaps == nil || netCaps.Constraints == nil {
+		return cfg.MaxPrice()
+	}
 	price := big.NewRat(0, 1)
 	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
 		for modelID := range constraints.Models {
@@ -130,7 +133,7 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 	if price, modelOk := models[modelID]; modelOk && price != nil {
 		return price.Value()
 	}
-	if defaultPrice, hasDefault := models["default"]; hasDefault {
+	if defaultPrice, hasDefault := models["default"]; hasDefault && defaultPrice != nil {
 		return defaultPrice.Value()
 	}
 
@@ -139,8 +142,8 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 }
 
 func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	if _, ok := cfg.maxPricePerCapability[cap]; !ok {
 		cfg.maxPricePerCapability[cap] = make(map[string]*core.AutoConvertedPrice)
 	}
