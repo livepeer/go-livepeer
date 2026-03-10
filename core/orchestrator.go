@@ -336,7 +336,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 }
 
 func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
-	if orch.node == nil || orch.node.Recipient == nil {
+	if orch.node == nil {
 		return nil, nil
 	}
 
@@ -356,7 +356,7 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 }
 
 func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
-	if orch.node == nil || orch.node.Recipient == nil {
+	if orch.node == nil {
 		return nil, nil
 	}
 
@@ -373,16 +373,30 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		price = fixedPrice
 	}
 
-	return &net.PriceInfo{
+	result := &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
-	}, nil
+	}
+
+	// For BYOC capabilities, set Capability and Constraint so the remote signer
+	// can identify this as a BYOC price and extract the capability name.
+	if caps != nil && caps.Constraints != nil {
+		if byocConstraint, ok := caps.Constraints.PerCapability[uint32(Capability_BYOC)]; ok {
+			result.Capability = uint32(Capability_BYOC)
+			for name := range byocConstraint.Models {
+				result.Constraint = name
+				break
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
-	if manifestID != "" {
+	if manifestID != "" && orch.node.Balances != nil {
 		if balances, ok := orch.node.Balances.balances[sender]; ok {
 			fixedPrice := balances.FixedPrice(manifestID)
 			if fixedPrice != nil {
@@ -412,9 +426,18 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 					continue
 				}
 				for modelID := range constraints.Models {
-					price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
-					if price == nil {
-						price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+					var price *big.Rat
+					if Capability(cap) == Capability_BYOC {
+						// BYOC prices are stored in jobPriceInfo, keyed by capability name
+						price = orch.node.GetPriceForJob(sender.String(), modelID)
+						if price == nil || price.Sign() == 0 {
+							price = orch.node.GetPriceForJob("default", modelID)
+						}
+					} else {
+						price = orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
+						if price == nil {
+							price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+						}
 					}
 
 					if price != nil {
@@ -431,7 +454,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	}
 
-	if !orch.node.AutoAdjustPrice {
+	if !orch.node.AutoAdjustPrice || orch.node.Recipient == nil {
 		return basePrice, nil
 	}
 
