@@ -90,7 +90,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			f.mu.Unlock()
 			slog.Info("Stream ended", "activeStreams", remainingStreams, "maxStreams", f.maxActiveStreams)
 		}()
-		wsURL := "wss://fal.run/Daydream/scope-runner-app/live-video-to-video"
+		wsURL := "ws://localhost:8001/ws"
 		slog.Info("Connecting to websocket", "url", wsURL)
 
 		// Prepare headers with authorization
