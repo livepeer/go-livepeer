@@ -376,15 +376,18 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	pixels := req.InPixels
 	now := time.Now()
 	lastUpdate := state.LastUpdate
+	if lastUpdate.IsZero() {
+		lastUpdate = now
+	}
 	secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
 	if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
-		if lastUpdate.IsZero() {
-			// preload with 60 seconds of data by default
-			lastUpdate = now.Add(-60 * time.Second)
+		if secSinceLastProcessed <= 0 {
+			// preload with 60 seconds of data for LV2V
+			initialBillableDuration := now.Add(-60 * time.Second)
+			secSinceLastProcessed = now.Sub(initialBillableDuration).Seconds()
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		secSinceLastProcessed = now.Sub(lastUpdate).Seconds()
 		pixels = int64(pixelsPerSec * secSinceLastProcessed)
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
@@ -504,9 +507,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	clog.Info(ctx, "Signed", "numTickets", balUpdate.NumTickets, "nonce", state.SenderNonce, "fee", fee.FloatString(0), "sessionId", oInfo.AuthToken.SessionId, "pmSessionId", sess.PMSessionID, "oldBalance", oldBal.FloatString(0), "newBalance", newBal.FloatString(0))
 
 	if monitor.Enabled {
-		sessionState := "continuing"
+		sessionStatus := "continuing"
 		if state.SequenceNumber == 0 {
-			sessionState = "new"
+			sessionStatus = "new"
 		}
 		pipeline := ""
 		if req.Type == RemoteType_LiveVideoToVideo {
@@ -514,22 +517,25 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
-			"session_id":        state.StateID,
-			"session_state":     sessionState,
-			"pipeline":          pipeline,
-			"request_id":        requestID,
-			"orch_address":      orchAddr.Hex(),
-			"orch_url":          oInfo.Transcoder,
-			"manifest_id":       manifestID,
-			"pm_session_id":     sess.PMSessionID,
-			"billable_duration": secSinceLastProcessed,
-			"current_time":      now.UTC().UnixMilli(),
-			"pixels":            pixels,
-			"session_balance":   newBal.FloatString(0),
-			"computed_fee":      fee.FloatString(0),
-			"cost_per_pixel":    orchPrice.FloatString(10),
-			"sequence_number":   state.SequenceNumber,
-			"num_tickets":       balUpdate.NumTickets,
+			"session_id":         state.StateID,
+			"session_status":     sessionStatus,
+			"pipeline":           pipeline,
+			"request_id":         requestID,
+			"orch_address":       orchAddr.Hex(),
+			"orch_url":           oInfo.Transcoder,
+			"manifest_id":        manifestID,
+			"pm_session_id":      sess.PMSessionID,
+			"billable_duration":  secSinceLastProcessed,
+			"current_time":       now.UTC(),
+			"current_time_unix":  now.UTC().UnixMilli(),
+			"previous_time":      lastUpdate.UTC(),
+			"previous_time_unix": lastUpdate.UTC().UnixMilli(),
+			"pixels":             pixels,
+			"session_balance":    newBal.FloatString(0),
+			"computed_fee":       fee.FloatString(0),
+			"cost_per_pixel":     orchPrice.FloatString(10),
+			"sequence_number":    state.SequenceNumber,
+			"num_tickets":        balUpdate.NumTickets,
 		})
 	}
 
