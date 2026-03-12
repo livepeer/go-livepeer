@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """
-Agent Test Client (SDK version) -- uses livepeer-gateway SDK unified submit_job().
+Agent Test Client (SDK version) -- uses livepeer-gateway SDK for inference & LoRA training.
 
-Functionally identical to agent-client.py but uses the SDK's unified submit_job()
-which auto-detects BYOC vs LV2V based on the capability.
+Supports both synchronous inference (image/video/music) and async LoRA training jobs.
 
-Architecture: Agent -> SDK (submit_job) -> Orchestrator -> Adapter -> Proxy -> Provider
+Architecture: Agent -> SDK -> Orchestrator -> Adapter -> Proxy -> Provider (fal.ai)
 
 Usage:
-    python3 agent-client-sdk.py
-    python3 agent-client-sdk.py --task "create a dragon as image using recraft, then animate it using lucy"
-    python3 agent-client-sdk.py -i
+    # Inference (image/video/music):
+    python3 agent-client-sdk.py --task "create a dragon as image using recraft"
+    python3 agent-client-sdk.py -i                 # interactive mode
+
+    # LoRA Training (via orchestrator):
+    python3 agent-client-sdk.py train submit -d DATASET_URL --wait --steps 10
+    python3 agent-client-sdk.py train status --job-id JOB_ID
+
+    # LoRA Training (direct to adapter, bypasses orchestrator):
+    python3 agent-client-sdk.py train submit -d DATASET_URL --direct --steps 10
+
+    # Capabilities:
     python3 agent-client-sdk.py reg ls
+    python3 agent-client-sdk.py reg add -n flux-lora-training -m fal-ai/flux-lora-fast-training
+
+Prerequisites:
+    pip3 install livepeer-gateway
 """
 
 import argparse
@@ -30,6 +42,10 @@ from livepeer_gateway import (
     LivepeerJob,
     list_capabilities as sdk_list_capabilities,
     LivepeerGatewayError,
+    ByocTrainingRequest,
+    submit_training_job,
+    get_training_status,
+    wait_for_training,
 )
 
 # ---- Config ----
@@ -205,6 +221,245 @@ def tool_generate_music(prompt, capability="beatoven-music", duration=15):
     except Exception as e:
         log(f"Music generation failed: {e}", "ERROR")
         return {"ok": False, "error": str(e)}
+
+
+# ============================================================
+# Tools -- LoRA Training via SDK
+# ============================================================
+
+# Model-specific parameter mapping for different trainers
+TRAINER_PARAM_MAP = {
+    "fal-ai/flux-lora-fast-training": {
+        "dataset_field": "images_data_url",
+        "steps_field": "steps",
+        "trigger_field": "trigger_word",
+        "extra": {"is_style": False, "create_masks": True},
+    },
+    "fal-ai/flux-lora-portrait-trainer": {
+        "dataset_field": "images_data_url",
+        "steps_field": "steps",
+        "trigger_field": "trigger_phrase",
+        "extra": {"create_masks": False, "subject_crop": True},
+    },
+    "fal-ai/wan-trainer/t2v-14b": {
+        "dataset_field": "training_data_url",
+        "steps_field": "number_of_steps",
+        "trigger_field": "trigger_phrase",
+        "extra": {},
+    },
+    "fal-ai/qwen-image-trainer": {
+        "dataset_field": "image_data_url",
+        "steps_field": "steps",
+        "trigger_field": "trigger_phrase",
+        "extra": {},
+    },
+}
+
+
+def _build_train_params(model_id, dataset_url, trigger_word, steps, extra_params=None):
+    """Build training params with correct field names for the model."""
+    mapping = TRAINER_PARAM_MAP.get(model_id, {
+        "dataset_field": "images_data_url",
+        "steps_field": "steps",
+        "trigger_field": "trigger_word",
+        "extra": {},
+    })
+    params = {
+        mapping["dataset_field"]: dataset_url,
+        mapping["steps_field"]: steps,
+        mapping["trigger_field"]: trigger_word,
+        **mapping["extra"],
+    }
+    if extra_params:
+        params.update(extra_params)
+    return params
+
+
+def tool_train_lora(images_data_url, trigger_word="lptest", steps=100,
+                    model_id="fal-ai/flux-lora-fast-training",
+                    capability="flux-lora-training", extra_params=None):
+    """Submit a LoRA training job via the SDK (async, returns immediately)."""
+    log(f"Submitting training: trigger='{trigger_word}' steps={steps}", "TOOL")
+    log(f"  Dataset: {images_data_url}", "INFO")
+    log(f"  Model: {model_id} via [{capability}]", "SDK")
+
+    params = _build_train_params(model_id, images_data_url, trigger_word, steps, extra_params)
+    log(f"  Params: {json.dumps(params)}", "INFO")
+
+    start = time.time()
+    try:
+        req = ByocTrainingRequest(
+            capability=capability,
+            model_id=model_id,
+            params=params,
+            timeout_seconds=30,
+        )
+        resp = submit_training_job(req, orch_url=ORCH)
+        elapsed = time.time() - start
+        log(f"Job submitted in {elapsed:.1f}s: job_id={resp.job_id} status={resp.status}", "RESULT")
+        if resp.status_url:
+            log(f"  Status URL: {resp.status_url}", "INFO")
+        return {"ok": True, "job_id": resp.job_id, "status": resp.status,
+                "orchestrator_url": resp.orchestrator_url, "elapsed": elapsed}
+
+    except Exception as e:
+        log(f"Training submit failed: {e}", "ERROR")
+        return {"ok": False, "error": str(e)}
+
+
+def tool_training_status(job_id, orch_url=None):
+    """Check training job status."""
+    orch = orch_url or ORCH
+    log(f"Checking training status: {job_id}", "TOOL")
+    try:
+        status = get_training_status(job_id, orch)
+        cost_info = f" cost={status.cost} balance={status.balance}" if status.cost else ""
+        log(f"  Status: {status.status} progress={status.progress}%{cost_info}", "RESULT")
+        result = {"ok": True, "job_id": status.job_id, "status": status.status,
+                  "progress": status.progress}
+        if status.cost:
+            result["cost"] = status.cost
+        if status.balance:
+            result["balance"] = status.balance
+        if status.lora_url:
+            result["lora_url"] = status.lora_url
+            log(f"  LoRA URL: {status.lora_url}", "OUTPUT")
+        if status.config_url:
+            result["config_url"] = status.config_url
+        if status.error:
+            result["error"] = status.error
+            log(f"  Error: {status.error}", "ERROR")
+        return result
+    except Exception as e:
+        log(f"Status check failed: {e}", "ERROR")
+        return {"ok": False, "error": str(e)}
+
+
+def tool_train_lora_and_wait(images_data_url, trigger_word="lptest", steps=100,
+                              model_id="fal-ai/flux-lora-fast-training",
+                              capability="flux-lora-training",
+                              poll_interval=5.0, timeout=3600.0, extra_params=None):
+    """Submit a LoRA training job and wait for completion (blocking)."""
+    log(f"Training (blocking): trigger='{trigger_word}' steps={steps}", "TOOL")
+    log(f"  Dataset: {images_data_url}", "INFO")
+    log(f"  Model: {model_id} via [{capability}]", "SDK")
+    log(f"  Timeout: {timeout}s poll_interval: {poll_interval}s", "INFO")
+
+    params = _build_train_params(model_id, images_data_url, trigger_word, steps, extra_params)
+    log(f"  Params: {json.dumps(params)}", "INFO")
+
+    start = time.time()
+    try:
+        req = ByocTrainingRequest(
+            capability=capability,
+            model_id=model_id,
+            params=params,
+            timeout_seconds=30,
+        )
+        resp = submit_training_job(req, orch_url=ORCH)
+        log(f"  Submitted: job_id={resp.job_id}", "RESULT")
+
+        # Poll until done
+        orch = resp.orchestrator_url or ORCH
+        log("  Waiting for training to complete...", "INFO")
+        final = wait_for_training(
+            resp.job_id, orch,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+
+        elapsed = time.time() - start
+        log(f"  Final: status={final.status} ({elapsed:.1f}s)", "RESULT")
+
+        result = {"ok": final.status == "completed", "job_id": final.job_id,
+                  "status": final.status, "elapsed": elapsed}
+        if final.lora_url:
+            result["lora_url"] = final.lora_url
+            log(f"  LoRA weights: {final.lora_url}", "OUTPUT")
+        if final.config_url:
+            result["config_url"] = final.config_url
+            log(f"  Config: {final.config_url}", "OUTPUT")
+        if final.error:
+            result["error"] = final.error
+            log(f"  Error: {final.error}", "ERROR")
+        return result
+
+    except Exception as e:
+        log(f"Training failed: {e}", "ERROR")
+        return {"ok": False, "error": str(e)}
+
+
+def tool_train_lora_direct(images_data_url, trigger_word="lptest", steps=100,
+                            model_id="fal-ai/flux-lora-fast-training",
+                            poll_interval=5.0, timeout=3600.0, extra_params=None):
+    """Submit a LoRA training job directly to adapter (bypasses orchestrator)."""
+    import urllib.request, urllib.error
+
+    log(f"Training (direct to adapter): trigger='{trigger_word}' steps={steps}", "TOOL")
+    log(f"  Dataset: {images_data_url}", "INFO")
+    log(f"  Model: {model_id}", "INFO")
+    log(f"  Adapter: {ADAPTER}", "SDK")
+
+    params = _build_train_params(model_id, images_data_url, trigger_word, steps, extra_params)
+    start = time.time()
+    body = {"model_id": model_id, **params}
+
+    try:
+        req = urllib.request.Request(
+            f"{ADAPTER}/train",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:
+        log(f"Submit failed: {e}", "ERROR")
+        return {"ok": False, "error": str(e)}
+
+    job_id = data.get("job_id")
+    if not job_id:
+        log(f"No job_id in response: {data}", "ERROR")
+        return {"ok": False, "error": "No job_id"}
+
+    log(f"  Submitted: job_id={job_id}", "RESULT")
+    log("  Waiting for training to complete...", "INFO")
+
+    elapsed_poll = 0
+    while elapsed_poll < timeout:
+        time.sleep(poll_interval)
+        elapsed_poll += poll_interval
+
+        try:
+            with urllib.request.urlopen(f"{ADAPTER}/train/{job_id}", timeout=10) as resp:
+                status_data = json.loads(resp.read())
+        except Exception as e:
+            log(f"  Poll error: {e}", "ERROR")
+            continue
+
+        status = status_data.get("status", "unknown")
+        progress = status_data.get("progress", 0)
+        log(f"  [{elapsed_poll:.0f}s] status={status} progress={progress}%", "INFO")
+
+        if status == "completed":
+            result = status_data.get("result", {})
+            lora_file = result.get("diffusers_lora_file", {})
+            lora_url = lora_file.get("url") if isinstance(lora_file, dict) else None
+            config_file = result.get("config_file", {})
+            config_url = config_file.get("url") if isinstance(config_file, dict) else None
+            elapsed = time.time() - start
+            log(f"  Training completed in {elapsed:.1f}s!", "OUTPUT")
+            if lora_url:
+                log(f"  LoRA weights: {lora_url}", "OUTPUT")
+            return {"ok": True, "job_id": job_id, "status": "completed",
+                    "lora_url": lora_url, "config_url": config_url, "elapsed": elapsed}
+
+        if status in ("failed", "cancelled"):
+            log(f"  Training {status}: {status_data.get('error', '?')}", "ERROR")
+            return {"ok": False, "job_id": job_id, "status": status,
+                    "error": status_data.get("error")}
+
+    log(f"  Timed out after {timeout}s", "ERROR")
+    return {"ok": False, "job_id": job_id, "status": "timeout"}
 
 
 # ============================================================
@@ -683,13 +938,78 @@ def cmd_register(args):
             log(f"Removal failed: {e}", "ERROR")
 
 
+def cmd_train(args):
+    """Handle training subcommand."""
+    if args.train_action in ("submit",):
+        if not args.dataset_url:
+            log("--dataset-url is required", "ERROR")
+            return
+        extra = json.loads(args.params) if args.params else None
+        if args.direct:
+            result = tool_train_lora_direct(
+                images_data_url=args.dataset_url,
+                trigger_word=args.trigger_word,
+                steps=args.steps,
+                model_id=args.model_id,
+                poll_interval=args.poll_interval,
+                timeout=args.timeout,
+                extra_params=extra,
+            )
+        elif args.wait:
+            result = tool_train_lora_and_wait(
+                images_data_url=args.dataset_url,
+                trigger_word=args.trigger_word,
+                steps=args.steps,
+                model_id=args.model_id,
+                capability=args.capability,
+                poll_interval=args.poll_interval,
+                timeout=args.timeout,
+                extra_params=extra,
+            )
+        else:
+            result = tool_train_lora(
+                images_data_url=args.dataset_url,
+                trigger_word=args.trigger_word,
+                steps=args.steps,
+                model_id=args.model_id,
+                capability=args.capability,
+                extra_params=extra,
+            )
+        log(f"Result: {json.dumps(result, indent=2)}", "OUTPUT")
+
+    elif args.train_action in ("status",):
+        if not args.job_id:
+            log("--job-id is required", "ERROR")
+            return
+        result = tool_training_status(args.job_id, args.orch_url)
+        log(f"Result: {json.dumps(result, indent=2)}", "OUTPUT")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Livepeer Network Agent Client (SDK version)")
+    parser = argparse.ArgumentParser(
+        description="Livepeer Network Agent Client (SDK version)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Inference (image/video/music):
+  python3 agent-client-sdk.py --task "a dragon as image using recraft"
+  python3 agent-client-sdk.py -i
+
+  # LoRA Training:
+  python3 agent-client-sdk.py train submit --dataset-url URL --wait
+  python3 agent-client-sdk.py train submit --dataset-url URL --direct --steps 10
+  python3 agent-client-sdk.py train status --job-id JOB_ID
+
+  # Capabilities:
+  python3 agent-client-sdk.py reg ls
+""",
+    )
     sub = parser.add_subparsers(dest="command")
 
     parser.add_argument("--task", type=str, help="Task to execute")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode")
 
+    # Register subcommand
     reg = sub.add_parser("register", aliases=["reg"], help="Manage capabilities")
     reg_sub = reg.add_subparsers(dest="register_action")
 
@@ -703,12 +1023,36 @@ def main():
     reg_rm = reg_sub.add_parser("remove", aliases=["rm"], help="Unregister a capability")
     reg_rm.add_argument("--name", "-n", required=True, help="Capability name to remove")
 
+    # Train subcommand
+    train = sub.add_parser("train", help="LoRA training jobs")
+    train_sub = train.add_subparsers(dest="train_action")
+
+    train_submit = train_sub.add_parser("submit", help="Submit a LoRA training job")
+    train_submit.add_argument("--dataset-url", "-d", required=True, help="URL to ZIP of training images")
+    train_submit.add_argument("--trigger-word", "-t", default="lptest", help="Trigger word (default: lptest)")
+    train_submit.add_argument("--steps", "-s", type=int, default=100, help="Training steps (default: 100)")
+    train_submit.add_argument("--model-id", "-m", default="fal-ai/flux-lora-fast-training", help="Training model ID")
+    train_submit.add_argument("--capability", default="flux-lora-training", help="Capability name")
+    train_submit.add_argument("--wait", "-w", action="store_true", help="Wait for completion (blocking)")
+    train_submit.add_argument("--direct", action="store_true", help="Submit directly to adapter (bypass orchestrator)")
+    train_submit.add_argument("--poll-interval", type=float, default=5.0, help="Poll interval in seconds")
+    train_submit.add_argument("--timeout", type=float, default=3600.0, help="Max wait time in seconds")
+    train_submit.add_argument("--params", "-p", type=str, help="Extra params as JSON (e.g. '{\"learning_rate\": 0.0001}')")
+
+    train_status = train_sub.add_parser("status", help="Check training job status")
+    train_status.add_argument("--job-id", "-j", required=True, help="Job ID to check")
+    train_status.add_argument("--orch-url", help="Orchestrator URL (default: ORCH_URL env)")
+
     args = parser.parse_args()
 
     if args.command in ("register", "reg"):
         if not args.register_action:
             args.register_action = "list"
         cmd_register(args)
+    elif args.command == "train":
+        if not args.train_action:
+            args.train_action = "submit"
+        cmd_train(args)
     elif args.task:
         run_workflow(args.task)
     elif args.interactive:

@@ -180,6 +180,10 @@ func (bsg *BYOCGatewayServer) registerRoutes() {
 
 	// Job submission routes for batch processing
 	bsg.httpMux.Handle("/process/request/", bsg.SubmitJob())
+
+	// Training routes (proxied to orchestrator)
+	bsg.httpMux.Handle("/process/train/", bsg.SubmitTrainingJob())
+	bsg.httpMux.Handle("GET /process/job/{jobId}", bsg.GetTrainingJobStatus())
 }
 
 // withCORS adds CORS headers to responses
@@ -199,6 +203,9 @@ type BYOCOrchestratorServer struct {
 	httpMux *http.ServeMux
 
 	sharedBalMtx *sync.Mutex
+
+	// Training job store for async training jobs
+	trainingStore *TrainingJobStore
 }
 
 func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trickleSrv *trickle.Server, trickleBasePath string, mux *http.ServeMux) *BYOCOrchestratorServer {
@@ -209,6 +216,7 @@ func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trick
 		trickleBasePath: trickleBasePath,
 		httpMux:         mux,
 		sharedBalMtx:    &sync.Mutex{},
+		trainingStore:   NewTrainingJobStore(24 * time.Hour),
 	}
 
 	bso.registerRoutes()
@@ -228,6 +236,11 @@ func (bso *BYOCOrchestratorServer) registerRoutes() {
 	bso.httpMux.Handle("/process/token", bso.GetJobToken())
 	bso.httpMux.Handle("/capability/register", bso.RegisterCapability())
 	bso.httpMux.Handle("/capability/unregister", bso.UnregisterCapability())
+	// Training routes (async)
+	bso.httpMux.Handle("/process/train/", bso.SubmitTrainingJob())
+	bso.httpMux.Handle("GET /process/jobs", bso.ListTrainingJobs())
+	bso.httpMux.Handle("GET /process/job/{jobId}", bso.GetTrainingJobStatus())
+	bso.httpMux.Handle("POST /process/job/{jobId}/cancel", bso.CancelTrainingJob())
 	// Stream routes
 	bso.httpMux.Handle("/ai/stream/start", bso.StartStream())
 	bso.httpMux.Handle("/ai/stream/stop", bso.StopStream())

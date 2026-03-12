@@ -59,6 +59,17 @@ def _call_orch(capability: str, body: dict, timeout: int = 300) -> dict:
         return json.loads(resp.read())
 
 
+def _call_orch_train(capability: str, body: dict, timeout: int = 30) -> dict:
+    """Submit a training job to the orchestrator's BYOC training endpoint."""
+    url = f"{ORCH_URL}/process/train/{capability}"
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={
+        "Content-Type": "application/json",
+        "Livepeer": _livepeer_header(capability, timeout),
+    })
+    with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+        return json.loads(resp.read())
+
+
 def _download_file(url: str, ext: str) -> str:
     """Download a URL to a local file in OUTPUT_DIR."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -316,6 +327,159 @@ def generate_music(prompt: str, model: str = "beatoven-music", duration: int = 1
         f"Local file: {filepath}\n"
         f"To listen: open {filepath}"
     )
+
+
+@mcp.tool()
+def train_lora(
+    images_data_url: str,
+    model: str = "fal-ai/flux-lora-fast-training",
+    capability: str = "flux-lora-training",
+    trigger_word: str = "ohwx",
+    steps: int = 1000,
+    is_style: bool = False,
+) -> str:
+    """Submit a LoRA fine-tuning training job on the Livepeer network.
+
+    Args:
+        images_data_url: URL to a ZIP file containing training images (min 4, recommended 10-50).
+        model: fal.ai training model ID. Default: fal-ai/flux-lora-fast-training.
+        capability: Livepeer capability name. Default: flux-lora-training.
+        trigger_word: Trigger word for the trained LoRA. Default: ohwx.
+        steps: Number of training steps. Default: 1000.
+        is_style: True for style training, False for subject training.
+
+    Returns job_id and status_url for polling. Training runs async (minutes to hours).
+    """
+    body = {
+        "model_id": model,
+        "params": {
+            "images_data_url": images_data_url,
+            "trigger_word": trigger_word,
+            "steps": steps,
+            "is_style": is_style,
+            "create_masks": not is_style,
+        },
+    }
+
+    start = time.time()
+    try:
+        result = _call_orch_train(capability, body)
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        return f"Error: HTTP {e.code} - {err_body[:300]}"
+    except Exception as e:
+        return f"Error: {e}"
+
+    elapsed = time.time() - start
+    job_id = result.get("job_id", "unknown")
+    status = result.get("status", "unknown")
+
+    return (
+        f"Training job submitted in {elapsed:.1f}s\n"
+        f"Job ID: {job_id}\n"
+        f"Status: {status}\n"
+        f"Model: {model}\n"
+        f"Trigger word: {trigger_word}\n"
+        f"Steps: {steps}\n"
+        f"Use check_training_status with job_id to monitor progress."
+    )
+
+
+@mcp.tool()
+def check_training_status(job_id: str) -> str:
+    """Check the status of a training job.
+
+    Args:
+        job_id: The job ID returned by train_lora.
+
+    Returns current status, progress, and result if completed.
+    """
+    try:
+        url = f"{ORCH_URL}/process/job/{job_id}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return f"Job {job_id} not found"
+        return f"Error: HTTP {e.code}"
+    except Exception as e:
+        return f"Error: {e}"
+
+    status = data.get("status", "unknown")
+    progress = data.get("progress", 0)
+    lines = [
+        f"Job ID: {job_id}",
+        f"Status: {status}",
+        f"Progress: {progress}%",
+        f"Model: {data.get('model_id', '?')}",
+    ]
+
+    if status == "completed":
+        result = data.get("result", {})
+        lora_file = result.get("diffusers_lora_file", {})
+        lora_url = lora_file.get("url", "N/A") if isinstance(lora_file, dict) else "N/A"
+        lines.append(f"LoRA weights URL: {lora_url}")
+
+        config_file = result.get("config_file", {})
+        config_url = config_file.get("url", "N/A") if isinstance(config_file, dict) else "N/A"
+        lines.append(f"Config URL: {config_url}")
+
+    if status == "failed":
+        lines.append(f"Error: {data.get('error', 'unknown')}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def generate_with_lora(
+    prompt: str,
+    lora_url: str,
+    model: str = "recraft-v4",
+    lora_scale: float = 1.0,
+) -> str:
+    """Generate an image using a trained LoRA model.
+
+    Args:
+        prompt: Text description (include the trigger word from training).
+        lora_url: URL to the .safetensors LoRA weights file.
+        model: Base model capability. Default: recraft-v4.
+        lora_scale: LoRA application strength (0.0-2.0). Default: 1.0.
+
+    Returns the generated image path.
+    """
+    body = {
+        "prompt": prompt,
+        "loras": [{"path": lora_url, "scale": lora_scale}],
+        "num_images": 1,
+    }
+
+    start = time.time()
+    try:
+        result = _call_orch(model, body)
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        return f"Error: HTTP {e.code} - {err_body[:300]}"
+    except Exception as e:
+        return f"Error: {e}"
+
+    elapsed = time.time() - start
+
+    image_url = _extract_image_url(result)
+    if image_url:
+        ext = _guess_image_ext(image_url)
+        try:
+            filepath = _download_file(image_url, ext)
+            return (
+                f"Image generated with LoRA in {elapsed:.1f}s using {model}\n"
+                f"URL: {image_url}\n"
+                f"Saved to: {filepath}\n"
+                f"To view inline: use the Read tool on {filepath}"
+            )
+        except Exception as dl_err:
+            return f"Image generated with LoRA in {elapsed:.1f}s\nURL: {image_url}\nDownload failed: {dl_err}"
+
+    return f"Generated in {elapsed:.1f}s but could not extract URL.\nRaw: {json.dumps(result)[:500]}"
 
 
 @mcp.tool()
