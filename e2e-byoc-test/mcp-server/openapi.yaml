@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Livepeer BYOC API
+  description: >
+    AI media generation via the Livepeer decentralized network.
+    Generate images, videos, and music using models like Recraft, Gemini, LTX, Lucy, Kling, and Beatoven.
+    All requests are routed through the Livepeer BYOC orchestrator.
+  version: 1.0.0
+servers:
+  - url: https://34.134.195.88:8935
+    description: Livepeer BYOC Orchestrator (GCE)
+
+paths:
+  /capabilities:
+    get:
+      operationId: listCapabilities
+      summary: List available AI capabilities
+      description: Returns all AI models currently registered on the Livepeer network.
+      responses:
+        "200":
+          description: List of capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Capability"
+
+  /process/request/{capability}:
+    post:
+      operationId: processRequest
+      summary: Generate media using a Livepeer network capability
+      description: >
+        Send an inference request to the specified capability.
+        Supports image generation, video generation, and music generation.
+      parameters:
+        - name: capability
+          in: path
+          required: true
+          description: >
+            Capability name. Image: nano-banana, recraft-v4, gemini-image.
+            Video: ltx-t2v-23, ltx-i2v, lucy-i2v, kling-i2v, wan-v2v.
+            Music: beatoven-music.
+          schema:
+            type: string
+            enum:
+              - nano-banana
+              - recraft-v4
+              - gemini-image
+              - ltx-t2v-23
+              - ltx-i2v
+              - lucy-i2v
+              - kling-i2v
+              - wan-v2v
+              - beatoven-music
+        - name: Livepeer
+          in: header
+          required: true
+          description: Base64-encoded JSON job request header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InferenceRequest"
+      responses:
+        "200":
+          description: Inference result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InferenceResponse"
+        "400":
+          description: Bad request
+        "500":
+          description: Inference error
+
+components:
+  schemas:
+    Capability:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Capability name (e.g. nano-banana, recraft-v4)
+        model_id:
+          type: string
+          description: Provider model ID (e.g. fal-ai/nano-banana-2)
+        capacity:
+          type: integer
+          description: Max concurrent requests
+
+    InferenceRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          description: Text prompt describing what to generate
+        num_images:
+          type: integer
+          description: Number of images to generate (image models)
+          default: 1
+        image_url:
+          type: string
+          description: Input image URL for image-to-video models
+        video_url:
+          type: string
+          description: Input video URL for video-to-video models
+        duration:
+          type: integer
+          description: Duration in seconds (music models)
+          default: 15
+        num_inference_steps:
+          type: integer
+          description: Number of inference steps (affects quality/speed)
+
+    InferenceResponse:
+      type: object
+      properties:
+        images:
+          type: array
+          description: Generated images (for image models)
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              base64:
+                type: string
+              mime_type:
+                type: string
+        video:
+          type: object
+          description: Generated video (for video models)
+          properties:
+            url:
+              type: string
+        audio:
+          type: object
+          description: Generated audio (for music models)
+          properties:
+            url:
+              type: string

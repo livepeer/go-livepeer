@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "livepeer-byoc": {
+      "command": "python3",
+      "args": [
+        "/Users/qiang.han/Documents/mycodespace/livepeer/go-livepeer/e2e-byoc-test/mcp-server/server.py"
+      ],
+      "env": {
+        "ORCH_URL": "https://34.134.195.88:8935",
+        "ADAPTER_URL": "http://34.134.195.88:9090"
+      }
+    }
+  }
+}
