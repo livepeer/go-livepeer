@@ -21,9 +21,11 @@
 
 set -euo pipefail
 
-VM_IP="${1:?Usage: $0 <VM_IP> <FAL_KEY> [GEMINI_KEY]}"
-FAL_KEY="${2:?Usage: $0 <VM_IP> <FAL_KEY> [GEMINI_KEY]}"
+VM_IP="${1:?Usage: $0 <VM_IP> <FAL_KEY> [GEMINI_KEY] [REPLICATE_KEY] [RUNPOD_KEY]}"
+FAL_KEY="${2:?Usage: $0 <VM_IP> <FAL_KEY> [GEMINI_KEY] [REPLICATE_KEY] [RUNPOD_KEY]}"
 GEMINI_KEY="${3:-}"
+REPLICATE_KEY="${4:-}"
+RUNPOD_KEY="${5:-}"
 SSH_USER="${SSH_USER:-root}"
 REMOTE_DIR="/opt/byoc"
 
@@ -110,6 +112,98 @@ services:
       timeout: 3s
       retries: 15
 
+  # --- Replicate provider ---
+  serverless-proxy-replicate:
+    image: ${PROXY_IMAGE:-livepeer-serverless-proxy:latest}
+    container_name: byoc_proxy_replicate
+    restart: unless-stopped
+    environment:
+      PROVIDER: replicate
+      API_KEY: ${REPLICATE_KEY}
+      PORT: "8080"
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  inference-adapter-replicate:
+    image: ${ADAPTER_IMAGE:-livepeer-inference-adapter:latest}
+    container_name: byoc_adapter_replicate
+    restart: unless-stopped
+    environment:
+      ORCH_URL: https://byoc_orch:8935
+      ORCH_SECRET: ${ORCH_SECRET}
+      BACKEND_URL: http://byoc_proxy_replicate:8080
+      BACKEND_INFERENCE_PATH: /inference
+      BACKEND_TIMEOUT: "300"
+      ADAPTER_PORT: "9091"
+      ADAPTER_CALLBACK_URL: http://byoc_adapter_replicate:9091
+      HEALTH_CHECK_INTERVAL: "5"
+      REGISTER_INTERVAL: "15"
+      CAPABILITIES: >
+        [
+          {"name":"seedream-4","model_id":"bytedance/seedream-4","capacity":3},
+          {"name":"z-image-turbo","model_id":"prunaai/z-image-turbo","capacity":3},
+          {"name":"imagen-4","model_id":"google/imagen-4","capacity":3},
+          {"name":"hunyuan-image-3","model_id":"tencent/hunyuan-image-3","capacity":3},
+          {"name":"gen-4.5","model_id":"runwayml/gen-4.5","capacity":2},
+          {"name":"pixverse-v5.6","model_id":"pixverse/pixverse-v5.6","capacity":2},
+          {"name":"dreamactor-m2","model_id":"bytedance/dreamactor-m2.0","capacity":2},
+          {"name":"gpt-5-nano","model_id":"openai/gpt-5-nano","capacity":5},
+          {"name":"dall-e-3","model_id":"openai/dall-e-3","capacity":3},
+          {"name":"claude-opus","model_id":"anthropic/claude-opus-4.6","capacity":3}
+        ]
+    ports:
+      - "9091:9091"
+    depends_on:
+      - orchestrator
+      - serverless-proxy-replicate
+
+  # --- RunPod provider ---
+  serverless-proxy-runpod:
+    image: ${PROXY_IMAGE:-livepeer-serverless-proxy:latest}
+    container_name: byoc_proxy_runpod
+    restart: unless-stopped
+    environment:
+      PROVIDER: runpod
+      API_KEY: ${RUNPOD_KEY}
+      MODEL_ID: lx5lawokk3qfle
+      PORT: "8080"
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  inference-adapter-runpod:
+    image: ${ADAPTER_IMAGE:-livepeer-inference-adapter:latest}
+    container_name: byoc_adapter_runpod
+    restart: unless-stopped
+    environment:
+      ORCH_URL: https://byoc_orch:8935
+      ORCH_SECRET: ${ORCH_SECRET}
+      BACKEND_URL: http://byoc_proxy_runpod:8080
+      BACKEND_INFERENCE_PATH: /inference
+      BACKEND_TIMEOUT: "300"
+      ADAPTER_PORT: "9092"
+      ADAPTER_CALLBACK_URL: http://byoc_adapter_runpod:9092
+      HEALTH_CHECK_INTERVAL: "5"
+      REGISTER_INTERVAL: "15"
+      CAPABILITIES: >
+        [
+          {"name":"wan-animate","model_id":"lx5lawokk3qfle","capacity":2}
+        ]
+    ports:
+      - "9092:9092"
+    depends_on:
+      - orchestrator
+      - serverless-proxy-runpod
+
 networks:
   default:
     name: byoc_network
@@ -120,6 +214,8 @@ echo "==> Writing .env..."
 ssh "${SSH_USER}@${VM_IP}" "cat > ${REMOTE_DIR}/.env" <<ENV
 FAL_KEY=${FAL_KEY}
 GEMINI_KEY=${GEMINI_KEY}
+REPLICATE_KEY=${REPLICATE_KEY}
+RUNPOD_KEY=${RUNPOD_KEY}
 ORCH_SECRET=offchain-test-secret-$(openssl rand -hex 8)
 ENV
 
