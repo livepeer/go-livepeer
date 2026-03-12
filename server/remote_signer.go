@@ -379,16 +379,15 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if lastUpdate.IsZero() {
 		lastUpdate = now
 	}
-	secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
+	billableSecs := now.Sub(lastUpdate).Seconds()
 	if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
-		if secSinceLastProcessed <= 0 {
+		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
-			initialBillableDuration := now.Add(-60 * time.Second)
-			secSinceLastProcessed = now.Sub(initialBillableDuration).Seconds()
+			billableSecs = (60 * time.Second).Seconds()
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		pixels = int64(pixelsPerSec * secSinceLastProcessed)
+		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -525,11 +524,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"orch_url":           oInfo.Transcoder,
 			"manifest_id":        manifestID,
 			"pm_session_id":      sess.PMSessionID,
-			"billable_duration":  secSinceLastProcessed,
 			"current_time":       now.UTC(),
 			"current_time_unix":  now.UTC().UnixMilli(),
 			"previous_time":      lastUpdate.UTC(),
 			"previous_time_unix": lastUpdate.UTC().UnixMilli(),
+			"billable_secs":      billableSecs,
 			"pixels":             pixels,
 			"session_balance":    newBal.FloatString(0),
 			"computed_fee":       fee.FloatString(0),
