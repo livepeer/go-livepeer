@@ -71,7 +71,7 @@ func (rc *RPCClient) HeaderByHash(hash common.Hash) (*MiniHeader, error) {
 	return rc.callEth("eth_getBlockByHash", hash)
 }
 
-func (rc *RPCClient) callEth(method string, arg interface{}) (*MiniHeader, error) {
+func (rc *RPCClient) callEth(method string, arg any) (*MiniHeader, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), rc.requestTimeout)
 	defer cancel()
 
