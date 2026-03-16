@@ -182,20 +182,28 @@ def list_capabilities() -> str:
 
 
 @mcp.tool()
-def generate_image(prompt: str, model: str = "nano-banana") -> str:
+def generate_image(prompt: str, model: str = "nano-banana", image_url: str = "") -> str:
     """Generate an image using AI models on the Livepeer network.
 
     Args:
         prompt: Text description of the image to generate.
-        model: Model to use. Options: nano-banana (fast/cheap), recraft-v4 (high quality),
-               gemini-image (Google Gemini). Default: nano-banana.
+        model: Model to use. Text-to-image: nano-banana, recraft-v4, gemini-image,
+               flux-schnell, flux-dev, flux-pro, qwen-image, fast-lcm.
+               Image editing (requires image_url): kontext-edit, reve-edit,
+               topaz-upscale, bg-remove. Default: nano-banana.
+        image_url: URL of input image for editing models (kontext-edit, reve-edit,
+                   topaz-upscale, bg-remove). Leave empty for text-to-image.
 
     Returns the image file path. The caller should use the Read tool on the
     returned file path to view the image inline.
     """
+    body = {"prompt": prompt, "num_images": 1}
+    if image_url:
+        body["image_url"] = image_url
+
     start = time.time()
     try:
-        result = _call_orch(model, {"prompt": prompt, "num_images": 1})
+        result = _call_orch(model, body)
     except urllib.error.HTTPError as e:
         body = e.read().decode() if e.fp else ""
         return f"Error: HTTP {e.code} - {body[:300]}"
@@ -289,16 +297,21 @@ def generate_video(prompt: str, model: str = "ltx-t2v-23", image_url: str = "") 
 
 @mcp.tool()
 def generate_music(prompt: str, model: str = "beatoven-music", duration: int = 15) -> str:
-    """Generate music/audio using AI models on the Livepeer network.
+    """Generate music or speech audio using AI models on the Livepeer network.
 
     Args:
-        prompt: Text description of the music to generate (mood, genre, style).
-        model: Model to use. Options: beatoven-music. Default: beatoven-music.
-        duration: Duration in seconds. Default: 15.
+        prompt: Text description of music to generate, or text to speak for TTS models.
+        model: Model to use. Options: beatoven-music (background music),
+               chatterbox-tts (text-to-speech), lux-tts (expressive TTS).
+               Default: beatoven-music.
+        duration: Duration in seconds (for music models). Default: 15.
 
     Returns the audio URL and local file path.
     """
-    body = {"prompt": prompt, "duration": duration}
+    if model in ("chatterbox-tts", "lux-tts"):
+        body = {"text": prompt}
+    else:
+        body = {"prompt": prompt, "duration": duration}
 
     start = time.time()
     try:

@@ -94,12 +94,25 @@ services:
         [
           {"name":"nano-banana","model_id":"fal-ai/nano-banana-2","capacity":5},
           {"name":"recraft-v4","model_id":"fal-ai/recraft/v4/pro/text-to-image","capacity":5},
-          {"name":"gemini-image","model_id":"gemini/gemini-2.0-flash-exp-image-generation","capacity":5},
+          {"name":"gemini-image","model_id":"gemini/gemini-2.5-flash-image","capacity":5},
+          {"name":"gemini-text","model_id":"gemini/gemini-2.0-flash","capacity":10},
+          {"name":"flux-schnell","model_id":"fal-ai/flux/schnell","capacity":5},
+          {"name":"flux-dev","model_id":"fal-ai/flux/dev","capacity":3},
+          {"name":"flux-pro","model_id":"fal-ai/flux-2-pro","capacity":3},
+          {"name":"qwen-image","model_id":"fal-ai/qwen-image-2/text-to-image","capacity":3},
+          {"name":"kontext-edit","model_id":"fal-ai/flux-pro/kontext","capacity":3},
+          {"name":"reve-edit","model_id":"fal-ai/reve/edit","capacity":3},
+          {"name":"topaz-upscale","model_id":"fal-ai/topaz/upscale/image","capacity":3},
+          {"name":"bg-remove","model_id":"fal-ai/bria/background/remove","capacity":5},
           {"name":"ltx-t2v","model_id":"fal-ai/ltx-2.3/text-to-video/fast","capacity":3},
           {"name":"ltx-t2v-23","model_id":"fal-ai/ltx-2.3/text-to-video","capacity":3},
           {"name":"ltx-i2v","model_id":"fal-ai/ltx-2.3/image-to-video","capacity":3},
           {"name":"lucy-i2v","model_id":"decart/lucy-14b/image-to-video","capacity":3},
-          {"name":"wan-v2v","model_id":"fal-ai/wan/v2.2-a14b/video-to-video","capacity":3}
+          {"name":"wan-v2v","model_id":"fal-ai/wan/v2.2-a14b/video-to-video","capacity":3},
+          {"name":"kling-i2v","model_id":"fal-ai/kling-video/v3/pro/image-to-video","capacity":2},
+          {"name":"fast-lcm","model_id":"fal-ai/fast-lcm-diffusion","capacity":5},
+          {"name":"chatterbox-tts","model_id":"fal-ai/chatterbox/text-to-speech","capacity":3},
+          {"name":"lux-tts","model_id":"fal-ai/lux-tts","capacity":3}
         ]
     ports:
       - "9090:9090"
@@ -204,6 +217,27 @@ services:
       - orchestrator
       - serverless-proxy-runpod
 
+  # --- Scope live streaming adapter ---
+  stream-adapter:
+    image: ${STREAM_ADAPTER_IMAGE:-livepeer-stream-adapter:latest}
+    container_name: byoc_stream_adapter
+    restart: unless-stopped
+    environment:
+      ORCH_URL: https://byoc_orch:8935
+      ORCH_SECRET: ${ORCH_SECRET}
+      FAL_KEY: ${FAL_KEY}
+      ADAPTER_PORT: "9093"
+      ADAPTER_CALLBACK_URL: http://byoc_stream_adapter:9093
+      REGISTER_INTERVAL: "15"
+      CAPABILITIES: >
+        [
+          {"name":"scope-live","model_id":"daydream/scope-app","capacity":2}
+        ]
+    ports:
+      - "9093:9093"
+    depends_on:
+      - orchestrator
+
 networks:
   default:
     name: byoc_network
@@ -224,11 +258,13 @@ echo "==> Copying container source for build..."
 NAAP_DIR="${SCRIPT_DIR}/../../../NaaP/containers"
 scp -r "${NAAP_DIR}/livepeer-serverless-proxy" "${SSH_USER}@${VM_IP}:${REMOTE_DIR}/"
 scp -r "${NAAP_DIR}/livepeer-inference-adapter" "${SSH_USER}@${VM_IP}:${REMOTE_DIR}/"
+scp -r "${NAAP_DIR}/livepeer-stream-adapter" "${SSH_USER}@${VM_IP}:${REMOTE_DIR}/"
 
 echo "==> Building images on VM..."
 ssh "${SSH_USER}@${VM_IP}" "cd ${REMOTE_DIR} && \
   docker build -t livepeer-serverless-proxy:latest ./livepeer-serverless-proxy && \
-  docker build -t livepeer-inference-adapter:latest ./livepeer-inference-adapter"
+  docker build -t livepeer-inference-adapter:latest ./livepeer-inference-adapter && \
+  docker build -t livepeer-stream-adapter:latest ./livepeer-stream-adapter"
 
 # --- Step 5: Start the stack ---
 echo "==> Starting BYOC stack..."

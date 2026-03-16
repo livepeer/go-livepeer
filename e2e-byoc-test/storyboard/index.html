@@ -1,0 +1,3485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Livepeer Storyboard</title>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface-hover: #1a1a1a;
+  --border: #222;
+  --border-hover: #333;
+  --text: #e5e5e5;
+  --text-muted: #666;
+  --text-dim: #444;
+  --accent: #fff;
+  --accent-soft: rgba(255,255,255,0.06);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.5), 0 16px 48px rgba(0,0,0,0.4);
+  --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+@font-face {
+  font-family: 'Inter';
+  src: local('Inter');
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Canvas ── */
+#canvas-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+#canvas {
+  position: absolute;
+  transform-origin: 0 0;
+  will-change: transform;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Grid background ── */
+#canvas-viewport::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--text-dim) 0.5px, transparent 0);
+  background-size: 40px 40px;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Top bar ── */
+#topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: rgba(10,10,10,0.85);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  z-index: 1000;
+  gap: 16px;
+}
+
+#topbar .logo {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+#topbar .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+#topbar .zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+#topbar .zoom-controls button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all var(--transition);
+}
+
+#topbar .zoom-controls button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+#zoom-level {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  min-width: 40px;
+  text-align: center;
+}
+
+#topbar .status {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ── Cards ── */
+.card {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: box-shadow var(--transition), border-color var(--transition);
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  min-height: 160px;
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-lg);
+}
+
+.card.selected {
+  border-color: #555;
+}
+
+.card-header {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+  cursor: grab;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+
+.card-header:active { cursor: grabbing; }
+
+.card-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  outline: none;
+  border: none;
+  background: transparent;
+  font-family: var(--font);
+}
+
+.card-title:focus {
+  color: var(--text);
+}
+
+.card-type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.card-type-badge.image { color: #8b5cf6; background: rgba(139,92,246,0.1); }
+.card-type-badge.video { color: #06b6d4; background: rgba(6,182,212,0.1); }
+.card-type-badge.music { color: #f59e0b; background: rgba(245,158,11,0.1); }
+.card-type-badge.camera { color: #10b981; background: rgba(16,185,129,0.1); }
+.card-type-badge.stream {
+  color: #ec4899;
+  background: rgba(236,72,153,0.1);
+  animation: pulse-badge 2s infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.card-ref {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: #aaa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: #999;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.card:hover .card-meta { opacity: 1; }
+.card-meta .meta-ref { color: #ccc; font-weight: 500; }
+.card-meta .meta-model { color: #8b5cf6; }
+.card-meta .meta-time { color: #666; }
+
+.card-controls {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.card-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all var(--transition);
+}
+
+.card-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-muted);
+}
+
+.card-btn.close:hover { color: #ef4444; }
+.card-btn.save-btn:hover { color: #4ade80; }
+
+.card-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  position: relative;
+  background: var(--bg);
+}
+
+.card-body img,
+.card-body video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.card-body audio {
+  width: calc(100% - 24px);
+  height: 40px;
+}
+
+/* Placeholder skeleton */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.placeholder .spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.placeholder .label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.placeholder .shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%, rgba(255,255,255,0.02) 50%, transparent 100%);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* Error state */
+.card-error {
+  font-size: 11px;
+  color: #ef4444;
+  padding: 16px;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+/* Resize handle */
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.card:hover .resize-handle { opacity: 1; }
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-dim);
+  border-bottom: 2px solid var(--text-dim);
+}
+
+/* Minimized card */
+.card.minimized .card-body { display: none; }
+.card.minimized .resize-handle { display: none; }
+.card.minimized { min-height: unset; height: 36px !important; }
+
+/* ── Dependency arrows SVG layer ── */
+#arrows-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+#arrows-svg .arrow-visible {
+  fill: none;
+  stroke: rgba(255,255,255,0.18);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+  transition: stroke 0.05s, stroke-width 0.05s, filter 0.05s;
+}
+
+#arrows-svg .arrow-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 24;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+#arrows-svg .arrow-visible.arrow-hover {
+  stroke: rgba(255,255,255,0.6);
+  stroke-width: 3;
+}
+
+#arrows-svg .arrow-visible.arrow-selected {
+  stroke: rgba(139,92,246,0.85);
+  stroke-width: 3;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 6px rgba(139,92,246,0.4));
+}
+
+#arrows-svg .arrow-head {
+  fill: rgba(255,255,255,0.25);
+  stroke: none;
+}
+
+/* ── Arrow Info Popup ── */
+#arrow-info-popup {
+  display: none;
+  position: fixed;
+  z-index: 2500;
+  width: 340px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: rgba(16,16,16,0.96);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(139,92,246,0.3);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.1);
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  animation: arrowPopIn 0.18s cubic-bezier(0.34,1.56,0.64,1);
+}
+#arrow-info-popup.show { display: block; }
+
+@keyframes arrowPopIn {
+  from { opacity: 0; transform: scale(0.92) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.aip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.aip-header .aip-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: rgba(139,92,246,0.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+}
+.aip-header .aip-titles { flex: 1; min-width: 0; }
+.aip-header .aip-cap {
+  font-weight: 600; font-size: 14px; color: #c4b5fd;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.aip-header .aip-type {
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.aip-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.aip-section:last-child { border-bottom: none; }
+
+.aip-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.aip-value {
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.aip-value.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #a5b4fc;
+}
+
+.aip-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.aip-row:last-child { border-bottom: none; }
+.aip-stat { flex: 1; }
+.aip-stat .aip-label { margin-bottom: 2px; }
+.aip-stat .aip-val {
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+.aip-stat .aip-val.time  { color: #34d399; }
+.aip-stat .aip-val.model { color: #c4b5fd; }
+.aip-stat .aip-val.link  { color: #60a5fa; }
+
+.aip-flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.aip-node {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aip-node.from { border-left: 3px solid #60a5fa; }
+.aip-node.to   { border-left: 3px solid #34d399; }
+.aip-arrow-icon { color: var(--text-muted); font-size: 16px; flex-shrink: 0; }
+
+/* ── Context menu ── */
+#card-context-menu {
+  position: fixed;
+  z-index: 2000;
+  background: rgba(20,20,20,0.95);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 6px 0;
+  min-width: 200px;
+  display: none;
+  font-size: 12px;
+}
+
+#card-context-menu.show { display: block; }
+
+.ctx-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  transition: background var(--transition);
+}
+
+.ctx-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.ctx-item .ctx-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.ctx-item .ctx-label { flex: 1; }
+
+.ctx-item .ctx-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ── Camera card ── */
+.camera-card {
+  position: fixed;
+  top: 60px;
+  left: 16px;
+  width: 240px;
+  z-index: 900;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.camera-card video {
+  width: 100%;
+  display: block;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.camera-card .card-header {
+  height: 32px;
+  cursor: move;
+}
+
+.camera-card.minimized video { display: none; }
+
+/* ── Chat panel ── */
+#chat-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 380px;
+  max-height: 520px;
+  background: rgba(20,20,20,0.95);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#chat-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  flex-shrink: 0;
+}
+
+#chat-header .title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+#chat-header .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  margin-right: 8px;
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+}
+
+#chat-messages::-webkit-scrollbar { width: 4px; }
+#chat-messages::-webkit-scrollbar-track { background: transparent; }
+#chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.msg {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  max-width: 90%;
+  word-wrap: break-word;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+}
+
+.msg.agent {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--text-muted);
+  padding-left: 0;
+}
+
+.msg.system {
+  align-self: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+#chat-input-wrap {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#chat-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font);
+  outline: none;
+  resize: none;
+  height: 40px;
+  transition: border-color var(--transition);
+}
+
+#chat-input:focus {
+  border-color: var(--border-hover);
+}
+
+#chat-input::placeholder {
+  color: var(--text-dim);
+}
+
+/* Chat minimized */
+#chat-panel.minimized #chat-messages,
+#chat-panel.minimized #chat-input-wrap { display: none; }
+#chat-panel.minimized { max-height: 40px; }
+
+/* ── SDK Service config overlay ── */
+#config-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#config-overlay.hidden { display: none; }
+
+#config-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  width: 420px;
+  box-shadow: var(--shadow-lg);
+}
+
+#config-dialog h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+#config-dialog p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+#config-dialog label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+#config-dialog input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  margin-bottom: 16px;
+  transition: border-color var(--transition);
+}
+
+#config-dialog input:focus { border-color: var(--border-hover); }
+
+#config-dialog button {
+  width: 100%;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+#config-dialog button:hover { opacity: 0.9; }
+
+/* ── LoRA Training Modal ── */
+#lora-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  z-index: 3000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#lora-overlay.show { display: flex; }
+
+#lora-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px 24px;
+  width: 500px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+#lora-dialog h2 {
+  font-size: 16px; font-weight: 600;
+  margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+}
+#lora-dialog h2 .badge {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px;
+  background: rgba(139,92,246,0.15); color: #a78bfa;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+#lora-dialog .subtitle {
+  font-size: 12px; color: var(--text-muted);
+  margin-bottom: 20px; line-height: 1.5;
+}
+
+#lora-dialog label {
+  font-size: 11px; font-weight: 500;
+  color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.5px; display: block;
+  margin-bottom: 6px; margin-top: 14px;
+}
+#lora-dialog label:first-of-type { margin-top: 0; }
+
+#lora-dialog input[type="text"],
+#lora-dialog input[type="url"],
+#lora-dialog input[type="number"],
+#lora-dialog select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color var(--transition);
+}
+#lora-dialog input:focus,
+#lora-dialog select:focus { border-color: var(--border-hover); }
+
+#lora-dialog .hint {
+  font-size: 11px; color: var(--text-dim);
+  margin-top: 4px; line-height: 1.4;
+}
+
+/* Source tabs */
+.lora-source-tabs {
+  display: flex; gap: 0; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.lora-source-tab {
+  flex: 1; padding: 8px 12px;
+  font-size: 12px; font-weight: 500;
+  text-align: center; cursor: pointer;
+  background: var(--bg); color: var(--text-muted);
+  border: none; outline: none;
+  transition: background var(--transition), color var(--transition);
+}
+.lora-source-tab:not(:last-child) { border-right: 1px solid var(--border); }
+.lora-source-tab.active {
+  background: rgba(139,92,246,0.12); color: #a78bfa;
+}
+.lora-source-tab:hover:not(.active) {
+  background: var(--surface-hover); color: var(--text);
+}
+
+.lora-source-panel { display: none; }
+.lora-source-panel.active { display: block; }
+
+/* File drop zone */
+.lora-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 24px; text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.lora-dropzone:hover,
+.lora-dropzone.dragover {
+  border-color: #a78bfa;
+  background: rgba(139,92,246,0.05);
+}
+.lora-dropzone .dz-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }
+.lora-dropzone .dz-text { font-size: 13px; color: var(--text-muted); }
+.lora-dropzone .dz-hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.lora-dropzone .dz-files {
+  margin-top: 10px; font-size: 12px; color: var(--text);
+  font-family: var(--font-mono);
+}
+
+/* Button row */
+.lora-actions {
+  display: flex; gap: 10px; margin-top: 20px;
+}
+.lora-actions button {
+  flex: 1; padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.lora-actions button:hover { opacity: 0.9; }
+.lora-actions .lora-cancel {
+  background: var(--bg); color: var(--text-muted);
+}
+.lora-actions .lora-submit {
+  background: #7c3aed; color: #fff; border-color: #7c3aed;
+}
+.lora-actions .lora-submit:disabled {
+  opacity: 0.4; cursor: not-allowed;
+}
+
+/* Progress section */
+.lora-progress { margin-top: 16px; display: none; }
+.lora-progress.show { display: block; }
+.lora-progress-bar {
+  height: 6px; border-radius: 3px;
+  background: var(--border); overflow: hidden;
+  margin-bottom: 8px;
+}
+.lora-progress-fill {
+  height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+  width: 0%; transition: width 0.5s ease;
+}
+.lora-progress-text {
+  font-size: 12px; color: var(--text-muted);
+  display: flex; justify-content: space-between;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Selection prevention during drag ── */
+.dragging { user-select: none; }
+</style>
+</head>
+<body>
+
+<!-- Config overlay -->
+<div id="config-overlay">
+  <div id="config-dialog">
+    <h2>Connect to Livepeer</h2>
+    <p>Enter your SDK Service URL (for inference) and/or Orchestrator URL (for LLM enrichment).</p>
+    <label>SDK Service URL</label>
+    <input id="cfg-url" type="url" value="https://livepeer-sdk-service-90265565772.us-central1.run.app" placeholder="https://...">
+    <label style="margin-top:8px">Orchestrator URL (for prompt enrichment)</label>
+    <input id="cfg-orch-url" type="url" value="https://34.134.195.88:8935" placeholder="https://...">
+    <button id="cfg-connect">Connect</button>
+  </div>
+</div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <span class="logo">Livepeer Storyboard</span><span style="font-size:10px;color:var(--text-dim);margin-left:6px;">v3.0</span>
+  <span class="divider"></span>
+  <span id="card-count" class="status">0 cards</span>
+  <div class="zoom-controls">
+    <button id="zoom-out" title="Zoom out">−</button>
+    <span id="zoom-level">100%</span>
+    <button id="zoom-in" title="Zoom in">+</button>
+    <button id="zoom-fit" title="Fit all">&#9723;</button>
+  </div>
+  <span class="divider"></span>
+  <button id="train-lora-btn" title="Train LoRA model" style="background:rgba(139,92,246,0.12);color:#a78bfa;border:1px solid rgba(139,92,246,0.25);border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);">&#9881; Train LoRA</button>
+  <button id="save-all-btn" title="Save all media" style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);">&#8615; Save All</button>
+</div>
+
+<!-- Canvas -->
+<div id="canvas-viewport">
+  <div id="canvas">
+    <svg id="arrows-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<!-- Context menu for right-click on cards -->
+<div id="card-context-menu">
+  <div class="ctx-item" data-action="animate"><span class="ctx-icon">&#9654;</span><span class="ctx-label">Animate to video</span><span class="ctx-hint">i2v</span></div>
+  <div class="ctx-item" data-action="restyle"><span class="ctx-icon">&#9998;</span><span class="ctx-label">Restyle image</span><span class="ctx-hint">img2img</span></div>
+  <div class="ctx-item" data-action="upscale"><span class="ctx-icon">&#8593;</span><span class="ctx-label">Upscale / enhance</span></div>
+  <div class="ctx-item" data-action="transform-video"><span class="ctx-icon">&#9851;</span><span class="ctx-label">Transform video</span><span class="ctx-hint">v2v</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="custom"><span class="ctx-icon">&#9881;</span><span class="ctx-label">Custom prompt...</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="save"><span class="ctx-icon">&#8615;</span><span class="ctx-label">Save media</span></div>
+</div>
+
+<div id="arrow-info-popup"></div>
+
+<!-- LoRA Training Modal -->
+<div id="lora-overlay">
+  <div id="lora-dialog">
+    <h2>&#9881; Train LoRA <span class="badge">Flux</span></h2>
+    <div class="subtitle">Fine-tune a LoRA model on your images. Provide 10–30 images of your subject via URL, local files, or storyboard outputs.</div>
+
+    <label>Training Dataset</label>
+    <div class="lora-source-tabs">
+      <button class="lora-source-tab active" data-source="url">ZIP URL</button>
+      <button class="lora-source-tab" data-source="upload">Upload Files</button>
+      <button class="lora-source-tab" data-source="storyboard">From Storyboard</button>
+    </div>
+
+    <!-- Source: ZIP URL -->
+    <div class="lora-source-panel active" id="lora-src-url">
+      <input id="lora-zip-url" type="url" placeholder="https://example.com/my-training-images.zip">
+      <div class="hint">Direct URL to a .zip file containing 10–30 training images (JPG/PNG).</div>
+    </div>
+
+    <!-- Source: Upload Files -->
+    <div class="lora-source-panel" id="lora-src-upload">
+      <div class="lora-dropzone" id="lora-dropzone">
+        <div class="dz-icon">&#128206;</div>
+        <div class="dz-text">Drop images here or click to browse</div>
+        <div class="dz-hint">JPG, PNG — 10 to 30 images recommended</div>
+        <div class="dz-files" id="lora-file-list"></div>
+      </div>
+      <input type="file" id="lora-file-input" multiple accept="image/*" style="display:none">
+    </div>
+
+    <!-- Source: Storyboard cards -->
+    <div class="lora-source-panel" id="lora-src-storyboard">
+      <div class="hint" style="margin-bottom:8px">Select generated images from your storyboard to use as training data.</div>
+      <div id="lora-card-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:160px;overflow-y:auto;"></div>
+      <div class="hint" style="margin-top:6px"><span id="lora-card-count">0</span> images selected</div>
+    </div>
+
+    <label>Trigger Word</label>
+    <input id="lora-trigger" type="text" placeholder="e.g. MYTRIGGER, ohwx, sks" value="MYTRIGGER">
+    <div class="hint">A unique token that activates your LoRA in prompts. Keep it rare and uppercase.</div>
+
+    <label>Training Steps</label>
+    <input id="lora-steps" type="number" value="1000" min="100" max="5000" step="100">
+    <div class="hint">More steps = better quality but longer training. 500–1500 is typical.</div>
+
+    <label>Model</label>
+    <select id="lora-model">
+      <option value="fal-ai/flux-lora-fast-training" selected>Flux LoRA Fast Training (fal.ai)</option>
+    </select>
+
+    <div class="lora-progress" id="lora-progress">
+      <div class="lora-progress-bar"><div class="lora-progress-fill" id="lora-progress-fill"></div></div>
+      <div class="lora-progress-text">
+        <span id="lora-progress-status">Submitting…</span>
+        <span id="lora-progress-pct">0%</span>
+      </div>
+    </div>
+
+    <div class="lora-actions">
+      <button class="lora-cancel" id="lora-cancel">Cancel</button>
+      <button class="lora-submit" id="lora-submit">Start Training</button>
+    </div>
+  </div>
+</div>
+
+<!-- Camera -->
+<div class="camera-card" id="camera-card" style="display:none">
+  <div class="card-header" id="camera-drag-handle">
+    <span class="card-type-badge camera">CAM</span>
+    <span class="card-title">Camera</span>
+    <div class="card-controls">
+      <button class="card-btn" id="camera-toggle" title="Minimize">_</button>
+    </div>
+  </div>
+  <video id="camera-preview" autoplay muted playsinline></video>
+</div>
+
+<!-- Chat -->
+<div id="chat-panel">
+  <div id="chat-header">
+    <span class="status-dot"></span>
+    <span class="title">Agent</span>
+    <div class="card-controls">
+      <button class="card-btn" id="chat-toggle" title="Minimize">_</button>
+    </div>
+  </div>
+  <div id="chat-messages">
+    <div class="msg system">Connected — describe what you want to create</div>
+  </div>
+  <div id="chat-input-wrap">
+    <textarea id="chat-input" placeholder="Create a dragon as image using recraft, then animate it…" rows="1"></textarea>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Configuration
+// ============================================================
+let SDK_SERVICE = localStorage.getItem('sdk_service_url') || 'https://livepeer-sdk-service-90265565772.us-central1.run.app';
+let ORCH_URL = localStorage.getItem('orch_url') || 'https://34.134.195.88:8935';
+
+// ============================================================
+// Canvas state
+// ============================================================
+const canvas = document.getElementById('canvas');
+const viewport = document.getElementById('canvas-viewport');
+let scale = 1;
+let panX = 0, panY = 0;
+let isPanning = false;
+let panStartX, panStartY;
+let cards = [];
+let nextCardId = 0;
+let nextCol = 0, nextRow = 0;
+const CARD_W = 320, CARD_H = 280, GAP = 24;
+const COLS_PER_ROW = 5;
+
+function updateTransform() {
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+}
+
+// Pan with middle mouse or space+drag
+viewport.addEventListener('pointerdown', e => {
+  if (e.target !== viewport && e.target !== canvas && !e.target.matches('#canvas-viewport::before')) return;
+  if (e.button === 1 || e.button === 0) {
+    isPanning = true;
+    panStartX = e.clientX - panX;
+    panStartY = e.clientY - panY;
+    document.body.classList.add('dragging');
+    viewport.setPointerCapture(e.pointerId);
+  }
+});
+
+viewport.addEventListener('pointermove', e => {
+  if (!isPanning) return;
+  panX = e.clientX - panStartX;
+  panY = e.clientY - panStartY;
+  updateTransform();
+});
+
+viewport.addEventListener('pointerup', () => {
+  isPanning = false;
+  document.body.classList.remove('dragging');
+});
+
+// Zoom with scroll
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const worldX = (mx - panX) / scale;
+  const worldY = (my - panY) / scale;
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  scale = Math.max(0.1, Math.min(5, scale * delta));
+  panX = mx - worldX * scale;
+  panY = my - worldY * scale;
+  updateTransform();
+}, { passive: false });
+
+// Zoom buttons
+document.getElementById('zoom-in').onclick = () => { scale = Math.min(5, scale * 1.2); updateTransform(); };
+document.getElementById('zoom-out').onclick = () => { scale = Math.max(0.1, scale / 1.2); updateTransform(); };
+document.getElementById('zoom-fit').onclick = fitAll;
+
+function fitAll() {
+  if (cards.length === 0) { scale = 1; panX = 80; panY = 80; updateTransform(); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  cards.forEach(c => {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x + c.w);
+    maxY = Math.max(maxY, c.y + c.h);
+  });
+  const cw = maxX - minX + 100, ch = maxY - minY + 160;
+  const vw = viewport.clientWidth, vh = viewport.clientHeight - 48;
+  scale = Math.min(vw / cw, vh / ch, 2);
+  panX = (vw - cw * scale) / 2 - minX * scale;
+  panY = (vh - ch * scale) / 2 - minY * scale + 48;
+  updateTransform();
+}
+
+function nextPosition() {
+  // Try grid positions, skipping any that overlap existing cards
+  for (let attempts = 0; attempts < 100; attempts++) {
+    const col = (nextCol + attempts) % COLS_PER_ROW;
+    const row = Math.floor((nextCol + attempts) / COLS_PER_ROW);
+    const x = 60 + col * (CARD_W + GAP);
+    const y = 80 + row * (CARD_H + GAP);
+    if (!_overlapsAny(x, y, CARD_W, CARD_H)) {
+      nextCol += attempts + 1;
+      return { x, y };
+    }
+  }
+  // Fallback: place below everything
+  nextCol++;
+  const base = findFreeBasePosition(CARD_W, CARD_H);
+  return base;
+}
+
+/** Check if a rectangle overlaps any existing card (with padding). */
+function _overlapsAny(x, y, w, h, excludeId) {
+  const pad = GAP;
+  for (const c of cards) {
+    if (c.id === excludeId) continue;
+    if (x + w + pad > c.x && x < c.x + c.w + pad &&
+        y + h + pad > c.y && y < c.y + c.h + pad) return true;
+  }
+  return false;
+}
+
+/** Find a non-overlapping position near a source card (right side, then below). */
+function positionNear(srcCard, targetW, targetH, excludeId) {
+  const w = targetW || CARD_W;
+  const h = targetH || CARD_H;
+  // Try to the right of source
+  let x = srcCard.x + srcCard.w + GAP + 56;
+  let y = srcCard.y;
+  if (!_overlapsAny(x, y, w, h, excludeId)) return { x, y };
+  // Try stacking below existing cards at same x
+  for (let attempt = 1; attempt < 20; attempt++) {
+    y = srcCard.y + attempt * (h + GAP);
+    if (!_overlapsAny(x, y, w, h, excludeId)) return { x, y };
+  }
+  // Fallback: further right
+  x = srcCard.x + srcCard.w * 2 + GAP * 2 + 56;
+  y = srcCard.y;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (!_overlapsAny(x, y, w, h, excludeId)) return { x, y };
+    y += h + GAP;
+  }
+  return { x, y }; // give up, place anyway
+}
+
+/**
+ * Find a free region on the canvas for a batch of new cards.
+ * Returns {x, y} base position where a block of (blockW × blockH) pixels
+ * won't overlap any existing cards.
+ * Strategy: try below existing cards first, then to the right.
+ */
+function findFreeBasePosition(blockW, blockH) {
+  if (cards.length === 0) return { x: 60, y: 80 };
+  // Compute bounding box of all existing cards
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of cards) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x + c.w);
+    maxY = Math.max(maxY, c.y + c.h);
+  }
+  const margin = GAP * 3; // extra spacing between batches
+  // Strategy 1: Place below all existing cards (same left edge)
+  const belowY = maxY + margin;
+  if (!_overlapsAny(minX, belowY, blockW, blockH)) return { x: minX, y: belowY };
+  // Strategy 2: Place to the right of all existing cards (same top edge)
+  const rightX = maxX + margin;
+  if (!_overlapsAny(rightX, minY, blockW, blockH)) return { x: rightX, y: minY };
+  // Strategy 3: Spiral scan from bottom-right corner
+  const stepX = CARD_W + GAP;
+  const stepY = CARD_H + GAP;
+  for (let ring = 1; ring < 20; ring++) {
+    // Try positions in expanding rings
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = 0; dy <= ring; dy++) {
+        const tx = minX + dx * stepX;
+        const ty = maxY + margin + dy * stepY;
+        if (!_overlapsAny(tx, ty, blockW, blockH)) return { x: tx, y: ty };
+      }
+    }
+  }
+  // Final fallback: way below
+  return { x: minX, y: maxY + margin };
+}
+
+// ============================================================
+// Card management
+// ============================================================
+// ── Result registry — every output gets a unique ID for chat reference ──
+const registry = {}; // { "dragon_01": { card, result, type, title, url } }
+
+function createCard({ type, title, refId, width, height }) {
+  const id = nextCardId++;
+  const rid = refId || `out_${id}`;
+  const pos = nextPosition();
+  const w = width || CARD_W;
+  const h = height || CARD_H;
+
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.id = `card-${id}`;
+  el.dataset.refId = rid;
+  el.style.cssText = `left:${pos.x}px; top:${pos.y}px; width:${w}px; height:${h}px;`;
+
+  const safeTitle = (title || type).replace(/"/g, '&quot;');
+
+  el.innerHTML = `
+    <div class="card-header">
+      <span class="card-type-badge ${type}">${type.toUpperCase()}</span>
+      <input class="card-title" value="${safeTitle}" spellcheck="false" title="ref: ${rid}">
+      <span class="card-ref">${rid}</span>
+      <div class="card-controls">
+        <button class="card-btn save-btn" title="Save media" style="display:none;">&#8615;</button>
+        <button class="card-btn min-btn" title="Minimize">_</button>
+        <button class="card-btn close" title="Close">×</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="placeholder">
+        <div class="shimmer"></div>
+        <div class="spinner"></div>
+        <div class="label">Generating…</div>
+      </div>
+    </div>
+    <div class="resize-handle"></div>
+  `;
+
+  canvas.appendChild(el);
+  const card = { id, refId: rid, el, type, x: pos.x, y: pos.y, w, h, minimized: false };
+  cards.push(card);
+  registry[rid] = { card, result: null, type, title: title || type, url: null };
+
+  // Drag
+  setupDrag(el.querySelector('.card-header'), card);
+  // Resize
+  setupResize(el.querySelector('.resize-handle'), card);
+  // Minimize
+  el.querySelector('.min-btn').onclick = () => {
+    card.minimized = !card.minimized;
+    el.classList.toggle('minimized', card.minimized);
+  };
+  // Save
+  el.querySelector('.save-btn').onclick = () => saveCardMedia(card);
+  // Close
+  el.querySelector('.close').onclick = () => {
+    el.remove();
+    cards = cards.filter(c => c.id !== id);
+    removeArrowEdgesFor(rid);
+    delete registry[rid];
+    updateCardCount();
+  };
+  // Right-click context menu
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e, card);
+  });
+
+  updateCardCount();
+  return card;
+}
+
+function setCardContent(card, { imageUrl, videoUrl, audioUrl, error, capability, elapsed }) {
+  const body = card.el.querySelector('.card-body');
+  const rid = card.refId;
+  if (error) {
+    body.innerHTML = `<div class="card-error">${error}</div>`;
+    if (registry[rid]) registry[rid].error = error;
+    return;
+  }
+  const url = imageUrl || videoUrl || audioUrl;
+  if (registry[rid]) { registry[rid].url = url; }
+
+  // Build metadata overlay
+  const metaParts = [`<span class="meta-ref">${rid}</span>`];
+  if (capability) metaParts.push(`<span class="meta-model">${capability}</span>`);
+  if (elapsed) metaParts.push(`<span class="meta-time">${(elapsed / 1000).toFixed(1)}s</span>`);
+  const metaHtml = `<div class="card-meta">${metaParts.join('')}</div>`;
+
+  // Show save button when media is available
+  const saveBtn = card.el.querySelector('.save-btn');
+  if (saveBtn && (imageUrl || videoUrl || audioUrl)) saveBtn.style.display = '';
+
+  if (imageUrl) {
+    body.innerHTML = `<img src="${imageUrl}" alt="${rid}" loading="lazy">${metaHtml}`;
+  } else if (videoUrl) {
+    body.innerHTML = `<video src="${videoUrl}" controls autoplay muted loop playsinline></video>${metaHtml}`;
+  } else if (audioUrl) {
+    body.innerHTML = `<audio src="${audioUrl}" controls></audio>${metaHtml}`;
+  } else {
+    // No media URL returned — show the raw data or a "no output" message
+    const dataStr = card._lastData ? JSON.stringify(card._lastData, null, 2).slice(0, 300) : 'No media URL in response';
+    body.innerHTML = `<div class="card-error">No media returned\n${dataStr}</div>${metaHtml}`;
+  }
+}
+
+function updateCardCount() {
+  document.getElementById('card-count').textContent = cards.length + ' card' + (cards.length !== 1 ? 's' : '');
+}
+
+// ============================================================
+// Save / Download media
+// ============================================================
+
+/** Get the media URL for a card (from registry). */
+function _getCardMediaUrl(card) {
+  const reg = registry[card.refId];
+  if (!reg) return null;
+  const result = reg.result || {};
+  return result._resolvedImageUrl || result._resolvedVideoUrl
+    || result.image_url || result.video_url || result.audio_url
+    || reg.url;
+}
+
+/** Guess file extension from a URL or data URI. */
+function _guessExt(url, type) {
+  if (url.startsWith('data:')) {
+    const mime = url.split(';')[0].split(':')[1] || '';
+    if (mime.includes('png')) return 'png';
+    if (mime.includes('webp')) return 'webp';
+    if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+    if (mime.includes('mp4')) return 'mp4';
+    if (mime.includes('webm')) return 'webm';
+    if (mime.includes('wav')) return 'wav';
+    if (mime.includes('mp3') || mime.includes('mpeg')) return 'mp3';
+  }
+  const path = url.split('?')[0].split('#')[0];
+  const ext = path.split('.').pop().toLowerCase();
+  if (['png','jpg','jpeg','webp','gif','mp4','webm','mov','mp3','wav','ogg'].includes(ext)) return ext;
+  if (type === 'image') return 'png';
+  if (type === 'video') return 'mp4';
+  if (type === 'music') return 'mp3';
+  return 'bin';
+}
+
+/** Download a single card's media. */
+async function saveCardMedia(card) {
+  const url = _getCardMediaUrl(card);
+  if (!url) { alert('No media to save for this card.'); return; }
+  const ext = _guessExt(url, card.type);
+  const filename = `${card.refId}.${ext}`;
+  try {
+    let blob;
+    if (url.startsWith('data:')) {
+      const resp = await fetch(url);
+      blob = await resp.blob();
+    } else {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      blob = await resp.blob();
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    // Fallback: open in new tab
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+}
+
+/** Save all cards that have media. */
+async function saveAllMedia() {
+  const mediaCards = cards.filter(c => _getCardMediaUrl(c));
+  if (mediaCards.length === 0) { alert('No media to save.'); return; }
+  const btn = document.getElementById('save-all-btn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = `Saving 0/${mediaCards.length}...`;
+  for (let i = 0; i < mediaCards.length; i++) {
+    btn.textContent = `Saving ${i + 1}/${mediaCards.length}...`;
+    await saveCardMedia(mediaCards[i]);
+    // Small delay between downloads to avoid browser blocking
+    if (i < mediaCards.length - 1) await new Promise(r => setTimeout(r, 500));
+  }
+  btn.textContent = origText;
+  btn.disabled = false;
+}
+
+// ============================================================
+// Dependency Arrows
+// ============================================================
+const arrowEdges = []; // { fromRefId, toRefId, meta: { capability, prompt, params, elapsed, action } }
+const arrowsSvg = document.getElementById('arrows-svg');
+const arrowInfoPopup = document.getElementById('arrow-info-popup');
+let selectedArrowIdx = -1;
+
+function addArrowEdge(fromRefId, toRefId, meta = {}) {
+  const existing = arrowEdges.find(e => e.fromRefId === fromRefId && e.toRefId === toRefId);
+  if (existing) {
+    // Update metadata if arrow already exists
+    if (Object.keys(meta).length) Object.assign(existing.meta, meta);
+    return;
+  }
+  arrowEdges.push({ fromRefId, toRefId, meta });
+  redrawArrows();
+}
+
+function updateArrowMeta(fromRefId, toRefId, meta) {
+  const edge = arrowEdges.find(e => e.fromRefId === fromRefId && e.toRefId === toRefId);
+  if (edge) Object.assign(edge.meta, meta);
+}
+
+function removeArrowEdgesFor(refId) {
+  const before = arrowEdges.length;
+  for (let i = arrowEdges.length - 1; i >= 0; i--) {
+    if (arrowEdges[i].fromRefId === refId || arrowEdges[i].toRefId === refId) arrowEdges.splice(i, 1);
+  }
+  if (arrowEdges.length !== before) redrawArrows();
+}
+
+function redrawArrows() {
+  arrowsSvg.innerHTML = '';
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  marker.setAttribute('id', 'arrowhead');
+  marker.setAttribute('markerWidth', '8');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('refX', '8');
+  marker.setAttribute('refY', '3');
+  marker.setAttribute('orient', 'auto');
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  poly.setAttribute('points', '0 0, 8 3, 0 6');
+  poly.setAttribute('class', 'arrow-head');
+  marker.appendChild(poly);
+  defs.appendChild(marker);
+  arrowsSvg.appendChild(defs);
+
+  for (const edge of arrowEdges) {
+    const fromCard = cards.find(c => c.refId === edge.fromRefId);
+    const toCard = cards.find(c => c.refId === edge.toRefId);
+    if (!fromCard || !toCard) continue;
+
+    // Center-right of source → center-left of target
+    const x1 = fromCard.x + fromCard.w;
+    const y1 = fromCard.y + fromCard.h / 2;
+    const x2 = toCard.x;
+    const y2 = toCard.y + toCard.h / 2;
+
+    // Cubic Bezier with horizontal pull
+    const dx = Math.abs(x2 - x1);
+    const pull = Math.max(60, dx * 0.4);
+    const cx1 = x1 + pull;
+    const cy1 = y1;
+    const cx2 = x2 - pull;
+    const cy2 = y2;
+
+    const d = `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+    const edgeIdx = arrowEdges.indexOf(edge);
+
+    // Visible arrow path
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('marker-end', 'url(#arrowhead)');
+    path.classList.add('arrow-visible');
+    if (edgeIdx === selectedArrowIdx) path.classList.add('arrow-selected');
+
+    // Wide invisible hit area on top for hover + click
+    const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hitPath.setAttribute('d', d);
+    hitPath.classList.add('arrow-hit');
+
+    // Hover: toggle class on the visible path
+    hitPath.addEventListener('mouseenter', () => path.classList.add('arrow-hover'));
+    hitPath.addEventListener('mouseleave', () => path.classList.remove('arrow-hover'));
+
+    // Click handler
+    hitPath.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showArrowInfo(edgeIdx, e);
+    });
+
+    arrowsSvg.appendChild(path);
+    arrowsSvg.appendChild(hitPath);
+  }
+}
+
+// ============================================================
+// Arrow Info Popup
+// ============================================================
+function showArrowInfo(edgeIdx, evt) {
+  const edge = arrowEdges[edgeIdx];
+  if (!edge) return;
+
+  selectedArrowIdx = edgeIdx;
+  redrawArrows();
+
+  const m = edge.meta || {};
+  const fromReg = registry[edge.fromRefId] || {};
+  const toReg = registry[edge.toRefId] || {};
+  const fromTitle = fromReg.title || edge.fromRefId;
+  const toTitle = toReg.title || edge.toRefId;
+
+  // Determine type icon
+  const typeIcon = m.type === 'video' ? '&#9654;'
+    : m.type === 'audio' ? '&#9835;'
+    : '&#9634;';
+  const typeLabel = m.type || toReg.type || 'transform';
+
+  let html = `
+    <div class="aip-header">
+      <div class="aip-icon">${typeIcon}</div>
+      <div class="aip-titles">
+        <div class="aip-cap">${m.capability || '—'}</div>
+        <div class="aip-type">${typeLabel}</div>
+      </div>
+    </div>
+    <div class="aip-flow">
+      <div class="aip-node from" title="${edge.fromRefId}">${fromTitle}</div>
+      <span class="aip-arrow-icon">&#10230;</span>
+      <div class="aip-node to" title="${edge.toRefId}">${toTitle}</div>
+    </div>`;
+
+  // Stats row
+  const elapsed = m.elapsed ? (m.elapsed / 1000).toFixed(1) + 's' : '—';
+  html += `
+    <div class="aip-row">
+      <div class="aip-stat">
+        <div class="aip-label">Model</div>
+        <div class="aip-val model">${m.capability || '—'}</div>
+      </div>
+      <div class="aip-stat">
+        <div class="aip-label">Latency</div>
+        <div class="aip-val time">${elapsed}</div>
+      </div>
+    </div>`;
+
+  // Prompt
+  if (m.prompt) {
+    const promptText = m.prompt.length > 200 ? m.prompt.slice(0, 200) + '...' : m.prompt;
+    html += `
+      <div class="aip-section">
+        <div class="aip-label">Prompt</div>
+        <div class="aip-value">${promptText.replace(/</g, '&lt;')}</div>
+      </div>`;
+  }
+
+  // Params (image_url, strength, etc.)
+  const params = m.params || {};
+  const paramKeys = Object.keys(params).filter(k => k !== 'image_url' && k !== 'video_url');
+  if (params.image_url || params.video_url || paramKeys.length) {
+    html += `<div class="aip-section"><div class="aip-label">Parameters</div>`;
+    if (params.image_url) {
+      const urlDisplay = params.image_url.startsWith('data:') ? 'data:image/... (base64)' : params.image_url.slice(0, 60) + '...';
+      html += `<div class="aip-value mono" style="font-size:11px; margin-bottom:4px;">image_url: ${urlDisplay.replace(/</g, '&lt;')}</div>`;
+    }
+    if (params.video_url) {
+      const urlDisplay = params.video_url.startsWith('data:') ? 'data:video/... (base64)' : params.video_url.slice(0, 60) + '...';
+      html += `<div class="aip-value mono" style="font-size:11px; margin-bottom:4px;">video_url: ${urlDisplay.replace(/</g, '&lt;')}</div>`;
+    }
+    for (const k of paramKeys) {
+      const v = typeof params[k] === 'object' ? JSON.stringify(params[k]) : String(params[k]);
+      html += `<div class="aip-value mono" style="font-size:11px; margin-bottom:2px;">${k}: ${v.replace(/</g, '&lt;')}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Action (if from context menu)
+  if (m.action) {
+    html += `
+      <div class="aip-section">
+        <div class="aip-label">Action</div>
+        <div class="aip-value">${m.action}</div>
+      </div>`;
+  }
+
+  arrowInfoPopup.innerHTML = html;
+  arrowInfoPopup.classList.add('show');
+
+  // Position near click, but keep on screen
+  const popW = 340, popH = arrowInfoPopup.offsetHeight || 300;
+  let px = evt.clientX + 12;
+  let py = evt.clientY - 20;
+  if (px + popW > window.innerWidth - 16) px = evt.clientX - popW - 12;
+  if (py + popH > window.innerHeight - 16) py = window.innerHeight - popH - 16;
+  if (py < 16) py = 16;
+  arrowInfoPopup.style.left = px + 'px';
+  arrowInfoPopup.style.top = py + 'px';
+}
+
+function hideArrowInfo() {
+  arrowInfoPopup.classList.remove('show');
+  if (selectedArrowIdx >= 0) {
+    selectedArrowIdx = -1;
+    redrawArrows();
+  }
+}
+
+// Dismiss arrow info on click outside
+document.addEventListener('click', (e) => {
+  if (selectedArrowIdx >= 0 && !arrowInfoPopup.contains(e.target)) {
+    hideArrowInfo();
+  }
+});
+
+// ============================================================
+// Restyle Intelligence — model selection & prompt engineering
+// ============================================================
+
+// Model capabilities for image editing / restyling
+const RESTYLE_MODELS = {
+  'kontext-edit': {
+    priority: 1,
+    strengths: 'Best for style transfer while preserving composition, faces, and layout. Handles complex scene transforms.',
+    promptStrategy: 'instruction',  // Instruction-based: "Change the style to..."
+  },
+  'reve-edit': {
+    priority: 2,
+    strengths: 'Good for artistic restyling and text-driven edits. Preserves structure well.',
+    promptStrategy: 'instruction',
+  },
+};
+
+// Style presets with optimized prompts per model
+const STYLE_PRESETS = {
+  watercolor:    { label: 'Watercolor',    kw: /watercolor|watercolour/i,   instruction: 'Restyle this image as a watercolor painting with soft, translucent washes of color, visible paper texture, and gentle bleeding edges. Keep all subjects, composition, and layout exactly the same.' },
+  oilpaint:      { label: 'Oil Painting',  kw: /oil\s*paint/i,             instruction: 'Transform this image into a classical oil painting with visible brushstrokes, rich impasto texture, and deep color saturation. Preserve all subjects and composition exactly.' },
+  anime:         { label: 'Anime',         kw: /anime|manga/i,             instruction: 'Convert this image to anime/manga style with clean linework, cel-shading, large expressive eyes, and vibrant flat colors. Keep the same subjects, poses, and composition.' },
+  cartoon:       { label: 'Cartoon',       kw: /cartoon|comic/i,           instruction: 'Restyle this image as a cartoon with bold outlines, simplified shapes, exaggerated features, and bright flat colors. Maintain the same subjects and layout.' },
+  sketch:        { label: 'Pencil Sketch', kw: /sketch|pencil|drawing/i,   instruction: 'Convert this image into a detailed pencil sketch with fine hatching, cross-hatching for shadows, and clean linework on white paper. Keep all subjects and composition identical.' },
+  pixel:         { label: 'Pixel Art',     kw: /pixel\s*art|8[\s-]?bit|retro\s*game/i, instruction: 'Transform this image into pixel art with a limited color palette, visible square pixels, and retro 16-bit game aesthetic. Preserve the same subjects and layout.' },
+  cyberpunk:     { label: 'Cyberpunk',     kw: /cyberpunk|neon|synthwave/i, instruction: 'Restyle this image in cyberpunk aesthetic with neon lighting, holographic elements, rain-slicked surfaces, and a pink-cyan-purple color scheme. Keep all subjects and composition the same.' },
+  steampunk:     { label: 'Steampunk',     kw: /steampunk|victorian\s*sci/i,instruction: 'Transform this image into steampunk style with brass gears, copper pipes, Victorian industrial aesthetic, and warm sepia tones. Preserve all subjects and layout.' },
+  noir:          { label: 'Film Noir',     kw: /noir|black\s*and\s*white|monochrome|b&w/i, instruction: 'Convert this image to dramatic film noir style with high-contrast black and white, deep shadows, venetian blind lighting, and moody atmosphere. Keep subjects and composition identical.' },
+  vintage:       { label: 'Vintage',       kw: /vintage|retro|70s|80s|old\s*photo/i, instruction: 'Apply a vintage photograph aesthetic with faded warm tones, film grain, slight vignetting, and muted pastel colors reminiscent of 1970s photography. Keep all subjects the same.' },
+  popart:        { label: 'Pop Art',       kw: /pop\s*art|warhol|lichtenstein/i, instruction: 'Transform this image into Andy Warhol-inspired pop art with bold primary colors, Ben-Day dots, high contrast, and graphic flat color fills. Preserve subjects and composition.' },
+  impressionist: { label: 'Impressionist', kw: /impressionist|monet|renoir/i, instruction: 'Restyle this image as a French Impressionist painting with visible dappled brushstrokes, soft light, atmospheric color mixing, and a dreamy quality. Keep subjects and composition identical.' },
+  surreal:       { label: 'Surreal',       kw: /surreal|dali|dream/i,       instruction: 'Transform this image into a surrealist artwork with dreamlike distortions, impossible geometry, melting forms, and symbolic elements while keeping the core subjects recognizable.' },
+  ghibli:        { label: 'Studio Ghibli', kw: /ghibli|miyazaki/i,          instruction: 'Convert this image to Studio Ghibli animation style with lush painted backgrounds, soft lighting, gentle color palettes, and whimsical character rendering. Keep the same subjects and composition.' },
+  '3d':          { label: '3D Render',     kw: /3d\s*render|blender|unreal|cgi/i, instruction: 'Transform this image into a photorealistic 3D render with clean geometry, subsurface scattering, global illumination, and slightly glossy surfaces. Keep subjects and composition identical.' },
+};
+
+function selectRestyleModel() {
+  // MUST use image-editing models that preserve composition
+  for (const model of ['kontext-edit', 'reve-edit']) {
+    if (AVAILABLE_CAPS.has(model)) {
+      console.log('[Restyle] Selected editing model:', model);
+      return model;
+    }
+  }
+  // Last resort fallback — will NOT preserve original image
+  console.warn('[Restyle] No editing models available! Falling back to text-to-image.');
+  return AVAILABLE_CAPS.has('recraft-v4') ? 'recraft-v4' : 'nano-banana';
+}
+
+function buildRestylePrompt(userInput, model) {
+  const modelInfo = RESTYLE_MODELS[model];
+
+  // Check if user input matches a known style preset
+  let matchedPreset = null;
+  for (const [key, preset] of Object.entries(STYLE_PRESETS)) {
+    if (preset.kw.test(userInput)) {
+      matchedPreset = preset;
+      break;
+    }
+  }
+
+  if (modelInfo?.promptStrategy === 'instruction') {
+    // Instruction-based models (kontext-edit, reve-edit):
+    // These work best with explicit "keep the same" directives
+    if (matchedPreset) {
+      return matchedPreset.instruction;
+    }
+    // Custom style — wrap with preservation instructions
+    return `Restyle this image: ${userInput}. IMPORTANT: Keep all subjects, people, objects, poses, and spatial composition exactly the same. Only change the artistic style, colors, and rendering technique. Do not add, remove, or reposition any elements.`;
+  }
+
+  // Fallback for text-to-image models (recraft, nano-banana) — these can't truly edit
+  // Best effort: describe the original + new style
+  if (matchedPreset) {
+    return `${matchedPreset.instruction} Photorealistic reference quality.`;
+  }
+  return `${userInput}. Highly detailed, professional quality.`;
+}
+
+// ============================================================
+// Right-click Context Menu
+// ============================================================
+const ctxMenu = document.getElementById('card-context-menu');
+let ctxTargetCard = null;
+
+function showContextMenu(e, card) {
+  e.preventDefault();
+  ctxTargetCard = card;
+  ctxMenu.style.left = e.clientX + 'px';
+  ctxMenu.style.top = e.clientY + 'px';
+  ctxMenu.classList.add('show');
+
+  // Adjust menu items based on card type
+  const items = ctxMenu.querySelectorAll('.ctx-item');
+  const hasMedia = registry[card.refId]?.url || registry[card.refId]?.result;
+  const isImage = card.type === 'image';
+  const isVideo = card.type === 'video';
+  items.forEach(item => {
+    const action = item.dataset.action;
+    if (action === 'animate') item.style.display = (isImage && hasMedia) ? 'flex' : 'none';
+    if (action === 'restyle') item.style.display = (isImage && hasMedia) ? 'flex' : 'none';
+    if (action === 'upscale') item.style.display = (isImage && hasMedia) ? 'flex' : 'none';
+    if (action === 'transform-video') item.style.display = (isVideo && hasMedia) ? 'flex' : 'none';
+    if (action === 'save') item.style.display = hasMedia ? 'flex' : 'none';
+  });
+}
+
+document.addEventListener('click', () => ctxMenu.classList.remove('show'));
+document.addEventListener('contextmenu', e => {
+  if (!ctxMenu.contains(e.target)) ctxMenu.classList.remove('show');
+});
+
+ctxMenu.addEventListener('click', async (e) => {
+  const item = e.target.closest('.ctx-item');
+  if (!item || !ctxTargetCard) return;
+  ctxMenu.classList.remove('show');
+
+  const action = item.dataset.action;
+  const srcCard = ctxTargetCard;
+
+  // Handle save action immediately — no registry needed
+  if (action === 'save') {
+    saveCardMedia(srcCard);
+    return;
+  }
+
+  const srcReg = registry[srcCard.refId];
+  if (!srcReg) return;
+
+  // Get media URLs from the source card — check all possible response shapes
+  const srcResult = srcReg.result || {};
+  let srcImageUrl = srcResult._resolvedImageUrl || srcResult.image_url || srcReg.url;
+  if (!srcImageUrl) {
+    const d = srcResult.data || {};
+    const img0 = d.images?.[0];
+    if (img0) srcImageUrl = img0.url || (img0.base64 ? `data:${img0.mime_type || 'image/png'};base64,${img0.base64}` : null);
+    // Check data.image (singular) — topaz-upscale, bg-remove etc.
+    if (!srcImageUrl && d.image) srcImageUrl = typeof d.image === 'string' ? d.image : d.image.url;
+  }
+  // Get video URL from source card
+  let srcVideoUrl = srcResult._resolvedVideoUrl || srcResult.video_url;
+  if (!srcVideoUrl) {
+    const d = srcResult.data || {};
+    if (d.video) srcVideoUrl = typeof d.video === 'string' ? d.video : d.video.url;
+    if (!srcVideoUrl) srcVideoUrl = d.video_url || d.url;
+  }
+  // For video cards, srcReg.url might be the video URL
+  if (!srcVideoUrl && srcCard.type === 'video' && srcReg.url) srcVideoUrl = srcReg.url;
+
+  let prompt = '';
+  let capability = '';
+  let newType = 'image';
+
+  if (action === 'animate') {
+    prompt = window.prompt('Describe the animation:', `Animate "${srcCard.el.querySelector('.card-title').value}" with smooth cinematic motion, subtle camera movement`);
+    if (!prompt) return;
+    capability = AVAILABLE_CAPS.has('ltx-i2v') ? 'ltx-i2v' : (AVAILABLE_CAPS.has('lucy-i2v') ? 'lucy-i2v' : 'ltx-t2v-23');
+    newType = 'video';
+  } else if (action === 'restyle') {
+    const styleInput = window.prompt('Describe the new style:', 'watercolor painting with loose brushstrokes');
+    if (!styleInput) return;
+    // Use image-editing models that preserve composition
+    capability = selectRestyleModel();
+    prompt = buildRestylePrompt(styleInput, capability);
+    newType = 'image';
+  } else if (action === 'upscale') {
+    prompt = 'Upscale and enhance this image with sharp details';
+    capability = AVAILABLE_CAPS.has('topaz-upscale') ? 'topaz-upscale' : (AVAILABLE_CAPS.has('gemini-image') ? 'gemini-image' : 'recraft-v4');
+    newType = 'image';
+  } else if (action === 'transform-video') {
+    prompt = window.prompt('Describe the video transformation:', 'Transform this video into anime style with vibrant colors');
+    if (!prompt) return;
+    capability = AVAILABLE_CAPS.has('wan-v2v') ? 'wan-v2v' : 'ltx-t2v-23';
+    newType = 'video';
+  } else if (action === 'custom') {
+    prompt = window.prompt('Enter your prompt:', '');
+    if (!prompt) return;
+    // Auto-detect type from prompt
+    const isVideo = /\b(animate|video|motion|move|cinematic)\b/i.test(prompt);
+    const isEdit = /\b(style|restyle|transform|change|convert|make it|turn it|into|edit|modify|adjust|watercolor|oil paint|anime|cartoon|sketch|pixel|cyberpunk|steampunk|noir|vintage|pop art|impressionist|surreal)\b/i.test(prompt);
+    newType = isVideo ? 'video' : 'image';
+    if (isVideo) {
+      capability = AVAILABLE_CAPS.has('ltx-i2v') ? 'ltx-i2v' : 'ltx-t2v-23';
+    } else if (isEdit && srcImageUrl) {
+      capability = selectRestyleModel();
+      prompt = buildRestylePrompt(prompt, capability);
+    } else {
+      capability = AVAILABLE_CAPS.has('recraft-v4') ? 'recraft-v4' : 'nano-banana';
+    }
+  }
+
+  // Create new card and arrow
+  const newRefId = `${srcCard.refId}_${action}_${Date.now().toString(36).slice(-4)}`;
+  const newCard = createCard({
+    type: newType,
+    title: prompt.slice(0, 40),
+    refId: newRefId,
+  });
+
+  // Position near source, avoiding overlaps
+  const nearPos = positionNear(srcCard, newCard.w, newCard.h, newCard.id);
+  newCard.x = nearPos.x;
+  newCard.y = nearPos.y;
+  newCard.el.style.left = newCard.x + 'px';
+  newCard.el.style.top = newCard.y + 'px';
+
+  // Draw arrow from source to new card
+  addArrowEdge(srcCard.refId, newRefId, {
+    capability, prompt, action, type: newType,
+  });
+
+  addMessage(`${newRefId}: [${capability}] ${prompt.slice(0, 60)}…`, 'agent');
+
+  // Run inference
+  try {
+    const params = {};
+    const isEditModel = ['kontext-edit', 'reve-edit', 'topaz-upscale', 'bg-remove'].includes(capability);
+    if (srcImageUrl && (action === 'animate' || action === 'restyle' || action === 'upscale' || isEditModel)) {
+      params.image_url = srcImageUrl;
+    }
+    if (srcVideoUrl && (action === 'transform-video' || capability === 'wan-v2v')) {
+      if (srcVideoUrl.startsWith('data:')) {
+        // Base64 videos (from lucy-i2v) can't be used as wan-v2v input — too large
+        setCardContent(newCard, { error: 'This video is base64 (from lucy-i2v) and cannot be used for video-to-video. Regenerate the source with ltx-i2v or kling-i2v instead.' });
+        addMessage(`${newRefId}: Cannot use base64 video for v2v. Use ltx-i2v or kling-i2v as source instead.`, 'agent');
+        return;
+      }
+      params.video_url = srcVideoUrl;
+    }
+    const t0 = performance.now();
+    const result = await runInference(capability, prompt, params);
+    const elapsed = performance.now() - t0;
+
+    let imageUrl = result.image_url;
+    let videoUrl = result.video_url;
+    let audioUrl = result.audio_url;
+    const data = result.data || {};
+    if (!videoUrl && data.video) videoUrl = typeof data.video === 'string' ? data.video : data.video.url;
+    if (!imageUrl && data.images?.[0]) imageUrl = data.images[0].url || (data.images[0].base64 ? `data:${data.images[0].mime_type || 'image/png'};base64,${data.images[0].base64}` : null);
+      if (!imageUrl && data.image) imageUrl = typeof data.image === 'string' ? data.image : data.image.url;
+
+    result._resolvedImageUrl = imageUrl;
+    result._resolvedVideoUrl = videoUrl;
+    newCard._lastData = data;
+
+    setCardContent(newCard, { imageUrl, videoUrl, audioUrl, capability, elapsed });
+    if (registry[newRefId]) {
+      registry[newRefId].result = result;
+      registry[newRefId].url = imageUrl || videoUrl || audioUrl;
+    }
+    // Update arrow metadata with inference results
+    updateArrowMeta(srcCard.refId, newRefId, { elapsed, params });
+    addMessage(`${newRefId} done (${capability}, ${(elapsed / 1000).toFixed(1)}s)`, 'agent');
+  } catch (err) {
+    setCardContent(newCard, { error: err.message });
+    addMessage(`${newRefId} failed: ${err.message}`, 'agent');
+  }
+});
+
+// ============================================================
+// Drag & Resize
+// ============================================================
+function setupDrag(handle, card) {
+  let startX, startY, origX, origY;
+  handle.addEventListener('pointerdown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    e.stopPropagation();
+    startX = e.clientX; startY = e.clientY;
+    origX = card.x; origY = card.y;
+    document.body.classList.add('dragging');
+
+    const onMove = ev => {
+      card.x = origX + (ev.clientX - startX) / scale;
+      card.y = origY + (ev.clientY - startY) / scale;
+      card.el.style.left = card.x + 'px';
+      card.el.style.top = card.y + 'px';
+      redrawArrows();
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('dragging');
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+function setupResize(handle, card) {
+  handle.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    const origW = card.w, origH = card.h;
+    document.body.classList.add('dragging');
+
+    const onMove = ev => {
+      card.w = Math.max(200, origW + (ev.clientX - startX) / scale);
+      card.h = Math.max(160, origH + (ev.clientY - startY) / scale);
+      card.el.style.width = card.w + 'px';
+      card.el.style.height = card.h + 'px';
+      redrawArrows();
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('dragging');
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+// ============================================================
+// Camera
+// ============================================================
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const video = document.getElementById('camera-preview');
+    video.srcObject = stream;
+    document.getElementById('camera-card').style.display = '';
+    return stream;
+  } catch (e) {
+    console.warn('Camera not available:', e);
+    return null;
+  }
+}
+
+// Camera drag
+setupDrag(document.getElementById('camera-drag-handle'), {
+  get x() { return parseInt(document.getElementById('camera-card').style.left) || 16; },
+  set x(v) { document.getElementById('camera-card').style.left = v + 'px'; },
+  get y() { return parseInt(document.getElementById('camera-card').style.top) || 60; },
+  set y(v) { document.getElementById('camera-card').style.top = v + 'px'; },
+  el: document.getElementById('camera-card')
+});
+
+document.getElementById('camera-toggle').onclick = () => {
+  document.getElementById('camera-card').classList.toggle('minimized');
+};
+
+// ============================================================
+// Chat
+// ============================================================
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+
+function addMessage(text, role = 'agent') {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+document.getElementById('chat-toggle').onclick = () => {
+  document.getElementById('chat-panel').classList.toggle('minimized');
+};
+
+// Chat drag
+(function() {
+  const panel = document.getElementById('chat-panel');
+  const header = document.getElementById('chat-header');
+  let sx, sy, ox, oy;
+  header.addEventListener('pointerdown', e => {
+    if (e.target.tagName === 'BUTTON') return;
+    sx = e.clientX; sy = e.clientY;
+    const rect = panel.getBoundingClientRect();
+    ox = rect.left; oy = rect.top;
+    document.body.classList.add('dragging');
+    const onMove = ev => {
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+      panel.style.left = (ox + ev.clientX - sx) + 'px';
+      panel.style.top = (oy + ev.clientY - sy) + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('dragging');
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+})();
+
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    handleUserMessage(text);
+  }
+});
+
+// ============================================================
+// SDK Service API
+// ============================================================
+async function sdkFetch(path, body, timeout = 300000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(SDK_SERVICE + path, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err.slice(0, 200)}`);
+    }
+    return await resp.json();
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+async function listCapabilities() {
+  return sdkFetch('/capabilities');
+}
+
+async function runInference(capability, prompt, params = {}, imageData = null) {
+  const body = { capability, prompt, params };
+  if (imageData) body.image_data = imageData;
+  return sdkFetch('/inference', body, 300000);
+}
+
+const ENRICH_SYSTEM_PROMPT = `You are a master creative director AI agent controlling a media generation pipeline.
+
+Given a user's task, produce a PRECISE execution plan as a JSON array.
+
+For EACH step, return:
+- "id": unique snake_case ref ID (e.g. "dragon_abyss_01") — used to reference this output later
+- "type": "image" | "video" | "music"
+- "prompt": richly enriched prompt — see PROMPT ENGINEERING below
+- "capability": exact model name from catalog below
+- "depends_on": step id this depends on (for image→video, image→edit chains), or null
+- "params": optional dict of extra params (e.g. {"width": 1024, "height": 1024} for size-capped images)
+- "title": short display title for the UI card
+
+IMPORTANT RULES:
+1. OUTPUT COUNT vs SUBJECT COUNT — ABSOLUTELY CRITICAL:
+   Numbers describe EITHER subjects in the scene OR number of outputs. You MUST distinguish:
+   - "two girls skating" → 1 image containing two girls (number describes SUBJECTS)
+   - "three cats playing" → 1 image containing three cats (number describes SUBJECTS)
+   - "a dragon fighting five knights" → 1 image with one dragon and five knights (SUBJECTS)
+   - "create 3 pictures of a cat" → 3 separate images (number modifies "pictures" = OUTPUT COUNT)
+   - "5 images of landscapes" → 5 separate images (number modifies "images" = OUTPUT COUNT)
+   A number is an OUTPUT COUNT ONLY when it directly modifies words like "pictures", "images", "photos", "videos", "drawings", "sketches", "outputs", "variations". Otherwise it describes subjects in the scene. When no output count is given, produce exactly 1 output.
+2. UNIQUE VARIETY: Each output MUST differ in at least 3 of: camera angle, style, mood, lighting, composition.
+3. MODEL DISTRIBUTION: Spread across different models for stylistic diversity unless user specifies one.
+4. NAMING: Each id must be unique, descriptive, snake_case.
+5. SEQUENCING: Independent steps run concurrently. Only add depends_on for true dependencies.
+6. IMAGE→VIDEO CHAINS: Use URL-returning models (recraft-v4, nano-banana, flux-*) for the image step. Do NOT use gemini-image — it returns base64 which video models cannot consume.
+6b. VIDEO→VIDEO CHAINS (wan-v2v): The source video MUST have an HTTP URL. Do NOT use lucy-i2v as source for wan-v2v chains — lucy-i2v returns base64 video which wan-v2v cannot consume. Use ltx-i2v or kling-i2v instead (they return URLs).
+6c. IMAGE SIZE FOR VIDEO CHAINS: When an image step feeds into a video step (image→video), add "params": {"width": 1024, "height": 1024} to the image step. Video models have a 10MB input limit — high-res images from recraft-v4 or flux-pro can exceed this.
+
+MULTI-PHASE WORKFLOW PLANNING — CRITICAL:
+11. SEQUENTIAL PHASES: When the user says "create X, then do Y with some of them", you MUST create ALL generation steps FIRST, then create dependent steps with depends_on pointing to specific source steps. Example: "create 5 images, animate 2 of them" → 5 image steps (no depends_on) + 2 video steps (each with depends_on pointing to a specific image step).
+12. SELECTION CONSTRAINTS: When the user says "pick N of them" or "select some", choose N specific source steps to chain from. If there's a constraint (e.g. "not from gemini"), ensure the selected source steps satisfy that constraint — use appropriate models for those specific sources.
+13. INDEPENDENT GROUPS: Different subjects in the same prompt are independent. "Create 5 portraits AND 2 fish drawings" → 5 portrait steps + 2 fish steps, ALL independent (no depends_on between groups). They run concurrently.
+14. NEVER create video steps without an image source unless the user explicitly asks for text-to-video. "Animate" or "bring to life" ALWAYS means image→video (i2v) with depends_on, not text-to-video.
+
+EDITING vs GENERATION — CRITICAL:
+7. RESTYLING / STYLE TRANSFER: When the user wants to change the style of an existing image, ALWAYS use an IMAGE EDITING model (kontext-edit or reve-edit) with depends_on pointing to the source. These models preserve composition/subjects. NEVER use text-to-image models for restyling.
+8. EDITING MODELS require image_url (injected via depends_on). They EDIT the input. Text-to-image models GENERATE from scratch.
+9. UPSCALING: Use topaz-upscale with depends_on. BACKGROUND REMOVAL: Use bg-remove with depends_on.
+
+PROMPT ENGINEERING BY MODEL TYPE:
+- Text-to-image: Rich descriptive prompt — subject, artistic style, lighting, composition, mood, color palette, camera angle, atmosphere, texture.
+- Image editing (kontext-edit, reve-edit): INSTRUCTION prompt — "Restyle this image as [style]. Keep all subjects, poses, and composition exactly the same. Only change the artistic rendering." Be explicit about what to KEEP and what to CHANGE.
+- Video: Describe the MOTION — camera movement, subject animation, atmosphere dynamics. Not just the scene.
+- Audio (TTS): The prompt IS the text to speak.
+
+MODEL CATALOG:
+Image (text-to-image):
+  - nano-banana    | 3s   | Draft quality    | Testing, quick iterations. Returns URL.
+  - recraft-v4     | 8s   | High quality     | Illustrations, graphic design, sharp details. Returns URL.
+  - gemini-image   | 10s  | High quality     | Photorealism, creative compositions. Returns base64 — NOT for image→video chains.
+  - flux-schnell   | 5s   | Good quality     | Fast FLUX model, versatile styles. Returns URL.
+  - flux-dev       | 12s  | High quality     | FLUX dev, better detail than schnell. Returns URL.
+  - flux-pro       | 15s  | Best quality     | FLUX pro, highest quality FLUX. Returns URL.
+  - qwen-image     | 10s  | High quality     | Qwen image generation, good with Asian art styles. Returns URL.
+  - fast-lcm       | 2s   | Draft quality    | Fastest image gen, LCM distilled. Returns URL.
+
+Image (editing/processing — requires image_url from prior step):
+  - kontext-edit   | 10s  | High quality     | Edit/transform images with text instructions. Requires image_url.
+  - reve-edit      | 10s  | High quality     | Image editing and restyling. Requires image_url.
+  - topaz-upscale  | 8s   | Enhancement      | Upscale and enhance image resolution. Requires image_url.
+  - bg-remove      | 3s   | Utility          | Remove background from image. Requires image_url.
+
+Video:
+  - ltx-t2v-23     | 20s  | Good quality     | Text-to-video, general purpose (no image input needed)
+  - ltx-i2v        | 20s  | Good quality     | Image-to-video, animates a still (requires image_url)
+  - lucy-i2v       | 30s  | High quality     | Image-to-video, cinematic motion (requires image_url)
+  - wan-v2v        | 25s  | Good quality     | Video-to-video, transforms existing video
+  - kling-i2v      | 40s  | Best quality     | Image-to-video, professional cinematic (requires image_url)
+
+Audio:
+  - chatterbox-tts | 5s   | Good quality     | Text-to-speech, natural voice
+  - lux-tts        | 5s   | Good quality     | Text-to-speech, expressive voice
+
+Return ONLY a valid JSON array. No markdown, no explanation, no code fences.`;
+
+// Cache for live capabilities from orchestrator
+let _liveCapsCache = null;
+let _liveCapsCacheTime = 0;
+const CAPS_CACHE_TTL = 60000; // 1 minute
+
+async function fetchLiveCapabilities() {
+  const now = Date.now();
+  if (_liveCapsCache && (now - _liveCapsCacheTime) < CAPS_CACHE_TTL) return _liveCapsCache;
+  try {
+    const caps = await listCapabilities();
+    _liveCapsCache = caps.map(c => {
+      const name = c.name || '';
+      const modelInfo = MODELS[name];
+      // Determine sub-type for editing models
+      let subType = '';
+      if (['kontext-edit', 'reve-edit'].includes(name)) subType = 'image-editing (requires image_url, preserves composition)';
+      else if (name === 'topaz-upscale') subType = 'image-upscale (requires image_url, enhances resolution)';
+      else if (name === 'bg-remove') subType = 'image-utility (requires image_url, removes background)';
+      else if (/i2v/.test(name)) subType = 'image-to-video (requires image_url)';
+      else if (/v2v/.test(name)) subType = 'video-to-video (requires video_url)';
+      else if (/t2v/.test(name)) subType = 'text-to-video';
+      else if (/tts/.test(name)) subType = 'text-to-speech';
+      return {
+        name,
+        model_id: c.model_id || name,
+        type: modelInfo?.type || 'image',
+        sub_type: subType,
+        description: modelInfo
+          ? `${modelInfo.desc}. Latency:${modelInfo.latency}/10, Quality:${modelInfo.quality}/10, Creativity:${modelInfo.creativity}/10`
+          : (c.model_id || name),
+      };
+    });
+    _liveCapsCacheTime = now;
+    // Also update AVAILABLE_CAPS
+    _liveCapsCache.forEach(c => AVAILABLE_CAPS.add(c.name));
+    return _liveCapsCache;
+  } catch (e) {
+    console.warn('Failed to fetch live capabilities:', e.message);
+    // Fallback to static AVAILABLE_CAPS
+    return [...AVAILABLE_CAPS].filter(c => c !== 'gemini-text').map(name => ({
+      name,
+      model_id: MODELS[name]?.desc || name,
+      type: MODELS[name]?.type || 'image',
+      description: MODELS[name] ? `${MODELS[name].desc}, latency:${MODELS[name].latency}/10 quality:${MODELS[name].quality}/10` : '',
+    }));
+  }
+}
+
+async function enrichTask(task, context = '') {
+  // Fetch live capabilities and pass to the LLM planner
+  const capsList = await fetchLiveCapabilities();
+
+  // Try agentic enrichment v2 first (chain-of-thought + decompose + validate)
+  if (SDK_SERVICE) {
+    try {
+      const v2Result = await sdkFetch('/enrich/v2', {
+        task, context, capabilities: capsList, quality: 'balanced',
+      }, 60000);
+
+      // Show reasoning in chat if available
+      if (v2Result.reasoning) {
+        const r = v2Result.reasoning;
+        if (r.intent) addMessage(`Intent: ${r.intent}`, 'system');
+        if (r.narrative) addMessage(`Narrative: ${r.narrative}`, 'system');
+        if (r.output_count_reasoning) addMessage(`Count: ${r.output_count_reasoning}`, 'system');
+      }
+      if (v2Result.validation_fixes?.length) {
+        v2Result.validation_fixes.forEach(f => addMessage(`Validate fix: ${f}`, 'system'));
+      }
+      if (v2Result.phases?.length) {
+        addMessage(`Phases: ${v2Result.phases.join(' → ')}`, 'system');
+      }
+      return v2Result;
+    } catch (e) {
+      console.warn('Enrichment v2 failed, trying v1:', e.message);
+      addMessage(`Agentic planner failed (${e.message}), trying simple planner…`, 'system');
+    }
+
+    // Fallback to v1
+    try {
+      return await sdkFetch('/enrich', { task, context, capabilities: capsList }, 30000);
+    } catch (e) {
+      console.warn('SDK Service enrichment v1 also failed:', e.message);
+    }
+  }
+
+  // Last resort: direct orchestrator
+  let fullPrompt = ENRICH_SYSTEM_PROMPT + '\n\nUser task: ' + task;
+  if (context) fullPrompt += '\n\nContext: ' + context;
+
+  const header = btoa(JSON.stringify({
+    request: JSON.stringify({ run: 'echo' }),
+    capability: 'gemini-text',
+    timeout_seconds: 60,
+  }));
+
+  const resp = await fetch(ORCH_URL + '/process/request/gemini-text', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Livepeer': header,
+    },
+    body: JSON.stringify({ prompt: fullPrompt }),
+  });
+
+  if (!resp.ok) throw new Error(`Enrichment HTTP ${resp.status}`);
+  const result = await resp.json();
+  let raw = result.text || '';
+  let clean = raw.trim();
+  if (clean.startsWith('```')) clean = clean.split('\n').slice(1).join('\n');
+  if (clean.endsWith('```')) clean = clean.slice(0, -3);
+  clean = clean.trim();
+  const steps = JSON.parse(clean);
+  return { steps, raw };
+}
+
+/** Request re-planning after a step failure. */
+async function requestReplan(originalSteps, failedStepId, error, completedResults) {
+  if (!SDK_SERVICE) return null;
+  const capsList = await fetchLiveCapabilities();
+  try {
+    return await sdkFetch('/replan', {
+      original_steps: originalSteps,
+      failed_step_id: failedStepId,
+      error: error,
+      completed_results: completedResults,
+      capabilities: capsList,
+    }, 20000);
+  } catch (e) {
+    console.warn('Re-plan failed:', e.message);
+    return null;
+  }
+}
+
+// ============================================================
+// Live camera processing
+// ============================================================
+let liveSession = null; // { card, capability, prompt, interval, running }
+
+function captureFrame() {
+  const video = document.getElementById('camera-preview');
+  if (!video.srcObject || video.videoWidth === 0) return null;
+  const c = document.createElement('canvas');
+  c.width = Math.min(video.videoWidth, 640); // cap resolution for speed
+  c.height = Math.round(c.width * video.videoHeight / video.videoWidth);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(video, 0, 0, c.width, c.height);
+  // Return base64 without the data URI prefix
+  return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+
+async function startLiveProcessing(capability, prompt, intervalMs = 3000) {
+  if (liveSession?.running) {
+    stopLiveProcessing();
+  }
+
+  const card = createCard({ type: 'stream', title: `Live: ${capability}`, width: 400, height: 340 });
+  const body = card.el.querySelector('.card-body');
+  body.innerHTML = `
+    <div class="placeholder">
+      <div class="shimmer"></div>
+      <div class="spinner"></div>
+      <div class="label">Waiting for first frame…</div>
+    </div>
+  `;
+
+  liveSession = { card, capability, prompt, running: true, inflight: false, frameCount: 0 };
+
+  addMessage(`Live processing started — ${capability} every ${intervalMs/1000}s`, 'agent');
+
+  const tick = async () => {
+    if (!liveSession?.running) return;
+    if (liveSession.inflight) return; // skip if previous request still pending
+
+    const frame = captureFrame();
+    if (!frame) { return; }
+
+    liveSession.inflight = true;
+    liveSession.frameCount++;
+    const n = liveSession.frameCount;
+
+    try {
+      const result = await runInference(capability, prompt || '', {}, frame);
+      if (!liveSession?.running) return;
+      const url = result.image_url || result.video_url;
+      if (url) {
+        const body = card.el.querySelector('.card-body');
+        body.innerHTML = `<img src="${url}" alt="frame ${n}">`;
+        // Update title with frame count
+        card.el.querySelector('.card-title').value = `Live: ${capability} #${n}`;
+      }
+    } catch (e) {
+      if (liveSession?.running) {
+        addMessage(`Live frame ${n} error: ${e.message}`, 'system');
+      }
+    } finally {
+      if (liveSession) liveSession.inflight = false;
+    }
+  };
+
+  liveSession.timer = setInterval(tick, intervalMs);
+  tick(); // first frame immediately
+}
+
+function stopLiveProcessing() {
+  if (!liveSession) return;
+  liveSession.running = false;
+  if (liveSession.timer) clearInterval(liveSession.timer);
+  addMessage(`Live processing stopped after ${liveSession.frameCount} frames`, 'agent');
+  liveSession = null;
+}
+
+// ============================================================
+// Model catalog — media agent skill for model selection
+// ============================================================
+const MODELS = {
+  // Image generation (1-10 scale: latency, quality, creativity)
+  'nano-banana':   { type: 'image', latency: 9, quality: 3, creativity: 4, desc: 'fast draft, Google' },
+  'recraft-v4':    { type: 'image', latency: 6, quality: 8, creativity: 7, desc: 'illustration, sharp details' },
+  'gemini-image':  { type: 'image', latency: 5, quality: 8, creativity: 8, desc: 'photorealistic, creative (base64)' },
+  'flux-schnell':  { type: 'image', latency: 8, quality: 6, creativity: 6, desc: 'fast FLUX, good balance' },
+  'flux-dev':      { type: 'image', latency: 5, quality: 8, creativity: 7, desc: 'FLUX dev, high quality' },
+  'flux-pro':      { type: 'image', latency: 4, quality: 9, creativity: 8, desc: 'FLUX 2 Pro, maximum quality' },
+  'qwen-image':    { type: 'image', latency: 5, quality: 8, creativity: 8, desc: 'Qwen, next-gen unified model' },
+  // Image editing / transformation
+  'kontext-edit':  { type: 'image', latency: 5, quality: 8, creativity: 7, desc: 'local edits, scene transforms' },
+  'reve-edit':     { type: 'image', latency: 5, quality: 7, creativity: 7, desc: 'text-driven image editing' },
+  'topaz-upscale': { type: 'image', latency: 6, quality: 9, creativity: 3, desc: 'professional upscaling' },
+  'bg-remove':     { type: 'image', latency: 8, quality: 8, creativity: 2, desc: 'background removal' },
+  'fast-lcm':      { type: 'image', latency: 9, quality: 5, creativity: 5, desc: 'fast LCM diffusion, img2img' },
+  // Video
+  'ltx-t2v-23':    { type: 'video', latency: 5, quality: 7, creativity: 6, desc: 'text-to-video' },
+  'ltx-i2v':       { type: 'video', latency: 5, quality: 7, creativity: 6, desc: 'image-to-video' },
+  'lucy-i2v':      { type: 'video', latency: 3, quality: 8, creativity: 7, desc: 'cinematic i2v' },
+  'wan-v2v':       { type: 'video', latency: 3, quality: 8, creativity: 7, desc: 'video-to-video' },
+  'kling-i2v':     { type: 'video', latency: 2, quality: 9, creativity: 8, desc: 'Kling 3 Pro, cinematic i2v' },
+  // Audio / TTS
+  'chatterbox-tts': { type: 'audio', latency: 6, quality: 7, creativity: 5, desc: 'multi-speaker dialogue TTS' },
+  'lux-tts':        { type: 'audio', latency: 6, quality: 8, creativity: 5, desc: 'high-quality voice cloning 48kHz' },
+  // Live stream
+  'scope-live':    { type: 'stream', latency: 8, quality: 7, creativity: 8, desc: 'realtime LCM diffusion' },
+};
+
+const IMAGE_MODELS = Object.entries(MODELS).filter(([,m]) => m.type === 'image').map(([k]) => k);
+const VIDEO_MODELS = Object.entries(MODELS).filter(([,m]) => m.type === 'video').map(([k]) => k);
+
+function selectModel(type, preference = 'balanced') {
+  const pool = Object.entries(MODELS).filter(([,m]) => m.type === type);
+  if (pool.length === 0) return 'nano-banana';
+  // Score based on preference
+  const scored = pool.map(([name, m]) => {
+    let score;
+    switch (preference) {
+      case 'fast':     score = m.latency * 3 + m.quality; break;
+      case 'quality':  score = m.quality * 3 + m.creativity; break;
+      case 'creative': score = m.creativity * 3 + m.quality; break;
+      default:         score = m.latency + m.quality + m.creativity; break;
+    }
+    return { name, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].name;
+}
+
+function selectDiverseModels(type, count) {
+  // Pick diverse models, cycling through quality tiers
+  const pool = Object.entries(MODELS).filter(([,m]) => m.type === type).map(([k]) => k);
+  if (pool.length === 0) return Array(count).fill('nano-banana');
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    result.push(pool[i % pool.length]);
+  }
+  return result;
+}
+
+// ============================================================
+// Capability alias map (for "using X" shortcuts)
+// ============================================================
+const CAPABILITY_ALIASES = {
+  nano: 'nano-banana', banana: 'nano-banana', draft: 'nano-banana',
+  recraft: 'recraft-v4',
+  gemini: 'gemini-image',
+  flux: 'flux-schnell', schnell: 'flux-schnell',
+  'flux-dev': 'flux-dev', 'flux-pro': 'flux-pro',
+  qwen: 'qwen-image',
+  kontext: 'kontext-edit', edit: 'kontext-edit',
+  reve: 'reve-edit',
+  upscale: 'topaz-upscale', topaz: 'topaz-upscale', enhance: 'topaz-upscale',
+  'bg-remove': 'bg-remove', background: 'bg-remove', remove: 'bg-remove',
+  lcm: 'fast-lcm',
+  scope: 'scope-live', daydream: 'scope-live', live: 'scope-live',
+  ltx: 'ltx-t2v-23',
+  lucy: 'lucy-i2v',
+  wan: 'wan-v2v',
+  kling: 'kling-i2v',
+  tts: 'chatterbox-tts', speech: 'chatterbox-tts', chatterbox: 'chatterbox-tts',
+  lux: 'lux-tts',
+};
+
+function resolveCapability(hint, type = 'image') {
+  if (!hint) return selectModel(type, 'balanced');
+  const h = hint.toLowerCase();
+  for (const [k, v] of Object.entries(CAPABILITY_ALIASES)) {
+    if (h.includes(k)) return v;
+  }
+  // Check preference keywords
+  if (/fast|quick|draft/.test(h)) return selectModel(type, 'fast');
+  if (/best|stun|high|quality/.test(h)) return selectModel(type, 'quality');
+  if (/art|creat|unique|wild/.test(h)) return selectModel(type, 'creative');
+  return selectModel(type, 'balanced');
+}
+
+// ============================================================
+// Available capabilities (fetched from orchestrator)
+// ============================================================
+let AVAILABLE_CAPS = new Set([
+  'nano-banana', 'recraft-v4', 'gemini-image', 'gemini-text',
+  'flux-schnell', 'flux-dev', 'flux-pro', 'qwen-image',
+  'kontext-edit', 'reve-edit', 'topaz-upscale', 'bg-remove',
+  'fast-lcm', 'ltx-t2v-23', 'ltx-i2v', 'lucy-i2v', 'wan-v2v',
+  'kling-i2v', 'chatterbox-tts', 'lux-tts', 'scope-live',
+]);
+
+// Models that are actually available for inference (subset of MODELS)
+function getAvailableModels(type) {
+  return Object.entries(MODELS)
+    .filter(([name, m]) => m.type === type && AVAILABLE_CAPS.has(name))
+    .map(([name]) => name);
+}
+
+function selectAvailableDiverseModels(type, count) {
+  const pool = getAvailableModels(type);
+  if (pool.length === 0) return Array(count).fill('nano-banana');
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    result.push(pool[i % pool.length]);
+  }
+  return result;
+}
+
+// ============================================================
+// Local fallback parser (when LLM enrichment is unavailable)
+// ============================================================
+function parseStepsLocal(task) {
+  const lower = task.toLowerCase();
+
+  // Detect quantity: "5 pictures", "three images", etc.
+  const numWords = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
+  let count = 1;
+  const countMatch = lower.match(/(\d+)\s+(?:picture|image|photo|video|clip|song|track|music)/);
+  const wordMatch = lower.match(/(one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:picture|image|photo|video|clip|song|track|music)/);
+  if (countMatch) count = parseInt(countMatch[1]);
+  else if (wordMatch) count = numWords[wordMatch[1]];
+
+  // Detect explicit "using X"
+  const capMatch = task.match(/using\s+(\S+)/i);
+  const capHint = capMatch ? capMatch[1] : '';
+  const forceModel = capHint ? resolveCapability(capHint) : null;
+  // Verify forced model is available
+  const validForce = forceModel && AVAILABLE_CAPS.has(forceModel) ? forceModel : null;
+
+  // Detect type
+  let type = 'image';
+  if (/video|animate|clip|i2v|t2v|v2v/i.test(lower)) type = 'video';
+  else if (/music|audio|song|soundtrack|track/i.test(lower)) type = 'music';
+
+  // Clean base prompt — extract the core subject
+  let basePrompt = task.replace(/\s*using\s+\S+/i, '').trim();
+  basePrompt = basePrompt.replace(/^(give|create|generate|make|draw|paint)\s+(me\s+)?/i, '').trim();
+  basePrompt = basePrompt.replace(/^\d+\s+/, '').replace(/^(pictures?|images?|photos?|videos?|clips?|songs?|tracks?)\s*(,\s*)?/i, '').trim();
+  basePrompt = basePrompt.replace(/^(of\s+|where\s+(each\s+)?)/i, '').trim();
+  // Remove meta-instructions like "with different styles, vibe, and details"
+  basePrompt = basePrompt.replace(/,?\s*with\s+different\s+[\w\s,]+$/i, '').trim();
+
+  // Build steps with AVAILABLE diverse models
+  const models = validForce ? Array(count).fill(validForce) : selectAvailableDiverseModels(type, count);
+
+  // Rich enrichment templates for multi-output
+  const styles = [
+    { vibe: 'dramatic', angle: 'wide cinematic shot', lighting: 'harsh directional light with deep shadows', palette: 'dark blues and crimson' },
+    { vibe: 'serene', angle: 'close-up portrait', lighting: 'soft bioluminescent glow', palette: 'teals and soft purples' },
+    { vibe: 'chaotic', angle: 'bird\'s-eye view', lighting: 'strobing lightning flashes', palette: 'electric blues and oranges' },
+    { vibe: 'mysterious', angle: 'low angle looking up', lighting: 'moonlit with volumetric fog', palette: 'deep greens and silver' },
+    { vibe: 'ethereal', angle: 'dutch angle', lighting: 'golden hour underwater rays', palette: 'warm amber and turquoise' },
+    { vibe: 'intense', angle: 'extreme close-up on faces', lighting: 'harsh rim light', palette: 'red and black' },
+    { vibe: 'whimsical', angle: 'isometric view', lighting: 'magical sparkles', palette: 'pastel rainbow' },
+    { vibe: 'dark', angle: 'silhouette composition', lighting: 'single backlight', palette: 'monochrome with one accent color' },
+    { vibe: 'luminous', angle: 'macro detail shot', lighting: 'glowing from within', palette: 'neon cyan and magenta' },
+    { vibe: 'epic', angle: 'panoramic ultra-wide', lighting: 'god rays through clouds', palette: 'gold and deep purple' },
+  ];
+
+  // Generate a short subject slug for IDs
+  const slug = basePrompt.slice(0, 20).replace(/\s+/g, '_').replace(/[^a-z0-9_]/gi, '').toLowerCase();
+
+  return Array.from({ length: count }, (_, i) => {
+    const s = styles[i % styles.length];
+    const id = `${slug}_${String(i+1).padStart(2, '0')}`;
+    const enrichedPrompt = count > 1
+      ? `${basePrompt}. ${s.angle}, ${s.vibe} mood, ${s.lighting}, color palette: ${s.palette}. Highly detailed, professional quality.`
+      : basePrompt;
+    return {
+      id,
+      type,
+      prompt: enrichedPrompt,
+      capability: models[i],
+      depends_on: null,
+      title: count > 1 ? `${basePrompt.slice(0, 30)} — ${s.vibe}` : basePrompt.slice(0, 40),
+    };
+  });
+}
+
+// ============================================================
+// Master Agent — enrich, plan, distribute, execute
+// ============================================================
+async function handleUserMessage(text) {
+  addMessage(text, 'user');
+
+  // ── Special commands ──
+  if (/^(ls|list)\s*(cap|capabilities)?$/i.test(text)) {
+    addMessage('Listing capabilities…', 'system');
+    try {
+      const caps = await listCapabilities();
+      const lines = caps.map(c => `  ${c.name} (${MODELS[c.name]?.desc || c.model_id})`);
+      addMessage(`Available:\n${lines.join('\n')}`, 'agent');
+    } catch (e) {
+      addMessage(`Error: ${e.message}`, 'agent');
+    }
+    return;
+  }
+
+  if (/^stop\s*(live|stream|camera|processing)?$/i.test(text)) {
+    stopLiveProcessing();
+    return;
+  }
+
+  if (/^(train|lora|train\s+lora|lora\s+train(ing)?|fine[\s-]?tune)$/i.test(text)) {
+    openLoraDialog();
+    return;
+  }
+
+  // ── Live camera / scope processing ──
+  // Matches: "process my camera using scope", "stream camera using scope every 5s",
+  //          "scope my camera", "use scope on my camera", "scope transform into cyberpunk"
+  const scopeMatch = text.match(/\bscope\b/i);
+  const liveMatch = text.match(/(?:process|live|stream|scope)\s+(?:my\s+)?(?:camera|video|webcam)(?:\s+(?:as|to)\s+\w+)?\s*(?:using\s+(\S+))?(?:\s+every\s+(\d+)s?)?/i)
+                 || (scopeMatch && text.match(/(?:using\s+)?scope\b(?:\s+(?:on\s+)?(?:my\s+)?(?:camera|video|webcam))?\s*(?:every\s+(\d+)s?)?/i));
+  if (liveMatch || scopeMatch) {
+    // If "scope" mentioned anywhere, force scope-live capability
+    const capHint = scopeMatch ? 'scope' : (liveMatch[1] || '');
+    const intervalSec = parseInt(liveMatch?.[2] || liveMatch?.[1]) || 3;
+    const cap = resolveCapability(capHint, 'image');
+    let prompt = text.replace(/(?:process|live|stream|scope)\s+(?:my\s+)?(?:camera|video|webcam)?/i, '').trim();
+    prompt = prompt.replace(/\s*using\s+\S+/i, '').replace(/\s*every\s+\d+s?/i, '').trim();
+    if (!prompt) prompt = 'enhance the video';
+    addMessage(`Starting Scope live processing (${cap}) — "${prompt}"`, 'agent');
+    startLiveProcessing(cap, prompt, intervalSec * 1000);
+    return;
+  }
+
+  // ── Registry lookup: "show dragon_01" / "describe dragon_01" ──
+  const refMatch = text.match(/^(?:show|open|describe|info)\s+(\S+)/i);
+  if (refMatch && registry[refMatch[1]]) {
+    const entry = registry[refMatch[1]];
+    const info = [`ID: ${refMatch[1]}`, `Type: ${entry.type}`, `Title: ${entry.title}`];
+    if (entry.url) info.push(`URL: ${entry.url}`);
+    if (entry.error) info.push(`Error: ${entry.error}`);
+    addMessage(info.join('\n'), 'agent');
+    return;
+  }
+
+  // ── Build context from registry for enrichment ──
+  // Include URLs so the LLM planner can reference them via depends_on for editing/chaining
+  const regEntries = Object.entries(registry).filter(([,v]) => v.url);
+  let contextStr = '';
+  if (regEntries.length > 0) {
+    const entries = regEntries.map(([id, v]) => {
+      let desc = `${id} (${v.type}: "${v.title}"`;
+      if (v.url && !v.url.startsWith('data:')) desc += `, url available`;
+      desc += ')';
+      return desc;
+    });
+    contextStr = `Previous outputs available for editing/chaining (use depends_on to reference by id):\n${entries.join('\n')}`;
+  }
+
+  // ── Master Agent: try LLM enrichment, fall back to local parser ──
+  let steps;
+  let enrichSource = 'local';
+  try {
+    addMessage('Agentic planning (decompose → plan → validate)…', 'system');
+    const enriched = await enrichTask(text, contextStr);
+    if (enriched.steps && enriched.steps.length > 0) {
+      // Validate steps: ensure each has required fields and uses available capabilities
+      steps = enriched.steps.map((s, i) => ({
+        id: s.id || `step_${i+1}`,
+        type: s.type || 'image',
+        prompt: s.prompt || text,
+        capability: s.capability || 'nano-banana',
+        depends_on: s.depends_on ?? null,
+        params: s.params || {},
+        title: s.title || `Step ${i+1}`,
+      }));
+      enrichSource = 'gemini';
+      const models = [...new Set(steps.map(s => s.capability))];
+      addMessage(`LLM planned ${steps.length} step(s) across ${models.length} model(s): ${models.join(', ')}`, 'agent');
+      // Show enriched prompts in chat
+      steps.forEach(s => {
+        addMessage(`  ${s.id}: [${s.capability}] "${s.prompt.slice(0, 100)}…"`, 'system');
+      });
+    }
+  } catch (e) {
+    addMessage(`LLM enrichment failed: ${e.message} — using local planner`, 'system');
+    console.warn('Enrichment error:', e);
+  }
+
+  if (!steps || steps.length === 0) {
+    steps = parseStepsLocal(text);
+    const models = [...new Set(steps.map(s => s.capability))];
+    addMessage(`Local plan: ${steps.length} step(s): ${models.join(', ')}`, 'agent');
+  }
+
+  // ── Build ID→index map and classify steps ──
+  const idToIdx = {};
+  steps.forEach((s, i) => { if (s.id) idToIdx[s.id] = i; });
+  const independent = [];
+  const dependent = [];
+  const depIdxOf = new Array(steps.length).fill(-1); // parent index per step
+  for (let i = 0; i < steps.length; i++) {
+    const dep = steps[i].depends_on;
+    const di = typeof dep === 'string' ? idToIdx[dep] : dep;
+    if (di != null && di >= 0 && di < i) {
+      dependent.push(i);
+      depIdxOf[i] = di;
+    } else {
+      independent.push(i);
+    }
+  }
+
+  // ── DAG layout: compute depth per step and assign (col, row) ──
+  const depth = new Array(steps.length).fill(0);
+  for (let i = 0; i < steps.length; i++) {
+    if (depIdxOf[i] >= 0) depth[i] = depth[depIdxOf[i]] + 1;
+  }
+  // Group by depth level; within each level, sort by parent row to keep chains aligned
+  const maxDepth = Math.max(...depth, 0);
+  const colSlots = []; // colSlots[d] = next available row at depth d
+  for (let d = 0; d <= maxDepth; d++) colSlots.push(0);
+  const layout = new Array(steps.length); // { col, row }
+  // Place roots first (depth 0) — spread vertically
+  for (const i of independent) {
+    layout[i] = { col: 0, row: colSlots[0]++ };
+  }
+  // Place dependents at their depth, aligning with parent row when possible
+  for (let d = 1; d <= maxDepth; d++) {
+    const atDepth = [];
+    for (let i = 0; i < steps.length; i++) {
+      if (depth[i] === d) atDepth.push(i);
+    }
+    // Sort by parent row to keep chains visually aligned
+    atDepth.sort((a, b) => (layout[depIdxOf[a]]?.row ?? 0) - (layout[depIdxOf[b]]?.row ?? 0));
+    for (const i of atDepth) {
+      const parentRow = layout[depIdxOf[i]]?.row ?? 0;
+      // Try parent's row first, then scan for free slot
+      let row = parentRow;
+      const usedRows = new Set(atDepth.filter(j => layout[j]).map(j => layout[j].row));
+      while (usedRows.has(row)) row++;
+      layout[i] = { col: d, row };
+      colSlots[d] = Math.max(colSlots[d], row + 1);
+    }
+  }
+
+  // ── Compute pixel positions from (col, row) ──
+  const colGap = CARD_W + GAP + 56;   // horizontal spacing between columns
+  const rowGap = CARD_H + GAP;        // vertical spacing between rows
+  // Calculate total block size and find free region avoiding existing cards
+  const totalCols = maxDepth + 1;
+  const totalRows = Math.max(...Object.values(colSlots), 1);
+  const blockW = totalCols * colGap;
+  const blockH = totalRows * rowGap;
+  const base = findFreeBasePosition(blockW, blockH);
+  const baseX = base.x, baseY = base.y;
+
+  // ── Create placeholder cards at computed positions ──
+  const cardMap = steps.map((step, i) => {
+    const refId = step.id || `out_${nextCardId}`;
+    const card = createCard({
+      type: step.type,
+      title: step.title || `Step ${i + 1}`,
+      refId,
+    });
+    // Override grid position with DAG layout position
+    const { col, row } = layout[i];
+    card.x = baseX + col * colGap;
+    card.y = baseY + row * rowGap;
+    card.el.style.left = card.x + 'px';
+    card.el.style.top = card.y + 'px';
+    return { step, card, refId };
+  });
+
+  // ── Draw arrows for dependencies ──
+  for (const i of dependent) {
+    addArrowEdge(cardMap[depIdxOf[i]].refId, cardMap[i].refId, {
+      capability: steps[i].capability,
+      prompt: steps[i].prompt,
+      type: steps[i].type,
+    });
+  }
+
+  // Auto-fit canvas to show all cards
+  setTimeout(fitAll, 50);
+
+  const results = new Array(steps.length);
+
+  // ── Determine which image steps feed into video steps (need size cap) ──
+  const _imageForVideoIds = new Set();
+  for (const { step } of cardMap) {
+    if (step.type === 'video' && step.depends_on) {
+      const srcIdx = typeof step.depends_on === 'string' ? idToIdx[step.depends_on] : step.depends_on;
+      if (srcIdx != null && cardMap[srcIdx]?.step.type === 'image') {
+        _imageForVideoIds.add(srcIdx);
+      }
+    }
+  }
+
+  // ── Sub-agent executor ──
+  const runSubAgent = async (idx) => {
+    const { step, card, refId } = cardMap[idx];
+    const params = { ...(step.params || {}) };
+    // Cap image size when it feeds into a video model (fal.ai 10MB limit)
+    if (_imageForVideoIds.has(idx) && !params.width && !params.height) {
+      params.width = 1024;
+      params.height = 1024;
+    }
+
+    // Inject dependency output (resolve string ID or numeric index)
+    const depRaw = step.depends_on;
+    const depIdx = typeof depRaw === 'string' ? idToIdx[depRaw] : depRaw;
+    if (depIdx != null && results[depIdx]) {
+      const prev = results[depIdx];
+      // Use resolved URLs which handle base64 images from gemini-image etc.
+      const prevImageUrl = prev._resolvedImageUrl || prev.image_url;
+      if (prevImageUrl) params.image_url = prevImageUrl;
+      const prevVideoUrl = prev._resolvedVideoUrl || prev.video_url;
+      if (prevVideoUrl) {
+        if (prevVideoUrl.startsWith('data:') && step.capability === 'wan-v2v') {
+          // Base64 videos can't be used as wan-v2v input
+          addMessage(`${refId}: Cannot chain base64 video to wan-v2v. Use ltx-i2v instead of lucy-i2v as source.`, 'agent');
+          results[idx] = { error: 'Base64 video incompatible with wan-v2v' };
+          setCardContent(card, { error: 'Source video is base64 (lucy-i2v). Use ltx-i2v or kling-i2v for v2v chains.' });
+          return;
+        }
+        params.video_url = prevVideoUrl;
+      }
+    }
+
+    try {
+      const t0 = performance.now();
+      const result = await runInference(step.capability, step.prompt, params);
+      const elapsed = performance.now() - t0;
+      // Extract media URLs — also check nested data for fallback
+      let imageUrl = result.image_url;
+      let videoUrl = result.video_url;
+      let audioUrl = result.audio_url;
+      const data = result.data || {};
+      if (!videoUrl && data.video) videoUrl = typeof data.video === 'string' ? data.video : data.video.url;
+      if (!imageUrl && data.images?.[0]) imageUrl = data.images[0].url || (data.images[0].base64 ? `data:${data.images[0].mime_type || 'image/png'};base64,${data.images[0].base64}` : null);
+      if (!imageUrl && data.image) imageUrl = typeof data.image === 'string' ? data.image : data.image.url;
+      if (!audioUrl && data.audio) audioUrl = typeof data.audio === 'string' ? data.audio : data.audio.url;
+
+      // Store result with resolved URLs for dependency chaining
+      result._resolvedImageUrl = imageUrl;
+      result._resolvedVideoUrl = videoUrl;
+      results[idx] = result;
+
+      card._lastData = data;
+      setCardContent(card, {
+        imageUrl,
+        videoUrl,
+        audioUrl,
+        capability: step.capability,
+        elapsed,
+      });
+      // Store in registry
+      if (registry[refId]) {
+        registry[refId].result = result;
+        registry[refId].url = imageUrl || videoUrl || audioUrl;
+      }
+      // Update arrow metadata with inference results
+      const depRawMeta = step.depends_on;
+      const depIdxMeta = typeof depRawMeta === 'string' ? idToIdx[depRawMeta] : depRawMeta;
+      if (depIdxMeta != null && depIdxMeta >= 0) {
+        updateArrowMeta(cardMap[depIdxMeta].refId, refId, {
+          elapsed, params, capability: step.capability,
+        });
+      }
+      addMessage(`${refId} done (${step.capability}, ${(elapsed/1000).toFixed(1)}s)`, 'agent');
+    } catch (e) {
+      addMessage(`${refId} failed: ${e.message} — requesting re-plan…`, 'agent');
+      setCardContent(card, { error: `${e.message} (re-planning…)` });
+
+      // Collect completed results for re-planning context
+      const completed = {};
+      for (let j = 0; j < results.length; j++) {
+        if (results[j] && !results[j].error) {
+          completed[cardMap[j].refId] = {
+            url: results[j]._resolvedImageUrl || results[j]._resolvedVideoUrl || results[j].audio_url,
+            type: steps[j].type,
+          };
+        }
+      }
+
+      const replan = await requestReplan(steps, refId, e.message, completed);
+      if (replan && replan.action === 'retry' && replan.patched_steps?.length) {
+        const patch = replan.patched_steps[0];
+        addMessage(`Re-plan: retry ${refId} with ${patch.capability} — ${replan.reason}`, 'agent');
+        step.capability = patch.capability || step.capability;
+        step.prompt = patch.prompt || step.prompt;
+        if (patch.params) Object.assign(params, patch.params);
+        setCardContent(card, {}); // reset to loading
+        card.el.querySelector('.card-body').innerHTML = '<div class="placeholder"><div class="shimmer"></div><div class="spinner"></div><div class="label">Retrying…</div></div>';
+        try {
+          const t0 = performance.now();
+          const result = await runInference(step.capability, step.prompt, params);
+          const elapsed = performance.now() - t0;
+          let imageUrl = result.image_url, videoUrl = result.video_url, audioUrl = result.audio_url;
+          const data = result.data || {};
+          if (!videoUrl && data.video) videoUrl = typeof data.video === 'string' ? data.video : data.video.url;
+          if (!imageUrl && data.images?.[0]) imageUrl = data.images[0].url || (data.images[0].base64 ? `data:${data.images[0].mime_type || 'image/png'};base64,${data.images[0].base64}` : null);
+          if (!imageUrl && data.image) imageUrl = typeof data.image === 'string' ? data.image : data.image.url;
+          if (!audioUrl && data.audio) audioUrl = typeof data.audio === 'string' ? data.audio : data.audio.url;
+          result._resolvedImageUrl = imageUrl;
+          result._resolvedVideoUrl = videoUrl;
+          results[idx] = result;
+          setCardContent(card, { imageUrl, videoUrl, audioUrl, capability: step.capability, elapsed });
+          if (registry[refId]) { registry[refId].result = result; registry[refId].url = imageUrl || videoUrl || audioUrl; }
+          addMessage(`${refId} retry succeeded (${step.capability}, ${(elapsed/1000).toFixed(1)}s)`, 'agent');
+        } catch (retryErr) {
+          results[idx] = { error: retryErr.message };
+          setCardContent(card, { error: `Retry also failed: ${retryErr.message}` });
+          addMessage(`${refId} retry also failed: ${retryErr.message}`, 'agent');
+        }
+      } else {
+        results[idx] = { error: e.message };
+        setCardContent(card, { error: e.message });
+        if (replan) addMessage(`Re-plan: ${replan.action} — ${replan.reason}`, 'agent');
+      }
+    }
+  };
+
+  // ── Launch independent sub-agents concurrently ──
+  addMessage(`Launching ${independent.length} concurrent task(s)…`, 'system');
+  await Promise.allSettled(independent.map(i => runSubAgent(i)));
+
+  // ── Run dependent steps in waves: each wave can run concurrently if deps are met ──
+  let remaining = [...dependent];
+  while (remaining.length > 0) {
+    const ready = remaining.filter(i => {
+      const dep = steps[i].depends_on;
+      const depIdx = typeof dep === 'string' ? idToIdx[dep] : dep;
+      return depIdx == null || results[depIdx] != null;
+    });
+    if (ready.length === 0) {
+      // All remaining have unmet deps — run sequentially to avoid deadlock
+      for (const i of remaining) await runSubAgent(i);
+      break;
+    }
+    await Promise.allSettled(ready.map(i => runSubAgent(i)));
+    remaining = remaining.filter(i => !ready.includes(i));
+  }
+
+  addMessage(`All ${steps.length} task(s) complete.`, 'agent');
+}
+
+// ============================================================
+// LoRA Training
+// ============================================================
+const loraOverlay = document.getElementById('lora-overlay');
+const loraSubmitBtn = document.getElementById('lora-submit');
+const loraCancelBtn = document.getElementById('lora-cancel');
+const loraProgress = document.getElementById('lora-progress');
+const loraProgressFill = document.getElementById('lora-progress-fill');
+const loraProgressStatus = document.getElementById('lora-progress-status');
+const loraProgressPct = document.getElementById('lora-progress-pct');
+let loraUploadedFiles = [];
+let loraSelectedCards = new Set();
+let loraActiveSource = 'url';
+let loraPollingTimer = null;
+
+// Open / close modal
+function openLoraDialog() {
+  loraOverlay.classList.add('show');
+  loraProgress.classList.remove('show');
+  loraSubmitBtn.disabled = false;
+  loraSubmitBtn.textContent = 'Start Training';
+  populateLoraCardGrid();
+}
+function closeLoraDialog() {
+  loraOverlay.classList.remove('show');
+  if (loraPollingTimer) { clearInterval(loraPollingTimer); loraPollingTimer = null; }
+}
+
+document.getElementById('train-lora-btn').onclick = openLoraDialog;
+document.getElementById('save-all-btn').onclick = saveAllMedia;
+loraCancelBtn.onclick = closeLoraDialog;
+loraOverlay.addEventListener('click', e => { if (e.target === loraOverlay) closeLoraDialog(); });
+
+// Source tabs
+document.querySelectorAll('.lora-source-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.lora-source-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.lora-source-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    loraActiveSource = tab.dataset.source;
+    const panelId = { url: 'lora-src-url', upload: 'lora-src-upload', storyboard: 'lora-src-storyboard' }[loraActiveSource];
+    document.getElementById(panelId).classList.add('active');
+  };
+});
+
+// File upload via drop zone
+const loraDropzone = document.getElementById('lora-dropzone');
+const loraFileInput = document.getElementById('lora-file-input');
+const loraFileList = document.getElementById('lora-file-list');
+
+loraDropzone.onclick = () => loraFileInput.click();
+loraDropzone.addEventListener('dragover', e => { e.preventDefault(); loraDropzone.classList.add('dragover'); });
+loraDropzone.addEventListener('dragleave', () => loraDropzone.classList.remove('dragover'));
+loraDropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  loraDropzone.classList.remove('dragover');
+  addLoraFiles(e.dataTransfer.files);
+});
+loraFileInput.addEventListener('change', () => {
+  addLoraFiles(loraFileInput.files);
+  loraFileInput.value = '';
+});
+
+function addLoraFiles(fileList) {
+  for (const f of fileList) {
+    if (f.type.startsWith('image/') || f.name.endsWith('.zip')) {
+      loraUploadedFiles.push(f);
+    }
+  }
+  loraFileList.textContent = loraUploadedFiles.length > 0
+    ? `${loraUploadedFiles.length} file(s): ${loraUploadedFiles.map(f => f.name).slice(0, 5).join(', ')}${loraUploadedFiles.length > 5 ? '…' : ''}`
+    : '';
+}
+
+// Storyboard card selection grid
+function populateLoraCardGrid() {
+  const grid = document.getElementById('lora-card-grid');
+  grid.innerHTML = '';
+  loraSelectedCards.clear();
+  const imageCards = Object.entries(registry).filter(([, v]) => v.type === 'image' && v.url);
+  if (imageCards.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-dim);font-size:12px;padding:16px;">No generated images yet. Create some first!</div>';
+    return;
+  }
+  for (const [refId, entry] of imageCards) {
+    const thumb = document.createElement('div');
+    thumb.style.cssText = 'position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:border-color 0.1s;';
+    const img = document.createElement('img');
+    img.src = entry.url;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+    thumb.appendChild(img);
+    const check = document.createElement('div');
+    check.style.cssText = 'position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.5);border:1.5px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:background 0.1s;';
+    thumb.appendChild(check);
+    thumb.onclick = () => {
+      if (loraSelectedCards.has(refId)) {
+        loraSelectedCards.delete(refId);
+        thumb.style.borderColor = 'transparent';
+        check.style.background = 'rgba(0,0,0,0.5)';
+        check.textContent = '';
+      } else {
+        loraSelectedCards.add(refId);
+        thumb.style.borderColor = '#7c3aed';
+        check.style.background = '#7c3aed';
+        check.textContent = '✓';
+      }
+      document.getElementById('lora-card-count').textContent = loraSelectedCards.size;
+    };
+    thumb.title = `${refId}: ${entry.title}`;
+    grid.appendChild(thumb);
+  }
+  document.getElementById('lora-card-count').textContent = '0';
+}
+
+// Build training images ZIP from uploaded files or storyboard cards
+async function buildLoraZipBase64(files) {
+  // Simple uncompressed ZIP builder for images
+  // Each file: local header + data + central dir entry
+  const entries = [];
+  for (const f of files) {
+    const buf = await f.arrayBuffer();
+    entries.push({ name: f.name, data: new Uint8Array(buf) });
+  }
+  return entriesToZipBase64(entries);
+}
+
+async function buildLoraZipFromCards(refIds) {
+  const entries = [];
+  let idx = 0;
+  for (const refId of refIds) {
+    const entry = registry[refId];
+    if (!entry?.url) continue;
+    try {
+      const resp = await fetch(entry.url);
+      const buf = await resp.arrayBuffer();
+      const ext = entry.url.includes('.webp') ? 'webp' : entry.url.includes('.jpg') ? 'jpg' : 'png';
+      entries.push({ name: `img_${String(idx++).padStart(3, '0')}.${ext}`, data: new Uint8Array(buf) });
+    } catch (e) {
+      console.warn(`Failed to fetch ${refId}:`, e);
+    }
+  }
+  return entriesToZipBase64(entries);
+}
+
+function entriesToZipBase64(entries) {
+  // Minimal uncompressed ZIP (STORE method)
+  const textEnc = new TextEncoder();
+  let offset = 0;
+  const localHeaders = [];
+  const centralEntries = [];
+
+  for (const { name, data } of entries) {
+    const nameBytes = textEnc.encode(name);
+    // Local file header (30 + name)
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);  // local sig
+    lv.setUint16(4, 20, true);           // version needed
+    lv.setUint16(8, 0, true);            // method: STORE
+    lv.setUint32(18, data.length, true);  // compressed size
+    lv.setUint32(22, data.length, true);  // uncompressed size
+    lv.setUint16(26, nameBytes.length, true);
+    lh.set(nameBytes, 30);
+    localHeaders.push(lh, data);
+
+    // Central directory entry
+    const ch = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);       // local header offset
+    ch.set(nameBytes, 46);
+    centralEntries.push(ch);
+
+    offset += lh.length + data.length;
+  }
+
+  const cdOffset = offset;
+  let cdSize = 0;
+  for (const c of centralEntries) cdSize += c.length;
+
+  // End of central directory
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, cdOffset, true);
+
+  // Combine
+  const total = offset + cdSize + 22;
+  const zip = new Uint8Array(total);
+  let pos = 0;
+  for (const chunk of localHeaders) { zip.set(chunk, pos); pos += chunk.length; }
+  for (const chunk of centralEntries) { zip.set(chunk, pos); pos += chunk.length; }
+  zip.set(eocd, pos);
+
+  // Convert to base64
+  let bin = '';
+  for (let i = 0; i < zip.length; i++) bin += String.fromCharCode(zip[i]);
+  return btoa(bin);
+}
+
+// Upload ZIP to SDK service and get a URL back
+async function uploadLoraZip(zipBase64) {
+  // POST to SDK service /upload endpoint if available,
+  // otherwise use data URI (some providers accept it)
+  try {
+    const result = await sdkFetch('/upload', {
+      data: zipBase64,
+      content_type: 'application/zip',
+      filename: 'training_images.zip',
+    });
+    if (result.url) return result.url;
+  } catch (e) {
+    // /upload not available — fall back to data URI
+    console.warn('Upload endpoint not available, using data URI:', e.message);
+  }
+  return `data:application/zip;base64,${zipBase64}`;
+}
+
+// Submit training job
+loraSubmitBtn.onclick = async () => {
+  const trigger = document.getElementById('lora-trigger').value.trim();
+  const steps = parseInt(document.getElementById('lora-steps').value) || 1000;
+  const modelId = document.getElementById('lora-model').value;
+
+  let imagesDataUrl = '';
+
+  try {
+    if (loraActiveSource === 'url') {
+      imagesDataUrl = document.getElementById('lora-zip-url').value.trim();
+      if (!imagesDataUrl) { alert('Please enter a ZIP URL'); return; }
+    } else if (loraActiveSource === 'upload') {
+      if (loraUploadedFiles.length === 0) { alert('Please add some images'); return; }
+      loraSubmitBtn.disabled = true;
+      loraSubmitBtn.textContent = 'Packaging images…';
+      // Check if a single .zip file was uploaded
+      if (loraUploadedFiles.length === 1 && loraUploadedFiles[0].name.endsWith('.zip')) {
+        const buf = await loraUploadedFiles[0].arrayBuffer();
+        let bin = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        imagesDataUrl = await uploadLoraZip(btoa(bin));
+      } else {
+        const zipBase64 = await buildLoraZipBase64(loraUploadedFiles);
+        imagesDataUrl = await uploadLoraZip(zipBase64);
+      }
+    } else if (loraActiveSource === 'storyboard') {
+      if (loraSelectedCards.size === 0) { alert('Please select some images'); return; }
+      loraSubmitBtn.disabled = true;
+      loraSubmitBtn.textContent = 'Packaging images…';
+      const zipBase64 = await buildLoraZipFromCards([...loraSelectedCards]);
+      imagesDataUrl = await uploadLoraZip(zipBase64);
+    }
+  } catch (e) {
+    alert(`Failed to prepare images: ${e.message}`);
+    loraSubmitBtn.disabled = false;
+    loraSubmitBtn.textContent = 'Start Training';
+    return;
+  }
+
+  // Show progress
+  loraSubmitBtn.disabled = true;
+  loraSubmitBtn.textContent = 'Training…';
+  loraProgress.classList.add('show');
+  loraProgressFill.style.width = '0%';
+  loraProgressStatus.textContent = 'Submitting job…';
+  loraProgressPct.textContent = '0%';
+
+  addMessage(`LoRA training started — trigger: "${trigger}", ${steps} steps`, 'system');
+
+  // Create a training card on the canvas
+  const trainingRefId = `lora_${Date.now().toString(36)}`;
+  const trainingCard = createCard({
+    type: 'image',
+    title: `LoRA: ${trigger}`,
+    refId: trainingRefId,
+  });
+  const body = trainingCard.el.querySelector('.card-body');
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;padding:16px;">
+      <div class="spinner"></div>
+      <div style="font-size:12px;color:var(--text-muted);">Training LoRA…</div>
+      <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);" id="train-status-${trainingRefId}">Submitting…</div>
+      <div style="width:80%;height:4px;border-radius:2px;background:var(--border);overflow:hidden;margin-top:4px;">
+        <div style="height:100%;border-radius:2px;background:linear-gradient(90deg,#7c3aed,#a78bfa);width:0%;transition:width 0.5s;" id="train-bar-${trainingRefId}"></div>
+      </div>
+    </div>`;
+
+  try {
+    const result = await sdkFetch('/train', {
+      capability: 'flux-lora-training',
+      model_id: modelId,
+      params: {
+        images_data_url: imagesDataUrl,
+        trigger_word: trigger,
+        steps: steps,
+      },
+      wait: false,
+    });
+
+    const jobId = result.job_id;
+    if (!jobId) {
+      throw new Error('No job_id returned: ' + JSON.stringify(result).slice(0, 200));
+    }
+
+    addMessage(`LoRA job submitted: ${jobId}`, 'system');
+    loraProgressStatus.textContent = `Job ${jobId.slice(0, 12)}… running`;
+
+    // Poll for status
+    loraPollingTimer = setInterval(async () => {
+      try {
+        const status = await sdkFetch(`/train/${jobId}`);
+        const pct = status.progress || 0;
+        loraProgressFill.style.width = pct + '%';
+        loraProgressPct.textContent = pct + '%';
+        loraProgressStatus.textContent = `${status.status} — ${pct}%`;
+
+        // Update card
+        const statusEl = document.getElementById(`train-status-${trainingRefId}`);
+        const barEl = document.getElementById(`train-bar-${trainingRefId}`);
+        if (statusEl) statusEl.textContent = `${status.status} — ${pct}%`;
+        if (barEl) barEl.style.width = pct + '%';
+
+        if (status.status === 'completed' || status.status === 'COMPLETED') {
+          clearInterval(loraPollingTimer);
+          loraPollingTimer = null;
+          loraProgressFill.style.width = '100%';
+          loraProgressPct.textContent = '100%';
+          loraProgressStatus.textContent = 'Completed!';
+          loraSubmitBtn.textContent = 'Done!';
+
+          // Extract LoRA URL
+          const loraUrl = status.result?.diffusers_lora_file?.url
+                       || status.result?.lora_url
+                       || status.result?.url;
+
+          const msg = loraUrl
+            ? `LoRA training complete!\nWeights: ${loraUrl}\nUse trigger word "${trigger}" in your prompts.`
+            : `LoRA training complete!\n${JSON.stringify(status.result || {}).slice(0, 300)}`;
+          addMessage(msg, 'agent');
+
+          // Update card with result
+          body.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;padding:16px;text-align:center;">
+              <div style="font-size:28px;">&#10003;</div>
+              <div style="font-size:13px;font-weight:600;color:#a78bfa;">LoRA Ready</div>
+              <div style="font-size:12px;color:var(--text-muted);">Trigger: <b>${trigger}</b></div>
+              ${loraUrl ? `<div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);word-break:break-all;max-width:90%;">${loraUrl.slice(0, 80)}…</div>` : ''}
+            </div>`;
+          if (registry[trainingRefId]) {
+            registry[trainingRefId].result = status.result;
+            registry[trainingRefId].loraUrl = loraUrl;
+            registry[trainingRefId].triggerWord = trigger;
+          }
+        } else if (status.status === 'failed' || status.status === 'FAILED') {
+          clearInterval(loraPollingTimer);
+          loraPollingTimer = null;
+          loraProgressStatus.textContent = 'Failed';
+          loraSubmitBtn.textContent = 'Start Training';
+          loraSubmitBtn.disabled = false;
+          addMessage(`LoRA training failed: ${status.error || 'unknown error'}`, 'agent');
+          setCardContent(trainingCard, { error: status.error || 'Training failed' });
+        }
+      } catch (pollErr) {
+        console.warn('Poll error:', pollErr);
+      }
+    }, 5000);
+
+  } catch (err) {
+    loraProgress.classList.remove('show');
+    loraSubmitBtn.disabled = false;
+    loraSubmitBtn.textContent = 'Start Training';
+    addMessage(`LoRA training error: ${err.message}`, 'agent');
+    setCardContent(trainingCard, { error: err.message });
+  }
+};
+
+// ============================================================
+// Config overlay
+// ============================================================
+document.getElementById('cfg-connect').onclick = async () => {
+  const url = document.getElementById('cfg-url').value.trim().replace(/\/+$/, '');
+  const orchUrl = document.getElementById('cfg-orch-url').value.trim().replace(/\/+$/, '');
+  if (!url && !orchUrl) return;
+  if (url) { SDK_SERVICE = url; localStorage.setItem('sdk_service_url', url); }
+  if (orchUrl) { ORCH_URL = orchUrl; localStorage.setItem('orch_url', orchUrl); }
+  document.getElementById('config-overlay').classList.add('hidden');
+
+  // Test SDK Service connection
+  if (SDK_SERVICE) {
+    try {
+      const health = await sdkFetch('/health');
+      addMessage(`SDK Service: ${url}`, 'system');
+    } catch (e) {
+      addMessage(`SDK Service unavailable — will use direct orchestrator for enrichment`, 'system');
+    }
+  }
+
+  // Test orchestrator enrichment
+  if (ORCH_URL) {
+    addMessage(`Orchestrator: ${ORCH_URL} (gemini-text enrichment)`, 'system');
+  }
+
+  // Start camera
+  startCamera();
+
+  // Focus chat
+  chatInput.focus();
+};
+
+// Auto-connect if saved
+if (SDK_SERVICE) {
+  document.getElementById('cfg-url').value = SDK_SERVICE;
+}
+if (ORCH_URL) {
+  document.getElementById('cfg-orch-url').value = ORCH_URL;
+}
+
+// Enter key on config
+document.getElementById('cfg-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('cfg-connect').click();
+});
+document.getElementById('cfg-orch-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('cfg-connect').click();
+});
+
+// ============================================================
+// Keyboard shortcuts
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key === '0' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    scale = 1; panX = 80; panY = 80; updateTransform();
+  }
+  if (e.key === '=' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    scale = Math.min(5, scale * 1.2); updateTransform();
+  }
+  if (e.key === '-' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    scale = Math.max(0.1, scale / 1.2); updateTransform();
+  }
+  if (e.key === '1' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    fitAll();
+  }
+});
+
+// Initial transform
+panX = 80;
+panY = 80;
+updateTransform();
+</script>
+</body>
+</html>
