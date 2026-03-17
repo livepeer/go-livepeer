@@ -176,6 +176,7 @@ type LivepeerConfig struct {
 	AIProcessingRetryTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
 	AIMinRunnerVersion         *string
+	AIRuntime                  *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -240,6 +241,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerContainersPerGPU := 1
 	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
+	defaultAIRuntime := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
@@ -362,6 +364,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
 		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
+		AIRuntime:                &defaultAIRuntime,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
@@ -1363,7 +1366,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
+		aiRuntime, err := worker.SetupRuntime(*cfg.AIRuntime)
+		if err != nil {
+			glog.Errorf("Error setting up AI container runtime: %v", err)
+			return
+		}
+
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID, aiRuntime)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
