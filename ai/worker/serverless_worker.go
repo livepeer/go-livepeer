@@ -17,21 +17,25 @@ import (
 	"github.com/livepeer/go-livepeer/trickle"
 )
 
-const (
-	// Maximum number of concurrent streams allowed
-	maxConcurrentStreams = 5
-)
-
 type ServerlessWorker struct {
 	mu               sync.Mutex
 	activeStreams    int
 	maxActiveStreams int
+	wsURL            string
 }
 
 // NewServerlessWorker creates a new ServerlessWorker instance
-func NewServerlessWorker() (*ServerlessWorker, error) {
+func NewServerlessWorker(wsURL string, capacity int) (*ServerlessWorker, error) {
+	if wsURL == "" {
+		return nil, fmt.Errorf("serverless worker requires a websocket URL")
+	}
+	if capacity <= 0 {
+		return nil, fmt.Errorf("serverless worker requires a positive capacity")
+	}
+
 	return &ServerlessWorker{
-		maxActiveStreams: maxConcurrentStreams,
+		maxActiveStreams: capacity,
+		wsURL:            wsURL,
 	}, nil
 }
 
@@ -90,8 +94,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			f.mu.Unlock()
 			slog.Info("Stream ended", "activeStreams", remainingStreams, "maxStreams", f.maxActiveStreams)
 		}()
-		wsURL := "ws://localhost:8001/ws"
-		slog.Info("Connecting to websocket", "url", wsURL)
+		slog.Info("Connecting to websocket", "url", f.wsURL)
 
 		// Prepare headers with authorization
 		headers := http.Header{}
@@ -102,7 +105,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 		// Connect to websocket
 		// TODO do this outside of the goroutine to be able to return an error to the caller?
-		websocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+		websocketConn, _, err := websocket.DefaultDialer.Dial(f.wsURL, headers)
 		if err != nil {
 			slog.Error("Failed to connect to websocket", "error", err)
 			return
