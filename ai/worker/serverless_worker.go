@@ -8,8 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -18,10 +22,39 @@ import (
 )
 
 type ServerlessWorker struct {
-	mu               sync.Mutex
-	activeStreams    int
-	maxActiveStreams int
-	wsURL            string
+	mu         sync.Mutex
+	inUse      int
+	capacity   int
+	wsURL      string
+	trickleSrv *trickle.Server
+}
+
+type wsMessage struct {
+	Type string `json:"type"`
+}
+
+type createChannelsMessage struct {
+	Type      string `json:"type"`
+	RequestID string `json:"request_id"`
+	MimeType  string `json:"mime_type"`
+	Direction string `json:"direction"`
+}
+
+type closeChannelsMessage struct {
+	Type     string   `json:"type"`
+	Channels []string `json:"channels"`
+}
+
+type wsResponseMessage struct {
+	Type      string        `json:"type"`
+	RequestID string        `json:"request_id"`
+	Channels  []channelInfo `json:"channels"`
+}
+
+type channelInfo struct {
+	URL       string `json:"url"`
+	Direction string `json:"direction"`
+	MimeType  string `json:"mime_type"`
 }
 
 // NewServerlessWorker creates a new ServerlessWorker instance
@@ -34,9 +67,15 @@ func NewServerlessWorker(wsURL string, capacity int) (*ServerlessWorker, error) 
 	}
 
 	return &ServerlessWorker{
-		maxActiveStreams: capacity,
-		wsURL:            wsURL,
+		capacity: capacity,
+		wsURL:    wsURL,
 	}, nil
+}
+
+func (f *ServerlessWorker) SetTrickleServer(srv *trickle.Server) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trickleSrv = srv
 }
 
 func (f *ServerlessWorker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
@@ -76,41 +115,91 @@ func (f *ServerlessWorker) TextToSpeech(ctx context.Context, req GenTextToSpeech
 }
 
 func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVideoToVideoJSONRequestBody) (*LiveVideoToVideoResponse, error) {
-	// Increment active stream count
+	manifestID := ""
+	if req.ManifestId != nil {
+		manifestID = *req.ManifestId
+	}
+	if manifestID == "" {
+		return nil, fmt.Errorf("serverless worker requires manifest ID for live-video-to-video")
+	}
+
+	if req.SubscribeUrl == "" {
+		return nil, fmt.Errorf("serverless worker requires subscribe URL for live-video-to-video")
+	}
+	subscribeURL, err := url.Parse(req.SubscribeUrl)
+	if err != nil {
+		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	if !strings.HasSuffix(subscribeURL.Path, manifestID) {
+		return nil, fmt.Errorf("subscribe URL path %q must end with manifest ID %q", subscribeURL.Path, manifestID)
+	}
+	trickleBasePath := strings.TrimSuffix(subscribeURL.Path, manifestID)
+	buildTrickleURL := func(channelName string) string {
+		if trickleBasePath == "" {
+			return ""
+		}
+		u := *subscribeURL
+		u.Path = trickleBasePath
+		u = *u.JoinPath(channelName)
+		return u.String()
+	}
+	if buildTrickleURL(manifestID+"-test") == "" {
+		return nil, fmt.Errorf("could not construct trickle channel URL from subscribe URL %q", req.SubscribeUrl)
+	}
+
 	f.mu.Lock()
-	f.activeStreams++
-	currentStreams := f.activeStreams
+	trickleSrv := f.trickleSrv
+	if trickleSrv == nil {
+		f.mu.Unlock()
+		return nil, fmt.Errorf("serverless worker requires trickle server before live-video-to-video")
+	}
+	f.inUse++
+	currentInUse := f.inUse
 	f.mu.Unlock()
 
-	slog.Info("Starting new stream", "activeStreams", currentStreams, "maxStreams", f.maxActiveStreams)
+	slog.Info("Starting new job", "inUse", currentInUse, "capacity", f.capacity, "url", f.wsURL)
 
-	// Start websocket connection in a goroutine
+	// Prepare headers with authorization
+	headers := http.Header{}
+	if authToken := os.Getenv("FAL_API_KEY"); authToken != "" {
+		headers.Add("Authorization", authToken)
+		slog.Info("Added authorization header from FAL_API_KEY")
+	}
+
+	// Dial before starting goroutines so errors can be returned to caller
+	websocketConn, _, err := websocket.DefaultDialer.Dial(f.wsURL, headers)
+	if err != nil {
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to connect to websocket", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to connect to websocket: %w", err)
+	}
+
+	// Start websocket processing in a goroutine
 	go func() {
-		// Ensure we decrement the counter when this goroutine exits
+		var writeMu sync.Mutex
+		openChannels := map[string]*trickle.TrickleLocalPublisher{}
+
+		// Ensure we decrement the counter and close all local channels when this goroutine exits
 		defer func() {
+			_ = websocketConn.Close()
+
+			for name, ch := range openChannels {
+				if err := ch.Close(); err != nil {
+					slog.Warn("Failed to close trickle channel", "channel", name, "error", err)
+				}
+			}
+
 			f.mu.Lock()
-			f.activeStreams--
-			remainingStreams := f.activeStreams
+			f.inUse--
+			remainingInUse := f.inUse
 			f.mu.Unlock()
-			slog.Info("Stream ended", "activeStreams", remainingStreams, "maxStreams", f.maxActiveStreams)
+			slog.Info("Job ended", "inUse", remainingInUse, "capacity", f.capacity)
 		}()
-		slog.Info("Connecting to websocket", "url", f.wsURL)
 
-		// Prepare headers with authorization
-		headers := http.Header{}
-		if authToken := os.Getenv("FAL_API_KEY"); authToken != "" {
-			headers.Add("Authorization", authToken)
-			slog.Info("Added authorization header from FAL_API_KEY")
-		}
-
-		// Connect to websocket
-		// TODO do this outside of the goroutine to be able to return an error to the caller?
-		websocketConn, _, err := websocket.DefaultDialer.Dial(f.wsURL, headers)
-		if err != nil {
-			slog.Error("Failed to connect to websocket", "error", err)
-			return
-		}
-		defer websocketConn.Close()
+		slog.Info("Connected to websocket successfully")
 
 		// Subscribe to the events trickle stream to detect when stream ends
 		if req.EventsUrl != nil && *req.EventsUrl != "" {
@@ -132,7 +221,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					if err != nil {
 						if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
 							slog.Info("Events stream closed, closing websocket", "reason", err)
-							websocketConn.Close() // This will cause ReadMessage to return an error
+							_ = websocketConn.Close() // This will cause ReadMessage to return an error
 							return
 						}
 						slog.Warn("Error reading events stream", "error", err)
@@ -142,7 +231,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 					// Read and print the event data for debugging
 					data, err := io.ReadAll(segment.Body)
-					segment.Body.Close()
+					_ = segment.Body.Close()
 					if err != nil {
 						slog.Warn("Error reading event body", "error", err)
 						continue
@@ -154,7 +243,41 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			slog.Warn("No events URL provided, cannot detect stream end via trickle")
 		}
 
-		slog.Info("Connected to websocket successfully")
+		// Track missed pongs and terminate after 3 missed pongs
+		const (
+			pingInterval   = 10 * time.Second
+			maxMissedPongs = int32(3)
+		)
+		var missedPongs atomic.Int32
+		websocketConn.SetPongHandler(func(string) error {
+			missedPongs.Store(0)
+			return nil
+		})
+		pingDone := make(chan struct{})
+		defer close(pingDone)
+		go func() {
+			ticker := time.NewTicker(pingInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					writeMu.Lock()
+					err := websocketConn.WriteMessage(websocket.PingMessage, nil)
+					writeMu.Unlock()
+					if err != nil {
+						slog.Warn("Failed to send ping", "error", err)
+						return
+					}
+					if missedPongs.Add(1) >= maxMissedPongs {
+						slog.Warn("Too many missed pongs, closing websocket", "missed", missedPongs.Load())
+						_ = websocketConn.Close()
+						return
+					}
+				case <-pingDone:
+					return
+				}
+			}
+		}()
 
 		// Wait for connection_established message from server
 		_, readyMsg, err := websocketConn.ReadMessage()
@@ -170,14 +293,14 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			return
 		}
 
-		// Verify it's the connection_established message
+		// Verify it's the connection_established message.
 		if msgType, ok := readyResponse["type"].(string); ok && msgType == "connection_established" {
 			slog.Info("Received connection ready message", "message", readyResponse["message"])
 		} else {
 			slog.Warn("Unexpected ready message format", "message", string(readyMsg))
 		}
 
-		// Marshal request to JSON and send
+		// Marshal request to JSON and send.
 		reqJSON, err := json.Marshal(req)
 		if err != nil {
 			slog.Error("Failed to marshal request", "error", err)
@@ -186,8 +309,10 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 		slog.Info("Sending request to websocket", "request", string(reqJSON))
 
-		// TODO check response message and retry on failure
+		// TODO check response message and retry on failure.
+		writeMu.Lock()
 		err = websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
+		writeMu.Unlock()
 		if err != nil {
 			slog.Error("Failed to send message", "error", err)
 			return
@@ -221,7 +346,9 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			}
 		}()
 
-		// Receive and print messages indefinitely (or until events stream closes or timeout)
+		streamCount := 0
+
+		// Receive and handle messages indefinitely (or until events stream closes or timeout)
 		for {
 			select {
 			case <-timeout.C:
@@ -238,27 +365,105 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					"type", msg.messageType,
 					"message", string(msg.message))
 
-				// Parse the message to check for health_check status
-				var msgData map[string]interface{}
-				if err := json.Unmarshal(msg.message, &msgData); err != nil {
+				var generic wsMessage
+				if err := json.Unmarshal(msg.message, &generic); err != nil {
 					slog.Warn("Failed to parse message", "error", err)
 					continue
 				}
 
-				// Check if this is a health_check message
-				// TODO handle the states like docker.go watchContainer i.e. anything else apart from ERROR to handle?
-				if msgType, ok := msgData["type"].(string); ok && msgType == "health_check" {
-					// Extract the nested data.status field
-					if data, ok := msgData["data"].(map[string]interface{}); ok {
-						if status, ok := data["status"].(string); ok {
-							slog.Info("Health check status", "status", status)
-
-							if status == "ERROR" {
-								slog.Info("Runner status is ERROR, closing websocket")
-								return
-							}
-						}
+				switch generic.Type {
+				case "create_channels":
+					var startMsg createChannelsMessage
+					if err := json.Unmarshal(msg.message, &startMsg); err != nil {
+						slog.Warn("Failed to parse create_channels message", "error", err)
+						continue
 					}
+					mimeType := startMsg.MimeType
+					if mimeType == "" {
+						mimeType = "video/MP2T"
+					}
+
+					streamCount++
+					streamCountStr := strconv.Itoa(streamCount)
+					var newChannels []channelInfo
+					createInbound := false
+					createOutbound := false
+					switch strings.ToLower(startMsg.Direction) {
+					case "in":
+						createInbound = true
+					case "out":
+						createOutbound = true
+					case "bidirectional":
+						createInbound = true
+						createOutbound = true
+					default:
+						slog.Warn("Ignoring create_channels with unsupported direction", "direction", startMsg.Direction)
+						continue
+					}
+
+					if createInbound {
+						channelName := manifestID + "-" + streamCountStr + "-in"
+						ch := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
+						ch.CreateChannel()
+						openChannels[channelName] = ch
+						newChannels = append(newChannels, channelInfo{
+							URL:       buildTrickleURL(channelName),
+							Direction: "in",
+							MimeType:  mimeType,
+						})
+					}
+					if createOutbound {
+						channelName := manifestID + "-" + streamCountStr + "-out"
+						ch := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
+						ch.CreateChannel()
+						openChannels[channelName] = ch
+						newChannels = append(newChannels, channelInfo{
+							URL:       buildTrickleURL(channelName),
+							Direction: "out",
+							MimeType:  mimeType,
+						})
+					}
+
+					resp := wsResponseMessage{
+						Type:      "response",
+						RequestID: startMsg.RequestID,
+						Channels:  newChannels,
+					}
+					respJSON, err := json.Marshal(resp)
+					if err != nil {
+						slog.Warn("Failed to marshal response message", "error", err)
+						continue
+					}
+					writeMu.Lock()
+					err = websocketConn.WriteMessage(websocket.TextMessage, respJSON)
+					writeMu.Unlock()
+					if err != nil {
+						slog.Warn("Failed to send response message", "error", err)
+						return
+					}
+					slog.Info("Created trickle channels for create_channels", "count", len(newChannels), "direction", startMsg.Direction, "mimeType", mimeType)
+
+				case "close_channels":
+					var stopMsg closeChannelsMessage
+					if err := json.Unmarshal(msg.message, &stopMsg); err != nil {
+						slog.Warn("Failed to parse close_channels message", "error", err)
+						continue
+					}
+					for _, channelName := range stopMsg.Channels {
+						ch, ok := openChannels[channelName]
+						if !ok {
+							slog.Warn("close_channels channel not found", "channel", channelName)
+							continue
+						}
+						if err := ch.Close(); err != nil {
+							slog.Warn("Failed to close close_channels channel", "channel", channelName, "error", err)
+							continue
+						}
+						delete(openChannels, channelName)
+						slog.Info("Closed trickle channel from close_channels", "channel", channelName)
+					}
+				default:
+					slog.Debug("Ignoring websocket message type", "type", generic.Type)
 				}
 			}
 		}
@@ -281,12 +486,12 @@ func (f *ServerlessWorker) HasCapacity(pipeline string, modelID string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	hasCapacity := f.activeStreams < f.maxActiveStreams
+	hasCapacity := f.inUse < f.capacity
 	clog.Info(context.Background(), "HasCapacity",
 		"pipeline", pipeline,
 		"modelID", modelID,
-		"activeStreams", f.activeStreams,
-		"maxStreams", f.maxActiveStreams,
+		"inUse", f.inUse,
+		"capacity", f.capacity,
 		"hasCapacity", hasCapacity)
 
 	return hasCapacity
@@ -306,7 +511,7 @@ func (f *ServerlessWorker) GetLiveAICapacity(pipeline, modelID string) Capacity 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	idleCapacity := f.maxActiveStreams - f.activeStreams
+	idleCapacity := f.capacity - f.inUse
 	if idleCapacity < 0 {
 		idleCapacity = 0
 	}
@@ -314,11 +519,11 @@ func (f *ServerlessWorker) GetLiveAICapacity(pipeline, modelID string) Capacity 
 	clog.Info(context.Background(), "GetLiveAICapacity",
 		"pipeline", pipeline,
 		"modelID", modelID,
-		"activeStreams", f.activeStreams,
+		"inUse", f.inUse,
 		"idleCapacity", idleCapacity)
 
 	return Capacity{
-		ContainersInUse: f.activeStreams,
+		ContainersInUse: f.inUse,
 		ContainersIdle:  idleCapacity,
 	}
 }

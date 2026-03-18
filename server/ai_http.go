@@ -61,6 +61,9 @@ func startAIServer(lp *lphttp) error {
 		Mux:      lp.transRPC,
 		BasePath: TrickleHTTPPath,
 	})
+	if sw, ok := lp.node.AIWorker.(*worker.ServerlessWorker); ok {
+		sw.SetTrickleServer(lp.trickleSrv)
+	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
