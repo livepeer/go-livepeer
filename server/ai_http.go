@@ -176,10 +176,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
-		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
-		pubCh.CreateChannel()
-		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
-		subCh.CreateChannel()
+		var pubCh, subCh *trickle.TrickleLocalPublisher
+		// TEMP HACK for Scope
+		if modelID != "scope" {
+			pubCh = trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+			pubCh.CreateChannel()
+			subCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+			subCh.CreateChannel()
+		}
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
@@ -187,8 +191,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		ctx, cancel := context.WithCancel(ctx)
 		closeSession := func() {
-			pubCh.Close()
-			subCh.Close()
+			// TEMP HACK for Scope
+			if modelID != "scope" {
+				pubCh.Close()
+				subCh.Close()
+			}
 			eventsCh.Close()
 			controlPubCh.Close()
 			cancel()
@@ -219,7 +226,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		// For every segment, check payments
 		go func() {
-			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			// TEMP HACK for Scope
+			monitorChannelID := mid
+			if modelID == "scope" {
+				monitorChannelID = mid + "-events"
+			}
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, monitorChannelID)
 			for {
 				// Set seq to next segment in case the subscriber is outside
 				// the server's retention window
