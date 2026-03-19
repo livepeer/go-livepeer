@@ -147,6 +147,24 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		return nil, fmt.Errorf("could not construct trickle channel URL from subscribe URL %q", req.SubscribeUrl)
 	}
 
+	wsURL := f.wsURL
+	if req.Params != nil {
+		if wsURLRaw, ok := (*req.Params)["ws_url"]; ok {
+			wsURLOverride, ok := wsURLRaw.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid params.ws_url: must be a string")
+			}
+			if wsURLOverride != "" {
+				parsedWSURL, err := url.Parse(wsURLOverride)
+				if err != nil || parsedWSURL.Host == "" || (parsedWSURL.Scheme != "ws" && parsedWSURL.Scheme != "wss") {
+					return nil, fmt.Errorf("invalid params.ws_url: must be a valid ws or wss URL")
+				}
+				wsURL = wsURLOverride
+			}
+			delete(*req.Params, "ws_url")
+		}
+	}
+
 	f.mu.Lock()
 	trickleSrv := f.trickleSrv
 	if trickleSrv == nil {
@@ -157,7 +175,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	currentInUse := f.inUse
 	f.mu.Unlock()
 
-	slog.Info("Starting new job", "inUse", currentInUse, "capacity", f.capacity, "url", f.wsURL)
+	slog.Info("Starting new job", "inUse", currentInUse, "capacity", f.capacity, "url", wsURL)
 
 	// Prepare headers with authorization
 	headers := http.Header{}
@@ -167,7 +185,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	}
 
 	// Dial before starting goroutines so errors can be returned to caller
-	websocketConn, _, err := websocket.DefaultDialer.Dial(f.wsURL, headers)
+	websocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
 		f.mu.Lock()
 		f.inUse--
