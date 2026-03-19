@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.8.10
+
+#### General
+
+* [#3872](https://github.com/livepeer/go-livepeer/pull/3872) build: install XQuartz in macOS CI to fix arm64 builds (@hjpotter92)
+
+#### Broadcaster
+
+* [#3864](https://github.com/livepeer/go-livepeer/pull/3864) Fix crash in broadcaster max price calculation (@j0sh)
+
+#### Orchestrator
+
+* [#3863](https://github.com/livepeer/go-livepeer/pull/3863) Update LPMS to c44af72 (@j0sh)
+
+#### AI – LV2V
+
+* [#3791](https://github.com/livepeer/go-livepeer/pull/3791) ai/live: Remote signer: GetOrchestratorInfo (@j0sh)
+* [#3822](https://github.com/livepeer/go-livepeer/pull/3822) ai/live: Remote signer: tickets (@j0sh)
+* [#3866](https://github.com/livepeer/go-livepeer/pull/3866) ai/live: Remote signer: discovery (@j0sh)
+* [#3870](https://github.com/livepeer/go-livepeer/pull/3870) ai/live: Remote signer: updates (@j0sh)
+
+#### AI – BYOC
+
+* [#3865](https://github.com/livepeer/go-livepeer/pull/3865) byoc: add orch swap reporting same as lv2v (@ad-astra-video)
+* [#3857](https://github.com/livepeer/go-livepeer/pull/3857) byoc: fix orchestrator streaming reserve capacity (@ad-astra-video)
+* [#3871](https://github.com/livepeer/go-livepeer/pull/3871) byoc: Merge BYOC capabilities with existing capabilities and pricing (@eliteprox)
+
 ## v0.8.9
 
 ### Features ⚒
