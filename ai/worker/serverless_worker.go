@@ -247,14 +247,14 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						continue
 					}
 
-					// Read and print the event data for debugging
+					// Read the event data to drain the stream, but avoid logging full payload contents.
 					data, err := io.ReadAll(segment.Body)
 					_ = segment.Body.Close()
 					if err != nil {
 						slog.Warn("Error reading event body", "error", err)
 						continue
 					}
-					slog.Info("Received event from trickle stream", "data", string(data))
+					slog.Info("Received event from trickle stream", "size_bytes", len(data))
 				}
 			}()
 		} else {
