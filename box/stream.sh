@@ -7,6 +7,7 @@ STREAM_ID="my-stream-id"
 RTMP_OUTPUT=${RTMP_OUTPUT:-""}
 FPS=${FPS:-30}
 INPUT_VIDEO=${INPUT_VIDEO:-""}
+INPUT_WEBCAM=${INPUT_WEBCAM:-""}
 
 case "$1" in
   start)
@@ -22,7 +23,11 @@ case "$1" in
 
     INPUT_FLAGS="-f lavfi -i testsrc=size=1280x720:rate=${FPS},format=yuv420p"
     if [ -n "$INPUT_VIDEO" ]; then
+      echo "Using video file: ${INPUT_VIDEO}"
       INPUT_FLAGS="-stream_loop -1 -i ${INPUT_VIDEO}"
+    elif [ -n "$INPUT_WEBCAM" ]; then
+      echo "Using webcam: ${INPUT_WEBCAM}"
+      INPUT_FLAGS="-f v4l2 -framerate ${FPS} -video_size 1280x720 -i ${INPUT_WEBCAM}"
     fi
 
     ffmpeg -re ${INPUT_FLAGS} \
