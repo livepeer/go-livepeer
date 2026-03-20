@@ -148,16 +148,20 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	}
 
 	wsURL := f.wsURL
-	if req.Params != nil {
+	wsURLPrefix := strings.TrimSpace(os.Getenv("LIVE_AI_WS_PREFIX"))
+	if req.Params != nil && wsURLPrefix != "" {
 		if wsURLRaw, ok := (*req.Params)["ws_url"]; ok {
 			wsURLOverride, ok := wsURLRaw.(string)
 			if !ok {
 				return nil, fmt.Errorf("invalid params.ws_url: must be a string")
 			}
 			if wsURLOverride != "" {
+				if !strings.HasPrefix(wsURLOverride, wsURLPrefix) {
+					return nil, fmt.Errorf("unacceptable params.ws_url")
+				}
 				parsedWSURL, err := url.Parse(wsURLOverride)
-				if err != nil || parsedWSURL.Host == "" || (parsedWSURL.Scheme != "ws" && parsedWSURL.Scheme != "wss") {
-					return nil, fmt.Errorf("invalid params.ws_url: must be a valid ws or wss URL")
+				if err != nil || parsedWSURL.Host == "" {
+					return nil, fmt.Errorf("invalid params.ws_url")
 				}
 				wsURL = wsURLOverride
 			}
@@ -180,7 +184,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	// Prepare headers with authorization
 	headers := http.Header{}
 	if authToken := os.Getenv("FAL_API_KEY"); authToken != "" {
-		headers.Add("Authorization", authToken)
+		headers.Add("Authorization", "Key "+authToken)
 		slog.Info("Added authorization header from FAL_API_KEY")
 	}
 
@@ -194,6 +198,39 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		slog.Error("Failed to connect to websocket", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, fmt.Errorf("failed to connect to websocket: %w", err)
 	}
+
+	// Wait for connection readiness before starting background processing or returning.
+	_, readyMsg, err := websocketConn.ReadMessage()
+	if err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to read ready message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to read ready message: %w", err)
+	}
+	var readyResponse map[string]interface{}
+	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to parse ready message", "error", err, "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to parse ready message: %w", err)
+	}
+	msgType, ok := readyResponse["type"].(string)
+	if !ok || msgType != "ready" {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Unexpected ready message format", "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("did not receive ready message from websocket")
+	}
+	slog.Info("Received ready message", "message", readyResponse["message"])
 
 	// Start websocket processing in a goroutine
 	go func() {
@@ -296,27 +333,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				}
 			}
 		}()
-
-		// Wait for connection_established message from server
-		_, readyMsg, err := websocketConn.ReadMessage()
-		if err != nil {
-			slog.Error("Failed to read ready message", "error", err)
-			return
-		}
-
-		// Parse the ready message
-		var readyResponse map[string]interface{}
-		if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
-			slog.Error("Failed to parse ready message", "error", err, "message", string(readyMsg))
-			return
-		}
-
-		// Verify it's the connection_established message.
-		if msgType, ok := readyResponse["type"].(string); ok && msgType == "connection_established" {
-			slog.Info("Received connection ready message", "message", readyResponse["message"])
-		} else {
-			slog.Warn("Unexpected ready message format", "message", string(readyMsg))
-		}
 
 		// Marshal request to JSON and send.
 		reqJSON, err := json.Marshal(req)
