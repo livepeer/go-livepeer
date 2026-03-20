@@ -169,6 +169,7 @@ func SendQueueEventAsync(eventType string, data interface{}) {
 	case kafkaProducer.events <- event:
 	default:
 		glog.Warningf("kafka producer event queue is full, dropping event %q", eventType)
+		KafkaEventSendError(eventType)
 	}
 }
 
