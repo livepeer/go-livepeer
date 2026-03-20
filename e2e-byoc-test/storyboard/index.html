@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Livepeer Storyboard</title>
+<script src="https://unpkg.com/mux.js@6.3.0/dist/mux.min.js"></script>
 <style>
 :root {
   --bg: #0a0a0a;
@@ -718,6 +719,54 @@ body {
   font-family: var(--font-mono);
 }
 
+/* ── Live Stream Panel ── */
+.live-panel {
+  position: fixed; top: 60px; right: 16px; width: 360px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg); z-index: 900; overflow: hidden;
+}
+.live-header {
+  height: 36px; display: flex; align-items: center;
+  padding: 0 10px; border-bottom: 1px solid var(--border); cursor: move; gap: 6px;
+}
+#live-body { padding: 8px; }
+#live-output-wrap {
+  position: relative; background: #000; border-radius: var(--radius-sm);
+  overflow: hidden; margin-bottom: 8px;
+}
+#live-canvas { width: 100%; height: auto; display: block; }
+#live-status {
+  position: absolute; top: 6px; left: 8px; font-size: 10px; color: #aaa;
+  font-family: var(--font-mono); background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px;
+}
+#live-fps {
+  position: absolute; top: 6px; right: 8px; font-size: 10px; color: #0f0;
+  font-family: var(--font-mono); background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px;
+}
+#live-controls { display: flex; flex-direction: column; gap: 6px; }
+.live-row { display: flex; flex-direction: column; gap: 3px; }
+.live-row label { font-size: 11px; color: var(--text-muted); }
+.live-row select, .live-row input, .live-row textarea {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 6px 8px; font-size: 12px; font-family: var(--font); resize: none;
+}
+.live-row select:focus, .live-row input:focus, .live-row textarea:focus {
+  outline: none; border-color: var(--border-hover);
+}
+.live-btn {
+  padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+  font-size: 12px; font-weight: 500; cursor: pointer; flex: 1; transition: all var(--transition);
+}
+.live-btn.start { background: #1a472a; color: #4ade80; border-color: #2d6a3e; }
+.live-btn.start:hover { background: #1f5533; }
+.live-btn.start:disabled { opacity: 0.4; cursor: not-allowed; }
+.live-btn.stop { background: #4a1a1a; color: #f87171; border-color: #6a2d2d; }
+.live-btn.stop:hover { background: #551f1f; }
+.live-btn.stop:disabled { opacity: 0.4; cursor: not-allowed; }
+.live-panel.minimized #live-body { display: none; }
+.live-btn-card { color: #4ade80 !important; font-size: 10px !important; }
+.live-btn-card:hover { background: #1a472a !important; }
+
 #chat-input-wrap {
   padding: 10px 14px;
   border-top: 1px solid var(--border);
@@ -1112,6 +1161,54 @@ body {
   </div>
 </div>
 
+<!-- Live Stream Panel -->
+<div id="live-panel" class="live-panel">
+  <div class="live-header" id="live-drag-handle">
+    <span class="card-type-badge" style="background:#e44;">LIVE</span>
+    <span class="card-title">Scope Live</span>
+    <div class="card-controls">
+      <button class="card-btn" id="live-toggle" title="Minimize">_</button>
+    </div>
+  </div>
+  <div id="live-body">
+    <div id="live-output-wrap">
+      <video id="live-video" width="512" height="512" autoplay muted playsinline style="background:#000;display:none;"></video>
+      <canvas id="live-canvas" width="512" height="512"></canvas>
+      <div id="live-status">Ready</div>
+      <div id="live-fps"></div>
+    </div>
+    <div id="live-controls">
+      <div class="live-row">
+        <label>Input</label>
+        <select id="live-input-src">
+          <option value="none">Text Only (no video input)</option>
+          <option value="webcam">Webcam</option>
+          <option value="url">Video URL</option>
+        </select>
+      </div>
+      <div class="live-row" id="live-url-row" style="display:none">
+        <input id="live-video-url" type="text" placeholder="https://... or storyboard video URL">
+      </div>
+      <div class="live-row">
+        <label>Pipeline</label>
+        <select id="live-pipeline">
+          <option value="wan2_1">WAN 2.1 VACE</option>
+          <option value="streamdiffusionv2">StreamDiffusion v2</option>
+          <option value="longlive">LongLive</option>
+        </select>
+      </div>
+      <div class="live-row" style="display:flex;gap:8px;align-items:flex-start">
+        <textarea id="live-prompt" placeholder="Describe the scene..." rows="2" style="flex:1">a cyberpunk cityscape with neon lights</textarea>
+        <button id="live-send-prompt" class="live-btn" style="padding:8px 16px;white-space:nowrap" disabled>Send</button>
+      </div>
+      <div class="live-row" style="display:flex;gap:8px">
+        <button id="live-start" class="live-btn start">Start Stream</button>
+        <button id="live-stop" class="live-btn stop" disabled>Stop</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Camera -->
 <div class="camera-card" id="camera-card" style="display:none">
   <div class="card-header" id="camera-drag-handle">
@@ -1348,6 +1445,7 @@ function createCard({ type, title, refId, width, height }) {
       <input class="card-title" value="${safeTitle}" spellcheck="false" title="ref: ${rid}">
       <span class="card-ref">${rid}</span>
       <div class="card-controls">
+        <button class="card-btn live-btn-card" title="Transform Live" style="display:none;">&#9654;</button>
         <button class="card-btn save-btn" title="Save media" style="display:none;">&#8615;</button>
         <button class="card-btn min-btn" title="Minimize">_</button>
         <button class="card-btn close" title="Close">×</button>
@@ -1415,9 +1513,14 @@ function setCardContent(card, { imageUrl, videoUrl, audioUrl, error, capability,
   if (elapsed) metaParts.push(`<span class="meta-time">${(elapsed / 1000).toFixed(1)}s</span>`);
   const metaHtml = `<div class="card-meta">${metaParts.join('')}</div>`;
 
-  // Show save button when media is available
+  // Show save + live transform buttons when media is available
   const saveBtn = card.el.querySelector('.save-btn');
   if (saveBtn && (imageUrl || videoUrl || audioUrl)) saveBtn.style.display = '';
+  const liveCardBtn = card.el.querySelector('.live-btn-card');
+  if (liveCardBtn && (imageUrl || videoUrl)) {
+    liveCardBtn.style.display = '';
+    liveCardBtn.onclick = () => transformLive(url, card.type);
+  }
 
   if (imageUrl) {
     body.innerHTML = `<img src="${imageUrl}" alt="${rid}" loading="lazy">${metaHtml}`;
@@ -2297,16 +2400,26 @@ async function fetchLiveCapabilities() {
   }
 }
 
-async function enrichTask(task, context = '') {
-  // Fetch live capabilities and pass to the LLM planner
-  const capsList = await fetchLiveCapabilities();
+// Cache capabilities to avoid re-fetching every time
+let _capsCache = null;
+let _capsCacheTime = 0;
+async function getCachedCapabilities() {
+  if (_capsCache && Date.now() - _capsCacheTime < 60000) return _capsCache; // cache 60s
+  _capsCache = await fetchLiveCapabilities();
+  _capsCacheTime = Date.now();
+  return _capsCache;
+}
 
-  // Try agentic enrichment v2 first (chain-of-thought + decompose + validate)
+async function enrichTask(task, context = '') {
+  // Use cached capabilities (avoid blocking fetch every time)
+  const capsList = await getCachedCapabilities();
+
+  // Try fast single-shot enrichment first (skip decompose phase for speed)
   if (SDK_SERVICE) {
     try {
       const v2Result = await sdkFetch('/enrich/v2', {
-        task, context, capabilities: capsList, quality: 'balanced',
-      }, 60000);
+        task, context, capabilities: capsList, quality: 'fast',
+      }, 30000);
 
       // Show reasoning in chat if available
       if (v2Result.reasoning) {
@@ -2737,7 +2850,7 @@ async function handleUserMessage(text) {
   let steps;
   let enrichSource = 'local';
   try {
-    addMessage('Agentic planning (decompose → plan → validate)…', 'system');
+    addMessage('Planning…', 'system');
     const enriched = await enrichTask(text, contextStr);
     if (enriched.steps && enriched.steps.length > 0) {
       // Validate steps: ensure each has required fields and uses available capabilities
@@ -3441,6 +3554,8 @@ document.getElementById('cfg-connect').onclick = async () => {
 // Auto-connect if saved
 if (SDK_SERVICE) {
   document.getElementById('cfg-url').value = SDK_SERVICE;
+  // Prefetch capabilities on load (caches for 60s, speeds up first enrichment)
+  getCachedCapabilities().catch(() => {});
 }
 if (ORCH_URL) {
   document.getElementById('cfg-orch-url').value = ORCH_URL;
@@ -3480,6 +3595,752 @@ document.addEventListener('keydown', e => {
 panX = 80;
 panY = 80;
 updateTransform();
+
+// ============================================================
+// Live Streaming (Scope Trickle)
+// ============================================================
+const livePanel = document.getElementById('live-panel');
+const liveCanvas = document.getElementById('live-canvas');
+const liveCtx = liveCanvas.getContext('2d');
+const liveStatus = document.getElementById('live-status');
+const liveFps = document.getElementById('live-fps');
+const liveStartBtn = document.getElementById('live-start');
+const liveStopBtn = document.getElementById('live-stop');
+const livePrompt = document.getElementById('live-prompt');
+const liveInputSrc = document.getElementById('live-input-src');
+const liveUrlRow = document.getElementById('live-url-row');
+const livePipeline = document.getElementById('live-pipeline');
+
+let liveStreamId = null;
+let liveSubscribeUrl = null;
+let livePublishUrl = null;
+let liveControlUrl = null;
+let liveRunning = false;
+let liveSubSeq = -1;
+let livePubSeq = 0;
+let liveFrameCount = 0;
+let liveFpsStart = 0;
+let livePromptTimer = null;
+let liveCamStream = null;
+let liveCamCanvas = null;
+
+// Toggle minimize
+document.getElementById('live-toggle').onclick = () => {
+  livePanel.classList.toggle('minimized');
+};
+
+// Show/hide video URL input
+liveInputSrc.onchange = () => {
+  liveUrlRow.style.display = liveInputSrc.value === 'url' ? '' : 'none';
+};
+
+// --- Subscribe output: mux.js transmux MPEG-TS → fMP4 → MSE ---
+async function trickleSubscribeLoop() {
+  if (!liveRunning || !liveSubscribeUrl) return;
+  liveFrameCount = 0;
+  liveFpsStart = performance.now();
+
+  const liveVideo = document.getElementById('live-video');
+
+  if (window.muxjs && window.MediaSource && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+    liveVideo.style.display = 'block';
+    liveCanvas.style.display = 'none';
+    await trickleSubscribeDirect(liveVideo);
+  } else {
+    liveVideo.style.display = 'none';
+    liveCanvas.style.display = 'block';
+    await trickleSubscribeFallback();
+  }
+}
+
+// Direct trickle → mux.js transmux → MSE playback
+async function trickleSubscribeDirect(videoEl) {
+  const subUrl = liveSubscribeUrl;
+
+  // MSE + mux.js transmuxer setup
+  const ms = new MediaSource();
+  videoEl.src = URL.createObjectURL(ms);
+  await new Promise(r => ms.addEventListener('sourceopen', r, { once: true }));
+
+  const sb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+  sb.mode = 'sequence';
+  const tx = new muxjs.mp4.Transmuxer({ remux: true });
+  let initDone = false, pending = [], appending = false;
+
+  function flush() {
+    if (appending || sb.updating || !pending.length) return;
+    appending = true;
+    try { sb.appendBuffer(pending.shift()); } catch(e) { appending = false; }
+  }
+  sb.addEventListener('updateend', () => {
+    appending = false; flush();
+    if (videoEl.buffered.length > 0) {
+      const end = videoEl.buffered.end(videoEl.buffered.length - 1);
+      if (end - videoEl.currentTime > 2) videoEl.currentTime = end - 0.3;
+      if (end > 30) try { sb.remove(0, end - 15); } catch(e) {}
+    }
+  });
+  tx.on('data', (seg) => {
+    if (!initDone) {
+      const init = new Uint8Array(seg.initSegment.byteLength + seg.data.byteLength);
+      init.set(seg.initSegment, 0);
+      init.set(seg.data, seg.initSegment.byteLength);
+      pending.push(init); initDone = true;
+    } else {
+      pending.push(new Uint8Array(seg.data));
+    }
+    flush();
+  });
+
+  // FPS counter via requestVideoFrameCallback (accurate per-frame)
+  if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+    let lastTime = performance.now(), fcount = 0;
+    function countFrame(now) {
+      if (!liveRunning) return;
+      fcount++; liveFrameCount++;
+      if (now - lastTime >= 1000) {
+        liveFps.textContent = fcount + ' fps';
+        fcount = 0; lastTime = now;
+      }
+      videoEl.requestVideoFrameCallback(countFrame);
+    }
+    videoEl.requestVideoFrameCallback(countFrame);
+  }
+
+  // Prefetch pipeline: fetch segment N+1 while processing N
+  let seq = -1;
+  let segCount = 0;
+
+  async function fetchSeg(s) {
+    for (let retry = 0; retry < 5; retry++) {
+      try {
+        const r = await fetch(`${subUrl}/${s}`, { signal: AbortSignal.timeout(10000) });
+        if (r.status === 200) return { data: new Uint8Array(await r.arrayBuffer()), seq: parseInt(r.headers.get('Lp-Trickle-Seq') || s) };
+        if (r.status === 470) { const l = r.headers.get('Lp-Trickle-Latest'); if (l) return { skip: true, seq: parseInt(l) }; await new Promise(r=>setTimeout(r,30)); continue; }
+        if (r.status === 404) { await new Promise(r=>setTimeout(r,500)); continue; }
+        await new Promise(r=>setTimeout(r,100));
+      } catch(e) { if (e.name === 'TimeoutError') continue; await new Promise(r=>setTimeout(r,200)); }
+    }
+    return null;
+  }
+
+  let nextFetch = fetchSeg(seq);
+  while (liveRunning) {
+    const result = await nextFetch;
+    if (!liveRunning) break;
+    if (!result) { nextFetch = fetchSeg(seq); continue; }
+    if (result.skip) { seq = result.seq; nextFetch = fetchSeg(seq); continue; }
+    seq = result.seq + 1;
+    nextFetch = fetchSeg(seq); // prefetch next immediately
+    if (result.data.byteLength > 0) {
+      tx.push(result.data); tx.flush();
+      segCount++;
+      if (videoEl.paused) videoEl.play().catch(() => {});
+    }
+  }
+
+  tx.dispose();
+  try { if (ms.readyState === 'open') ms.endOfStream(); } catch(e) {}
+}
+
+// WHEP: WebRTC playback via orchestrator
+async function whepSubscribe(videoEl) {
+  const whepUrl = `${SDK_SERVICE}/stream/${liveStreamId}/whep`;
+  console.log('WHEP URL:', whepUrl);
+
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  });
+
+  // Expect video (and optionally audio) from server
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+
+  // When track arrives, attach to video element
+  pc.ontrack = (event) => {
+    console.log('WHEP track received:', event.track.kind);
+    if (event.streams && event.streams[0]) {
+      videoEl.srcObject = event.streams[0];
+      videoEl.play().catch(() => {});
+      liveStatus.textContent = 'Live (WebRTC)';
+    }
+  };
+
+  // FPS counter via requestVideoFrameCallback
+  if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+    let lastTime = performance.now();
+    let framesSinceLastUpdate = 0;
+    function countFrame(now) {
+      if (!liveRunning) return;
+      framesSinceLastUpdate++;
+      liveFrameCount++;
+      if (now - lastTime >= 1000) {
+        liveFps.textContent = framesSinceLastUpdate + ' fps';
+        framesSinceLastUpdate = 0;
+        lastTime = now;
+      }
+      videoEl.requestVideoFrameCallback(countFrame);
+    }
+    videoEl.requestVideoFrameCallback(countFrame);
+  }
+
+  // Create SDP offer
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Wait for ICE gathering
+  await new Promise((resolve) => {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') resolve();
+    });
+    // Timeout after 5s
+    setTimeout(resolve, 5000);
+  });
+
+  // Send offer to WHEP endpoint
+  const resp = await fetch(whepUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sdp' },
+    body: pc.localDescription.sdp,
+  });
+
+  if (resp.status !== 201 && resp.status !== 200) {
+    const errText = await resp.text();
+    throw new Error(`WHEP ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  // Set remote SDP answer
+  const sdpAnswer = await resp.text();
+  await pc.setRemoteDescription(new RTCSessionDescription({
+    type: 'answer',
+    sdp: sdpAnswer,
+  }));
+
+  console.log('WHEP connection established');
+
+  // Keep connection alive while stream is running
+  window._whepPC = pc;
+  await new Promise((resolve) => {
+    const check = setInterval(() => {
+      if (!liveRunning) {
+        clearInterval(check);
+        pc.close();
+        resolve();
+      }
+    }, 500);
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        clearInterval(check);
+        resolve();
+      }
+    };
+  });
+}
+
+// Direct trickle → mux.js transmux MPEG-TS → fMP4 → MSE
+async function trickleSubscribeMuxJS(videoEl) {
+  const subUrl = liveSubscribeUrl;
+  let seq = -1;
+
+  // Setup MSE
+  const ms = new MediaSource();
+  videoEl.src = URL.createObjectURL(ms);
+  await new Promise(r => ms.addEventListener('sourceopen', r, { once: true }));
+
+  const sb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+  sb.mode = 'sequence';
+
+  // Setup mux.js transmuxer
+  const transmuxer = new muxjs.mp4.Transmuxer({ remux: true });
+  let initSegmentAppended = false;
+  let pendingBuffers = [];
+  let appending = false;
+
+  function appendToMSE(data) {
+    pendingBuffers.push(data);
+    flushPending();
+  }
+
+  function flushPending() {
+    if (appending || sb.updating || pendingBuffers.length === 0) return;
+    appending = true;
+    const buf = pendingBuffers.shift();
+    try { sb.appendBuffer(buf); } catch (e) { console.warn('appendBuffer:', e); appending = false; }
+  }
+
+  sb.addEventListener('updateend', () => {
+    appending = false;
+    flushPending();
+    // Stay near live edge
+    if (videoEl.buffered.length > 0) {
+      const end = videoEl.buffered.end(videoEl.buffered.length - 1);
+      if (end - videoEl.currentTime > 3) videoEl.currentTime = end - 0.5;
+      // Evict old buffer to prevent memory growth
+      if (end > 30) {
+        try { sb.remove(0, end - 15); } catch (e) {}
+      }
+    }
+  });
+
+  // Transmuxer output → MSE
+  transmuxer.on('data', (segment) => {
+    // First segment: prepend init segment
+    if (!initSegmentAppended) {
+      const initSeg = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
+      initSeg.set(segment.initSegment, 0);
+      initSeg.set(segment.data, segment.initSegment.byteLength);
+      appendToMSE(initSeg);
+      initSegmentAppended = true;
+    } else {
+      appendToMSE(new Uint8Array(segment.data));
+    }
+  });
+
+  let segCount = 0;
+
+  // Preconnect pattern: always have 2 fetches in flight for pipelining
+  async function fetchSegment(fetchSeq) {
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        const resp = await fetch(`${subUrl}/${fetchSeq}`, { signal: AbortSignal.timeout(10000) });
+        if (resp.status === 200) {
+          const data = new Uint8Array(await resp.arrayBuffer());
+          const actualSeq = parseInt(resp.headers.get('Lp-Trickle-Seq') || fetchSeq);
+          return { data, seq: actualSeq };
+        }
+        if (resp.status === 470) {
+          const latest = resp.headers.get('Lp-Trickle-Latest');
+          if (latest) return { skip: true, seq: parseInt(latest) };
+          await new Promise(r => setTimeout(r, 30));
+        } else if (resp.status === 404) {
+          await new Promise(r => setTimeout(r, 300));
+        } else {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      } catch (e) {
+        if (e.name === 'TimeoutError') continue;
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+    return null;
+  }
+
+  // Pipeline: always prefetch next segment while processing current
+  let nextFetch = fetchSegment(seq);
+
+  while (liveRunning) {
+    const result = await nextFetch;
+    if (!liveRunning) break;
+
+    if (!result) {
+      nextFetch = fetchSegment(seq);
+      continue;
+    }
+
+    if (result.skip) {
+      seq = result.seq;
+      nextFetch = fetchSegment(seq);
+      continue;
+    }
+
+    seq = result.seq + 1;
+    // Start fetching NEXT segment immediately (pipelining)
+    nextFetch = fetchSegment(seq);
+
+    if (result.data.byteLength > 0) {
+      transmuxer.push(result.data);
+      transmuxer.flush();
+      segCount++;
+
+      const elapsed = (performance.now() - liveFpsStart) / 1000;
+      if (videoEl.buffered.length > 0 && elapsed > 0) {
+        const rate = segCount / elapsed;
+        liveFps.textContent = `${rate.toFixed(1)} seg/s`;
+      }
+
+      if (videoEl.paused) videoEl.play().catch(() => {});
+    }
+  }
+
+  // Cleanup
+  transmuxer.dispose();
+  try { if (ms.readyState === 'open') ms.endOfStream(); } catch (e) {}
+}
+
+// Fallback: SDK Service proxy (works everywhere, but slower)
+async function trickleSubscribeFallback() {
+  let lastFrameSeq = -1;
+  while (liveRunning) {
+    try {
+      const resp = await fetch(`${SDK_SERVICE}/stream/${liveStreamId}/frame?seq=${lastFrameSeq}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!liveRunning) break;
+      if (resp.status === 204) { await new Promise(r => setTimeout(r, 30)); continue; }
+      if (!resp.ok) { await new Promise(r => setTimeout(r, 200)); continue; }
+      const frameSeq = parseInt(resp.headers.get('X-Trickle-Seq') || '0');
+      lastFrameSeq = frameSeq;
+      const blob = await resp.blob();
+      if (blob.size === 0) continue;
+      const bmp = await createImageBitmap(blob);
+      liveCanvas.width = bmp.width; liveCanvas.height = bmp.height;
+      liveCtx.drawImage(bmp, 0, 0); bmp.close();
+      liveFrameCount++;
+      const elapsed = (performance.now() - liveFpsStart) / 1000;
+      if (elapsed > 0) liveFps.textContent = (liveFrameCount / elapsed).toFixed(1) + ' fps';
+    } catch (err) {
+      if (!liveRunning) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+}
+
+// --- MPEG-TS Muxer (from j0sh/trickle gist) ---
+function _crc32(buf) {
+  const table = _crc32.t || (_crc32.t = (() => { const t = new Uint32Array(256); for (let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c;} return t; })());
+  let crc = 0xFFFFFFFF; for (const b of buf) crc = (crc>>>8)^table[(crc^b)&0xFF]; return (crc^0xFFFFFFFF)>>>0;
+}
+class TSMuxer {
+  constructor() { this.ps=188;this.pp=0;this.pm=0x100;this.vp=0x101;this.ap=0x102;this.cc=new Map();this.onData=()=>{};this._init(); }
+  _init() { this._pat().forEach(p=>this.onData(p)); this._pmt().forEach(p=>this.onData(p)); }
+  _pk(payload,pid,pus=false,ptr=false) {
+    const p=new Uint8Array(188).fill(0xFF);p[0]=0x47;p[1]=(pus?0x40:0)|((pid>>8)&0x1F);p[2]=pid&0xFF;
+    const cc=this.cc.get(pid)??0;let afc=1,off=4;this.cc.set(pid,(cc+1)&0xF);
+    if(pus&&ptr)p[off++]=0;const bl=188-off;
+    if(payload.length<bl){afc=3;const s=bl-payload.length-2;p[off++]=s+1;p[off++]=0;if(s>0)p.fill(0xFF,off,off+s);off+=s;}
+    p[3]=(afc<<4)|(cc&0xF);p.set(payload.subarray(0,188-off),off);return p;
+  }
+  _pat(){const s=[0,0xB0,0x0D,0,1,0xC1,0,0,0,1,0xE0|(this.pm>>8),this.pm&0xFF];const c=_crc32(Uint8Array.from(s));s.push((c>>24)&0xFF,(c>>16)&0xFF,(c>>8)&0xFF,c&0xFF);return[this._pk(Uint8Array.from(s),this.pp,true,true)];}
+  _pmt(){let s=[2,0xB0,0,0,1,0xC1,0,0,0xE0|(this.vp>>8),this.vp&0xFF,0xF0,0,0x1B,0xE0|(this.vp>>8),this.vp&0xFF,0xF0,0,0x0F,0xE0|(this.ap>>8),this.ap&0xFF,0xF0,0];const l=s.length+4-3;s[1]=0xB0|((l>>8)&0xF);s[2]=l&0xFF;const p=Uint8Array.from(s);const c=_crc32(p);const f=new Uint8Array(p.length+4);f.set(p);f.set([(c>>24)&0xFF,(c>>16)&0xFF,(c>>8)&0xFF,c&0xFF],p.length);return[this._pk(f,this.pm,true,true)];}
+  mux(isV,pts,dts,data){const pid=isV?this.vp:this.ap,sid=isV?0xE0:0xC0;const h=[0,0,1,sid];let pl=data.length+8;if(isV||pl>0xFFFF)pl=0;h.push((pl>>8)&0xFF,pl&0xFF,0x80,0x80,5);
+    const p=pts;h.push((2<<4)|(((p>>30)&7)<<1)|1,(p>>22)&0xFF,(((p>>15)&0x7F)<<1)|1,(p>>7)&0xFF,((p&0x7F)<<1)|1);
+    const pes=new Uint8Array(h.length+data.length);pes.set(h);pes.set(data,h.length);let o=0,f=true;while(o<pes.length){const sl=Math.min(pes.length-o,184);this.onData(this._pk(pes.subarray(o,o+sl),pid,f,false));f=false;o+=sl;}}
+}
+
+// --- Trickle Publisher (streaming fetch, from j0sh/trickle gist) ---
+function createTricklePublisher(url, mimeType) {
+  let idx = 0, nextCtrl = null;
+  async function preconnect(i) {
+    let controller;
+    const stream = new ReadableStream({ start(c) { controller = c; } });
+    fetch(`${url}/${i}`, { method:'POST', headers:{'Content-Type':mimeType}, body:stream, duplex:'half' })
+      .then(r => { if(!r.ok) r.text().then(t=>console.warn(`seg ${i}:`,r.status,t)); })
+      .catch(e => console.warn(`seg ${i} POST:`,e));
+    return controller;
+  }
+  async function next() {
+    if (!nextCtrl) nextCtrl = await preconnect(idx);
+    const ctrl = nextCtrl; const seq = idx++;
+    nextCtrl = null;
+    preconnect(idx).then(c => nextCtrl = c).catch(()=>{});
+    return { write(chunk) { ctrl.enqueue(chunk); }, close() { ctrl.close(); }, seq: () => seq };
+  }
+  async function close() { if(nextCtrl){nextCtrl.close();nextCtrl=null;} fetch(url,{method:'DELETE'}).catch(()=>{}); }
+  return { next, close };
+}
+
+// --- Trickle Publish (WebCodecs H.264 → MPEG-TS → direct trickle) ---
+async function startCamPublish() {
+  if (!livePublishUrl || liveInputSrc.value !== 'webcam') return;
+
+  // Check WebCodecs support
+  if (!window.VideoEncoder || !window.MediaStreamTrackProcessor) {
+    addMessage('WebCodecs not supported — falling back to SDK proxy', 'system');
+    return startCamPublishFallback();
+  }
+
+  try {
+    liveCamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 512 }, audio: false });
+    addMessage('Webcam active — publishing via WebCodecs + MPEG-TS', 'system');
+
+    // Setup trickle publisher (streaming POST directly to orch trickle)
+    const pub = createTricklePublisher(livePublishUrl, 'video/mp2t');
+    const seg = await pub.next();
+
+    // Setup TS muxer
+    const tsMuxer = new TSMuxer();
+    tsMuxer.onData = packet => seg.write(packet);
+
+    // WebCodecs Video Encoder (hardware H.264)
+    const videoTrack = liveCamStream.getVideoTracks()[0];
+    const processor = new MediaStreamTrackProcessor({ track: videoTrack });
+    const reader = processor.readable.getReader();
+    const videoEncoder = new VideoEncoder({
+      output: chunk => {
+        const ts = Math.round(chunk.timestamp * 90 / 1000); // 90kHz
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        tsMuxer.mux(true, ts, ts, data);
+      },
+      error: e => console.error('VideoEncoder error:', e),
+    });
+    videoEncoder.configure({
+      codec: 'avc1.42E01E', width: 512, height: 512, framerate: 25,
+      latencyMode: 'realtime',
+      avc: { format: 'annexb' },
+    });
+
+    // Encode loop
+    (async function encodeLoop() {
+      while (liveRunning) {
+        const { value, done } = await reader.read();
+        if (done || !liveRunning) break;
+        videoEncoder.encode(value);
+        value.close();
+        livePubSeq++;
+      }
+    })();
+
+    // Store cleanup refs
+    window._livePub = pub;
+    window._liveSeg = seg;
+    window._liveEncoder = videoEncoder;
+    window._liveReader = reader;
+
+  } catch (err) {
+    console.error('WebCodecs publish failed:', err);
+    addMessage('WebCodecs failed: ' + err.message + ' — using SDK proxy', 'system');
+    startCamPublishFallback();
+  }
+}
+
+// Fallback: SDK Service JPEG proxy (for browsers without WebCodecs)
+async function startCamPublishFallback() {
+  if (!livePublishUrl || liveInputSrc.value !== 'webcam') return;
+  try {
+    liveCamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 512 } });
+    liveCamCanvas = document.createElement('canvas'); liveCamCanvas.width = 512; liveCamCanvas.height = 512;
+    const ctx = liveCamCanvas.getContext('2d');
+    const v = document.createElement('video'); v.srcObject = liveCamStream; v.muted = true; await v.play();
+    livePubSeq = 0;
+    const pubFrame = async () => {
+      if (!liveRunning) return;
+      ctx.drawImage(v, 0, 0, 512, 512);
+      liveCamCanvas.toBlob(async (blob) => {
+        if (!blob || !liveRunning) return;
+        try { await fetch(`${SDK_SERVICE}/stream/${liveStreamId}/publish?seq=${livePubSeq}`, { method:'POST', body:blob, headers:{'Content-Type':'image/jpeg'} }); livePubSeq++; } catch(e) {}
+        if (liveRunning) setTimeout(pubFrame, 40);
+      }, 'image/jpeg', 0.6);
+    };
+    pubFrame();
+  } catch (err) { addMessage('Webcam failed: ' + err.message, 'system'); }
+}
+
+// --- Prompt Updates (via scope-trickle /update-params endpoint) ---
+async function sendPromptUpdate() {
+  if (!liveRunning) return;
+  const prompt = livePrompt.value.trim();
+  if (!prompt) return;
+
+  try {
+    // Call scope-trickle /update-params directly (via fal.run)
+    const FAL_SCOPE = 'https://fal.run/Daydream/scope-trickle';
+    const resp = await fetch(`${FAL_SCOPE}/update-params?prompt=${encodeURIComponent(prompt)}&session_id=${liveStreamId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Key d26bca42-b78f-4933-aa85-7ca8196753e4:280a286603355c3a6a608085c652b754',
+      },
+      body: '{}',
+    });
+    if (resp.ok) {
+      const result = await resp.json();
+      liveStatus.textContent = result.status === 'updated' ? 'Prompt updated' : result.error || 'Error';
+      setTimeout(() => { if (liveRunning) liveStatus.textContent = 'Live'; }, 1500);
+      addMessage(`Prompt: "${prompt}"`, 'system');
+    }
+  } catch (e) {
+    console.warn('Prompt update error:', e);
+    liveStatus.textContent = 'Prompt error';
+  }
+}
+
+// Send prompt button
+const liveSendPromptBtn = document.getElementById('live-send-prompt');
+liveSendPromptBtn.onclick = () => sendPromptUpdate();
+
+// Also allow Enter key to send
+livePrompt.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendPromptUpdate();
+  }
+});
+
+// --- Start Stream ---
+liveStartBtn.onclick = async () => {
+  liveStartBtn.disabled = true;
+  liveStatus.textContent = 'Starting...';
+
+  const inputSrc = liveInputSrc.value;
+  const pipeline = livePipeline.value;
+  const prompt = livePrompt.value.trim() || 'a beautiful landscape';
+
+  const enableVideoIngress = inputSrc !== 'none';
+  const reqBody = {
+    capability: 'scope-live',
+    params: {
+      model_id: 'scope-trickle',
+      pipeline: pipeline,
+      prompt: prompt,
+    },
+    enable_video_ingress: enableVideoIngress,
+    enable_video_egress: true,
+    enable_data_output: false,
+  };
+
+  try {
+    // Phase 4: Cold start handling — show loading states
+    liveStatus.textContent = 'Starting stream...';
+    addMessage('Starting stream — GPU cold start may take 1-2 minutes...', 'system');
+
+    const result = await sdkFetch('/stream/start', reqBody, 300000);
+
+    liveSubscribeUrl = result.subscribe_url;
+    livePublishUrl = result.publish_url;
+    liveControlUrl = result.control_url;
+    liveStreamId = result.stream_id || Date.now().toString();
+
+    if (!liveSubscribeUrl) {
+      throw new Error('No subscribe URL returned — stream setup incomplete');
+    }
+
+    liveRunning = true;
+    liveStopBtn.disabled = false;
+    liveSendPromptBtn.disabled = false;
+    liveStatus.textContent = 'Connecting to GPU...';
+    addMessage(`Stream ${liveStreamId} created, waiting for GPU output...`, 'system');
+
+    // Start output subscription
+    trickleSubscribeLoop().then(() => {
+      if (!liveRunning) liveStatus.textContent = 'Stopped';
+    });
+
+    // Start webcam publishing if needed
+    if (inputSrc === 'webcam') {
+      startCamPublish();
+      liveStatus.textContent = 'Publishing webcam → GPU...';
+    }
+
+    // Phase 4: Monitor for first output frame
+    let waitCount = 0;
+    const checkOutput = setInterval(() => {
+      waitCount++;
+      const liveVideo = document.getElementById('live-video');
+      if (liveVideo && liveVideo.buffered && liveVideo.buffered.length > 0) {
+        liveStatus.textContent = 'Live';
+        clearInterval(checkOutput);
+        addMessage('GPU output streaming!', 'system');
+      } else if (liveFrameCount > 0) {
+        liveStatus.textContent = 'Live';
+        clearInterval(checkOutput);
+      } else if (waitCount > 60) {
+        clearInterval(checkOutput);
+      } else {
+        liveStatus.textContent = `Waiting for GPU output... (${waitCount}s)`;
+      }
+    }, 1000);
+
+  } catch (err) {
+    liveStartBtn.disabled = false;
+    liveStatus.textContent = 'Error';
+    addMessage('Live stream error: ' + err.message, 'system');
+    console.error('Stream start error:', err);
+  }
+};
+
+// --- Stop Stream ---
+liveStopBtn.onclick = async () => {
+  liveRunning = false;
+  liveStopBtn.disabled = true;
+  liveStartBtn.disabled = false;
+  liveSendPromptBtn.disabled = true;
+  liveStatus.textContent = 'Stopped';
+  liveFps.textContent = '';
+
+  // Stop webcam
+  if (liveCamStream) {
+    liveCamStream.getTracks().forEach(t => t.stop());
+    liveCamStream = null;
+  }
+
+  // Clean up WebCodecs publisher
+  if (window._liveEncoder) { try { window._liveEncoder.close(); } catch(e){} window._liveEncoder = null; }
+  if (window._liveSeg) { try { window._liveSeg.close(); } catch(e){} window._liveSeg = null; }
+  if (window._livePub) { try { window._livePub.close(); } catch(e){} window._livePub = null; }
+  // Clean up WebRTC
+  if (window._whepPC) { window._whepPC.close(); window._whepPC = null; }
+
+  // Reset video/canvas visibility
+  const liveVideo = document.getElementById('live-video');
+  if (liveVideo) {
+    liveVideo.pause();
+    liveVideo.srcObject = null;
+    liveVideo.removeAttribute('src');
+    liveVideo.style.display = 'none';
+  }
+  liveCanvas.style.display = 'block';
+
+  // Send stop via SDK Service
+  if (liveStreamId) {
+    try {
+      await sdkFetch(`/stream/${liveStreamId}/stop`, {}, 10000);
+    } catch (e) { console.warn('Stream stop error:', e); }
+    addMessage('Live stream stopped', 'system');
+    liveStreamId = null;
+  }
+};
+
+// --- Transform Live: pick any card/cam as input ---
+function transformLive(mediaUrl, mediaType) {
+  // Set input source to URL and populate the URL field
+  liveInputSrc.value = 'url';
+  liveUrlRow.style.display = '';
+  document.getElementById('live-video-url').value = mediaUrl || '';
+
+  // Auto-focus the live panel
+  livePanel.classList.remove('minimized');
+
+  // If not already streaming, auto-start
+  if (!liveRunning) {
+    addMessage(`Transform Live: using ${mediaType || 'media'} as input`, 'system');
+    liveStartBtn.click();
+  }
+}
+
+// Add "Transform Live" to camera card
+document.getElementById('camera-card').addEventListener('dblclick', () => {
+  // Double-click camera to start live transform with webcam
+  liveInputSrc.value = 'webcam';
+  liveUrlRow.style.display = 'none';
+  livePanel.classList.remove('minimized');
+  if (!liveRunning) {
+    addMessage('Transform Live: using webcam as input', 'system');
+    liveStartBtn.click();
+  }
+});
+
+// --- Drag live panel ---
+(function() {
+  let dragX, dragY, startLeft, startTop;
+  const handle = document.getElementById('live-drag-handle');
+  handle.addEventListener('pointerdown', e => {
+    dragX = e.clientX;
+    dragY = e.clientY;
+    const rect = livePanel.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    livePanel.style.left = (startLeft + e.clientX - dragX) + 'px';
+    livePanel.style.top = (startTop + e.clientY - dragY) + 'px';
+    livePanel.style.right = 'auto';
+  });
+})();
 </script>
 </body>
 </html>

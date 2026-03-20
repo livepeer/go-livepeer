@@ -49,6 +49,7 @@ logger = logging.getLogger("sdk-service")
 # ---------------------------------------------------------------------------
 
 ORCH_URL = os.environ.get("ORCH_URL", "https://34.134.195.88:8935")
+ORCH_PUBLIC_URL = os.environ.get("ORCH_PUBLIC_URL", "https://34-134-195-88.nip.io")
 ADAPTER_URLS = os.environ.get(
     "ADAPTER_URLS", "http://34.134.195.88:9090,http://34.134.195.88:9091,http://34.134.195.88:9092"
 ).split(",")
@@ -1068,7 +1069,7 @@ def _build_stream_livepeer_header(
         "id": stream_id,
         "request": json.dumps(params),
         "capability": capability,
-        "timeout_seconds": 10,
+        "timeout_seconds": 300,
         "parameters": json.dumps({
             "enable_video_ingress": enable_video_ingress,
             "enable_video_egress": enable_video_egress,
@@ -1099,12 +1100,12 @@ async def stream_start(req: StreamStartRequest):
     }).encode()
 
     status, data, resp_headers = _orch_request(
-        "POST", "/process/stream/start", body,
+        "POST", "/ai/stream/start", body,
         headers={
             "Livepeer": livepeer_hdr,
             "Livepeer-Capability": req.capability,
         },
-        timeout=30,
+        timeout=300,
     )
     if status >= 400:
         raise HTTPException(status_code=status, detail=data.decode()[:500])
@@ -1112,23 +1113,218 @@ async def stream_start(req: StreamStartRequest):
         result = json.loads(data)
     except Exception:
         result = {"raw": data.decode()[:1000]}
-    # Include any useful headers from orchestrator
+    # Rewrite trickle URLs: replace internal Docker hostnames with public HTTPS URL
+    from urllib.parse import urlparse
+    pub_parsed = urlparse(ORCH_PUBLIC_URL)
+    pub_host = pub_parsed.netloc  # e.g. "34-134-195-88.nip.io"
     for key in ("X-Control-Url", "X-Events-Url", "X-Publish-Url",
                 "X-Subscribe-Url", "X-Data-Url"):
         if key in resp_headers:
-            result[key.lower().replace("-", "_").replace("x_", "")] = resp_headers[key]
+            url = resp_headers[key]
+            # Replace any internal hostname patterns with public address
+            for internal in ("0.0.0.0:8935", "byoc_orch:8935", "localhost:8935",
+                             "34.134.195.88:8935", "34-134-195-88.nip.io:443"):
+                url = url.replace(internal, pub_host)
+            # Ensure HTTPS scheme
+            if url.startswith("http://"):
+                url = "https://" + url[7:]
+            result[key.lower().replace("-", "_").replace("x_", "")] = url
+    result["stream_id"] = stream_id
+
+    # Initialize MPEG-TS media session for browser ↔ trickle encoding/decoding
+    pub_url = result.get("publish_url", "")
+    sub_url = result.get("subscribe_url", "")
+    if pub_url or sub_url:
+        try:
+            await _init_stream_session(stream_id, pub_url, sub_url)
+        except Exception as e:
+            logger.warning("Failed to init MPEG-TS session %s: %s", stream_id, e)
+
     return result
 
 
 @app.post("/stream/{stream_id}/stop")
 async def stream_stop(stream_id: str):
     """Stop a live stream."""
+    # Clean up media session
+    session = _stream_sessions.pop(stream_id, None)
+    if session:
+        await _cleanup_stream_session(session)
+
+    # Build Livepeer header with stream_id in the request field
+    job_request = {
+        "id": stream_id,
+        "request": json.dumps({"stream_id": stream_id}),
+        "capability": "scope-live",
+    }
+    livepeer_hdr = base64.b64encode(json.dumps(job_request).encode()).decode()
     status, data, _ = _orch_request(
-        "POST", f"/process/stream/{stream_id}/stop", timeout=10
+        "POST", "/ai/stream/stop", timeout=10,
+        body=json.dumps({"stream_id": stream_id}).encode(),
+        headers={"Livepeer": livepeer_hdr},
     )
     if status >= 400:
         raise HTTPException(status_code=status, detail=data.decode()[:500])
     return {"status": "stopped", "stream_id": stream_id}
+
+
+# ---------------------------------------------------------------------------
+# Stream media sessions — MPEG-TS encode/decode for browser ↔ trickle
+# ---------------------------------------------------------------------------
+import asyncio
+import io
+import threading
+from typing import Any
+
+_stream_sessions: dict[str, dict[str, Any]] = {}
+
+
+async def _init_stream_session(stream_id: str, publish_url: str, subscribe_url: str):
+    """Create persistent MediaPublish/MediaOutput for MPEG-TS encoding/decoding."""
+    from livepeer_gateway.media_publish import MediaPublish
+    from livepeer_gateway.media_output import MediaOutput
+
+    session: dict[str, Any] = {
+        "stream_id": stream_id,
+        "publish_url": publish_url,
+        "subscribe_url": subscribe_url,
+        "publisher": None,
+        "output": None,
+        "latest_frame_jpeg": None,
+        "frame_seq": 0,
+        "output_task": None,
+    }
+
+    # Input: JPEG → MPEG-TS → trickle (MediaPublish encodes to MPEG-TS)
+    if publish_url:
+        try:
+            from livepeer_gateway.media_publish import MediaPublishConfig
+            publisher = MediaPublish(publish_url, config=MediaPublishConfig(fps=25.0, keyframe_interval_s=0.5))
+        except Exception:
+            publisher = MediaPublish(publish_url)
+        session["publisher"] = publisher
+
+    # Output: trickle → MPEG-TS → decoded frames (background loop)
+    if subscribe_url:
+        output = MediaOutput(subscribe_url)
+        session["output"] = output
+        # Start background task to decode MPEG-TS frames
+        session["output_task"] = asyncio.create_task(
+            _output_decode_loop(session, output)
+        )
+
+    _stream_sessions[stream_id] = session
+    logger.info("Stream session %s: MPEG-TS media proxy initialized", stream_id)
+
+
+async def _output_decode_loop(session: dict, output):
+    """Background: read MPEG-TS frames from trickle, keep latest as JPEG."""
+    import numpy as np
+    from PIL import Image
+
+    try:
+        async for decoded in output.frames():
+            if session.get("stopped"):
+                break
+            if getattr(decoded, "kind", None) != "video":
+                continue
+            frame = getattr(decoded, "frame", None)
+            if frame is None:
+                continue
+            # Convert VideoFrame → JPEG
+            arr = frame.to_ndarray(format="rgb24")
+            img = Image.fromarray(arr)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            session["latest_frame_jpeg"] = buf.getvalue()
+            session["frame_seq"] += 1
+    except Exception as e:
+        logger.warning("Output decode loop %s error: %s", session.get("stream_id"), e)
+
+
+async def _cleanup_stream_session(session: dict):
+    """Clean up a stream session."""
+    session["stopped"] = True
+    if session.get("output_task"):
+        session["output_task"].cancel()
+    if session.get("publisher"):
+        try:
+            await session["publisher"].close()
+        except Exception:
+            pass
+    if session.get("output"):
+        try:
+            await session["output"].close()
+        except Exception:
+            pass
+
+
+@app.get("/stream/{stream_id}/frame")
+async def stream_get_frame(stream_id: str, seq: int = -1):
+    """Get the latest output frame from a stream.
+
+    Reads MPEG-TS from trickle via background MediaOutput, returns decoded JPEG.
+    """
+    session = _stream_sessions.get(stream_id)
+    if not session:
+        # Fallback: lazy-init session from stored URLs
+        from starlette.responses import Response as StarletteResponse
+        return StarletteResponse(status_code=204)
+
+    # Wait for a new frame (up to 5s, poll every 10ms for low latency)
+    target_seq = session.get("frame_seq", 0) + (1 if seq >= 0 else 0)
+    for _ in range(500):
+        jpeg = session.get("latest_frame_jpeg")
+        current_seq = session.get("frame_seq", 0)
+        if jpeg and (seq < 0 or current_seq > seq):
+            from starlette.responses import Response as StarletteResponse
+            resp = StarletteResponse(content=jpeg, media_type="image/jpeg")
+            resp.headers["X-Trickle-Seq"] = str(current_seq)
+            resp.headers["X-Trickle-Latest"] = str(current_seq)
+            resp.headers["Access-Control-Expose-Headers"] = "X-Trickle-Seq, X-Trickle-Latest"
+            return resp
+        await asyncio.sleep(0.01)
+
+    from starlette.responses import Response as StarletteResponse
+    return StarletteResponse(status_code=204)
+
+
+@app.post("/stream/{stream_id}/publish")
+async def stream_publish_frame(stream_id: str, request: Request, seq: int = 0):
+    """Publish a frame to a stream's input.
+
+    Browser sends JPEG, SDK Service encodes to MPEG-TS via MediaPublish → trickle.
+    """
+    body = await request.body()
+    session = _stream_sessions.get(stream_id)
+
+    if session and session.get("publisher"):
+        # Encode JPEG → VideoFrame → MPEG-TS → trickle
+        try:
+            import numpy as np
+            from PIL import Image
+            from av import VideoFrame as AVVideoFrame
+
+            img = Image.open(io.BytesIO(body)).convert("RGB")
+            arr = np.array(img)
+            frame = AVVideoFrame.from_ndarray(arr, format="rgb24")
+            await session["publisher"].write_frame(frame)
+            return {"status": "ok", "seq": seq, "encoding": "mpegts"}
+        except Exception as e:
+            logger.warning("MPEG-TS encode error for %s: %s", stream_id, e)
+            # Fall through to raw publish
+
+    # Fallback: publish raw bytes to trickle
+    trickle_url = f"{ORCH_URL}/ai/trickle/{stream_id}/{seq}"
+    try:
+        req = urllib.request.Request(trickle_url, data=body, method="POST")
+        req.add_header("Content-Type", request.headers.get("content-type", "image/jpeg"))
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx) as r:
+            return {"status": "ok", "seq": seq}
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=e.code, detail=e.read().decode()[:200])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.post("/stream/{stream_id}/whip")
@@ -1149,6 +1345,30 @@ async def stream_whip_proxy(stream_id: str, request: Request):
         media_type=resp_headers.get("Content-Type", "application/sdp"),
     )
     for key in ("Location", "ETag", "Link", "Livepeer-Playback-URL"):
+        if key in resp_headers:
+            response.headers[key] = resp_headers[key]
+    return response
+
+
+@app.post("/stream/{stream_id}/whep")
+async def stream_whep_proxy(stream_id: str, request: Request):
+    """Proxy WHEP signaling to the orchestrator for WebRTC playback."""
+    body = await request.body()
+    content_type = request.headers.get("content-type", "application/sdp")
+    # WHEP URL pattern: /live/video-to-video/{stream_id}-out/whep
+    status, data, resp_headers = _orch_request(
+        "POST",
+        f"/live/video-to-video/{stream_id}-out/whep",
+        body,
+        headers={"Content-Type": content_type},
+        timeout=30,
+    )
+    response = Response(
+        content=data,
+        status_code=status,
+        media_type=resp_headers.get("Content-Type", "application/sdp"),
+    )
+    for key in ("Location", "ETag", "Link"):
         if key in resp_headers:
             response.headers[key] = resp_headers[key]
     return response

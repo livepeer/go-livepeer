@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY livepeer-gateway/ /sdk/
 RUN pip install --no-cache-dir /sdk/
 
-# Install missing transitive dep + FastAPI
-RUN pip install --no-cache-dir protobuf fastapi uvicorn[standard]
+# Install missing transitive dep + FastAPI + media deps
+RUN pip install --no-cache-dir protobuf fastapi uvicorn[standard] Pillow numpy
 
 COPY app.py .
 
