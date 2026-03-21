@@ -232,6 +232,63 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	}
 	slog.Info("Received ready message", "message", readyResponse["message"])
 
+	// Marshal request to JSON and send.
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to marshal request", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	slog.Info("Sending request to websocket", "request", string(reqJSON))
+	err = websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
+	if err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to send request message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to send request message: %w", err)
+	}
+	slog.Info("Sent request to websocket", "request", string(reqJSON))
+
+	// Wait for started handshake before launching background processing.
+	_, startedMsg, err := websocketConn.ReadMessage()
+	if err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to read started message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to read started message: %w", err)
+	}
+	var startedResponse wsMessage
+	if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Failed to parse started message", "error", err, "message", string(startedMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to parse started message: %w", err)
+	}
+	if startedResponse.Type != "started" {
+		_ = websocketConn.Close()
+		f.mu.Lock()
+		f.inUse--
+		remainingInUse := f.inUse
+		f.mu.Unlock()
+		slog.Error("Unexpected started message format", "message", string(startedMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("did not receive started message from websocket")
+	}
+	slog.Info("Received started message")
+
 	// Start websocket processing in a goroutine
 	go func() {
 		var writeMu sync.Mutex
@@ -333,26 +390,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				}
 			}
 		}()
-
-		// Marshal request to JSON and send.
-		reqJSON, err := json.Marshal(req)
-		if err != nil {
-			slog.Error("Failed to marshal request", "error", err)
-			return
-		}
-
-		slog.Info("Sending request to websocket", "request", string(reqJSON))
-
-		// TODO check response message and retry on failure.
-		writeMu.Lock()
-		err = websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
-		writeMu.Unlock()
-		if err != nil {
-			slog.Error("Failed to send message", "error", err)
-			return
-		}
-
-		slog.Info("Sent request to websocket", "request", string(reqJSON))
 
 		// Create a 1-hour timeout as a fail-safe to avoid big bills
 		timeout := time.NewTimer(1 * time.Hour)
