@@ -3642,7 +3642,7 @@ async function trickleSubscribeLoop() {
 
   const liveVideo = document.getElementById('live-video');
 
-  if (window.muxjs && window.MediaSource && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+  if (window.MediaSource && (MediaSource.isTypeSupported('video/mp2t; codecs="avc1.42E01E"') || MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'))) {
     liveVideo.style.display = 'block';
     liveCanvas.style.display = 'none';
     // Primary: continuous /watch stream (eliminates per-segment HTTP latency)
@@ -3664,43 +3664,31 @@ async function trickleSubscribeWatch(videoEl) {
   const watchUrl = `${SDK_SERVICE}/stream/${liveStreamId}/watch`;
   console.log('Subscribing via /watch:', watchUrl);
 
-  // Setup MSE + mux.js
+  // Chrome supports MPEG-TS natively in MSE — no transmuxer needed
+  const mimeType = MediaSource.isTypeSupported('video/mp2t; codecs="avc1.42E01E"')
+    ? 'video/mp2t; codecs="avc1.42E01E"'
+    : 'video/mp2t';
+
   const ms = new MediaSource();
   videoEl.src = URL.createObjectURL(ms);
   await new Promise(r => ms.addEventListener('sourceopen', r, { once: true }));
-  const sb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+  const sb = ms.addSourceBuffer(mimeType);
   sb.mode = 'sequence';
-  const tx = new muxjs.mp4.Transmuxer({ remux: true });
-  let initDone = false, pending = [], appending = false;
 
-  function flush() {
+  let pending = [], appending = false;
+  function appendNext() {
     if (appending || sb.updating || !pending.length) return;
     appending = true;
-    try { sb.appendBuffer(pending.shift()); } catch(e) { appending = false; }
+    try { sb.appendBuffer(pending.shift()); } catch(e) { console.warn('append:', e.message); appending = false; }
   }
   sb.addEventListener('updateend', () => {
-    appending = false; flush();
+    appending = false;
+    appendNext();
     if (videoEl.buffered.length > 0) {
       const end = videoEl.buffered.end(videoEl.buffered.length - 1);
       if (end - videoEl.currentTime > 3) videoEl.currentTime = end - 0.5;
       if (end > 30) try { sb.remove(0, end - 15); } catch(e) {}
     }
-  });
-  let initSegSaved = null;
-  tx.on('data', (seg) => {
-    if (!initDone) {
-      // Save init segment and prepend to first data
-      initSegSaved = new Uint8Array(seg.initSegment);
-      const combined = new Uint8Array(seg.initSegment.byteLength + seg.data.byteLength);
-      combined.set(seg.initSegment, 0);
-      combined.set(seg.data, seg.initSegment.byteLength);
-      pending.push(combined);
-      initDone = true;
-    } else {
-      // Only append data (skip init segment on subsequent flushes)
-      pending.push(new Uint8Array(seg.data));
-    }
-    flush();
   });
 
   // FPS counter
@@ -3718,33 +3706,30 @@ async function trickleSubscribeWatch(videoEl) {
     videoEl.requestVideoFrameCallback(countFrame);
   }
 
-  // Single fetch → continuous read → accumulate → flush periodically → MSE
+  // Single fetch → continuous MPEG-TS stream → direct MSE (no transmux!)
   const resp = await fetch(watchUrl, { signal: AbortSignal.timeout(300000) });
   if (!resp.ok) throw new Error(`/watch returned ${resp.status}`);
 
   const reader = resp.body.getReader();
   let buffer = new Uint8Array(0);
-  let lastFlush = performance.now();
 
   while (liveRunning) {
     const { value, done } = await reader.read();
     if (done || !liveRunning) break;
 
-    // Accumulate bytes
+    // Accumulate and align to 188-byte TS packets
     const combined = new Uint8Array(buffer.length + value.length);
     combined.set(buffer);
     combined.set(value, buffer.length);
-
-    // Align to 188-byte TS packet boundaries
-    let offset = 0;
-    while (offset < combined.length && combined[offset] !== 0x47) offset++;
-    const aligned = combined.subarray(offset);
+    let off = 0;
+    while (off < combined.length && combined[off] !== 0x47) off++;
+    const aligned = combined.subarray(off);
     const tsBytes = Math.floor(aligned.length / 188) * 188;
 
     if (tsBytes > 0) {
-      // Push TS packets — mux.js emits 'data' events automatically on keyframes
-      // Do NOT call tx.flush() during streaming (resets state, produces duplicate init segments)
-      tx.push(aligned.subarray(0, tsBytes));
+      // Feed MPEG-TS directly to MSE SourceBuffer (Chrome decodes natively)
+      pending.push(aligned.slice(0, tsBytes));
+      appendNext();
       buffer = aligned.subarray(tsBytes);
     } else {
       buffer = aligned;
@@ -3753,7 +3738,6 @@ async function trickleSubscribeWatch(videoEl) {
     if (videoEl.paused) videoEl.play().catch(() => {});
   }
 
-  tx.dispose();
   try { reader.cancel(); } catch(e) {}
   try { if (ms.readyState === 'open') ms.endOfStream(); } catch(e) {}
 }
