@@ -13,7 +13,7 @@ COPY livepeer-gateway/ /sdk/
 RUN pip install --no-cache-dir /sdk/
 
 # Install missing transitive dep + FastAPI + media deps
-RUN pip install --no-cache-dir protobuf fastapi uvicorn[standard] Pillow numpy
+RUN pip install --no-cache-dir protobuf fastapi uvicorn[standard] Pillow numpy aiohttp
 
 COPY app.py .
 

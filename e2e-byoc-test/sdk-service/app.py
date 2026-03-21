@@ -1350,6 +1350,66 @@ async def stream_whip_proxy(stream_id: str, request: Request):
     return response
 
 
+@app.get("/stream/{stream_id}/watch")
+async def stream_watch(stream_id: str):
+    """Continuous MPEG-TS stream — aggregates trickle segments into one HTTP response.
+
+    Simulates j0sh's proposed /all endpoint: subscribes to trickle output
+    server-side and streams MPEG-TS bytes continuously to the browser.
+    Browser uses a single fetch() + ReadableStream → mux.js → MSE.
+    Eliminates per-segment HTTP round-trip latency.
+    """
+    from starlette.responses import StreamingResponse
+
+    # Build trickle subscribe URL for this stream's output
+    from urllib.parse import urlparse
+    pub_parsed = urlparse(ORCH_PUBLIC_URL)
+    trickle_base = f"{ORCH_URL}/ai/trickle/{stream_id}-out"
+
+    import aiohttp as _aiohttp
+
+    async def generate():
+        seq = -1
+        connector = _aiohttp.TCPConnector(ssl=False)
+        async with _aiohttp.ClientSession(connector=connector) as session:
+            while True:
+                try:
+                    async with session.get(
+                        f"{trickle_base}/{seq}",
+                        timeout=_aiohttp.ClientTimeout(total=30),
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.read()
+                            actual_seq = r.headers.get("Lp-Trickle-Seq")
+                            if actual_seq:
+                                seq = int(actual_seq) + 1
+                            if data and len(data) > 0:
+                                yield data
+                        elif r.status == 470:
+                            latest = r.headers.get("Lp-Trickle-Latest")
+                            if latest:
+                                seq = int(latest)
+                            await asyncio.sleep(0.03)
+                        elif r.status == 404:
+                            break
+                        else:
+                            await asyncio.sleep(0.1)
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    break
+
+    return StreamingResponse(
+        generate(),
+        media_type="video/MP2T",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 @app.post("/stream/{stream_id}/whep")
 async def stream_whep_proxy(stream_id: str, request: Request):
     """Proxy WHEP signaling to the orchestrator for WebRTC playback."""
