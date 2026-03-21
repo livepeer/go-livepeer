@@ -1369,7 +1369,10 @@ async def stream_watch(stream_id: str):
     import aiohttp as _aiohttp
 
     async def generate():
+        import time as _time
         seq = -1
+        seg_count = 0
+        start_time = _time.time()
         connector = _aiohttp.TCPConnector(ssl=False)
         async with _aiohttp.ClientSession(connector=connector) as session:
             while True:
@@ -1384,6 +1387,14 @@ async def stream_watch(stream_id: str):
                             if actual_seq:
                                 seq = int(actual_seq) + 1
                             if data and len(data) > 0:
+                                seg_count += 1
+                                elapsed = _time.time() - start_time
+                                rate = seg_count / elapsed if elapsed > 0 else 0
+                                logger.info(
+                                    "/watch %s: seg#%d seq=%s %dB (%.1f seg/s, %.0f KB/s)",
+                                    stream_id, seg_count, actual_seq, len(data),
+                                    rate, (seg_count * len(data)) / elapsed / 1024 if elapsed > 0 else 0,
+                                )
                                 yield data
                         elif r.status == 470:
                             latest = r.headers.get("Lp-Trickle-Latest")

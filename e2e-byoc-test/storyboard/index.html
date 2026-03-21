@@ -3681,13 +3681,31 @@ async function trickleSubscribeWatch(videoEl) {
     appending = true;
     try { sb.appendBuffer(pending.shift()); } catch(e) { console.warn('append:', e.message); appending = false; }
   }
+  let playStarted = false;
+  const BUFFER_BEFORE_PLAY = 4.0; // Buffer 4s before starting playback for smoothness
+
   sb.addEventListener('updateend', () => {
     appending = false;
     appendNext();
     if (videoEl.buffered.length > 0) {
       const end = videoEl.buffered.end(videoEl.buffered.length - 1);
-      if (end - videoEl.currentTime > 3) videoEl.currentTime = end - 0.5;
-      if (end > 30) try { sb.remove(0, end - 15); } catch(e) {}
+
+      // Start playback only after buffering enough
+      if (!playStarted && end >= BUFFER_BEFORE_PLAY) {
+        videoEl.currentTime = 0;
+        videoEl.play().catch(() => {});
+        playStarted = true;
+        liveStatus.textContent = 'Live';
+        console.log('Buffered ' + end.toFixed(1) + 's — starting playback');
+      }
+
+      // If falling behind live edge, seek to stay within 2s of live
+      if (playStarted && end - videoEl.currentTime > 8) {
+        videoEl.currentTime = end - 2;
+      }
+
+      // Evict old buffer
+      if (end > 30) try { sb.remove(0, end - 20); } catch(e) {}
     }
   });
 
@@ -3707,6 +3725,7 @@ async function trickleSubscribeWatch(videoEl) {
   }
 
   // Single fetch → continuous MPEG-TS stream → direct MSE (no transmux!)
+  liveStatus.textContent = 'Buffering (0/' + BUFFER_BEFORE_PLAY + 's)...';
   const resp = await fetch(watchUrl, { signal: AbortSignal.timeout(300000) });
   if (!resp.ok) throw new Error(`/watch returned ${resp.status}`);
 
@@ -3727,7 +3746,6 @@ async function trickleSubscribeWatch(videoEl) {
     const tsBytes = Math.floor(aligned.length / 188) * 188;
 
     if (tsBytes > 0) {
-      // Feed MPEG-TS directly to MSE SourceBuffer (Chrome decodes natively)
       pending.push(aligned.slice(0, tsBytes));
       appendNext();
       buffer = aligned.subarray(tsBytes);
@@ -3735,7 +3753,11 @@ async function trickleSubscribeWatch(videoEl) {
       buffer = aligned;
     }
 
-    if (videoEl.paused) videoEl.play().catch(() => {});
+    // Update buffering status
+    if (!playStarted && videoEl.buffered.length > 0) {
+      const buf = videoEl.buffered.end(videoEl.buffered.length - 1);
+      liveStatus.textContent = 'Buffering (' + buf.toFixed(1) + '/' + BUFFER_BEFORE_PLAY + 's)...';
+    }
   }
 
   try { reader.cancel(); } catch(e) {}
