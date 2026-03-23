@@ -177,6 +177,7 @@ type LivepeerNode struct {
 	LiveAIAuthApiKey           string
 	LiveAIHeartbeatURL         string
 	LiveAIHeartbeatHeaders     map[string]string
+	LiveAIHeartbeatHeadersFile string
 	LiveAIHeartbeatInterval    time.Duration
 	LiveAICapReportInterval    time.Duration
 	LivePaymentInterval        time.Duration

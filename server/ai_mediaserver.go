@@ -1418,6 +1418,36 @@ func getStreamIDs(node *core.LivepeerNode) []string {
 	return streamIDs
 }
 
+// loadHeartbeatHeaders merges static headers with any headers from a file.
+// The file (if specified) is re-read on every call, enabling token rotation
+// via a K8s secret volume mount without requiring a pod restart. File headers
+// take precedence over static headers when keys conflict.
+func loadHeartbeatHeaders(staticHeaders map[string]string, headersFile string) map[string]string {
+	merged := make(map[string]string, len(staticHeaders))
+	for k, v := range staticHeaders {
+		merged[k] = v
+	}
+	if headersFile == "" {
+		return merged
+	}
+	data, err := os.ReadFile(headersFile)
+	if err != nil {
+		// Non-fatal: log at warning level and fall back to static headers.
+		return merged
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			merged[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	return merged
+}
+
 func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, liveAIHeartbeatURL string, liveAIHeartbeatHeaders map[string]string) {
 	streamIDs := getStreamIDs(node)
 
@@ -1436,7 +1466,9 @@ func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, liveAIHeartbeat
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	for key, value := range liveAIHeartbeatHeaders {
+	// Merge static headers with any file-based headers (re-read each call).
+	headers := loadHeartbeatHeaders(liveAIHeartbeatHeaders, node.LiveAIHeartbeatHeadersFile)
+	for key, value := range headers {
 		request.Header.Set(key, value)
 	}
 

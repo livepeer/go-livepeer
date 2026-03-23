@@ -184,6 +184,7 @@ type LivepeerConfig struct {
 	LiveAIAuthApiKey           *string
 	LiveAIHeartbeatURL         *string
 	LiveAIHeartbeatHeaders     *string
+	LiveAIHeartbeatHeadersFile *string
 	LiveAIHeartbeatInterval    *time.Duration
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
@@ -1815,6 +1816,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
 			}
 		}
+	}
+	if cfg.LiveAIHeartbeatHeadersFile != nil {
+		n.LiveAIHeartbeatHeadersFile = *cfg.LiveAIHeartbeatHeadersFile
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
