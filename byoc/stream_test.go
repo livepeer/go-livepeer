@@ -1669,8 +1669,6 @@ func TestGetStreamRequestParams(t *testing.T) {
 	})
 }
 
-// TestStartStreamWorkerErrorResponse tests the error response handling from worker
-// when worker returns status code > 399 (lines 154-182 in stream_orchestrator.go)
 func TestStartStreamWorkerErrorResponse(t *testing.T) {
 	// Mock worker that returns 400 Bad Request
 	statusCodeReturned := http.StatusBadRequest
@@ -1807,6 +1805,44 @@ func TestStartStreamWorkerErrorResponse(t *testing.T) {
 			assert.Contains(t, w.Body.String(), "invalid request parameters")
 
 			// Verify freeCapacity was called for non-500 errors
+			assert.True(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should have been called")
+
+			server.CloseClientConnections()
+
+			// no stream created
+			assert.Zero(t, len(mockOrch.node.ExternalCapabilities.Streams))
+		})
+	})
+
+	t.Run("WorkerReturns401_Unauthorized", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			statusCodeReturned = http.StatusUnauthorized
+			freeCapacityCalled = false
+
+			var removeCapCalled bool
+			mockRemoveCap := func(string) error {
+				removeCapCalled = true
+				return nil
+			}
+			mockOrch.unregisterExternalCapability = mockRemoveCap
+
+			req := httptest.NewRequest(http.MethodPost, "/process/stream/start", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Set up job request header
+			req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+			w := httptest.NewRecorder()
+			handler := bso.StartStream()
+			handler.ServeHTTP(w, req)
+
+			// Verify 500 error received after catch/change at Orchestrator
+			assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+			// Verify capability was removed
+			assert.True(t, removeCapCalled, "RemoveExternalCapability should have been called for 401")
+
+			// Verify freeCapacity was called
 			assert.True(t, freeCapacityCalled, "FreeExternalCapabilityCapacity should have been called")
 
 			server.CloseClientConnections()

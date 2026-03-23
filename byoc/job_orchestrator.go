@@ -48,8 +48,10 @@ func (bs *BYOCOrchestratorServer) RegisterCapability() http.Handler {
 			return
 		}
 		defer r.Body.Close()
-		extCapSettings := string(body)
 		remoteAddr := getRemoteAddr(r)
+
+		// The request body contains the capability settings JSON with the token field
+		extCapSettings := string(body)
 
 		cap, err := orch.RegisterExternalCapability(extCapSettings)
 
@@ -63,7 +65,7 @@ func (bs *BYOCOrchestratorServer) RegisterCapability() http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
-		clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v", remoteAddr, cap.Name, cap.Url, big.NewRat(cap.PricePerUnit, cap.PriceScaling))
+		clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v auth_token=%v", remoteAddr, cap.Name, cap.Url, big.NewRat(cap.PricePerUnit, cap.PriceScaling), cap.AuthToken != "")
 	})
 }
 
@@ -271,6 +273,13 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 	req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
 	req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
 
+	// Add Authorization header if auth token is set for this capability
+	if extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]; ok {
+		if extCap.AuthToken != "" {
+			req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+		}
+	}
+
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 	if err != nil {
@@ -285,6 +294,16 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
 		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	// Check for 401 Unauthorized - remove capability so worker can re-register with correct token
+	if resp.StatusCode == http.StatusUnauthorized {
+		clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
+		bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		http.Error(w, "job not able to be processed, removing capability err=worker auth token failed", http.StatusInternalServerError)
 		return
 	}
 
