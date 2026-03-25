@@ -29,7 +29,7 @@ jobs:
         target:
           - GOOS: linux
             GOARCH: amd64
-            container: ubuntu:20.04
+            container: ubuntu:22.04
             type: cpu
 
           - GOOS: linux
@@ -58,7 +58,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev libz-mingw-w64-dev yasm
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev yasm
 
       - name: Check out code
         uses: actions/checkout@v4
@@ -83,6 +83,7 @@ jobs:
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Set GPU build environment
@@ -114,6 +115,24 @@ jobs:
         if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
+      - name: Install protoc plugins
+        run: |
+          GOARCH= GOOS= go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+          GOARCH= GOOS= go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+
+      - name: Install zlib for windows
+        if: matrix.target.GOOS == 'windows'
+        env:
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          apt install -yqq wget
+          wget https://zlib.net/fossils/zlib-1.2.11.tar.gz
+          tar -xzf zlib-1.2.11.tar.gz
+          cd zlib-1.2.11
+          ./configure --prefix=/usr/x86_64-w64-mingw32 --static
+          make
+          make install
+
       - name: Install ffmpeg
         run: ./install_ffmpeg.sh
 
@@ -141,7 +160,7 @@ jobs:
           tar -czvf "../releases/$LP_BUILD_DIR.tar.gz" ./
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -184,6 +203,7 @@ jobs:
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           mkdir -p lp-builds/ releases/
 
       - name: Cache ffmpeg
@@ -199,10 +219,17 @@ jobs:
           # brew upgrade  # temporarily disabled because of the issues it's causing
           brew uninstall --ignore-dependencies --force pkg-config@0.29.2
           brew install coreutils pkgconf
+          wget https://github.com/XQuartz/XQuartz/releases/download/XQuartz-2.8.5/XQuartz-2.8.5.pkg -O XQuartz.pkg
+          sudo installer -verbose -pkg XQuartz.pkg -target /
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
+
+      - name: Install protoc plugins
+        run: |
+          GOARCH= GOOS= go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+          GOARCH= GOOS= go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -243,7 +270,7 @@ jobs:
           tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -277,7 +304,7 @@ jobs:
           update-environment: true
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: release-artifacts-*
           path: releases/

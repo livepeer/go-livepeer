@@ -42,6 +42,7 @@ type Capabilities struct {
 	capacities  map[Capability]int
 	mutex       sync.Mutex
 }
+
 type CapabilityTest struct {
 	inVideoData []byte
 	outProfile  ffmpeg.VideoProfile
@@ -87,6 +88,7 @@ const (
 	Capability_ImageToText                Capability = 34
 	Capability_LiveVideoToVideo           Capability = 35
 	Capability_TextToSpeech               Capability = 36
+	Capability_BYOC                       Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -128,6 +130,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ImageToText:                "Image to text",
 	Capability_LiveVideoToVideo:           "Live video to video",
 	Capability_TextToSpeech:               "Text to speech",
+	Capability_BYOC:                       "byoc",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{

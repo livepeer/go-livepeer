@@ -3,6 +3,7 @@ package media
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -102,23 +103,54 @@ func (t TrackType) MarshalJSON() ([]byte, error) {
 }
 
 type TrackStats struct {
-	Type            TrackType
-	Jitter          float64
-	PacketsLost     int64
-	PacketsReceived uint64
-	RTT             time.Duration
+	Type            TrackType     `json:"type"`
+	Jitter          float64       `json:"jitter"`
+	PacketsLost     int64         `json:"packets_lost"`
+	PacketsReceived int64         `json:"packets_received"`
+	PacketLossPct   float64       `json:"packet_loss_pct"`
+	RTT             time.Duration `json:"rtt"`
+	LastInputTS     float64       `json:"last_input_ts"`
+	LastOutputTS    float64       `json:"last_output_ts"`
+	Latency         float64       `json:"latency"`
+	Warnings        []string      `json:"warnings,omitempty"`
+}
+
+type ConnQuality int
+
+const (
+	ConnQualityGood ConnQuality = iota
+	ConnQualityBad
+)
+
+const acceptableJitterMs = 50
+const acceptablePacketLossPct = 2
+
+func (c ConnQuality) String() string {
+	switch c {
+	case ConnQualityGood:
+		return "good"
+	case ConnQualityBad:
+		return "bad"
+	default:
+		return "unknown"
+	}
+}
+
+func (c ConnQuality) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.String())
 }
 
 type MediaStats struct {
-	PeerConnStats PeerConnStats
-	TrackStats    []TrackStats
+	PeerConnStats PeerConnStats `json:"peer_conn_stats"`
+	TrackStats    []TrackStats  `json:"track_stats,omitempty"`
+	ConnQuality   ConnQuality   `json:"conn_quality"`
 }
 
 // MediaState manages the lifecycle of a media connection
 type MediaState struct {
 	pc     WHIPPeerConnection
 	getter stats.Getter
-	tracks []RTPTrack
+	tracks []SegmenterTrack
 	mu     *sync.Mutex
 	cond   *sync.Cond
 	closed bool
@@ -135,7 +167,7 @@ func NewMediaState(pc WHIPPeerConnection) *MediaState {
 	}
 }
 
-func (m *MediaState) SetTracks(getter stats.Getter, tracks []RTPTrack) {
+func (m *MediaState) SetTracks(getter stats.Getter, tracks []SegmenterTrack) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getter = getter
@@ -215,6 +247,7 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			PeerConnStats: pcStats,
 		}, nil
 	}
+	connQuality := ConnQualityGood
 	trackStats := make([]TrackStats, 0, len(tracks))
 	for _, t := range tracks {
 		s := getter.Get(uint32(t.SSRC()))
@@ -222,16 +255,43 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			continue
 		}
 
+		trackType := TrackType{t.Kind()}
+		var jitterMs, packetLossPct float64
+		if t.Codec().ClockRate > 0 {
+			jitterMs = (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000
+		}
+		packetsLost := s.InboundRTPStreamStats.PacketsLost
+		packetsReceived := int64(s.InboundRTPStreamStats.PacketsReceived)
+		if packetsLost > 0 || packetsReceived > 0 {
+			packetLossPct = float64(packetsLost) / float64(packetsLost+packetsReceived) * 100
+		}
+
+		var warnings []string
+		if jitterMs > acceptableJitterMs {
+			connQuality = ConnQualityBad
+			warnings = append(warnings, fmt.Sprintf("jitter greater than %d ms", acceptableJitterMs))
+		}
+		if packetLossPct > acceptablePacketLossPct {
+			connQuality = ConnQualityBad
+			warnings = append(warnings, fmt.Sprintf("packet loss greater than %d%%", acceptablePacketLossPct))
+		}
+
+		lastInputTS := float64(t.LastMpegtsTS()) / 90000.0
+
 		trackStats = append(trackStats, TrackStats{
-			Type:            TrackType{t.Kind()},
-			Jitter:          (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000,
-			PacketsLost:     s.InboundRTPStreamStats.PacketsLost,
-			PacketsReceived: s.InboundRTPStreamStats.PacketsReceived,
+			Type:            trackType,
+			Jitter:          jitterMs,
+			PacketsLost:     packetsLost,
+			PacketsReceived: packetsReceived,
+			PacketLossPct:   packetLossPct,
 			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
+			LastInputTS:     lastInputTS,
+			Warnings:        warnings,
 		})
 	}
 	return &MediaStats{
 		PeerConnStats: pcStats,
 		TrackStats:    trackStats,
+		ConnQuality:   connQuality,
 	}, nil
 }

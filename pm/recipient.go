@@ -10,6 +10,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pkg/errors"
 )
 
@@ -286,6 +287,10 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		if r.maxfacevalue.Cmp(faceValue) < 0 {
 			faceValue = r.maxfacevalue
 		}
+	}
+	if monitor.Enabled {
+		monitor.TicketFaceValue(sender.Hex(), faceValue)
+		monitor.MaxFloat(sender.Hex(), maxFloat)
 	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve

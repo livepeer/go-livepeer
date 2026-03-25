@@ -77,6 +77,12 @@ res=0
 $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
 [ $res -ne 0 ]
 
+# Check some serviceAddr special cases with additional nodes
+$TMPDIR/livepeer -orchestrator -serviceAddr none 2>&1 | grep "Empty service URI and no additional nodes specified"
+$TMPDIR/livepeer -orchestrator -nodes ghi,abc:def 2>&1 | grep "No valid instance URLs parsed from -nodes: Could not parse instance URI 'https://abc:def'"
+$TMPDIR/livepeer -orchestrator -nodes ghi,abc:123,def 2>&1 | grep "Configured nodes: https://ghi,https://abc:123,https://def"
+
+
 # Run mainnet tests
 if [ -z ${MAINNET_ETH_URL+x} ]; then
   echo "MAINNET_ETH_URL is not set - skipping mainnet tests"
@@ -209,6 +215,15 @@ $TMPDIR/livepeer -gateway -verifierUrl tcp://host/ || res=$?
 res=0
 $TMPDIR/livepeer -gateway -verifierUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
+
+# Check remote signer URL handling
+$TMPDIR/livepeer -gateway -remoteSignerUrl abc:65535 2>&1 | grep -e "Retrieving OrchestratorInfo fields from remote signer: https://abc:65535"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl http://127.0.0.1:65535 2>&1 | grep -e "Retrieving OrchestratorInfo fields from remote signer: http://127.0.0.1:65535"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl "http://[::1" 2>&1 | grep -e "Invalid remote signer URL"
+
+$TMPDIR/livepeer -gateway -remoteSignerUrl abc:def 2>&1 | grep -e 'Adding HTTPS to remote signer URL failed: parse "https://abc:def": invalid port ":def"'
 
 # Check that verifier shared path is required
 $TMPDIR/livepeer -gateway -verifierUrl http://host 2>&1 | grep "Requires a path to the"

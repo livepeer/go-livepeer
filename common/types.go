@@ -45,6 +45,8 @@ type NodeStatus struct {
 type Broadcaster interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+	OrchInfoSig() []byte
+	ExtraNodes() int
 }
 
 type CapabilityComparator interface {
@@ -126,6 +128,7 @@ type OrchestratorPool interface {
 	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) (OrchestratorDescriptors, error)
 	Size() int
 	SizeWith(ScorePred) int
+	Broadcaster() Broadcaster
 }
 
 type SelectionAlgorithm interface {
@@ -171,6 +174,7 @@ type OrchNetworkCapabilities struct {
 	LocalAddress       string                     `json:"local_address"`
 	OrchURI            string                     `json:"orch_uri"`
 	Capabilities       *net.Capabilities          `json:"capabilities"`
+	PriceInfo          *net.PriceInfo             `json:"price_info"`
 	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
 	Hardware           []*net.HardwareInformation `json:"hardware"`
 }

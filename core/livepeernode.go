@@ -19,12 +19,15 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -47,6 +50,7 @@ const (
 	TranscoderNode
 	RedeemerNode
 	AIWorkerNode
+	RemoteSignerNode
 )
 
 var nodeTypeStrs = map[NodeType]string{
@@ -56,6 +60,7 @@ var nodeTypeStrs = map[NodeType]string{
 	TranscoderNode:   "transcoder",
 	RedeemerNode:     "redeemer",
 	AIWorkerNode:     "aiworker",
+	RemoteSignerNode: "remotesigner",
 }
 
 func (t NodeType) String() string {
@@ -124,21 +129,30 @@ type LivepeerNode struct {
 	AIProcesssingRetryTimeout time.Duration
 
 	// Transcoder public fields
-	SegmentChans       map[ManifestID]SegmentChan
-	Recipient          pm.Recipient
-	RecipientAddr      string
-	SelectionAlgorithm common.SelectionAlgorithm
-	OrchestratorPool   common.OrchestratorPool
-	OrchPerfScore      *common.PerfScore
-	OrchSecret         string
-	Transcoder         Transcoder
-	TranscoderManager  *RemoteTranscoderManager
-	Balances           *AddressBalances
-	Capabilities       *Capabilities
-	AutoAdjustPrice    bool
-	AutoSessionLimit   bool
+	SegmentChans         map[ManifestID]SegmentChan
+	Recipient            pm.Recipient
+	RecipientAddr        string
+	SelectionAlgorithm   common.SelectionAlgorithm
+	OrchestratorPool     common.OrchestratorPool
+	OrchPerfScore        *common.PerfScore
+	OrchSecret           string
+	Transcoder           Transcoder
+	TranscoderManager    *RemoteTranscoderManager
+	Balances             *AddressBalances
+	Capabilities         *Capabilities
+	ExternalCapabilities *ExternalCapabilities
+	AutoAdjustPrice      bool
+	AutoSessionLimit     bool
+
 	// Broadcaster public fields
-	Sender pm.Sender
+	Sender     pm.Sender
+	ExtraNodes int
+
+	// Gateway fields for remote signers
+	RemoteSignerUrl *url.URL
+	RemoteEthAddr   ethcommon.Address // eth address of the remote signer
+	InfoSig         []byte            // sig over eth address for the OrchestratorInfo request
+	RemoteDiscovery bool              // expose remote discovery endpoint when enabled
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -148,8 +162,10 @@ type LivepeerNode struct {
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
+	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+	Nodes            []string // instance URLs of this orch available to do work
 
 	// For live video pipelines, cache for live pipelines; key is the stream name
 	LivePipelines map[string]*LivePipeline
@@ -157,38 +173,55 @@ type LivepeerNode struct {
 
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
+	LiveAIAuthWebhookURL       *url.URL
 	LiveAIAuthApiKey           string
+	LiveAIHeartbeatURL         string
+	LiveAIHeartbeatHeaders     map[string]string
+	LiveAIHeartbeatInterval    time.Duration
+	LiveAICapReportInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
-	LiveAICapRefreshModels     []string
+	LiveAISaveNSegments        *int
 
 	// Gateway
 	GatewayHost string
 }
 
 type LivePipeline struct {
-	RequestID   string
-	ControlPub  *trickle.TricklePublisher
-	StopControl func()
+	RequestID    string
+	StreamID     string
+	Params       []byte
+	Pipeline     string
+	ControlPub   *trickle.TricklePublisher
+	StopControl  func()
+	ReportUpdate func([]byte)
+	OutCond      *sync.Cond
+	OutWriter    *media.RingBuffer
+	Closed       bool
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
+	extCapPrices := make(map[string]map[string]*big.Rat)
+	extCapPrices["default"] = make(map[string]*big.Rat)
+
 	return &LivepeerNode{
-		Eth:              e,
-		WorkDir:          wd,
-		Database:         dbh,
-		AutoAdjustPrice:  true,
-		SegmentChans:     make(map[ManifestID]SegmentChan),
-		segmentMutex:     &sync.RWMutex{},
-		Capabilities:     &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
-		priceInfo:        make(map[string]*AutoConvertedPrice),
-		priceInfoForCaps: make(map[string]CapabilityPrices),
-		StorageConfigs:   make(map[string]*transcodeConfig),
-		storageMutex:     &sync.RWMutex{},
-		LivePipelines:    make(map[string]*LivePipeline),
-		LiveMu:           &sync.RWMutex{},
+		Eth:                  e,
+		WorkDir:              wd,
+		Database:             dbh,
+		AutoAdjustPrice:      true,
+		SegmentChans:         make(map[ManifestID]SegmentChan),
+		segmentMutex:         &sync.RWMutex{},
+		Capabilities:         &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
+		ExternalCapabilities: NewExternalCapabilities(),
+		priceInfo:            make(map[string]*AutoConvertedPrice),
+		priceInfoForCaps:     make(map[string]CapabilityPrices),
+		jobPriceInfo:         extCapPrices,
+		StorageConfigs:       make(map[string]*transcodeConfig),
+		storageMutex:         &sync.RWMutex{},
+		LivePipelines:        make(map[string]*LivePipeline),
+		LiveMu:               &sync.RWMutex{},
 	}, nil
 }
 
@@ -330,4 +363,36 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.NetworkCapabilities.Orchestrators
+}
+
+func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	//default price list initialized at startup
+	// check if the senderEthAddress is initialized if not default
+	if _, ok := n.jobPriceInfo[senderEthAddress]; !ok {
+		n.jobPriceInfo[senderEthAddress] = make(map[string]*big.Rat)
+	}
+
+	//set the price
+	senderPrices := n.jobPriceInfo[senderEthAddress]
+	senderPrices[extCapability] = price
+	glog.Infof("Set price for %s to %s", extCapability, price.FloatString(2))
+}
+
+func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability string) *big.Rat {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	senderPrices, ok := n.jobPriceInfo[senderEthAddress]
+	if !ok {
+		//default price list initialized at startup
+		senderPrices = n.jobPriceInfo["default"]
+	}
+	jobPrice := big.NewRat(0, 1)
+
+	if extCapInfo, ok := senderPrices[extCapability]; ok {
+		jobPrice = extCapInfo
+	}
+
+	return jobPrice
 }

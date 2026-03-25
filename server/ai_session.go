@@ -16,7 +16,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const aiLiveVideoToVideoPenalty = 0
+const aiLiveVideoToVideoPenalty = 5
 
 type AISession struct {
 	*BroadcastSession
@@ -222,10 +222,10 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	var warmSel, coldSel BroadcastSessionsSelector
 	var autoClear bool
 	if cap == core.Capability_LiveVideoToVideo {
-		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
-		// We always select a fresh session which has the lowest initial latency
-		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
-		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		// For Realtime Video AI, we use a dedicated selection algorithm
+		selAlg := LiveSelectionAlgorithm{}
+		warmSel = NewSelector(stakeRdr, selAlg, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelector(stakeRdr, selAlg, node.OrchPerfScore, coldCaps)
 		// we don't use penalties for not in Realtime Video AI
 		penalty = 0
 		// Automatically clear the session pool from old sessions during the discovery
@@ -478,53 +478,6 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 	return selectOrchestrator(ctx, sel.node, streamParams, numOrchs, sel.suspender, common.ScoreAtLeast(0), func(sessionID string) {})
 }
 
-type noopSus struct{}
-
-func (n noopSus) Suspended(orch string) int {
-	return 0
-}
-
-func (c *AISessionManager) refreshOrchCapacity(modelIDs []string) {
-	if len(modelIDs) < 1 {
-		return
-	}
-
-	pool := c.node.OrchestratorPool
-	if pool == nil {
-		return
-	}
-	clog.Infof(context.Background(), "Starting periodic orchestrator refresh for capacity reporting")
-
-	modelsReq := make(map[string]*core.ModelConstraint)
-	for _, modelID := range modelIDs {
-		modelsReq[modelID] = &core.ModelConstraint{
-			Warm:          false,
-			RunnerVersion: c.node.Capabilities.MinRunnerVersionConstraint(core.Capability_LiveVideoToVideo, modelID),
-		}
-	}
-	go func() {
-		refreshInterval := 10 * time.Second
-		ticker := time.NewTicker(refreshInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
-				capabilityConstraints := core.PerCapabilityConstraints{
-					core.Capability_LiveVideoToVideo: {Models: modelsReq},
-				}
-				caps := core.NewCapabilities(append(core.DefaultCapabilities(), core.Capability_LiveVideoToVideo), nil)
-				caps.SetPerCapabilityConstraints(capabilityConstraints)
-				caps.SetMinVersionConstraint(c.node.Capabilities.MinVersionConstraint())
-
-				pool.GetOrchestrators(ctx, pool.Size(), noopSus{}, caps, common.ScoreAtLeast(0))
-
-				cancel()
-			}
-		}
-	}()
-}
-
 type AISessionManager struct {
 	node      *core.LivepeerNode
 	selectors map[string]*AISessionSelector
@@ -539,7 +492,6 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 		mu:        sync.Mutex{},
 		ttl:       ttl,
 	}
-	sessionManager.refreshOrchCapacity(node.LiveAICapRefreshModels)
 	return sessionManager
 }
 
@@ -556,7 +508,7 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 	}
 
 	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession, false); err != nil {
-		return nil, err
+		return sess, err
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
@@ -604,4 +556,14 @@ func (c *AISessionManager) getSelector(ctx context.Context, cap core.Capability,
 	}
 
 	return sel, nil
+}
+
+func (s *AISession) Clone() *AISession {
+	bSess := s.BroadcastSession.Clone()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	newSess := *s
+	newSess.BroadcastSession = bSess
+	return &newSess
 }

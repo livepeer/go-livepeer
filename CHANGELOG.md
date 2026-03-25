@@ -1,5 +1,165 @@
 # Changelog
 
+## v0.8.10
+
+#### General
+
+* [#3872](https://github.com/livepeer/go-livepeer/pull/3872) build: install XQuartz in macOS CI to fix arm64 builds (@hjpotter92)
+
+#### Broadcaster
+
+* [#3864](https://github.com/livepeer/go-livepeer/pull/3864) Fix crash in broadcaster max price calculation (@j0sh)
+
+#### Orchestrator
+
+* [#3863](https://github.com/livepeer/go-livepeer/pull/3863) Update LPMS to c44af72 (@j0sh)
+
+#### AI – LV2V
+
+* [#3791](https://github.com/livepeer/go-livepeer/pull/3791) ai/live: Remote signer: GetOrchestratorInfo (@j0sh)
+* [#3822](https://github.com/livepeer/go-livepeer/pull/3822) ai/live: Remote signer: tickets (@j0sh)
+* [#3866](https://github.com/livepeer/go-livepeer/pull/3866) ai/live: Remote signer: discovery (@j0sh)
+* [#3870](https://github.com/livepeer/go-livepeer/pull/3870) ai/live: Remote signer: updates (@j0sh)
+
+#### AI – BYOC
+
+* [#3865](https://github.com/livepeer/go-livepeer/pull/3865) byoc: add orch swap reporting same as lv2v (@ad-astra-video)
+* [#3857](https://github.com/livepeer/go-livepeer/pull/3857) byoc: fix orchestrator streaming reserve capacity (@ad-astra-video)
+* [#3871](https://github.com/livepeer/go-livepeer/pull/3871) byoc: Merge BYOC capabilities with existing capabilities and pricing (@eliteprox)
+
+## v0.8.9
+
+### Features ⚒
+
+#### General
+
+* Gateway-native WHEP server for playback of realtime AI video
+* [#3841](https://github.com/livepeer/go-livepeer/pull/3841) byoc/streaming: add streaming workload processing capability to BYOC (@ad-astra-video)
+
+#### Orchestrator
+
+* [#3814](https://github.com/livepeer/go-livepeer/pull/3814) ai/worker: Add scope pipeline support to worker and build scripts (@victorges)
+* [#3823](https://github.com/livepeer/go-livepeer/pull/3823) ai/worker: Add sd15-v2v image support (@victorges)
+* [#3843](https://github.com/livepeer/go-livepeer/pull/3843) ai/worker: Add sdxl-v2v image support (@victorges)
+* [#3849](https://github.com/livepeer/go-livepeer/pull/3849) byoc: fix orchestrator stream setup when fails (@ad-astra-video)
+
+### Bug Fixes 🐞
+
+#### General
+
+* [#3777](https://github.com/livepeer/go-livepeer/pull/3777) docker: Forcefully SIGKILL runners after timeout (@pwilczynskiclearcode)
+* [#3779](https://github.com/livepeer/go-livepeer/pull/3779) worker: Fix orphaned containers on node shutdown (@victorges)
+* [#3781](https://github.com/livepeer/go-livepeer/pull/3781) worker/docker: Destroy containers from watch routines (@victorges)
+
+## v0.8.8
+
+### Features ⚒
+
+#### General
+
+* [#3719](https://github.com/livepeer/go-livepeer/pull/3719) Support multiple instances per orchestrator in discovery (@j0sh)
+
+#### Orchestrator
+
+* [#3749](https://github.com/livepeer/go-livepeer/pull/3749) worker: Overrule resource-hog AI runner containers on startup (@victorges)
+
+## v0.8.7
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#3532](https://github.com/livepeer/go-livepeer/pull/3532) Payment "per time" instead of "pay per pixel" (@leszko)
+- [#3686](https://github.com/livepeer/go-livepeer/pull/3686) Add `comfyui` / `streamdiffusion` pipeline to current-live pipeline (@leszko)
+- [#3705](https://github.com/livepeer/go-livepeer/pull/3705) AI/Live: segmented MediaWriter / MediaReader (@j0sh)
+- [#3641](https://github.com/livepeer/go-livepeer/pull/3641) BYOC: switch billing model to 1 ticket per second of compute (@ad-astra-video)
+- [#3680](https://github.com/livepeer/go-livepeer/pull/3680) AI: allow local Kafka with no auth for local deployment (@ad-astra-video)
+- [#3623](https://github.com/livepeer/go-livepeer/pull/3623) Stop stream if there are no payments from Gateway (@leszko)
+
+#### Broadcaster
+
+- [#3714](https://github.com/livepeer/go-livepeer/pull/3714) Make debug segment count configurable (@mjh1)
+- [#3721](https://github.com/livepeer/go-livepeer/pull/3721) Stream heartbeats (@mjh1)
+- [#3657](https://github.com/livepeer/go-livepeer/pull/3657) Re-encode audio to AAC for non-local (@j0sh)
+- [#3676](https://github.com/livepeer/go-livepeer/pull/3676) Pass full URLs to app for WHEP, status and update (@mjh1)
+- [#3733](https://github.com/livepeer/go-livepeer/pull/3733) Send authorization header to support new API (@mjh1)
+- [#3671](https://github.com/livepeer/go-livepeer/pull/3671) Send trickle errors down to `processStream` (@j0sh)
+- [#3677](https://github.com/livepeer/go-livepeer/pull/3677) Enable Video-to-Video suspension mechanism (penalty = 5) (@leszko)
+- [#3678](https://github.com/livepeer/go-livepeer/pull/3678) Add `LiveSelectionAlgorithm` (@leszko)
+- [#3694](https://github.com/livepeer/go-livepeer/pull/3694) Fix zeroing `ai_container_idle` metric for non-existing Os (@leszko)
+- [#3695](https://github.com/livepeer/go-livepeer/pull/3695) Remove session from pool if selection failed (@leszko)
+- [#3709](https://github.com/livepeer/go-livepeer/pull/3709) Send Kafka event when no orchestrators are available (@mjh1)
+- [#3722](https://github.com/livepeer/go-livepeer/pull/3722) Send Kafka event on orchestrator swaps (@j0sh)
+- [#3634](https://github.com/livepeer/go-livepeer/pull/3634) BYOC: Allow clients to include or exclude specific Orchestrators by serviceAddr in requests (@ad-astra-video)
+- [#3682](https://github.com/livepeer/go-livepeer/pull/3682) AI/Live: store & forward parameter updates (@j0sh)
+- [#3688](https://github.com/livepeer/go-livepeer/pull/3688) AI: options for `/live/video-to-video` update & status routes to support local browser tests (@ad-astra-video)
+
+#### Orchestrator
+
+- [#3665](https://github.com/livepeer/go-livepeer/pull/3665) Box: give GPUs to orchestrator if running GPU pipeline (@victorges)
+- [#3674](https://github.com/livepeer/go-livepeer/pull/3674) AI: fix startup to allow 0 price on AI models (@ad-astra-video)
+
+#### Transcoder
+
+- [#3734](https://github.com/livepeer/go-livepeer/pull/3734) Update LPMS to `a53e20a` (@j0sh)
+
+#### CLI
+
+- [#3700](https://github.com/livepeer/go-livepeer/pull/3700) cmd: move a few things to starter for easy embedding (@iameli)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#3711](https://github.com/livepeer/go-livepeer/pull/3711) AI/Live: watchdog for output segments (@j0sh)
+- [#3670](https://github.com/livepeer/go-livepeer/pull/3670) Set trickle idle timeout (@j0sh)
+- [#3594](https://github.com/livepeer/go-livepeer/pull/3594) Fix multiple issues in trickle, improving reliability and stability (@j0sh)
+- [#3650](https://github.com/livepeer/go-livepeer/pull/3650) BYOC: fix payment ticket count calculation (@ad-astra-video)
+- [#3651](https://github.com/livepeer/go-livepeer/pull/3651) BYOC: fix request timeout when removing capability (@ad-astra-video)
+
+#### Broadcaster
+
+- [#3673](https://github.com/livepeer/go-livepeer/pull/3673) AI/Live: WHIP endpoint updates for stream creation (@ad-astra-video)
+- [#3713](https://github.com/livepeer/go-livepeer/pull/3713) Send param updates to Kafka from control handler (@j0sh)
+- [#3699](https://github.com/livepeer/go-livepeer/pull/3699) Metrics: set correct `pipeline` and `model_name` labels (@pwilczynskiclearcode)
+- [#3702](https://github.com/livepeer/go-livepeer/pull/3702) Metrics: `GetCapacity` supports pipeline/modelID filtering (@pwilczynskiclearcode)
+
+#### Orchestrator
+
+- [#3640](https://github.com/livepeer/go-livepeer/pull/3640) Add lock while removing session during O suspension (@leszko)
+- [#3667](https://github.com/livepeer/go-livepeer/pull/3667) Don't delete stream state if `requestID` doesn't match (@mjh1)
+- [#3708](https://github.com/livepeer/go-livepeer/pull/3708) Retry ffmpeg more often in AI/Live to improve stream resilience (@j0sh)
+
+#### Transcoder
+
+- [#3734](https://github.com/livepeer/go-livepeer/pull/3734) Update LPMS to `a53e20a` (@j0sh)
+
+## v0.8.6
+
+### Features ⚒
+
+#### General
+
+- [#3570](https://github.com/livepeer/go-livepeer/pull/3570) Add Generic Processing Pipeline (aka Bring Your Own Container) (@ad-astra-video)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Gateway
+
+#### Orchestrator
+- [#3505](https://github.com/livepeer/go-livepeer/pull/3505) Introduce min runner version to selection (@leszko)
+
+### Bug Fixes 🐞
+
+#### Orchestrator
+- [#3589](https://github.com/livepeer/go-livepeer/pull/3589) Change binding host for docker containers from 0.0.0.0 to 127.0.0.1 (@leszko)
+- [#3592](https://github.com/livepeer/go-livepeer/pull/3592) ai/worker: Fix version discovery on containers startup (@victorges)
+- [#3595](https://github.com/livepeer/go-livepeer/pull/3595) ai/worker: Fetch hardware info from all containers (@victorges)
+- [#3389](https://github.com/livepeer/go-livepeer/pull/3389) Fix combined orchestrator capacity management for batch pipelines (@ad-astra-video)
+
+#### CLI
+
 ## v0.8.5
 
 ### Features ⚒

@@ -33,7 +33,12 @@ import (
 
 // TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
 
-const keyframeInterval = 2 * time.Second // TODO make configurable?
+const (
+	keyframeInterval       = 2 * time.Second // TODO make configurable?
+	iceDisconnectedTimeout = 5 * time.Second
+	iceFailedTimeout       = 10 * time.Second
+	iceKeepAliveInterval   = 2 * time.Second
+)
 
 // Generate a random ID for new resources
 func generateID() string {
@@ -66,6 +71,12 @@ type WHIPServer struct {
 func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
+	userAgent := r.Header.Get("User-Agent")
+	clog.Info(ctx, "Client info", "user-agent", userAgent)
+	if strings.Contains(userAgent, "Headless") {
+		clog.AddVal(ctx, "e2e", "true")
+	}
+
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
 		http.Error(w, "Unsupported Media Type, expected application/sdp", http.StatusUnsupportedMediaType)
@@ -94,13 +105,13 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// OnTrack callback: handle incoming media
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
+		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC(), "rate", track.Codec().ClockRate)
 		trackCh <- track
 	})
 
 	// PeerConnection state management
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		clog.Info(ctx, "ice connection state changed", "state", connectionState)
+		clog.Info(ctx, "whip ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
@@ -114,8 +125,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		SDP:  string(offerBytes),
 	}
 	if err := peerConnection.SetRemoteDescription(sdpOffer); err != nil {
+		// usually because the offer is incomplete or malformed
 		e := fmt.Sprintf("SetRemoteDescription failed: %v", err)
-		http.Error(w, e, http.StatusInternalServerError)
+		http.Error(w, e, http.StatusBadRequest)
 		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
@@ -182,9 +194,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
-		tracks := []RTPTrack{videoTrack}
+		tracks := []SegmenterTrack{NewSegmenterTrack(videoTrack)}
 		if audioTrack != nil {
-			tracks = append(tracks, audioTrack)
+			tracks = append(tracks, NewSegmenterTrack(audioTrack))
 		}
 		minSegDur := 1 * time.Second
 		segDurEnv := os.Getenv("LIVE_AI_MIN_SEG_DUR")
@@ -202,7 +214,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleRTP(ctx, segmenter, timeDecoder, track.(*webrtc.TrackRemote))
+				handleRTP(ctx, segmenter, timeDecoder, track, userAgent)
 			}()
 		}
 		gatherDuration := time.Since(gatherStartTime)
@@ -217,14 +229,20 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	return mediaState
 }
 
-func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote) {
+func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track SegmenterTrack, userAgent string) {
 	var frame rtp.Depacketizer
+	var tsCorrector *TimestampCorrector
 	codec := track.Codec().MimeType
-	incomingTrack := &IncomingTrack{track: track}
+	webrtcTrack := track.(*segmenterTrack).RTPTrack.(*webrtc.TrackRemote)
+	incomingTrack := &IncomingTrack{track: webrtcTrack}
 	isAudio := false
 	switch codec {
 	case webrtc.MimeTypeH264:
 		frame = &codecs.H264Packet{IsAVC: true}
+		tsCorrector = NewTimestampCorrector(TimestampCorrectorConfig{
+			UserAgent: userAgent,
+			Disable:   disableTSCorrection(),
+		})
 	case webrtc.MimeTypeOpus:
 		frame = &codecs.OpusPacket{}
 		isAudio = true
@@ -232,12 +250,13 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 		clog.Info(ctx, "Unsupported codec", "mime", codec)
 		return
 	}
+	gotAudio, gotVideo := false, false
 
 	ro := rtpreorderer.New()
 	au := [][]byte{}
 	currentTS := uint32(0)
 	for {
-		pkt, _, err := track.ReadRTP()
+		pkt, _, err := webrtcTrack.ReadRTP()
 		if err != nil {
 			clog.Info(ctx, "Track read complete or error", "track", codec, "err", err)
 			return
@@ -273,11 +292,17 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 			if isAudio {
 				segmenter.WriteAudio(track, pts, [][]byte{d})
+				if !gotAudio {
+					clog.Info(ctx, "First packet type=audio", "pts", pts, "rtp_ts", p.Timestamp)
+					gotAudio = true
+				}
 				continue
 			}
 
 			// h264 video from here on
 			// https://datatracker.ietf.org/doc/html/rfc6184
+
+			pts = tsCorrector.Process(ctx, pts)
 
 			if currentTS != p.Timestamp && len(au) > 0 {
 				// received a new frame, but previous frame was incomplete (lost marker bit)
@@ -336,6 +361,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 			if segmenter.IsReady() {
 				segmenter.WriteVideo(track, pts, dts, frameAU)
+				if !gotVideo {
+					clog.Info(ctx, "First packet type=video", "pts", pts, "rtp_ts", p.Timestamp)
+					gotVideo = true
+				}
 			}
 		}
 	}
@@ -475,7 +504,7 @@ func getRequestURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s/%s", scheme, r.Host, r.URL.Path)
+	return fmt.Sprintf("%s://%s%s", scheme, r.Host, r.URL.Path)
 }
 
 // split h264 nalus
@@ -538,8 +567,16 @@ func quoteCredential(v string) string {
 	return s[1 : len(s)-1]
 }
 
-func getUDPListenerAddr() (*net.UDPAddr, error) {
-	addrStr := os.Getenv("LIVE_AI_WHIP_ADDR") // TODO cli args?
+func disableTSCorrection() bool {
+	s := os.Getenv("LIVE_AI_DISABLE_TS_CORRECTION")
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return false
+	}
+	return v
+}
+
+func getUDPListenerAddr(addrStr string) (*net.UDPAddr, error) {
 	if addrStr == "" {
 		// Default to all interfaces, port 7290
 		return &net.UDPAddr{
@@ -570,7 +607,7 @@ func getUDPListenerAddr() (*net.UDPAddr, error) {
 }
 
 func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
-	// Taken from Pion default codecs, but limited to to Opus and H.264
+	// Taken from Pion default codecs, but limited to Opus and H.264
 
 	m := &webrtc.MediaEngine{}
 
@@ -627,7 +664,7 @@ func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	se := webrtc.SettingEngine{}
 
 	// Get UDP listener address from environment or use default
-	udpAddr, err := getUDPListenerAddr()
+	udpAddr, err := getUDPListenerAddr(os.Getenv("LIVE_AI_WHIP_ADDR"))
 	if err != nil {
 		log.Fatal("could not get UDP listener address: ", err)
 	}
@@ -642,6 +679,12 @@ func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	if natIP != "" {
 		se.SetNAT1To1IPs([]string{natIP}, webrtc.ICECandidateTypeHost)
 	}
+	se.SetICETimeouts(
+		iceDisconnectedTimeout,
+		iceFailedTimeout,
+		iceKeepAliveInterval,
+	)
+
 	return m, webrtc.WithSettingEngine(se)
 }
 

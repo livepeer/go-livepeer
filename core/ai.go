@@ -33,7 +33,7 @@ type AI interface {
 	HasCapacity(string, string) bool
 	EnsureImageAvailable(context.Context, string, string) error
 	HardwareInformation() []worker.HardwareInformation
-	GetLiveAICapacity() worker.Capacity
+	GetLiveAICapacity(pipeline, modelID string) worker.Capacity
 	Version() []worker.Version
 }
 

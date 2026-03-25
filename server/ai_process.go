@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -94,21 +95,28 @@ type aiRequestParams struct {
 
 // For live video pipelines
 type liveRequestParams struct {
-	segmentReader         *media.SwitchableSegmentReader
-	outputRTMPURL         string
-	mediaMTXOutputRTMPURL string
-	stream                string
-	requestID             string
-	streamID              string
-	pipelineID            string
-	pipeline              string
-	orchestrator          string
+	segmentReader *media.SwitchableSegmentReader
+	stream        string
+	requestID     string
+	streamID      string
+	manifestID    string
+	pipelineID    string
+	pipeline      string
+	orchestrator  string
 
+	paymentSender          LivePaymentSender
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration
 
+	// list of RTMP output destinations
+	rtmpOutputs []string
+	// prefix to identify local (MediaMTX) RTMP hosts
+	localRTMPPrefix string
+
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput func(error)
+	// Cancels the execution for the given Orchestrator session
+	kickOrch context.CancelCauseFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -118,6 +126,12 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
+
+	// Everything below needs to be protected by `mu` for concurrent modification + access
+	mu sync.Mutex
+
+	// when the write for the last segment started
+	lastSegmentTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1029,18 +1043,55 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
+const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	sess = sess.Clone()
+
 	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
 	params.liveParams.sess = sess
 	params.liveParams.startTime = time.Now()
 
-	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
-	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
-	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
-	clearSessionBalance(sess.BroadcastSession, core.RandomManifestID())
+	var paymentHeaders worker.RequestEditorFn
+	if hasRemoteSigner(params) {
+		rpp, ok := params.liveParams.paymentSender.(*remotePaymentSender)
+		if !ok {
+			return nil, errors.New("remote sender was not the correct type")
+		}
+		res, err := rpp.RequestPayment(ctx, &SegmentInfoSender{
+			sess: sess.BroadcastSession,
+		})
+		if err != nil {
+			return nil, err
+		}
+		paymentHeaders = func(_ context.Context, req *http.Request) error {
+			req.Header.Set(segmentHeader, res.SegCreds)
+			req.Header.Set(paymentHeader, res.Payment)
+			req.Header.Set("Authorization", protoVerAIWorker)
+			return nil
+		}
+	} else {
 
+		// Live Video should not reuse the existing session balance, because it could lead to not sending the init
+		// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
+		// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
+		clearSessionBalance(sess.BroadcastSession, core.RandomManifestID())
+
+		var (
+			balUpdate *BalanceUpdate
+			err       error
+		)
+		paymentHeaders, balUpdate, err = prepareAIPayment(ctx, sess, initPixelsToPay)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+			}
+			return nil, err
+		}
+		defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+	}
+
+	// Send request to orchestrator
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
@@ -1048,16 +1099,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	paymentHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	// Send request to orchestrator
 	reqTimeout := 5 * time.Second
 	reqCtx, cancel := context.WithTimeout(ctx, reqTimeout)
 	defer cancel()
@@ -1076,15 +1118,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	return resp, nil
-}
-
-// extractMid extracts the mid (manifest ID) from the publish URL
-// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
-// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
-// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
-func extractMid(path string) string {
-	pubSplit := strings.Split(path, "/")
-	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1451,7 +1484,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
-	ctx = clog.AddVal(ctx, "capability", capName)
+	if capName != "Live video to video" {
+		ctx = clog.AddVal(ctx, "capability", capName)
+	}
 	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
@@ -1485,6 +1520,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
+			if cap == core.Capability_LiveVideoToVideo && sess != nil {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			}
 			continue
 		}
 		if sess == nil {
@@ -1549,6 +1588,17 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if monitor.Enabled {
 			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
 		}
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_no_orchestrators_available",
+			"timestamp":   time.Now().UnixMilli(),
+			"stream_id":   params.liveParams.streamID,
+			"pipeline_id": params.liveParams.pipelineID,
+			"request_id":  params.liveParams.requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
@@ -1645,4 +1695,8 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 func encodeReqMetadata(metadata map[string]string) string {
 	metadataBytes, _ := json.Marshal(metadata)
 	return string(metadataBytes)
+}
+
+func hasRemoteSigner(params aiRequestParams) bool {
+	return params.node != nil && params.node.RemoteSignerUrl != nil
 }

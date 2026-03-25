@@ -169,3 +169,11 @@ box-stream:
 .PHONY: box-playback
 box-playback:
 	./box/stream.sh playback
+
+.PHONY: box-supabase
+box-supabase:
+	./box/supabase.sh
+
+.PHONY: box-frontend
+box-frontend:
+	./box/frontend.sh

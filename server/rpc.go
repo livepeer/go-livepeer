@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -52,8 +53,8 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
-	CheckAICapacity(pipeline, modelID string) bool
-	GetLiveAICapacity() worker.Capacity
+	CheckAICapacity(pipeline, modelID string) (bool, chan<- bool)
+	GetLiveAICapacity(pipeline, modelID string) worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -72,6 +73,7 @@ type Orchestrator interface {
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
+	Nodes() []string
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
@@ -82,12 +84,20 @@ type Orchestrator interface {
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
+	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
+	RemoveExternalCapability(extCapability string) error
+	GetUrlForCapability(extCapability string) string
+	CheckExternalCapabilityCapacity(extCapability string) int64
+	ReserveExternalCapabilityCapacity(extCapability string) error
+	FreeExternalCapabilityCapacity(extCapability string) error
+	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
 }
 
 // Balance describes methods for a session's balance maintenance
 type Balance interface {
 	Credit(amount *big.Rat)
 	StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Rat, *big.Rat)
+	Balance() *big.Rat
 }
 
 // BalanceUpdateStatus indicates the current status of a balance update
@@ -187,6 +197,7 @@ type lphttp struct {
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
 	trickleSrv   *trickle.Server
+	byocSrv      *byoc.BYOCOrchestratorServer
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
@@ -240,6 +251,8 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
+	//API for dynamic capabilities
+	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
@@ -349,11 +362,7 @@ func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.Orchestrato
 }
 
 func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) (*net.OrchestratorRequest, error) {
-	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
-	if err != nil {
-		return nil, err
-	}
-	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: b.OrchInfoSig(), Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
@@ -370,15 +379,17 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("authentication failed: %v", err)
 	}
 
+	serviceURI := orch.ServiceURI().String()
+
 	// currently, orchestrator == transcoder
-	if req.Capabilities == nil {
-		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
+	if req.Capabilities == nil || serviceURI == "" {
+		return orchestratorInfo(orch, addr, serviceURI, "")
 	}
 
 	if err := checkLiveVideoToVideoCapacity(orch, req); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
 	}
-	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
+	return orchestratorInfoWithCaps(orch, addr, serviceURI, "", req.Capabilities)
 }
 
 func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorRequest) interface{} {
@@ -390,7 +401,8 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
 		pipeline := "live-video-to-video"
 		for modelID := range liveCap.GetModels() {
-			if orch.CheckAICapacity(pipeline, modelID) {
+			hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
+			if hasCapacity {
 				// It has capacity for at least one of the requested models
 				return nil
 			}
@@ -466,6 +478,7 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
+		Nodes:              orch.Nodes(),
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),
@@ -496,18 +509,13 @@ func setLiveAICapacity(orch Orchestrator, capabilities *net.Capabilities) {
 	if !ok {
 		return
 	}
-	if len(liveAI.Models) > 1 {
-		// Live AI capacity is calculated based on the number of warm containers and assumes all containers serving the same model
-		glog.Warning("Setting Live AI capacity is only supported in a single model setup")
-		return
-	}
-	aiCapacity := orch.GetLiveAICapacity()
 
-	for _, model := range liveAI.Models {
+	for modelID, model := range liveAI.Models {
 		if model == nil {
 			glog.Warning("Model was nil when setting Live AI capacity")
 			continue
 		}
+		aiCapacity := orch.GetLiveAICapacity("live-video-to-video", modelID)
 		model.Capacity = uint32(aiCapacity.ContainersIdle)
 		model.CapacityInUse = uint32(aiCapacity.ContainersInUse)
 	}

@@ -21,21 +21,38 @@ type webhookResponse struct {
 }
 
 type webhookPool struct {
-	pool             *orchestratorPool
-	callback         *url.URL
-	responseHash     ethcommon.Hash
-	lastRequest      time.Time
-	mu               *sync.RWMutex
-	bcast            common.Broadcaster
-	discoveryTimeout time.Duration
+	pool                *orchestratorPool
+	callback            *url.URL
+	responseHash        ethcommon.Hash
+	lastRequest         time.Time
+	mu                  *sync.RWMutex
+	bcast               common.Broadcaster
+	discoveryTimeout    time.Duration
+	ignoreCapacityCheck bool
 }
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration) *webhookPool {
+	return WebhookPoolConfig{
+		Broadcaster:      bcast,
+		Callback:         callback,
+		DiscoveryTimeout: discoveryTimeout,
+	}.New()
+}
+
+type WebhookPoolConfig struct {
+	Broadcaster         common.Broadcaster
+	Callback            *url.URL
+	DiscoveryTimeout    time.Duration
+	IgnoreCapacityCheck bool
+}
+
+func (cfg WebhookPoolConfig) New() *webhookPool {
 	p := &webhookPool{
-		callback:         callback,
-		mu:               &sync.RWMutex{},
-		bcast:            bcast,
-		discoveryTimeout: discoveryTimeout,
+		callback:            cfg.Callback,
+		mu:                  &sync.RWMutex{},
+		bcast:               cfg.Broadcaster,
+		discoveryTimeout:    cfg.DiscoveryTimeout,
+		ignoreCapacityCheck: cfg.IgnoreCapacityCheck,
 	}
 	go p.getInfos()
 	return p
@@ -47,33 +64,40 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	pool := w.pool
 	w.mu.RUnlock()
 
-	// retrive addrs from cache if time since lastRequest is less than the refresh interval
+	// retrieve addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < common.WebhookDiscoveryRefreshInterval {
 		return pool.GetInfos(), nil
 	}
 
-	// retrive addrs from webhook if time since lastRequest is more than the refresh interval
+	// retrieve addrs from webhook if time since lastRequest is more than the refresh interval
 	body, err := getURLsfromWebhook(w.callback)
 	if err != nil {
 		return nil, err
 	}
 
 	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
+	w.mu.Lock()
 	if hash == w.responseHash {
-		w.mu.Lock()
 		w.lastRequest = time.Now()
 		pool = w.pool // may have been reset since beginning
 		w.mu.Unlock()
 		return pool.GetInfos(), nil
 	}
+	w.mu.Unlock()
 
 	infos, err := deserializeWebhookJSON(body)
 	if err != nil {
 		return nil, err
 	}
 
-	// pool = NewOrchestratorPool(w.bcast, addrs)
-	pool = &orchestratorPool{infos: infos, bcast: w.bcast, discoveryTimeout: w.discoveryTimeout}
+	pool = &orchestratorPool{
+		infos:               infos,
+		bcast:               w.bcast,
+		discoveryTimeout:    w.discoveryTimeout,
+		extraNodes:          w.bcast.ExtraNodes(),
+		ignoreCapacityCheck: w.ignoreCapacityCheck,
+		getOrchInfo:         serverGetOrchInfo,
+	}
 
 	w.mu.Lock()
 	w.responseHash = hash
@@ -118,6 +142,10 @@ func (w *webhookPool) GetOrchestrators(ctx context.Context, numOrchestrators int
 	defer w.mu.RUnlock()
 
 	return w.pool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
+}
+
+func (w *webhookPool) Broadcaster() common.Broadcaster {
+	return w.pool.bcast
 }
 
 var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {

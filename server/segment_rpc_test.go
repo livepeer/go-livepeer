@@ -101,6 +101,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -148,6 +149,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -635,6 +637,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -707,6 +710,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -776,6 +780,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -844,6 +849,7 @@ func TestServeSegment_TooBigSegment(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -884,6 +890,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
 	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("Nodes").Return(nil)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("Address").Return(ethcommon.Address{})
@@ -992,6 +999,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	require.Nil(err)
 	addr := ethcommon.BytesToAddress([]byte("foo"))
 	orch.On("ServiceURI").Return(uri)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(addr)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
@@ -1075,8 +1083,9 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 	origRandomIDGenerator := common.RandomIDGenerator
 	defer func() { common.RandomIDGenerator = origRandomIDGenerator }()
 
-	newAuthToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
-	oldAuthToken := &net.AuthToken{Token: []byte("notfoo"), SessionId: "notbar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	expiry := time.Now().Add(authTokenValidPeriod).Unix()
+	newAuthToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: expiry}
+	oldAuthToken := &net.AuthToken{Token: []byte("notfoo"), SessionId: "notbar", Expiration: expiry}
 	common.RandomIDGenerator = func(length uint) string { return newAuthToken.SessionId }
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
@@ -1132,6 +1141,7 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 	require.Nil(err)
 	addr := ethcommon.BytesToAddress([]byte("foo"))
 	orch.On("ServiceURI").Return(uri)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(addr)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
@@ -1218,6 +1228,7 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(false)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error")).Times(1)
 
 	// Check when price = 0
@@ -1287,6 +1298,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -1357,6 +1369,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -1437,6 +1450,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
@@ -1519,6 +1533,7 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)

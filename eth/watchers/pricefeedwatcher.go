@@ -218,6 +218,7 @@ func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
 			nextTick = nextTick.Add(d)
 			untilNextTick := nextTick.Sub(time.Now().UTC())
 			if untilNextTick <= 0 {
+				clog.Warningf(ctx, "Missed tick, untilNextTick <= 0, nextTick=%s", nextTick)
 				continue
 			}
 

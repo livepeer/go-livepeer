@@ -12,8 +12,8 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
@@ -67,7 +68,6 @@ const AISessionManagerTTL = 10 * time.Minute
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
-var LiveAIAuthWebhookURL *url.URL
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
@@ -126,10 +126,13 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
 
-	mediaMTXApiPassword string
-	liveAIAuthApiKey    string
-	livePaymentInterval time.Duration
-	outSegmentTimeout   time.Duration
+	mediaMTXApiPassword  string
+	liveAIAuthWebhookURL *url.URL
+	liveAIAuthApiKey     string
+	livePaymentInterval  time.Duration
+	outSegmentTimeout    time.Duration
+
+	byocSrv *byoc.BYOCGatewayServer
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -196,6 +199,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
+		liveAIAuthWebhookURL:    lpNode.LiveAIAuthWebhookURL,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
 		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,
@@ -203,6 +207,9 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 
+		if lpNode.LiveAISaveNSegments != nil {
+			liveAISaveNSegments = *lpNode.LiveAISaveNSegments
+		}
 		if err := startAIMediaServer(ctx, ls); err != nil {
 			return nil, fmt.Errorf("failed to start AI media server: %w", err)
 		}
@@ -241,7 +248,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	}()
 	if s.LivepeerNode.NodeType == core.BroadcasterNode {
 		go func() {
-			glog.V(4).Infof("HTTP Server listening on http://%v", httpAddr)
+			glog.Infof("HTTP Server listening on http://%v", httpAddr)
 			ec <- http.ListenAndServe(httpAddr, s.HTTPMux)
 		}()
 	}
@@ -276,7 +283,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		var VerificationFreq uint
-		nonce := rand.Uint64()
+		nonce := common.RandomUint64()
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
@@ -314,7 +321,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			if err != nil {
 				errMsg := fmt.Sprintf("Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
 				clog.Errorf(ctx, errMsg)
-				return nil, fmt.Errorf(errMsg)
+				return nil, errors.New(errMsg)
 			}
 			profiles = append(profiles, parsedProfiles...)
 
@@ -329,7 +336,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 			// set Recording OS if it was provided
@@ -338,7 +345,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 
@@ -376,7 +383,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			errMsg := fmt.Sprintf("Too many connections for streamID url=%s err=%q", url.String(), err)
 			clog.Errorf(ctx, errMsg)
-			return nil, fmt.Errorf(errMsg)
+			return nil, errors.New(errMsg)
 
 		}
 		return &core.StreamParameters{
@@ -1226,7 +1233,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			Profile: ffmpeg.VideoProfile{Format: ffmpeg.FormatNone},
 			Muxer: ffmpeg.ComponentOptions{
 				Name: "mp4",
-				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generatd file)
+				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generated file)
 				// other options is not mandatory but they will slightly improve generated MP4 file
 				Opts: map[string]string{"movflags": "frag_keyframe+negative_cts_offsets+omit_tfhd_offset+disable_chpl+default_base_moof"},
 			},
@@ -1658,7 +1665,16 @@ func getRemoteAddr(r *http.Request) string {
 	if proxiedAddr := r.Header.Get("X-Forwarded-For"); proxiedAddr != "" {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
-	return strings.Split(addr, ":")[0]
+
+	// addr is typically in the format "ip:port"
+	// Need to extract just the IP. Handle IPv6 too.
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		// probably not a real IP
+		return addr
+	}
+
+	return host
 }
 
 func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {

@@ -16,12 +16,6 @@
 
 ### Bug Fixes 🐞
 
-#### CLI
-
 #### General
 
-#### Broadcaster
-
-#### Orchestrator
-
-#### Transcoder
+#### CLI

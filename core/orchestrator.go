@@ -306,6 +306,32 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 		capPrices = append(capPrices, price)
 	}
 
+	// Append BYOC external capability prices using Capability_BYOC.
+	// The registered capability name is set as the Constraint, making BYOC
+	// pricing seamless alongside built-in capabilities like LiveVideoToVideo.
+	if orch.node != nil && orch.node.ExternalCapabilities != nil {
+		for name := range orch.node.ExternalCapabilities.Capabilities {
+			price := orch.node.GetPriceForJob(ethAddr, name)
+			if price == nil {
+				price = orch.node.GetPriceForJob("default", name)
+			}
+			if price == nil || price.Num().Sign() < 0 {
+				continue
+			}
+			priceInt64, err := common.PriceToInt64(price)
+			if err != nil {
+				glog.Errorf("error converting external capability %q price to int64: %v", name, err)
+				continue
+			}
+			capPrices = append(capPrices, &net.PriceInfo{
+				PricePerUnit:  priceInt64.Num().Int64(),
+				PixelsPerUnit: priceInt64.Denom().Int64(),
+				Capability:    uint32(Capability_BYOC),
+				Constraint:    name,
+			})
+		}
+	}
+
 	return capPrices, nil
 }
 
@@ -467,6 +493,13 @@ func (orch *orchestrator) Capabilities() *net.Capabilities {
 		return nil
 	}
 	return orch.node.Capabilities.ToNetCapabilities()
+}
+
+func (orch *orchestrator) Nodes() []string {
+	if orch == nil || orch.node == nil {
+		return nil
+	}
+	return orch.node.Nodes
 }
 
 func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
@@ -654,7 +687,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// we may still end up doing work multiple times. But this is OK for now.
 
 	//Assume d is in the right format, write it to disk
-	inName := common.RandName() + ".tempfile"
+	inName := fmt.Sprintf("%s-%d-%s.tempfile", md.ManifestID, md.Seq, common.RandName())
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
@@ -751,7 +784,21 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
-	os.Remove(fname)
+
+	// check for big inputs
+	keepInput := false
+	for i, seg := range tData.Segments {
+		// 840x480 30fps 10 mins ~ 7.38 billion pixels, or a 1gb output
+		if seg.Pixels > 7_378_560_000 || len(seg.Data) > 1_000_000_000 {
+			// keep input for later analysis to figure out extremely large output
+			keepInput = true
+			clog.Info(ctx, "Extremely large output detected!", "manifestID", md.ManifestID, "seq", md.Seq, "pixels", seg.Pixels, "bytes", len(seg.Data), "profile", md.Profiles[i])
+		}
+	}
+	if !keepInput {
+		os.Remove(fname)
+	}
+
 	tr.OS = config.OS
 	tr.TranscodeData = tData
 
@@ -964,6 +1011,8 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	defer cancel()
 	select {
 	case <-ctx.Done():
+		clog.Infof(logCtx, "Remote transcoder took too long to transcode transcoder=%s taskId=%d fname=%s dur=%v",
+			rt.addr, taskID, fname, time.Since(start))
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		segmentLen := 0

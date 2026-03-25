@@ -14,6 +14,7 @@ import (
 
 func TestNewAutoConvertedPrice(t *testing.T) {
 	t.Run("PriceFeedWatcher not initialized", func(t *testing.T) {
+		PriceFeedWatcher = nil
 		_, err := NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
 		require.Error(t, err)
 	})

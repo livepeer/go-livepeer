@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"reflect"
 	"runtime"
+	"syscall"
 	"time"
-
-	"github.com/olekukonko/tablewriter"
 
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
 	"github.com/livepeer/livepeer-data/pkg/mistconnector"
@@ -22,6 +20,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 )
+
+const shutdownTimeout = 10 * time.Second
 
 func main() {
 	// Override the default flag set since there are dependencies that
@@ -38,7 +38,7 @@ func main() {
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "3", "Log verbosity.  {4|5|6}")
 
-	cfg := parseLivepeerConfig()
+	cfg := starter.NewLivepeerConfig(flag.CommandLine)
 
 	// Config file
 	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
@@ -64,23 +64,8 @@ func main() {
 		return
 	}
 
-	cfg = updateNilsForUnsetFlags(cfg)
-
-	// compare current settings with default values, and print the difference
-	defCfg := starter.DefaultLivepeerConfig()
-	vDefCfg := reflect.ValueOf(defCfg)
-	vCfg := reflect.ValueOf(cfg)
-	cfgType := vCfg.Type()
-	paramTable := tablewriter.NewWriter(os.Stdout)
-	for i := 0; i < cfgType.NumField(); i++ {
-		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
-			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
-		}
-	}
-	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
-	paramTable.SetCenterSeparator("*")
-	paramTable.SetColumnSeparator("|")
-	paramTable.Render()
+	cfg = starter.UpdateNilsForUnsetFlags(cfg)
+	cfg.PrintConfig(os.Stdout)
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
@@ -94,184 +79,25 @@ func main() {
 	lc := make(chan struct{})
 
 	go func() {
+		defer close(lc)
 		starter.StartLivepeer(ctx, cfg)
-		lc <- struct{}{}
 	}()
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
 	select {
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
 		cancel()
-		time.Sleep(time.Second * 2) //Give time for other processes to shut down completely
 	case <-lc:
+		// fallthrough to normal shutdown below
 	}
-}
-
-func parseLivepeerConfig() starter.LivepeerConfig {
-	cfg := starter.DefaultLivepeerConfig()
-
-	// Network & Addresses:
-	cfg.Network = flag.String("network", *cfg.Network, "Network to connect to")
-	cfg.RtmpAddr = flag.String("rtmpAddr", *cfg.RtmpAddr, "Address to bind for RTMP commands")
-	cfg.CliAddr = flag.String("cliAddr", *cfg.CliAddr, "Address to bind for  CLI commands")
-	cfg.HttpAddr = flag.String("httpAddr", *cfg.HttpAddr, "Address to bind for HTTP commands")
-	cfg.ServiceAddr = flag.String("serviceAddr", *cfg.ServiceAddr, "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
-	cfg.VerifierURL = flag.String("verifierUrl", *cfg.VerifierURL, "URL of the verifier to use")
-	cfg.VerifierPath = flag.String("verifierPath", *cfg.VerifierPath, "Path to verifier shared volume")
-	cfg.LocalVerify = flag.Bool("localVerify", *cfg.LocalVerify, "Set to true to enable local verification i.e. pixel count and signature verification.")
-	cfg.HttpIngest = flag.Bool("httpIngest", *cfg.HttpIngest, "Set to true to enable HTTP ingest")
-
-	// Broadcaster's Selection Algorithm
-	cfg.OrchAddr = flag.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
-	cfg.OrchWebhookURL = flag.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
-	cfg.OrchBlacklist = flag.String("orchBlocklist", "", "Comma-separated list of blocklisted orchestrators")
-	cfg.OrchMinLivepeerVersion = flag.String("orchMinLivepeerVersion", *cfg.OrchMinLivepeerVersion, "Minimal go-livepeer version orchestrator should have to be selected")
-	cfg.SelectRandWeight = flag.Float64("selectRandFreq", *cfg.SelectRandWeight, "Weight of the random factor in the orchestrator selection algorithm")
-	cfg.SelectStakeWeight = flag.Float64("selectStakeWeight", *cfg.SelectStakeWeight, "Weight of the stake factor in the orchestrator selection algorithm")
-	cfg.SelectPriceWeight = flag.Float64("selectPriceWeight", *cfg.SelectPriceWeight, "Weight of the price factor in the orchestrator selection algorithm")
-	cfg.SelectPriceExpFactor = flag.Float64("selectPriceExpFactor", *cfg.SelectPriceExpFactor, "Expresses how significant a small change of price is for the selection algorithm; default 100")
-	cfg.OrchPerfStatsURL = flag.String("orchPerfStatsUrl", *cfg.OrchPerfStatsURL, "URL of Orchestrator Performance Stream Tester")
-	cfg.Region = flag.String("region", *cfg.Region, "Region in which a broadcaster is deployed; used to select the region while using the orchestrator's performance stats")
-	cfg.MaxPricePerUnit = flag.String("maxPricePerUnit", *cfg.MaxPricePerUnit, "The maximum transcoding price per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
-	cfg.MaxPricePerCapability = flag.String("maxPricePerCapability", *cfg.MaxPricePerCapability, `json list of prices per capability/model or path to json config file. Use "model_id": "default" to price all models in a pipeline the same. Example: {"capabilities_prices": [{"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "upscale", "model_id": "default", price_per_unit": 1200, "pixels_per_unit": 1}]}`)
-	cfg.IgnoreMaxPriceIfNeeded = flag.Bool("ignoreMaxPriceIfNeeded", *cfg.IgnoreMaxPriceIfNeeded, "Set to true to allow exceeding max price condition if there is no O that meets this requirement")
-	cfg.MinPerfScore = flag.Float64("minPerfScore", *cfg.MinPerfScore, "The minimum orchestrator's performance score a broadcaster is willing to accept")
-	cfg.DiscoveryTimeout = flag.Duration("discoveryTimeout", *cfg.DiscoveryTimeout, "Time to wait for orchestrators to return info to be included in transcoding sessions for manifest (default = 500ms)")
-	cfg.GatewayHost = flag.String("gatewayHost", *cfg.GatewayHost, "External hostname on which the Gateway node is running. Used when telling external services how to reach the node.")
-
-	// Transcoding:
-	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
-	cfg.Transcoder = flag.Bool("transcoder", *cfg.Transcoder, "Set to true to be a transcoder")
-	cfg.Gateway = flag.Bool("gateway", *cfg.Broadcaster, "Set to true to be a gateway")
-	cfg.Broadcaster = flag.Bool("broadcaster", *cfg.Broadcaster, "Set to true to be a broadcaster (**Deprecated**, use -gateway)")
-	cfg.OrchSecret = flag.String("orchSecret", *cfg.OrchSecret, "Shared secret with the orchestrator as a standalone transcoder or path to file")
-	cfg.TranscodingOptions = flag.String("transcodingOptions", *cfg.TranscodingOptions, "Transcoding options for broadcast job, or path to json config")
-	cfg.MaxAttempts = flag.Int("maxAttempts", *cfg.MaxAttempts, "Maximum transcode attempts")
-	cfg.MaxSessions = flag.String("maxSessions", *cfg.MaxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator or 'auto' for dynamic limit, maximum number of RTMP streams for Broadcaster, or maximum capacity for transcoder.")
-	cfg.CurrentManifest = flag.Bool("currentManifest", *cfg.CurrentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
-	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
-	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
-	cfg.TestTranscoder = flag.Bool("testTranscoder", *cfg.TestTranscoder, "Test Nvidia GPU transcoding at startup")
-	cfg.HevcDecoding = flag.Bool("hevcDecoding", *cfg.HevcDecoding, "Enable or disable HEVC decoding")
-
-	// AI:
-	cfg.AIServiceRegistry = flag.Bool("aiServiceRegistry", *cfg.AIServiceRegistry, "Set to true to use an AI ServiceRegistry contract address")
-	cfg.AIWorker = flag.Bool("aiWorker", *cfg.AIWorker, "Set to true to run an AI worker")
-	cfg.AIModels = flag.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
-	cfg.AIModelsDir = flag.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
-	cfg.AIRunnerImage = flag.String("aiRunnerImage", *cfg.AIRunnerImage, "[Deprecated] Specify the base Docker image for the AI runner. Example: livepeer/ai-runner:0.0.1. Use -aiRunnerImageOverrides instead.")
-	cfg.AIVerboseLogs = flag.Bool("aiVerboseLogs", *cfg.AIVerboseLogs, "Set to true to enable verbose logs for the AI runner containers created by the worker")
-	cfg.AIRunnerImageOverrides = flag.String("aiRunnerImageOverrides", *cfg.AIRunnerImageOverrides, `Specify overrides for the Docker images used by the AI runner. Example: '{"default": "livepeer/ai-runner:v1.0", "batch": {"text-to-speech": "livepeer/ai-runner:text-to-speech-v1.0"}, "live": {"another-pipeline": "livepeer/ai-runner:another-pipeline-v1.0"}}'`)
-	cfg.AIProcessingRetryTimeout = flag.Duration("aiProcessingRetryTimeout", *cfg.AIProcessingRetryTimeout, "Timeout for retrying to initiate AI processing request")
-	cfg.AIRunnerContainersPerGPU = flag.Int("aiRunnerContainersPerGPU", *cfg.AIRunnerContainersPerGPU, "Number of AI runner containers to run per GPU; default to 1")
-	cfg.AIMinRunnerVersion = flag.String("aiMinRunnerVersion", *cfg.AIMinRunnerVersion, `JSON specifying the min runner versions for each pipeline. It works ONLY for warm runner containers, SHOULD NOT be used for cold runners. Example: '[{"model_id": "noop", "pipeline": "live-video-to-video", "minVersion": "0.0.2"}]'; if not set, the runner's min version is used"`)
-
-	// Live AI:
-	cfg.MediaMTXApiPassword = flag.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
-	cfg.LiveAITrickleHostForRunner = flag.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
-	cfg.LiveAIAuthApiKey = flag.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
-	cfg.LiveAIAuthWebhookURL = flag.String("liveAIAuthWebhookUrl", "", "Live AI RTMP authentication webhook URL")
-	cfg.LivePaymentInterval = flag.Duration("livePaymentInterval", *cfg.LivePaymentInterval, "Interval to pay process Gateway <> Orchestrator Payments for Live AI Video")
-	cfg.LiveOutSegmentTimeout = flag.Duration("liveOutSegmentTimeout", *cfg.LiveOutSegmentTimeout, "Timeout duration to wait the output segment to be available in the Live AI pipeline; defaults to no timeout")
-	cfg.LiveAICapRefreshModels = flag.String("liveAICapRefreshModels", "", "Comma separated list of models to periodically fetch capacity for. Leave unset to switch off periodic refresh.")
-
-	// Onchain:
-	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
-	cfg.EthPassword = flag.String("ethPassword", *cfg.EthPassword, "Password for existing Eth account address or path to file")
-	cfg.EthKeystorePath = flag.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to ETH keystore directory or keyfile. If keyfile, overrides -ethAcctAddr and uses parent directory")
-	cfg.EthOrchAddr = flag.String("ethOrchAddr", *cfg.EthOrchAddr, "ETH address of an on-chain registered orchestrator")
-	cfg.EthUrl = flag.String("ethUrl", *cfg.EthUrl, "Ethereum node JSON-RPC URL")
-	cfg.TxTimeout = flag.Duration("transactionTimeout", *cfg.TxTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
-	cfg.MaxTxReplacements = flag.Int("maxTransactionReplacements", *cfg.MaxTxReplacements, "Number of times to automatically replace pending Ethereum transactions")
-	cfg.GasLimit = flag.Int("gasLimit", *cfg.GasLimit, "Gas limit for ETH transactions")
-	cfg.MinGasPrice = flag.Int64("minGasPrice", 0, "Minimum gas price (priority fee + base fee) for ETH transactions in wei, 10 Gwei = 10000000000")
-	cfg.MaxGasPrice = flag.Int("maxGasPrice", *cfg.MaxGasPrice, "Maximum gas price (priority fee + base fee) for ETH transactions in wei, 40 Gwei = 40000000000")
-	cfg.EthController = flag.String("ethController", *cfg.EthController, "Protocol smart contract address")
-	cfg.InitializeRound = flag.Bool("initializeRound", *cfg.InitializeRound, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
-	cfg.InitializeRoundMaxDelay = flag.Duration("initializeRoundMaxDelay", *cfg.InitializeRoundMaxDelay, "Maximum delay to wait before initializing a round")
-	cfg.TicketEV = flag.String("ticketEV", *cfg.TicketEV, "The expected value for PM tickets")
-	cfg.MaxFaceValue = flag.String("maxFaceValue", *cfg.MaxFaceValue, "set max ticket face value in WEI")
-	// Broadcaster max acceptable ticket EV
-	cfg.MaxTicketEV = flag.String("maxTicketEV", *cfg.MaxTicketEV, "The maximum acceptable expected value for one PM ticket")
-	// Broadcaster max acceptable total EV for one payment
-	cfg.MaxTotalEV = flag.String("maxTotalEV", *cfg.MaxTotalEV, "The maximum acceptable expected value for one PM payment")
-	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
-	cfg.DepositMultiplier = flag.Int("depositMultiplier", *cfg.DepositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
-	// Orchestrator base pricing info
-	cfg.PricePerUnit = flag.String("pricePerUnit", "0", "The price per 'pixelsPerUnit' amount pixels. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
-	// Unit of pixels for both O's pricePerUnit and B's maxPricePerUnit
-	cfg.PixelsPerUnit = flag.String("pixelsPerUnit", *cfg.PixelsPerUnit, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
-	cfg.PriceFeedAddr = flag.String("priceFeedAddr", *cfg.PriceFeedAddr, "ETH address of the Chainlink price feed contract. Used for custom currencies conversion on -pricePerUnit or -maxPricePerUnit")
-	cfg.AutoAdjustPrice = flag.Bool("autoAdjustPrice", *cfg.AutoAdjustPrice, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
-	cfg.PricePerGateway = flag.String("pricePerGateway", *cfg.PricePerGateway, `json list of price per gateway or path to json config file. Example: {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1000000000000},{"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":1000000000000}]}`)
-	cfg.PricePerBroadcaster = flag.String("pricePerBroadcaster", *cfg.PricePerBroadcaster, `json list of price per broadcaster or path to json config file. Example: {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1000000000000},{"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":1000000000000}]}`)
-	// Interval to poll for blocks
-	cfg.BlockPollingInterval = flag.Int("blockPollingInterval", *cfg.BlockPollingInterval, "Interval in seconds at which different blockchain event services poll for blocks")
-	// Redemption service
-	cfg.Redeemer = flag.Bool("redeemer", *cfg.Redeemer, "Set to true to run a ticket redemption service")
-	cfg.RedeemerAddr = flag.String("redeemerAddr", *cfg.RedeemerAddr, "URL of the ticket redemption service to use")
-	// Reward service
-	cfg.Reward = flag.Bool("reward", false, "Set to true to run a reward service")
-	// Metrics & logging:
-	cfg.Monitor = flag.Bool("monitor", *cfg.Monitor, "Set to true to send performance metrics")
-	cfg.MetricsPerStream = flag.Bool("metricsPerStream", *cfg.MetricsPerStream, "Set to true to group performance metrics per stream")
-	cfg.MetricsExposeClientIP = flag.Bool("metricsClientIP", *cfg.MetricsExposeClientIP, "Set to true to expose client's IP in metrics")
-	cfg.MetadataQueueUri = flag.String("metadataQueueUri", *cfg.MetadataQueueUri, "URI for message broker to send operation metadata")
-	cfg.MetadataAmqpExchange = flag.String("metadataAmqpExchange", *cfg.MetadataAmqpExchange, "Name of AMQP exchange to send operation metadata")
-	cfg.MetadataPublishTimeout = flag.Duration("metadataPublishTimeout", *cfg.MetadataPublishTimeout, "Max time to wait in background for publishing operation metadata events")
-
-	// Storage:
-	flag.StringVar(cfg.Datadir, "datadir", *cfg.Datadir, "[Deprecated] Directory that data is stored in")
-	flag.StringVar(cfg.Datadir, "dataDir", *cfg.Datadir, "Directory that data is stored in")
-	cfg.Objectstore = flag.String("objectStore", *cfg.Objectstore, "url of primary object store")
-	cfg.Recordstore = flag.String("recordStore", *cfg.Recordstore, "url of object store for recordings")
-
-	// Fast Verification GS bucket:
-	cfg.FVfailGsBucket = flag.String("FVfailGsbucket", *cfg.FVfailGsBucket, "Google Cloud Storage bucket for storing segments, which failed fast verification")
-	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Cloud Storage private key file name or key in JSON format for accessing FVfailGsBucket")
-	// API
-	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
-
-	// flags
-	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
-
-	// Gateway metrics
-	cfg.KafkaBootstrapServers = flag.String("kafkaBootstrapServers", *cfg.KafkaBootstrapServers, "URL of Kafka Bootstrap Servers")
-	cfg.KafkaUsername = flag.String("kafkaUser", *cfg.KafkaUsername, "Kafka Username")
-	cfg.KafkaPassword = flag.String("kafkaPassword", *cfg.KafkaPassword, "Kafka Password")
-	cfg.KafkaGatewayTopic = flag.String("kafkaGatewayTopic", *cfg.KafkaGatewayTopic, "Kafka Topic used to send gateway logs")
-
-	return cfg
-}
-
-// updateNilsForUnsetFlags changes some cfg fields to nil if they were not explicitly set with flags.
-// For some flags, the behavior is different whether the value is default or not set by the user at all.
-func updateNilsForUnsetFlags(cfg starter.LivepeerConfig) starter.LivepeerConfig {
-	res := cfg
-
-	isFlagSet := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
-
-	if !isFlagSet["minGasPrice"] {
-		res.MinGasPrice = nil
+	select {
+	case <-lc:
+		glog.Infof("Graceful shutdown complete")
+	case <-time.After(shutdownTimeout):
+		glog.Infof("Shutdown timed out, forcing exit")
+		os.Exit(1)
 	}
-	if !isFlagSet["pricePerUnit"] {
-		res.PricePerUnit = nil
-	}
-	if !isFlagSet["reward"] {
-		res.Reward = nil
-	}
-	if !isFlagSet["httpIngest"] {
-		res.HttpIngest = nil
-	}
-	if !isFlagSet["localVerify"] {
-		res.LocalVerify = nil
-	}
-	if !isFlagSet["hevcDecoding"] {
-		res.HevcDecoding = nil
-	}
-
-	return res
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
 	"github.com/peterbourgon/ff/v3"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ func TestParseAcceptsEitherDatadirCasing(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// No Casing
-	lpc := parseLivepeerConfig()
+	lpc := starter.NewLivepeerConfig(flag.CommandLine)
 
 	err := ff.Parse(flag.CommandLine, []string{
 		"-datadir", "/some/data/dir",
@@ -29,7 +30,7 @@ func TestParseAcceptsEitherDatadirCasing(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Camel Casing
-	lpc = parseLivepeerConfig()
+	lpc = starter.NewLivepeerConfig(flag.CommandLine)
 
 	err = ff.Parse(flag.CommandLine, []string{
 		"-dataDir", "/some/data/dir",

@@ -97,7 +97,7 @@ func TestResToTranscodeData(t *testing.T) {
 	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
-	// Test error after a successsful read
+	// Test error after a successful read
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 3)}
 	tempDir := t.TempDir()
 
@@ -116,7 +116,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
 
-	// Test successs for 1 output file
+	// Test success for 1 output file
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
 	res.Encoded[0].Pixels = 100
 
@@ -180,6 +180,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	makeMeta := func(p []ffmpeg.VideoProfile, c bool) *SegTranscodingMetadata {
 		return &SegTranscodingMetadata{
+			ManifestID:         "baz",
 			Profiles:           p,
 			CalcPerceptualHash: c,
 			Metadata: map[string]string{
@@ -197,7 +198,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, makeMeta(profiles, false))
 	assert.Equal(1, len(opts))
-	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
+	assert.Equal("foo/out_baz-0-bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
 	assert.Equal("copy", opts[0].AudioEncoder.Name)
@@ -208,7 +209,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -227,7 +228,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.True(opts[1].CalcSign)
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)

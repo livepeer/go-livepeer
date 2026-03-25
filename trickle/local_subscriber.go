@@ -39,11 +39,17 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	segment, latestSeq, exists := stream.getForRead(c.seq)
+	segment, latestSeq, exists, closed := stream.getForRead(c.seq)
 	if !exists {
+		if closed {
+			return nil, EOS
+		}
 		return nil, errors.New("seq not found")
 	}
-	c.seq++
+	seq := segment.idx
+	if seq >= 0 {
+		c.seq = seq + 1
+	}
 	r, w := io.Pipe()
 	go func() {
 		subscriber := &SegmentSubscriber{
@@ -75,4 +81,10 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 			"Content-Type":      stream.mimeType,
 		}, // TODO take more metadata from http headers
 	}, nil
+}
+
+func (c *TrickleLocalSubscriber) SetSeq(seq int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.seq = seq
 }

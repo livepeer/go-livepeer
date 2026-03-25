@@ -84,6 +84,18 @@ export RTMP_OUTPUT=rtmp://rtmp.livepeer.com/live/$STREAM_KEY
 
 This one is only required for the `box-stream` command. It is useful when you cannot use the `box-playback` command to play the stream, for example when you are using a remote non-UI machine.
 
+### Video Input
+
+By default, `box-stream` uses a generated test pattern. You can use a video file or webcam instead:
+
+```bash
+# Use a video file
+export INPUT_VIDEO=/path/to/video.mp4
+
+# Or use a webcam (Linux)
+export INPUT_WEBCAM=/dev/video0
+```
+
 ### Docker
 If you want to run the box in a docker container, set the `DOCKER` env var:
 ```bash
@@ -116,3 +128,16 @@ To rebuild and restart the runner, run the following command:
 ```bash
 make box-runner
 ```
+
+## Frontend
+
+To start the frontend, run the following commands:
+```bash
+make box-supabase
+make box-frontend
+```
+
+You can access the frontend with the following URL: http://localhost:3000/create?whipServer=http://127.0.0.1:5936/live/video-to-video/&pipeline=noop&videoJS=true
+
+Note that the box-frontend assumes you have the https://github.com/livepeer/pipelines/ repo cloned at the parent directory.
+Note also that you can start frontend together with `make box` by setting `export FRONTEND=true`.

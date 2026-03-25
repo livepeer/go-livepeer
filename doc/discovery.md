@@ -10,6 +10,8 @@ At the moment, the following data sources are supported by the discovery algorit
 - [Webhook](https://github.com/livepeer/go-livepeer/blob/master/discovery/wh_discovery.go): The list of active orchestrators is fetched from a webhook server. The Livepeer Studio [webhook implementation](https://github.com/livepeer/studio/blob/master/packages/api/src/middleware/subgraph.ts) returns cached responses from the [Livepeer subgraph](https://thegraph.com/hosted-service/subgraph/livepeer/arbitrum-one). This data source can be configured using the `-orchWebhookUrl` flag.
 - [Hardcoded list](https://github.com/livepeer/go-livepeer/blob/master/discovery/discovery.go): The list of active orchestrators is fetched from a hardcoded list. This data source can be configured using the `-orchAddr` flag.
 
+Additional orchestrators beyond the initial list can be advertised via the `-nodes` flag on each orchestrator, for example `-nodes host1:port1,host2:port2`. The gateway will then visit each of these nodes up until the maximum specified in the `-extraNodes` flag on the gateway. Note that the `-extraNodes` default is 0, so the gateway must be explicitly configured to visit additional nodes.
+
 After feching active orchestrators, the discovery algorithm filters for eligible orchestrators by:
 
 - Choosing the first M orchestrators out of N that respond to a `GetOrchestrator` request within a [timeout](https://github.com/livepeer/go-livepeer/blob/1af0a5182cd3a9aa38d961b6d1d104a3693ec814/discovery/discovery.go#L127)

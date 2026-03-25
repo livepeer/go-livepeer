@@ -3,7 +3,9 @@ set -e
 
 DOCKER=${DOCKER:-false}
 PIPELINE=${PIPELINE:-noop}
+AI_MODELS_JSON=${AI_MODELS_JSON:-live-video-to-video:${PIPELINE}:true}
 AI_RUNNER_CONTAINERS_PER_GPU=${AI_RUNNER_CONTAINERS_PER_GPU:-1}
+VERBOSE=${VERBOSE:-0}
 
 DOCKER_HOSTNAME="172.17.0.1"
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -21,13 +23,19 @@ if [[ "$PIPELINE" != "noop" ]]; then
   AI_MODELS_DIR_FLAG="-aiModelsDir ${AI_MODELS_DIR}"
 fi
 
+VERBOSE_FLAG=""
+if [ "$VERBOSE" = "1" ]; then
+  VERBOSE_FLAG="-aiVerboseLogs"
+fi
+
 if [ "$DOCKER" = "false" ]; then
   ./livepeer \
     -orchestrator \
     -aiWorker \
-    -aiModels ./box/aiModels-${PIPELINE}.json \
+    -aiModels "${AI_MODELS_JSON}" \
     -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${AI_MODELS_DIR_FLAG} \
+    ${VERBOSE_FLAG} \
     ${NVIDIA} \
     -serviceAddr localhost:8935 \
     -transcoder \
@@ -35,16 +43,31 @@ if [ "$DOCKER" = "false" ]; then
     -liveAITrickleHostForRunner "$DOCKER_HOSTNAME:8935" \
     -monitor
 else
+  GPU_FLAG=""
+  if [[ "$NVIDIA" != "" ]]; then
+    GPU_FLAG="--gpus all"
+  fi
+
+  # If AI_MODELS_JSON points to a file, set up Docker volume mount for it
+  AI_MODELS_JSON_MOUNT=""
+  if [[ -f "$AI_MODELS_JSON" ]]; then
+    AI_MODELS_JSON_MOUNT="-v ${AI_MODELS_JSON}:/config/aiModels.json:ro"
+    AI_MODELS_JSON="/config/aiModels.json"
+  fi
+
   docker run --rm --name orchestrator \
     --network host \
+    ${GPU_FLAG} \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v ./box/aiModels-${PIPELINE}.json:/opt/aiModels.json \
+    ${AI_MODELS_JSON_MOUNT} \
   livepeer/go-livepeer \
     -orchestrator \
     -aiWorker \
-    -aiModels /opt/aiModels.json \
+    -aiModels "${AI_MODELS_JSON}" \
     -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
+    ${VERBOSE_FLAG} \
     ${AI_MODELS_DIR_FLAG} \
+    ${NVIDIA} \
     -serviceAddr 127.0.0.1:8935 \
     -transcoder \
     -v 6 \

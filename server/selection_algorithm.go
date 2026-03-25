@@ -58,6 +58,17 @@ func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(ctx context.Context, a
 }
 
 func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(ctx context.Context, addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
+	res := filterByMaxPrice(ctx, addrs, maxPrice, prices)
+	if len(res) == 0 && sa.IgnoreMaxPriceIfNeeded {
+		// If no orchestrators pass the filter, return all Orchestrators
+		// It means that no orchestrators are below the max price
+		clog.Warningf(ctx, "No Orchestrators passed max price filter, not using the filter, numAddrs=%d, maxPrice=%v, prices=%v, addrs=%v", len(addrs), maxPrice, prices, addrs)
+		return addrs
+	}
+	return res
+}
+
+func filterByMaxPrice(ctx context.Context, addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
 	if maxPrice == nil || len(prices) == 0 {
 		// Max price filter not defined, return all Orchestrators
 		return addrs
@@ -68,14 +79,12 @@ func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(ctx context.Context, ad
 		price := prices[addr]
 		if price != nil && price.Cmp(maxPrice) <= 0 {
 			res = append(res, addr)
+		} else {
+			if price == nil {
+				price = big.NewRat(-1, 1)
+			}
+			clog.Warningf(ctx, "Orchestrator %s is above max price %v, price=%v", addr, maxPrice.FloatString(3), price.FloatString(3))
 		}
-	}
-
-	if len(res) == 0 && sa.IgnoreMaxPriceIfNeeded {
-		// If no orchestrators pass the filter, return all Orchestrators
-		// It means that no orchestrators are below the max price
-		clog.Warningf(ctx, "No Orchestrators passed max price filter, not using the filter, numAddrs=%d, maxPrice=%v, prices=%v, addrs=%v", len(addrs), maxPrice, prices, addrs)
-		return addrs
 	}
 	return res
 }
@@ -136,4 +145,16 @@ func selectBy(probabilities map[ethcommon.Address]float64) ethcommon.Address {
 	// should not happen, but just to be on the safe side if we encounter some super corner case with the float
 	// number precision
 	return addrs[0]
+}
+
+// LiveSelectionAlgorithm is the Selection Algorithm used for Realtime Video AI
+type LiveSelectionAlgorithm struct{}
+
+func (sa LiveSelectionAlgorithm) Select(ctx context.Context, addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+	filtered := filterByMaxPrice(ctx, addrs, maxPrice, prices)
+	if len(filtered) == 0 {
+		return ethcommon.Address{}
+	}
+	// Return the first address that satisfies the max price filter
+	return filtered[0]
 }

@@ -109,6 +109,9 @@ type AIAuthRequest struct {
 
 	// Gateway host
 	GatewayHost string `json:"gateway_host"`
+	WhepURL     string `json:"whep_url"`
+	StatusURL   string `json:"status_url"`
+	UpdateURL   string `json:"update_url"`
 }
 
 // Contains the configuration parameters for this AI job
@@ -149,6 +152,7 @@ func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*
 
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("x-api-key", apiKey)
+	request.Header.Set("Authorization", apiKey)
 
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {

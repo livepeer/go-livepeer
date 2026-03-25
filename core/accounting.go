@@ -31,6 +31,11 @@ func (b *Balance) Credit(amount *big.Rat) {
 	b.balances.Credit(b.addr, b.manifestID, amount)
 }
 
+// Reserve zeroes the balance and returns the current balance
+func (b *Balance) Reserve() *big.Rat {
+	return b.balances.Reserve(b.addr, b.manifestID)
+}
+
 // StageUpdate prepares a balance update by reserving the current balance and returning the number of tickets
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
@@ -58,6 +63,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	size := res.Int64()
 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
+}
+
+func (b *Balance) Balance() *big.Rat {
+	return b.balances.balancesForAddr(b.addr).Balance(b.manifestID)
 }
 
 // AddressBalances holds credit balances for ETH addresses

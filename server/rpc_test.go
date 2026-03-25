@@ -60,6 +60,10 @@ func (m *mockBalance) StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Ra
 	return args.Int(0), newCredit, existingCredit
 }
 
+func (m *mockBalance) Balance() *big.Rat {
+	return big.NewRat(0, 1)
+}
+
 func (m *mockBalance) Clear() {
 	m.Called()
 }
@@ -76,9 +80,10 @@ type stubOrchestrator struct {
 	offchain     bool
 	caps         *core.Capabilities
 	authToken    *net.AuthToken
+	jobPriceInfo *net.PriceInfo
 }
 
-func (r *stubOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
 }
 
@@ -88,6 +93,10 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	}
 	url, _ := url.Parse(r.serviceURI)
 	return url
+}
+
+func (r *stubOrchestrator) Nodes() []string {
+	return nil
 }
 
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
@@ -235,8 +244,8 @@ func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 	return nil, nil
 }
 
-func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
@@ -251,6 +260,35 @@ func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
+func (r *stubOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) RemoveExternalCapability(extCapability string) error {
+	return nil
+}
+func (r *stubOrchestrator) CheckExternalCapabilityCapacity(extCap string) int64 {
+	return 1
+}
+func (r *stubOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (r *stubOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+	return r.priceInfo, nil
+}
+func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
+}
+func (r *stubOrchestrator) ExtraNodes() int {
+	return 0
+}
+func (r *stubOrchestrator) OrchInfoSig() []byte {
+	b, _ := r.Sign([]byte(r.Address().Hex()))
+	return b
+}
+
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -289,13 +327,6 @@ func TestRPCTranscoderReq(t *testing.T) {
 		t.Errorf("Expected %v; got %v", o.sessCapErr, err)
 	}
 	o.sessCapErr = nil
-
-	// error signing
-	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b, GetOrchestratorInfoParams{})
-	if err == nil {
-		t.Error("Did not expect to generate a orchestrator request with invalid address")
-	}
 }
 
 func TestRPCSeg(t *testing.T) {
@@ -873,6 +904,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -904,6 +936,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
@@ -978,6 +1011,7 @@ func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
@@ -996,6 +1030,7 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	expErr := errors.New("TicketParams error")
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -1017,6 +1052,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
 	}
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
@@ -1037,6 +1073,7 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
 	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
@@ -1057,6 +1094,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
@@ -1336,6 +1374,7 @@ func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
@@ -1348,11 +1387,79 @@ func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
 	assert.Nil(t, orchInfo.CapabilitiesPrices)
 }
 
+type mockAICapacityOrch struct {
+	mockOrchestrator
+	nodes []string
+}
+
+// override to simulate "no AI capacity"
+func (o *mockAICapacityOrch) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return false, nil
+}
+
+// override Nodes to return configured nodes
+func (o *mockAICapacityOrch) Nodes() []string {
+	if o.nodes != nil {
+		return o.nodes
+	}
+	return nil
+}
+
+func TestGetOrchestrator_NoLiveVideoCapacity_WithAndWithoutServiceURI(t *testing.T) {
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+
+	// Build capabilities requesting LiveVideoToVideo with a single model
+	caps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_LiveVideoToVideo): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"modelX": {},
+					},
+				},
+			},
+		},
+	}
+
+	// Case 1: non-empty ServiceURI -> capacity check should run and fail
+	orch1 := &mockAICapacityOrch{nodes: []string{"node1"}}
+	orch1.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch1.On("ServiceURI").Return(mustParseUrl(t, "http://someuri.com"))
+	orch1.On("Address").Return(ethcommon.Address{})
+	// Other calls won't be reached because capacity check should fail, but set sensible defaults
+	orch1.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
+	orch1.On("PriceInfo", mock.Anything).Return(nil, nil)
+	orch1.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch1.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+
+	_, err := getOrchestrator(orch1, &net.OrchestratorRequest{Capabilities: caps})
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "Invalid orchestrator request")
+	}
+
+	// Case 2: empty ServiceURI -> capacity check is skipped; should return orchestrator info and nodes
+	orch2 := &mockAICapacityOrch{nodes: []string{"node1"}}
+	orch2.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	// Return an empty URL so ServiceURI().String() == ""
+	orch2.On("ServiceURI").Return(&url.URL{})
+	orch2.On("Address").Return(ethcommon.Address{})
+	orch2.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
+	orch2.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, nil)
+	orch2.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch2.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+
+	oInfo, err := getOrchestrator(orch2, &net.OrchestratorRequest{Capabilities: caps})
+	assert.Nil(t, err)
+	// ServiceURI was empty, so Transcoder should be empty string and Nodes should include our node
+	assert.Equal(t, "", oInfo.Transcoder)
+	assert.Equal(t, []string{"node1"}, oInfo.Nodes)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
 
-func (o *mockOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (o *mockOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	args := o.Called()
 	return args.Get(0).(worker.Capacity)
 }
@@ -1362,6 +1469,10 @@ func (o *mockOrchestrator) ServiceURI() *url.URL {
 	if args.Get(0) != nil {
 		return args.Get(0).(*url.URL)
 	}
+	return nil
+}
+func (o *mockOrchestrator) Nodes() []string {
+	o.Called()
 	return nil
 }
 func (o *mockOrchestrator) Address() ethcommon.Address {
@@ -1486,8 +1597,8 @@ func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 
@@ -1503,6 +1614,28 @@ func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
+func (o *mockOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (o *mockOrchestrator) RemoveExternalCapability(extCapability string) error {
+	return nil
+}
+func (o *mockOrchestrator) CheckExternalCapabilityCapacity(extCap string) int64 {
+	return 1
+}
+func (o *mockOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (o *mockOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, nil
+}
+func (o *mockOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
+}
+
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
 		Recipient:         pm.RandBytes(123),
@@ -1593,18 +1726,43 @@ func Test_setLiveAICapacity(t *testing.T) {
 					},
 				},
 			},
-			expectedSet: false,
+			expectedSet: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setLiveAICapacity(orch, tt.capabilities)
 			if tt.expectedSet {
-				model := tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["foo"]
-				require.NotNil(t, model)
-				require.Equal(t, uint32(123), model.Capacity)
-				require.Equal(t, uint32(123), model.CapacityInUse)
+				for _, model := range tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models {
+					require.NotNil(t, model)
+					require.Equal(t, uint32(123), model.Capacity)
+					require.Equal(t, uint32(123), model.CapacityInUse)
+				}
 			}
 		})
 	}
+}
+
+func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPrices(t *testing.T) {
+	require := require.New(t)
+
+	oldNodeStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldNodeStorage }()
+
+	orch := &mockOrchestrator{}
+	addr := ethcommon.HexToAddress("0x1")
+
+	orch.On("Nodes").Return()
+	orch.On("Address").Return(addr)
+	orch.On("TicketParams", addr, mock.Anything).Return(&net.TicketParams{Recipient: pm.RandBytes(32)}, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{Token: []byte("tok"), SessionId: "sess", Expiration: time.Now().Add(time.Hour).Unix()})
+
+	nonNilEmptyCaps := core.NewCapabilities(nil, nil).ToNetCapabilities()
+	info, err := orchestratorInfoWithCaps(orch, addr, "https://orch.example.com", "", nonNilEmptyCaps)
+	require.NoError(err)
+	require.Nil(info.CapabilitiesPrices, "non-nil (even if empty) caps should not return capabilities prices")
+
+	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
+	orch.AssertNotCalled(t, "PriceInfo", mock.Anything)
 }
