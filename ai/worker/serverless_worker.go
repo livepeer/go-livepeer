@@ -148,7 +148,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	}
 
 	wsURL := f.wsURL
-	wsURLPrefix := strings.TrimSpace(os.Getenv("LIVE_AI_WS_PREFIX"))
+	wsURLPrefix := strings.ToLower(strings.TrimSpace(os.Getenv("LIVE_AI_WS_PREFIX")))
 	if req.Params != nil && wsURLPrefix != "" {
 		if wsURLRaw, ok := (*req.Params)["ws_url"]; ok {
 			wsURLOverride, ok := wsURLRaw.(string)
@@ -156,6 +156,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				return nil, fmt.Errorf("invalid params.ws_url: must be a string")
 			}
 			if wsURLOverride != "" {
+				wsURLOverride = strings.ToLower(wsURLOverride)
 				if !strings.HasPrefix(wsURLOverride, wsURLPrefix) {
 					return nil, fmt.Errorf("unacceptable params.ws_url")
 				}
