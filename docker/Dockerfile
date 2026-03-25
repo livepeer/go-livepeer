@@ -19,7 +19,7 @@ RUN	apt update \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-19 main" \
 	&& apt update \
-	&& apt -yqq install clang-19 clang-tools-19 lld-19 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-13-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev libfdk-aac-dev
+	&& apt -yqq install clang-19 clang-tools-19 lld-19 build-essential pkg-config autoconf git python3 docker-ce-cli pciutils gcc-multilib libgcc-13-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev libfdk-aac-dev
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 30 \
