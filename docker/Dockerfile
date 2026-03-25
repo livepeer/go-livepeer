@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM livepeerci/cuda:12.6.3-cudnn-devel-ubuntu22.04 as build
+FROM --platform=$BUILDPLATFORM nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04 as build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
@@ -9,17 +9,17 @@ ENV	GOARCH="$TARGETARCH" \
 	CPATH="/usr/local/cuda_${TARGETARCH}/include:/usr/local/cuda/include" \
 	LIBRARY_PATH="/usr/local/cuda_${TARGETARCH}/lib64:/usr/local/cuda/lib64" \
 	DEBIAN_FRONTEND="noninteractive" \
-	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64 -L/usr/local/cuda/lib64"
+	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64  -L/usr/local/cuda/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm \
-	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
+	&& curl -fsSL https://dl.google.com/go/go1.25.8.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-19 main" \
 	&& apt update \
-	&& apt -yqq install clang-19 clang-tools-19 lld-19 build-essential pkg-config autoconf git python3 docker-ce-cli pciutils gcc-multilib libgcc-11-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev
+	&& apt -yqq install clang-19 clang-tools-19 lld-19 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-13-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev libfdk-aac-dev
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 30 \
@@ -30,16 +30,30 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.4.38 \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
 
+# nasm needed for ffmpeg
+RUN curl -o /nasm-3.01.tar.gz "https://www.nasm.us/pub/nasm/releasebuilds/3.01/nasm-3.01.tar.gz" \
+	&& echo "aea120d4adb0241f08ae24d6add09e4a993bc1c4d9f754dbfc8020d6916c9be1 nasm-3.01.tar.gz" > /nasm-3.01.tar.gz.sha256 \
+	&& sha256sum -c /nasm-3.01.tar.gz.sha256 \
+	&& tar xf /nasm-3.01.tar.gz \
+	&& rm /nasm-3.01.tar.gz /nasm-3.01.tar.gz.sha256 \
+	&& cd /nasm-3.01 \
+	&& ./configure \
+	&& make \
+	&& make install
+
 RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
 	&& git checkout ${FFMPEG_SHA} \
-	&& ./configure --enable-gpl --enable-libx264 --prefix=build && make -j"$(nproc)" && make install
+	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
 	GOFLAGS="-mod=readonly"
 
 WORKDIR	/src
+
+RUN	mkdir -p /go \
+	&& curl -fsSLO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
 
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
@@ -57,18 +71,19 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04 AS livepeer-amd64-base
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS livepeer-arm64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04 AS livepeer-arm64-base
 
 FROM	livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN	apt update && apt install -y libx264-163
+RUN	apt update && apt install -y libx264-164 libfdk-aac2
 
 COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
+COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 COPY --from=build /ffmpeg/build/ /usr/local
 RUN ldconfig /usr/local/lib
