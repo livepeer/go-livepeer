@@ -48,6 +48,8 @@ Servers may offer some grace with leading sequence numbers to avoid data races, 
 
 Publishers are responsible for segmenting content (if necessary) and subscribers are responsible for re-assembling content (if necessary)
 
+Publishers can POST with `seq=-1` to write to the current server write head. Successful publisher POST responses include `Lp-Trickle-Seq` metadata (HTTP header) with the effective segment index written by the server, which is especially useful when `-1` was used.
+
 Subscribers can initiate a subscribe with a `seq` of -1 to retrieve the most recent publish. With preconnects, the subscriber may be waiting for the *next* publish. For video this allows clients to eg, start streaming at the live edge of the next GOP.
 
 Subscribers can retrieve the current `seq` with the `Lp-Trickle-Seq` metadata (HTTP header). This is useful in case `-1` was used to initiate the subscription; the subscribing client can then pre-connect to `Lp-Trickle-Seq + 1`

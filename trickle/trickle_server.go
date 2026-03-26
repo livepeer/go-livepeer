@@ -373,6 +373,19 @@ func (tr *timeoutReader) Close() error {
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, _ := s.getForWrite(idx)
 
+	if idx == -1 && r.Header.Get("Lp-Trickle-Reset") != "" {
+		// Usually means the publisher had to restart for some reason.
+		// Close prior segments to unblock subscribers for any hanging writes
+		// but allow for preconnected segments (sometimes they come out-of-order)
+		s.mutex.Lock()
+		for _, seg := range s.segments {
+			if seg != nil && seg.idx < segment.idx {
+				seg.close()
+			}
+		}
+		s.mutex.Unlock()
+	}
+
 	// Wrap the request body with the custom timeoutReader so we can send
 	// provisional headers (keepalives) until receiving the first byte
 	reader := &timeoutReader{
@@ -393,7 +406,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 			if totalRead == 0 {
 				startedAt = time.Now()
 				s.mutex.Lock()
-				s.nextWrite = idx + 1
+				s.nextWrite = segment.idx + 1
 				s.writeTime = startedAt
 				s.mutex.Unlock()
 			}
@@ -417,9 +430,10 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 					s.mutex.Lock()
 					isClosed := s.closed
 					// increment seq anyway: avoids clients erroring out on next seq
-					s.nextWrite = idx + 1
+					s.nextWrite = segment.idx + 1
 					s.writeTime = startedAt
 					s.mutex.Unlock()
+					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 					if isClosed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
 					}
@@ -439,6 +453,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	}
 
 	// Mark segment as closed
+	w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 	segment.close()
 	slog.Info("POST completed", "stream", s.name, "idx", idx, "bytes", totalRead, "took", time.Since(startedAt))
 }
