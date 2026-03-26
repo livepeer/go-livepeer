@@ -295,7 +295,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		var writeMu sync.Mutex
 		openChannels := map[string]*trickle.TrickleLocalPublisher{}
 
-		// Ensure we decrement the counter and close all local channels when this goroutine exits
+		// Ensure we decrement the counter and close all channels when this goroutine exits
 		defer func() {
 			_ = websocketConn.Close()
 
@@ -303,6 +303,16 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				if err := ch.Close(); err != nil {
 					slog.Warn("Failed to close trickle channel", "channel", name, "error", err)
 				}
+			}
+			eventsChannelName := manifestID + "-events"
+			eventsCh := trickle.NewLocalPublisher(trickleSrv, eventsChannelName, "application/json")
+			if err := eventsCh.Close(); err != nil {
+				slog.Warn("Failed to close events trickle channel", "channel", eventsChannelName, "error", err)
+			}
+			controlChannelName := manifestID + "-control"
+			controlCh := trickle.NewLocalPublisher(trickleSrv, controlChannelName, "application/json")
+			if err := controlCh.Close(); err != nil {
+				slog.Warn("Failed to close control trickle channel", "channel", controlChannelName, "error", err)
 			}
 
 			f.mu.Lock()
@@ -322,7 +332,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 				subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 					URL: eventsUrl,
-					Ctx: context.Background(),
 				})
 				if err != nil {
 					slog.Error("Failed to create events subscriber", "error", err)
