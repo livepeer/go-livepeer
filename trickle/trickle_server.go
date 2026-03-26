@@ -117,6 +117,7 @@ func ConfigureServer(config TrickleServerConfig) *Server {
 	)
 
 	mux.HandleFunc("POST "+basePath+"{streamName}", streamManager.handleCreate)
+	mux.HandleFunc("GET "+basePath+"{streamName}/next", streamManager.handleNext)
 	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
 	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
 	mux.HandleFunc("DELETE "+basePath+"{streamName}/{idx}", streamManager.closeSeq)
@@ -373,7 +374,7 @@ func (tr *timeoutReader) Close() error {
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, _ := s.getForWrite(idx)
 
-	if idx == -1 && r.Header.Get("Lp-Trickle-Reset") != "" {
+	if r.Header.Get("Lp-Trickle-Reset") != "" {
 		// Usually means the publisher had to restart for some reason.
 		// Close prior segments to unblock subscribers for any hanging writes
 		// but allow for preconnected segments (sometimes they come out-of-order)
@@ -520,6 +521,25 @@ func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream.handleGet(w, r, idx)
+}
+
+func (sm *Server) handleNext(w http.ResponseWriter, r *http.Request) {
+	stream, exists := sm.getStream(r.PathValue("streamName"))
+	if !exists {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+	stream.mutex.RLock()
+	nextWrite := stream.nextWrite
+	closed := stream.closed
+	stream.mutex.RUnlock()
+
+	next := strconv.Itoa(nextWrite)
+	w.Header().Set("Lp-Trickle-Latest", next)
+	if closed {
+		w.Header().Set("Lp-Trickle-Closed", "terminated")
+	}
+	w.Write([]byte(next))
 }
 
 func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {

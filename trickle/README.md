@@ -22,6 +22,8 @@ Publishers POST to /channel-name/seq
 
 Subscribers GET to /channel-name/seq
 
+Clients can query the next segment seq with GET to /channel-name/next
+
 The `channel-name` is any valid HTTP path part.
 
 The `seq` is an integer sequence number indicating the segment, and must increase sequentially without gaps.
@@ -48,11 +50,21 @@ Servers may offer some grace with leading sequence numbers to avoid data races, 
 
 Publishers are responsible for segmenting content (if necessary) and subscribers are responsible for re-assembling content (if necessary)
 
-Publishers can POST with `seq=-1` to write to the current server write head. Successful publisher POST responses include `Lp-Trickle-Seq` metadata (HTTP header) with the effective segment index written by the server, which is especially useful when `-1` was used.
+Successful publisher POST responses include `Lp-Trickle-Seq` metadata (HTTP header) with the effective segment index written by the server.
+
+If a publisher sends `Lp-Trickle-Reset`, the server treats it as a restart signal for any `seq` value.
+The server closes prior segments to unblock waiting subscribers while still allowing preconnected/ahead segments.
 
 Subscribers can initiate a subscribe with a `seq` of -1 to retrieve the most recent publish. With preconnects, the subscriber may be waiting for the *next* publish. For video this allows clients to eg, start streaming at the live edge of the next GOP.
 
 Subscribers can retrieve the current `seq` with the `Lp-Trickle-Seq` metadata (HTTP header). This is useful in case `-1` was used to initiate the subscription; the subscribing client can then pre-connect to `Lp-Trickle-Seq + 1`
+
+GET `/channel-name/next` returns the next segment seq as plain text in the response body and in the `Lp-Trickle-Latest` response header.
+If the channel does not exist, the server returns 404.
+If the channel is closed, the server also includes `Lp-Trickle-Closed: terminated`.
+
+`Lp-Trickle-Seq` from a publisher write using `seq=-1` is not sufficient by itself to drive real-time ordering if writes overlap.
+It is still useful for post-facto mapping/observability, reconciliation after segment close, and debugging dropped/misordered assumptions.
 
 Subscribers can initiate a subscribe with a `seq` of -N to get the Nth-from-last segment. (TODO)
 
