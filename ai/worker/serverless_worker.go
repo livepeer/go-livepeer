@@ -200,39 +200,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		return nil, fmt.Errorf("failed to connect to websocket: %w", err)
 	}
 
-	// Wait for connection readiness before starting background processing or returning.
-	_, readyMsg, err := websocketConn.ReadMessage()
-	if err != nil {
-		_ = websocketConn.Close()
-		f.mu.Lock()
-		f.inUse--
-		remainingInUse := f.inUse
-		f.mu.Unlock()
-		slog.Error("Failed to read ready message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("failed to read ready message: %w", err)
-	}
-	var readyResponse map[string]interface{}
-	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
-		_ = websocketConn.Close()
-		f.mu.Lock()
-		f.inUse--
-		remainingInUse := f.inUse
-		f.mu.Unlock()
-		slog.Error("Failed to parse ready message", "error", err, "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("failed to parse ready message: %w", err)
-	}
-	msgType, ok := readyResponse["type"].(string)
-	if !ok || msgType != "ready" {
-		_ = websocketConn.Close()
-		f.mu.Lock()
-		f.inUse--
-		remainingInUse := f.inUse
-		f.mu.Unlock()
-		slog.Error("Unexpected ready message format", "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("did not receive ready message from websocket")
-	}
-	slog.Info("Received ready message", "message", readyResponse["message"])
-
 	// Marshal request to JSON and send.
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
@@ -245,50 +212,42 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	slog.Info("Sending request to websocket", "request", string(reqJSON))
-	err = websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
+	// Wait for connection readiness before starting background processing or returning.
+	_, readyMsg, err := websocketConn.ReadMessage()
 	if err != nil {
 		_ = websocketConn.Close()
 		f.mu.Lock()
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed to send request message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("failed to send request message: %w", err)
+		slog.Error("Failed to read ready message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, fmt.Errorf("failed to read ready message: %w", err)
 	}
-	slog.Info("Sent request to websocket", "request", string(reqJSON))
 
-	// Wait for started handshake before launching background processing.
-	_, startedMsg, err := websocketConn.ReadMessage()
+	err = performHandshake(
+		readyMsg,
+		func() ([]byte, error) {
+			_, msg, readErr := websocketConn.ReadMessage()
+			return msg, readErr
+		},
+		func() error {
+			slog.Info("Sending request to websocket", "request", string(reqJSON))
+			writeErr := websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
+			if writeErr == nil {
+				slog.Info("Sent request to websocket", "request", string(reqJSON))
+			}
+			return writeErr
+		},
+	)
 	if err != nil {
 		_ = websocketConn.Close()
 		f.mu.Lock()
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed to read started message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("failed to read started message: %w", err)
+		slog.Error("Failed handshake", "error", err, "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		return nil, err
 	}
-	var startedResponse wsMessage
-	if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
-		_ = websocketConn.Close()
-		f.mu.Lock()
-		f.inUse--
-		remainingInUse := f.inUse
-		f.mu.Unlock()
-		slog.Error("Failed to parse started message", "error", err, "message", string(startedMsg), "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("failed to parse started message: %w", err)
-	}
-	if startedResponse.Type != "started" {
-		_ = websocketConn.Close()
-		f.mu.Lock()
-		f.inUse--
-		remainingInUse := f.inUse
-		f.mu.Unlock()
-		slog.Error("Unexpected started message format", "message", string(startedMsg), "inUse", remainingInUse, "capacity", f.capacity)
-		return nil, fmt.Errorf("did not receive started message from websocket")
-	}
-	slog.Info("Received started message")
 
 	// Start websocket processing in a goroutine
 	go func() {
@@ -448,6 +407,12 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		}()
 
 		streamCount := 0
+		const (
+			// Retries may be expected due to plugin install/uninstall, so be generous.
+			maxHandshakeRetries  = 20
+			handshakeRetryWindow = 1 * time.Minute
+		)
+		handshakeRetryTimes := make([]time.Time, 0, maxHandshakeRetries)
 
 		// Receive and handle messages indefinitely (or until events stream closes or timeout)
 		for {
@@ -473,6 +438,62 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				}
 
 				switch generic.Type {
+				case "ready":
+					// This is a retry, maybe due to plugin install / uninstall.
+
+					// First check whether this is too many retries in a short time
+					now := time.Now()
+					cutoff := now.Add(-handshakeRetryWindow)
+					filteredRetryTimes := handshakeRetryTimes[:0]
+					for _, retryAt := range handshakeRetryTimes {
+						if retryAt.After(cutoff) {
+							filteredRetryTimes = append(filteredRetryTimes, retryAt)
+						}
+					}
+					handshakeRetryTimes = filteredRetryTimes
+					if len(handshakeRetryTimes) >= maxHandshakeRetries {
+						slog.Error("Too many handshake retries in short period", "retries", len(handshakeRetryTimes), "window", handshakeRetryWindow)
+						return
+					}
+					handshakeRetryTimes = append(handshakeRetryTimes, now)
+
+					// Close all media channels; active streams do not survive a retry.
+					for channelName, ch := range openChannels {
+						if err := ch.Close(); err != nil {
+							slog.Warn("Failed to close media trickle channel before handshake retry", "channel", channelName, "error", err)
+							continue
+						}
+						delete(openChannels, channelName)
+					}
+					streamCount = 0
+
+					// Perform the handshake
+					err := performHandshake(
+						msg.message,
+						func() ([]byte, error) {
+							nextMsg := <-messageChan
+							if nextMsg.err != nil {
+								return nil, nextMsg.err
+							}
+							return nextMsg.message, nil
+						},
+						func() error {
+							slog.Info("Retrying handshake request over websocket", "request", string(reqJSON))
+							writeMu.Lock()
+							defer writeMu.Unlock()
+							writeErr := websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
+							if writeErr == nil {
+								slog.Info("Sent retried handshake request to websocket", "request", string(reqJSON))
+							}
+							return writeErr
+						},
+					)
+					if err != nil {
+						slog.Error("Handshake retry failed", "error", err)
+						return
+					}
+					slog.Info("Handshake retry completed")
+
 				case "create_channels":
 					var startMsg createChannelsMessage
 					if err := json.Unmarshal(msg.message, &startMsg); err != nil {
@@ -564,7 +585,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						slog.Info("Closed trickle channel from close_channels", "channel", channelName)
 					}
 				default:
-					slog.Debug("Ignoring websocket message type", "type", generic.Type)
+					slog.Error("Received unrecognized websocket message type", "type", generic.Type, "message", string(msg.message))
+					return
 				}
 			}
 		}
@@ -636,4 +658,40 @@ func (f *ServerlessWorker) Version() []Version {
 			Version: "serverless-1.0.0",
 		},
 	}
+}
+
+func performHandshake(
+	readyMsg []byte,
+	readMsg func() ([]byte, error),
+	sendReq func() error,
+) error {
+	var readyResponse map[string]interface{}
+	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
+		return fmt.Errorf("failed to parse ready message: %w", err)
+	}
+	msgType, ok := readyResponse["type"].(string)
+	if !ok || msgType != "ready" {
+		return fmt.Errorf("did not receive ready message from websocket")
+	}
+	slog.Info("Received ready message", "message", readyResponse["message"])
+
+	if err := sendReq(); err != nil {
+		return fmt.Errorf("failed to send request message: %w", err)
+	}
+
+	startedMsg, err := readMsg()
+	if err != nil {
+		return fmt.Errorf("failed to read started message: %w", err)
+	}
+
+	var startedResponse wsMessage
+	if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
+		return fmt.Errorf("failed to parse started message: %w", err)
+	}
+	if startedResponse.Type != "started" {
+		return fmt.Errorf("unexpected message type %q between ready and started", startedResponse.Type)
+	}
+	slog.Info("Received started message")
+
+	return nil
 }
