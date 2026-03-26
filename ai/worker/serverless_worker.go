@@ -329,16 +329,36 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					return
 				}
 
+				const maxRetries = 5
+				const retryPause = 300 * time.Millisecond
+				retries := 0
+
 				for {
 					segment, err := subscriber.Read()
-					if err != nil {
+					if err == nil {
+						retries = 0
+					} else {
 						if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
 							slog.Info("Events stream closed, closing websocket", "reason", err)
 							_ = websocketConn.Close() // This will cause ReadMessage to return an error
 							return
 						}
-						slog.Warn("Error reading events stream", "error", err)
-						// Continue on other errors (like SequenceNonexistent)
+
+						var seqErr *trickle.SequenceNonexistent
+						if errors.As(err, &seqErr) {
+							// Stream exists but segment doesn't, so skip to leading edge.
+							subscriber.SetSeq(seqErr.Latest)
+						}
+
+						if retries > maxRetries {
+							slog.Error("Too many errors reading events stream, closing websocket", "error", err)
+							_ = websocketConn.Close()
+							return
+						}
+
+						slog.Warn("Error reading events stream", "error", err, "retry", retries)
+						retries++
+						time.Sleep(retryPause)
 						continue
 					}
 
