@@ -603,6 +603,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	require.NotEmpty(state.StateID)
 	require.Equal(ethClient.addr, state.OrchestratorAddress)
 	require.Equal("pmSession", state.PMSessionID)
+	require.EqualValues(0, state.SequenceNumber)
 	require.NotEmpty(state.Balance)
 	require.False(state.LastUpdate.IsZero())
 
@@ -641,6 +642,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 
 	var stateFee2 RemotePaymentState
 	require.NoError(json.Unmarshal(resp2.State.State, &stateFee2))
+	require.EqualValues(1, stateFee2.SequenceNumber)
 	newBal := new(big.Rat)
 	_, ok = newBal.SetString(stateFee2.Balance)
 	require.True(ok, "failed to parse new balance: %q", stateFee2.Balance)

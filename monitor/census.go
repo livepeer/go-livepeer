@@ -127,6 +127,7 @@ type (
 		kOrchestratorAddress          tag.Key
 		kOrchestratorVersion          tag.Key
 		kFVErrorType                  tag.Key
+		kEventType                    tag.Key
 		kPipeline                     tag.Key
 		kModelName                    tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
@@ -159,6 +160,7 @@ type (
 		mSourceSegmentDuration        *stats.Float64Measure
 		mHTTPClientTimeout1           *stats.Int64Measure
 		mHTTPClientTimeout2           *stats.Int64Measure
+		mKafkaEventSendError          *stats.Int64Measure
 		mRealtimeRatio                *stats.Float64Measure
 		mRealtime3x                   *stats.Int64Measure
 		mRealtime2x                   *stats.Int64Measure
@@ -301,6 +303,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
 	census.kOrchestratorVersion = tag.MustNewKey("orchestrator_version")
 	census.kFVErrorType = tag.MustNewKey("fverror_type")
+	census.kEventType = tag.MustNewKey("event_type")
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.kModelName = tag.MustNewKey("model_name")
 	census.kPipeline = tag.MustNewKey("pipeline")
@@ -310,6 +313,7 @@ func InitCensus(nodeType NodeType, version string) {
 	}
 	census.mHTTPClientTimeout1 = stats.Int64("http_client_timeout_1", "Number of times HTTP connection was dropped before transcoding complete", "tot")
 	census.mHTTPClientTimeout2 = stats.Int64("http_client_timeout_2", "Number of times HTTP connection was dropped before transcoded segments was sent back to client", "tot")
+	census.mKafkaEventSendError = stats.Int64("kafka_event_send_errors", "Dropped Kafka events due to a full queue", "tot")
 	census.mRealtimeRatio = stats.Float64("http_client_segment_transcoded_realtime_ratio", "Ratio of source segment duration / transcode time as measured on HTTP client", "rat")
 	census.mRealtime3x = stats.Int64("http_client_segment_transcoded_realtime_3x", "Number of segment transcoded 3x faster than realtime", "tot")
 	census.mRealtime2x = stats.Int64("http_client_segment_transcoded_realtime_2x", "Number of segment transcoded 2x faster than realtime", "tot")
@@ -501,6 +505,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mHTTPClientTimeout2,
 			Description: "Number of times HTTP connection was dropped before transcoded segments was sent back to client",
 			TagKeys:     baseTagsWithManifestIDAndIP,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "kafka_event_send_errors",
+			Measure:     census.mKafkaEventSendError,
+			Description: "Dropped Kafka events due to a full queue",
+			TagKeys:     append([]tag.Key{census.kEventType}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -1794,6 +1805,18 @@ func PaymentCreateError(ctx context.Context) {
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mPaymentCreateError.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+
+// KafkaEventSendError records a dropped Kafka event by event type.
+func KafkaEventSendError(eventType string) {
+	if !Enabled || census.mKafkaEventSendError == nil {
+		return
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kEventType, eventType)},
+		census.mKafkaEventSendError.M(1)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 

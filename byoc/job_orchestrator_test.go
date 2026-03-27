@@ -784,6 +784,89 @@ func TestProcessJob_MethodNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 }
 
+func TestProcessJob_WorkerAuthFailed(t *testing.T) {
+	// Mock worker that returns 401 Unauthorized
+	workerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error": "worker auth token failed"}`))
+	}))
+	defer workerServer.Close()
+
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
+		return true
+	}
+	mockGetUrlForCapability := func(capability string) string {
+		return workerServer.URL
+	}
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
+		return &net.PriceInfo{
+			PricePerUnit:  0,
+			PixelsPerUnit: 1,
+		}, nil
+	}
+
+	var removeCapCalled bool
+	mockRemoveExternalCapability := func(string) error {
+		removeCapCalled = true
+		return nil
+	}
+
+	mockOrch := newMockJobOrchestrator()
+	mockOrch.verifySignature = mockVerifySig
+	mockOrch.getUrlForCapability = mockGetUrlForCapability
+	mockOrch.jobPriceInfo = mockJobPriceInfo
+	mockOrch.unregisterExternalCapability = mockRemoveExternalCapability
+
+	bso := &BYOCOrchestratorServer{
+		node: mockOrch.node,
+		orch: mockOrch,
+	}
+
+	// Prepare job request
+	jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
+	paramsStr := marshalToString(t, jobParams)
+	jobReq := &JobRequest{
+		ID:         "test-job",
+		Capability: "test-capability",
+		Parameters: paramsStr,
+		Timeout:    70,
+		Request:    "{}",
+	}
+
+	orchJob := &orchJob{Req: jobReq, Params: &jobParams}
+	gatewayJob := &gatewayJob{Job: orchJob, node: mockOrch.node}
+
+	// Setup signing - sign the request using the gateway job pattern
+	mockOrch.node.OrchestratorPool = newStubOrchestratorPool(mockOrch.node, []string{workerServer.URL})
+	gatewayJob.sign()
+	mockOrch.node.OrchestratorPool = nil
+
+	// Make POST request to /process/request/<capability> endpoint
+	req := httptest.NewRequest(http.MethodPost, "/process/request/test-capability", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(jobRequestHdr, gatewayJob.SignedJobReq)
+
+	w := httptest.NewRecorder()
+	handler := bso.ProcessJob()
+	handler.ServeHTTP(w, req)
+
+	resp := w.Result()
+
+	// Verify response is 500 Internal Server Error (as per job_orchestrator.go line 306)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(t, w.Body.String(), "worker auth token failed")
+
+	// Verify capability was removed due to 401
+	assert.True(t, removeCapCalled, "RemoveExternalCapability should have been called for 401")
+
+	// Note: FreeExternalCapabilityCapacity is NOT called for 401 responses
+	// because the function returns early (job_orchestrator.go lines 300-308)
+	// before reaching the defer statement at line 315
+
+	workerServer.CloseClientConnections()
+}
+
 func TestProcessPayment(t *testing.T) {
 
 	ctx := context.Background()

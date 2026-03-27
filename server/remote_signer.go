@@ -28,6 +28,7 @@ const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
 const RemoteType_LiveVideoToVideo = "lv2v"
+const PipelineLiveVideoToVideo = "live-video-to-video"
 const RemoteType_BYOC = "byoc"
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
@@ -191,6 +192,7 @@ type RemotePaymentState struct {
 	Balance              string
 	InitialPricePerUnit  int64
 	InitialPixelsPerUnit int64
+	SequenceNumber       uint64
 }
 
 type RemotePaymentStateSig struct {
@@ -254,7 +256,8 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
-	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	requestID := string(core.RandomManifestID())
+	ctx := clog.AddVal(r.Context(), "request_id", requestID)
 	remoteAddr := getRemoteAddr(r)
 	clog.Info(ctx, "Live payment request", "ip", remoteAddr)
 
@@ -322,6 +325,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
+		state.SequenceNumber++
 	} else {
 		state = &RemotePaymentState{
 			StateID:              string(core.RandomManifestID()),
@@ -332,7 +336,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	stateID := core.ManifestID(state.StateID)
-	clog.AddVal(ctx, "state_id", state.StateID)
+	ctx = clog.AddVal(ctx, "state_id", state.StateID)
+	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
 	manifestID := req.ManifestID
 	byocCapability := ""
@@ -426,17 +431,20 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	pixels := req.InPixels
+	now := time.Now()
+	lastUpdate := state.LastUpdate
+	if lastUpdate.IsZero() {
+		lastUpdate = now
+	}
+	billableSecs := now.Sub(lastUpdate).Seconds()
 	if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
-		now := time.Now()
-		lastUpdate := state.LastUpdate
-		if lastUpdate.IsZero() {
-			// preload with 60 seconds of data by default
-			lastUpdate = now.Add(-60 * time.Second)
+		if billableSecs <= 0 {
+			// preload with 60 seconds of data for LV2V
+			billableSecs = (60 * time.Second).Seconds()
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
-		pixels = int64(pixelsPerSec * secSinceLastProcessed)
+		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 	} else if req.Type == RemoteType_BYOC {
 		// BYOC uses time-based pricing: price per unit of time (typically seconds)
 		// The pixelsPerUnit in the price info represents the time scaling factor
@@ -576,6 +584,39 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	clog.Info(ctx, "Signed", "numTickets", balUpdate.NumTickets, "nonce", state.SenderNonce, "fee", fee.FloatString(0), "sessionId", oInfo.AuthToken.SessionId, "pmSessionId", sess.PMSessionID, "oldBalance", oldBal.FloatString(0), "newBalance", newBal.FloatString(0))
+
+	if monitor.Enabled {
+		sessionStatus := "continuing"
+		if state.SequenceNumber == 0 {
+			sessionStatus = "new"
+		}
+		pipeline := ""
+		if req.Type == RemoteType_LiveVideoToVideo {
+			pipeline = PipelineLiveVideoToVideo
+		}
+		// NB: This could could drop events if tha Kafka queue is full!
+		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
+			"session_id":         state.StateID,
+			"session_status":     sessionStatus,
+			"pipeline":           pipeline,
+			"request_id":         requestID,
+			"orch_address":       orchAddr.Hex(),
+			"orch_url":           oInfo.Transcoder,
+			"manifest_id":        manifestID,
+			"pm_session_id":      sess.PMSessionID,
+			"current_time":       now.UTC(),
+			"current_time_unix":  now.UTC().UnixMilli(),
+			"previous_time":      lastUpdate.UTC(),
+			"previous_time_unix": lastUpdate.UTC().UnixMilli(),
+			"billable_secs":      billableSecs,
+			"pixels":             pixels,
+			"session_balance":    newBal.FloatString(0),
+			"computed_fee":       fee.FloatString(0),
+			"cost_per_pixel":     orchPrice.FloatString(10),
+			"sequence_number":    state.SequenceNumber,
+			"num_tickets":        balUpdate.NumTickets,
+		})
+	}
 
 	// Return payment (tickets), creds and signed state
 	resp := RemotePaymentResponse{
