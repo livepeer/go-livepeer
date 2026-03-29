@@ -3,9 +3,11 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
+	"path/filepath"
 	"testing"
 
 	"github.com/golang/glog"
@@ -117,6 +119,67 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Error("Did not get mismatched segments as expected")
 	}
 	tr.Profiles = p
+}
+
+func TestTranscodeSegCleansTempfileOnUnrecoverableError(t *testing.T) {
+	// Regression test for https://github.com/livepeer/go-livepeer/issues/1716
+	// When Transcode() returns an UnrecoverableError, transcodeSeg panics.
+	// The deferred cleanup must still remove the input *.tempfile.
+	ffmpeg.InitFFmpeg()
+	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9}
+	tr := stubTranscoderWithProfiles(p)
+	tr.TranscodeFn = func() error {
+		return NewUnrecoverableError(errors.New("simulated unrecoverable error"))
+	}
+
+	storage := drivers.NewMemoryDriver(nil).NewSession("")
+	config := transcodeConfig{LocalOS: storage, OS: storage}
+
+	workDir := t.TempDir()
+	n, err := NewLivepeerNode(nil, workDir, nil)
+	require.NoError(t, err)
+	n.Transcoder = tr
+
+	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
+	ss := StubSegment()
+
+	// transcodeSeg panics on UnrecoverableError; the deferred cleanup should
+	// still run and remove the tempfile.
+	require.Panics(t, func() {
+		_ = n.transcodeSeg(context.TODO(), config, ss, md)
+	})
+
+	// Verify no *.tempfile is left behind after the panic.
+	files, globErr := filepath.Glob(filepath.Join(workDir, "*.tempfile"))
+	require.NoError(t, globErr)
+	require.Empty(t, files, "expected no leftover tempfiles but found: %v", files)
+}
+
+func TestTranscodeSegCleansTempfileOnNormalError(t *testing.T) {
+	// Verify tempfile cleanup also works on normal (non-panic) error paths.
+	ffmpeg.InitFFmpeg()
+	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9}
+	tr := stubTranscoderWithProfiles(p)
+	tr.FailTranscode = true
+
+	storage := drivers.NewMemoryDriver(nil).NewSession("")
+	config := transcodeConfig{LocalOS: storage, OS: storage}
+
+	workDir := t.TempDir()
+	n, err := NewLivepeerNode(nil, workDir, nil)
+	require.NoError(t, err)
+	n.Transcoder = tr
+
+	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
+	ss := StubSegment()
+
+	res := n.transcodeSeg(context.TODO(), config, ss, md)
+	require.Error(t, res.Err)
+
+	// Verify no *.tempfile is left behind after a normal transcoding error.
+	files, globErr := filepath.Glob(filepath.Join(workDir, "*.tempfile"))
+	require.NoError(t, globErr)
+	require.Empty(t, files, "expected no leftover tempfiles but found: %v", files)
 }
 
 func TestServiceURIChange(t *testing.T) {
