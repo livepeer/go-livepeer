@@ -33,6 +33,36 @@ type wsMessage struct {
 	Type string `json:"type"`
 }
 
+type wsHandshakeMessage struct {
+	Type    string `json:"type"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// ServerlessHandshakeError preserves structured websocket handshake failures.
+type ServerlessHandshakeError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *ServerlessHandshakeError) Error() string {
+	if e == nil {
+		return "serverless handshake failed"
+	}
+	if e.Code != "" && e.Message != "" {
+		return fmt.Sprintf("serverless handshake failed (%s): %s", e.Code, e.Message)
+	}
+	if e.Message != "" {
+		return fmt.Sprintf("serverless handshake failed: %s", e.Message)
+	}
+	if e.Code != "" {
+		return fmt.Sprintf("serverless handshake failed (%s)", e.Code)
+	}
+	return "serverless handshake failed"
+}
+
 type createChannelsMessage struct {
 	Type      string `json:"type"`
 	RequestID string `json:"request_id"`
@@ -665,15 +695,14 @@ func performHandshake(
 	readMsg func() ([]byte, error),
 	sendReq func() error,
 ) error {
-	var readyResponse map[string]interface{}
+	var readyResponse wsHandshakeMessage
 	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
 		return fmt.Errorf("failed to parse ready message: %w", err)
 	}
-	msgType, ok := readyResponse["type"].(string)
-	if !ok || msgType != "ready" {
+	if readyResponse.Type != "ready" {
 		return fmt.Errorf("did not receive ready message from websocket")
 	}
-	slog.Info("Received ready message", "message", readyResponse["message"])
+	slog.Info("Received ready message", "message", readyResponse.Message)
 
 	if err := sendReq(); err != nil {
 		return fmt.Errorf("failed to send request message: %w", err)
@@ -684,9 +713,20 @@ func performHandshake(
 		return fmt.Errorf("failed to read started message: %w", err)
 	}
 
-	var startedResponse wsMessage
+	var startedResponse wsHandshakeMessage
 	if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
 		return fmt.Errorf("failed to parse started message: %w", err)
+	}
+	if startedResponse.Type == "error" {
+		statusCode := http.StatusInternalServerError
+		if startedResponse.Code == "ACCESS_DENIED" {
+			statusCode = http.StatusUnauthorized
+		}
+		return &ServerlessHandshakeError{
+			StatusCode: statusCode,
+			Code:       startedResponse.Code,
+			Message:    firstNonEmpty(startedResponse.Error, startedResponse.Message),
+		}
 	}
 	if startedResponse.Type != "started" {
 		return fmt.Errorf("unexpected message type %q between ready and started", startedResponse.Type)
@@ -694,4 +734,13 @@ func performHandshake(
 	slog.Info("Received started message")
 
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

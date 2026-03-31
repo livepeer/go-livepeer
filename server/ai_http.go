@@ -277,7 +277,16 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 
 			closeSession()
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			if modelID == "scope" {
+				var hsErr *worker.ServerlessHandshakeError
+				if errors.As(err, &hsErr) && hsErr.StatusCode == http.StatusUnauthorized {
+					respondWithError(w, err.Error(), http.StatusUnauthorized)
+				} else {
+					respondWithError(w, err.Error(), http.StatusInternalServerError)
+				}
+			} else {
+				respondWithError(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
