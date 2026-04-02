@@ -721,6 +721,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		exit("No services enabled; must be at least one of -gateway, -transcoder, -aiWorker, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
+	// Warn about flags that don't apply to the selected role
+	WarnMismatchedFlags(cfg)
+
 	lpmon.NodeID = *cfg.EthAcctAddr
 	if lpmon.NodeID != "" {
 		lpmon.NodeID += "-"
