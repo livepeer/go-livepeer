@@ -15,6 +15,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/byoc"
@@ -236,6 +238,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		node:         n,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
+	grpc_health_v1.RegisterHealthServer(s, health.NewServer())
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
 	lp.transRPC.HandleFunc("/payment", lp.Payment)
 	if acceptRemoteTranscoders {
