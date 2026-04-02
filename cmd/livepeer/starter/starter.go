@@ -1751,7 +1751,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		aiCaps = append(aiCaps, core.DefaultCapabilities()...)
 	}
 
-	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	allCaps := append(transcoderCaps, aiCaps...)
+	if len(allCaps) == 0 && (n.NodeType == core.OrchestratorNode || n.NodeType == core.TranscoderNode) {
+		glog.Error("No transcoding capabilities detected. The node will not be selected by broadcasters.")
+		if *cfg.Nvidia != "" && cfg.TestTranscoder != nil && !*cfg.TestTranscoder {
+			glog.Error("Hint: -testTranscoder is set to false with -nvidia flag. " +
+				"This skips GPU capability detection, resulting in no hardware capabilities. " +
+				"Remove -testTranscoder=false to enable GPU capability testing.")
+		}
+		glog.Exit("Refusing to start with zero capabilities. Fix the configuration and try again.")
+	}
+	n.Capabilities = core.NewCapabilities(allCaps, nil)
 	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
