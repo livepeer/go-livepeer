@@ -1,5 +1,21 @@
 # Real-Time AI Container Orchestration — Implementation Plan
 
+## Overview
+
+This document describes the plan for adding hardware-aware orchestrator selection, container sandboxing, and custom container support to go-livepeer's AI inference pipeline. It is designed to be referenced by other components in the Livepeer AI stack.
+
+### Integration Points
+
+| Component | Interface | Description |
+|---|---|---|
+| **Gateway / Router** | `OrchestratorInfo.hardware[]` | GPU tier + sandbox info for job routing |
+| **AI Runner Containers** | HTTP contract (`/health`, `/hardware/info`, `POST /{pipeline}`) | Standard interface all AI containers implement |
+| **On-chain Registry** | `Capability` bitstring + constraints | Discovery of custom model capabilities |
+| **Payment Module** | `SetBasePriceForCap` | Per-model / per-tier pricing |
+| **BYOC Framework** | `Capability_BYOC` + `ExternalCapabilities` | Third-party container registration |
+
+---
+
 ## Current State
 
 **What already exists:**
@@ -14,10 +30,42 @@
 **What's missing:**
 - GPU class/tier classification (consumer vs datacenter vs CC-capable)
 - Hardware-aware job routing at the gateway level
-- gVisor enforcement (runtime exists but isn't enforced per-container)
+- Container isolation enforcement appropriate for GPU workloads
 - Custom container image support (currently hardcoded to `livepeer/ai-runner:*` variants)
 - Container image verification (signatures, allowlists)
 - Resource limits and network isolation per container
+
+---
+
+## Container Isolation Strategy
+
+### The GPU Problem
+
+AI inference containers need direct GPU access via NVIDIA kernel modules. This constrains which isolation technologies are viable:
+
+| Approach | GPU Support | Isolation Level | Overhead | Status |
+|---|---|---|---|---|
+| **Kata + Cloud Hypervisor** | Full (VFIO passthrough) | Strong (lightweight VM) | Low-medium | Recommended |
+| **Kata + QEMU** | Full (VFIO passthrough) | Strong (VM) | Medium | Mature fallback |
+| **gVisor + nvproxy** | Partial (experimental) | Medium (syscall filter) | Low | Limited CUDA support |
+| **Plain containers + NVIDIA runtime** | Full | Weak (namespaces only) | Lowest | Current default |
+
+### Recommendation
+
+**Primary: Kata Containers with Cloud Hypervisor** for orchestrators running untrusted or custom AI containers. Kata provides real VM isolation while supporting full GPU passthrough via VFIO, which is essential for CUDA workloads.
+
+**Fallback: gVisor** remains useful for non-GPU containers (preprocessing, postprocessing, lightweight models on CPU). The existing `ai/worker/runtime.go` gVisor integration should be retained for these workloads.
+
+**Rationale:** gVisor intercepts syscalls in userspace. GPU access requires direct kernel driver interaction (NVIDIA kernel modules), and gVisor's `nvproxy` is experimental and does not support all CUDA operations needed for production AI inference. Kata VMs run a real Linux kernel, so NVIDIA drivers work natively with VFIO GPU passthrough.
+
+### Isolation Tiers (used throughout this plan)
+
+| Tier | Runtime | GPU | Use Case |
+|---|---|---|---|
+| **Tier 0 — None** | Default Docker (runc) | NVIDIA runtime | Trusted Livepeer images, development |
+| **Tier 1 — Syscall Filter** | gVisor (runsc) | nvproxy (limited) | CPU-only or light GPU tasks |
+| **Tier 2 — VM Isolation** | Kata + Cloud Hypervisor | VFIO passthrough | Custom/untrusted containers needing GPU |
+| **Tier 3 — Confidential** | Kata + CC hardware | VFIO + CC attestation | Sensitive data, privacy-required inference |
 
 ---
 
@@ -42,9 +90,9 @@ enum GPUTier {
 // Extend GPUComputeInfo:
 message GPUComputeInfo {
   // ... existing fields ...
-  GPUTier tier = 6;
-  bool cc_enabled = 7;          // Actually running in CC mode
-  bytes attestation_report = 8; // Optional CC attestation
+  GPUTier tier = 8;
+  bool cc_enabled = 9;          // Actually running in CC mode
+  bytes attestation_report = 10; // Optional CC attestation
 }
 ```
 
@@ -52,7 +100,7 @@ message GPUComputeInfo {
 
 **New file:** `ai/worker/gpu_classify.go`
 
-- Map GPU names to tiers using a lookup table (e.g., "H100" → CC_CAPABLE, "A100" → DATACENTER, "RTX 4090" → CONSUMER)
+- Map GPU names to tiers using a lookup table (e.g., "H100" -> CC_CAPABLE, "A100" -> DATACENTER, "RTX 4090" -> CONSUMER)
 - Parse GPU name from existing `GPUComputeInfo.name` field
 - Detect CC mode via NVIDIA driver sysfs/nvml (if available)
 - Populate new tier fields when `HardwareInformation` is built in `ai/worker/container.go`
@@ -77,34 +125,46 @@ message GPUComputeInfo {
 
 ---
 
-## Phase 2: gVisor Sandboxing Enforcement
+## Phase 2: Container Isolation Enforcement
 
-**Goal:** Containers run under gVisor by default, with per-container runtime selection.
+**Goal:** Containers run with appropriate isolation based on trust level and GPU requirements.
 
-### 2.1 — Harden Existing gVisor Integration
+### 2.1 — Kata Containers Integration
+
+**New file:** `ai/worker/runtime_kata.go`
+
+- Detect Kata runtime availability (`kata-runtime` or `kata-fc` in Docker daemon config)
+- Configure VFIO GPU passthrough for Kata containers
+- Health check that Kata runtime + GPU passthrough is functional before accepting isolated jobs
+- Operator config: `--ai-runtime kata|gvisor|runc` (default: `runc`)
+
+### 2.2 — Retain and Harden gVisor for CPU Workloads
 
 **File:** `ai/worker/runtime.go`
 
 - Current state: `--ai-runtime gvisor` flag exists, downloads runsc binary
-- Add: Verify runsc binary integrity (checksum verification on download)
+- Keep gVisor as option for non-GPU or light-GPU containers
+- Add: Verify runsc binary integrity (checksum verification already exists, ensure it's enforced)
 - Add: Health check that gVisor runtime is actually functional before accepting jobs
-- Add: Fallback behavior when gVisor unavailable (reject job vs run without sandbox)
+- Add: Clear logging when gVisor is selected but GPU workload is requested (warn about nvproxy limitations)
 
-### 2.2 — Per-Container Runtime Selection
-
-**File:** `ai/worker/docker.go`
-
-- In `createContainer()` (line ~400), set `HostConfig.Runtime` based on:
-  1. Container image trust level (Livepeer-signed → optional gVisor, unknown → require gVisor)
-  2. Operator config (`--ai-runtime` flag)
-  3. Job request (gateway can request sandboxed execution)
-- Add runtime field to `RunnerContainer` struct for tracking
-
-### 2.3 — Container Security Hardening
+### 2.3 — Per-Container Runtime Selection
 
 **File:** `ai/worker/docker.go`
 
-Add to `createContainer()` HostConfig:
+In `createContainer()` (~line 400), set `HostConfig.Runtime` based on:
+1. **Container image trust level:** Livepeer-signed -> runc (Tier 0), unknown -> Kata (Tier 2)
+2. **GPU requirement:** GPU-heavy -> Kata (not gVisor), CPU-only -> gVisor is fine
+3. **Operator config:** `--ai-runtime` flag as override
+4. **Job request:** Gateway can request specific isolation tier
+
+Add runtime field to `RunnerContainer` struct for tracking.
+
+### 2.4 — Container Security Hardening (All Runtimes)
+
+**File:** `ai/worker/docker.go`
+
+Add to `createContainer()` HostConfig regardless of runtime:
 - Seccomp profile (default Docker profile at minimum)
 - Drop all Linux capabilities, only add back what's needed (`SYS_ADMIN` for GPU)
 - Read-only root filesystem where possible
@@ -112,24 +172,25 @@ Add to `createContainer()` HostConfig:
 - Memory/CPU limits from operator config
 - PID limits to prevent fork bombs
 
-### 2.4 — Report Sandbox Status
+### 2.5 — Report Isolation Status
 
 **File:** `net/lp_rpc.proto`
 
 ```protobuf
-enum SandboxType {
-  SANDBOX_NONE = 0;
-  SANDBOX_GVISOR = 1;
-  SANDBOX_CC = 2;      // NVIDIA Confidential Computing
+enum IsolationType {
+  ISOLATION_NONE = 0;       // runc (default Docker)
+  ISOLATION_GVISOR = 1;     // Syscall filtering
+  ISOLATION_KATA = 2;       // VM-based (Cloud Hypervisor / QEMU)
+  ISOLATION_CC = 3;         // Confidential Computing (Kata + CC hardware)
 }
 
 // Add to HardwareInformation or OrchestratorInfo:
-SandboxType sandbox_type = N;
+IsolationType isolation_type = N;
 ```
 
-Gateway can then route sensitive workloads to sandboxed orchestrators.
+Gateway can then route sensitive workloads to appropriately isolated orchestrators.
 
-**Deliverable:** Containers run sandboxed by default. Gateways know which orchestrators offer sandboxed execution.
+**Deliverable:** Containers run with isolation appropriate to their trust level and GPU needs. Gateways know which orchestrators offer what isolation.
 
 ---
 
@@ -166,15 +227,16 @@ type ImagePolicy struct {
   ```
 - `DockerManager.Warm()` and `Borrow()` use the model config's container image instead of hardcoded `livepeer/ai-runner:*`
 - Container image override already partially exists via `ImageOverrides` in docker.go — extend this to be per-model
+- **Custom containers requiring GPU must use Kata isolation (Tier 2+)** unless explicitly trusted via image policy
 
 ### 3.3 — Container Interface Contract
 
 **New file:** `ai/worker/container_interface.go`
 
 Define the HTTP API contract that custom containers must implement:
-- `GET /health` → `{"status": "IDLE"|"LOADING"|"ERROR"}`
-- `GET /hardware/info` → `HardwareInformation` JSON
-- `POST /{pipeline}` → Pipeline-specific request/response
+- `GET /health` -> `{"status": "IDLE"|"LOADING"|"ERROR"}`
+- `GET /hardware/info` -> `HardwareInformation` JSON
+- `POST /{pipeline}` -> Pipeline-specific request/response
 - Document this as a spec that third-party container builders follow
 
 ### 3.4 — Resource Isolation Per Container
@@ -201,15 +263,15 @@ Define the HTTP API contract that custom containers must implement:
 
 ## Phase 4: Integration & Trust Tiers (Future)
 
-### 4.1 — Trust Tier System
+### 4.1 — Unified Trust Model
 
-Combine phases 1-3 into a unified trust model:
+Combine phases 1-3 into enforcement:
 
-| Tier | Hardware | Sandbox | Container Policy | Use Case |
-|------|----------|---------|-----------------|----------|
-| **Tier 3** | Any | None | Livepeer images only | Standard AI inference |
-| **Tier 2** | Any | gVisor | Verified custom images | Semi-trusted custom models |
-| **Tier 1** | H100+ | CC mode | Any verified image | Sensitive data processing |
+| Trust Tier | Hardware | Isolation | Container Policy | Use Case |
+|---|---|---|---|---|
+| **Tier 3 — Open** | Any | None (runc) | Livepeer images only | Standard AI inference |
+| **Tier 2 — Sandboxed** | Any | Kata VM | Verified custom images | Semi-trusted custom models |
+| **Tier 1 — Confidential** | H100+ | CC mode + Kata | Any verified image | Sensitive data processing |
 
 ### 4.2 — Attestation Flow (CC-capable nodes only)
 
@@ -218,20 +280,45 @@ Combine phases 1-3 into a unified trust model:
 - Gateway/client verifies attestation before sending sensitive data
 - On-chain attestation registry (optional, longer term)
 
+### 4.3 — Monitoring & Observability
+
+- Per-container isolation type in Prometheus metrics
+- Alert on isolation downgrades (Kata unavailable, falling back to runc)
+- Container escape detection (unexpected host namespace access)
+
 ---
 
 ## File Change Summary
 
 | Phase | Files Modified | Files Created |
-|-------|---------------|---------------|
+|---|---|---|
 | **Phase 1** | `net/lp_rpc.proto`, `ai/worker/container.go`, `server/selection_algorithm.go`, `server/selection.go`, `discovery/discovery.go`, `server/rpc.go`, `core/orchestrator.go` | `ai/worker/gpu_classify.go` |
-| **Phase 2** | `ai/worker/runtime.go`, `ai/worker/docker.go`, `net/lp_rpc.proto` | — |
+| **Phase 2** | `ai/worker/runtime.go`, `ai/worker/docker.go`, `net/lp_rpc.proto` | `ai/worker/runtime_kata.go` |
 | **Phase 3** | `ai/worker/docker.go`, `core/ai.go`, `core/capabilities.go` | `ai/worker/image_policy.go`, `ai/worker/container_interface.go` |
 
 ## Execution Order
 
-**Phase 1 → Phase 2 → Phase 3** (sequential, each builds on the previous)
+**Phase 1 -> Phase 2 -> Phase 3** (sequential, each builds on the previous)
 
 - Phase 1 is foundational — everything else depends on knowing what hardware you're routing to
-- Phase 2 is independent of Phase 3 but should come first (sandbox before allowing custom containers)
+- Phase 2 is independent of Phase 3 but should come first (establish isolation before allowing custom containers)
 - Phase 3 is the most complex and benefits from having the security foundation of Phase 2
+
+## Key Decisions & Trade-offs
+
+### Why Kata over gVisor for GPU workloads
+
+gVisor intercepts syscalls in userspace and uses `nvproxy` for experimental GPU support. This approach has fundamental limitations for production CUDA workloads:
+
+1. **nvproxy coverage** — Not all NVIDIA ioctls are implemented; complex CUDA operations (multi-stream, unified memory, NCCL) may fail
+2. **Driver compatibility** — Each NVIDIA driver update can introduce new ioctls that nvproxy doesn't handle
+3. **Performance** — Syscall interception adds latency to every GPU kernel launch
+
+Kata with VFIO passthrough gives the GPU direct access to a real kernel, so all CUDA operations work natively with no compatibility risk.
+
+### When gVisor is still the right choice
+
+- CPU-only inference (ONNX Runtime, lightweight models)
+- Preprocessing/postprocessing containers
+- Containers that don't need GPU access
+- Development/testing environments where Kata is not available
