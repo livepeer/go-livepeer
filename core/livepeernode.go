@@ -138,6 +138,7 @@ type LivepeerNode struct {
 	OrchSecret           string
 	Transcoder           Transcoder
 	TranscoderManager    *RemoteTranscoderManager
+	TranscoderSelfCheck  func() error // Re-runs GPU transcoding capability test; set at startup
 	Balances             *AddressBalances
 	Capabilities         *Capabilities
 	ExternalCapabilities *ExternalCapabilities
