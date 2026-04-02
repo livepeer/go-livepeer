@@ -61,6 +61,9 @@ func startAIServer(lp *lphttp) error {
 		Mux:      lp.transRPC,
 		BasePath: TrickleHTTPPath,
 	})
+	if sw, ok := lp.node.AIWorker.(*worker.ServerlessWorker); ok {
+		sw.SetTrickleServer(lp.trickleSrv)
+	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
@@ -173,10 +176,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
-		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
-		pubCh.CreateChannel()
-		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
-		subCh.CreateChannel()
+		var pubCh, subCh *trickle.TrickleLocalPublisher
+		// TEMP HACK for Scope
+		if modelID != "scope" {
+			pubCh = trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+			pubCh.CreateChannel()
+			subCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+			subCh.CreateChannel()
+		}
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
@@ -184,8 +191,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		ctx, cancel := context.WithCancel(ctx)
 		closeSession := func() {
-			pubCh.Close()
-			subCh.Close()
+			// TEMP HACK for Scope
+			if modelID != "scope" {
+				pubCh.Close()
+				subCh.Close()
+			}
 			eventsCh.Close()
 			controlPubCh.Close()
 			cancel()
@@ -216,7 +226,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		// For every segment, check payments
 		go func() {
-			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			// TEMP HACK for Scope
+			monitorChannelID := mid
+			if modelID == "scope" {
+				monitorChannelID = mid + "-events"
+			}
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, monitorChannelID)
 			for {
 				// Set seq to next segment in case the subscriber is outside
 				// the server's retention window
@@ -262,7 +277,16 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 
 			closeSession()
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			if modelID == "scope" {
+				var hsErr *worker.ServerlessHandshakeError
+				if errors.As(err, &hsErr) && hsErr.StatusCode == http.StatusUnauthorized {
+					respondWithError(w, err.Error(), http.StatusUnauthorized)
+				} else {
+					respondWithError(w, err.Error(), http.StatusInternalServerError)
+				}
+			} else {
+				respondWithError(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 

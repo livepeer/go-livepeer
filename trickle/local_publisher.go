@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // local (in-memory) publisher for trickle protocol
@@ -56,6 +57,12 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 	for {
 		n, err := data.Read(buf)
 		if n > 0 {
+			if totalRead == 0 {
+				stream.mutex.Lock()
+				stream.nextWrite = seq + 1
+				stream.writeTime = time.Now()
+				stream.mutex.Unlock()
+			}
 			segment.writeData(buf[:n])
 			totalRead += n
 		}

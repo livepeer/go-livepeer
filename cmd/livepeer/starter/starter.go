@@ -96,6 +96,7 @@ type LivepeerConfig struct {
 	Transcoder                 *bool
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
+	AIServerless               *bool
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -232,6 +233,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// AI:
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
+	defaultAIServerless := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -354,6 +356,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// AI:
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
+		AIServerless:             &defaultAIServerless,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -1304,6 +1307,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	var aiCaps []core.Capability
 	capabilityConstraints := make(core.PerCapabilityConstraints)
+	var aiModelConfigs []core.AIModelConfig
+
+	if *cfg.AIModels != "" {
+		aiModelConfigs, err = core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+	}
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1363,10 +1375,28 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
-		if err != nil {
-			glog.Errorf("Error starting AI worker: %v", err)
-			return
+		if *cfg.AIServerless {
+			if len(aiModelConfigs) != 1 {
+				glog.Errorf("Serverless requires exactly one AI model config, got %d", len(aiModelConfigs))
+				return
+			}
+			config := aiModelConfigs[0]
+			if config.Pipeline != "live-video-to-video" || config.ModelID != "scope" {
+				glog.Errorf("Serverless only supports live-video-to-video/scope, got %s/%s", config.Pipeline, config.ModelID)
+				return
+			}
+
+			n.AIWorker, err = worker.NewServerlessWorker(strings.TrimSpace(config.URL), config.Capacity)
+			if err != nil {
+				glog.Errorf("Error starting Serverless AI worker: %v", err)
+				return
+			}
+		} else {
+			n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
+			if err != nil {
+				glog.Errorf("Error starting AI worker: %v", err)
+				return
+			}
 		}
 
 		defer func() {
@@ -1382,13 +1412,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	if *cfg.AIModels != "" {
-		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
-		if err != nil {
-			glog.Errorf("Error parsing -aiModels: %v", err)
-			return
-		}
-
-		for _, config := range configs {
+		for _, config := range aiModelConfigs {
 			pipelineCap, err := core.PipelineToCapability(config.Pipeline)
 			if err != nil {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))

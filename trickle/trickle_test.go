@@ -228,6 +228,81 @@ func TestTrickle_Reset(t *testing.T) {
 	wg.Wait()
 }
 
+// TestTrickle_PublisherReset verifies reset behavior for publisher restarts:
+// 1) a blocked subscriber on an open segment is unblocked by reset,
+// 2) already-written bytes on that segment remain readable,
+// 3) reset write goes to the current nextWrite index.
+func TestTrickle_PublisherReset(t *testing.T) {
+	require, channelURL, server := makeServerWithServer(t)
+
+	lp := NewLocalPublisher(server, "testest", "text/plain")
+
+	// Partial write of segment 0 via pipe - do not close pipe yet.
+	r0, w0 := io.Pipe()
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		_ = lp.Write(r0)
+	}()
+	_, err := w0.Write([]byte("Hello"))
+	require.Nil(err)
+
+	// Local subscriber reads first bytes from segment 0, then blocks.
+	sub := NewLocalSubscriber(server, "testest")
+	sub.SetSeq(0)
+	td, err := sub.Read()
+	require.Nil(err)
+
+	buf := make([]byte, 5)
+	_, err = io.ReadFull(td.Reader, buf)
+	require.Nil(err)
+	require.Equal("Hello", string(buf))
+
+	unblocked := make(chan []byte, 1)
+	go func() {
+		rest, _ := io.ReadAll(td.Reader)
+		unblocked <- rest
+	}()
+
+	// HTTP POST reset - closes previous segments and writes next segment.
+	req, err := http.NewRequest("POST", channelURL+"/-1", bytes.NewReader([]byte("after-reset")))
+	require.Nil(err)
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Lp-Trickle-Reset", "true")
+	resp, err := http.DefaultClient.Do(req)
+	require.Nil(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal("1", resp.Header.Get("Lp-Trickle-Seq"), "POST /-1 should echo resolved seq")
+	resp.Body.Close()
+
+	// This receive deadlocks if reset doesn't unblock the reader.
+	<-unblocked
+
+	// Re-read segment 0 - partial data should still be there.
+	sub.SetSeq(0)
+	td, err = sub.Read()
+	require.Nil(err)
+	data, err := io.ReadAll(td.Reader)
+	require.Nil(err)
+	require.Equal("Hello", string(data))
+
+	// Reset write should land at index 1.
+	td, err = sub.Read()
+	require.Nil(err)
+	data, err = io.ReadAll(td.Reader)
+	require.Nil(err)
+	require.Equal("after-reset", string(data))
+
+	// Additional writes to the old segment writer can still succeed until writer close.
+	// This is a bit racy w subscribers but subs will terminate once they catch up.
+	// NB: Fix this someday
+	_, err = w0.Write([]byte("late-bytes"))
+	require.NoError(err)
+
+	require.Nil(w0.Close())
+	<-writeDone
+}
+
 func TestTrickle_IdleSweep(t *testing.T) {
 	require := require.New(t)
 	mux := http.NewServeMux()
