@@ -182,9 +182,9 @@ func UpdateNilsForUnsetFlags(cfg LivepeerConfig) LivepeerConfig {
 // Flags not in this map are assumed to apply to all roles.
 var flagRoleMap = map[string]string{
 	// Network
-	"rtmpAddr":    "B",
-	"serviceAddr": "O",
-	"nodes":       "O",
+	"rtmpAddr":     "B",
+	"serviceAddr":  "O",
+	"nodes":        "O",
 	"verifierUrl":  "B",
 	"verifierPath": "B",
 	"localVerify":  "B",
@@ -216,7 +216,7 @@ var flagRoleMap = map[string]string{
 	"aiVerboseLogs": "W", "aiRunnerImageOverrides": "W",
 	"aiProcessingRetryTimeout": "W", "aiRunnerContainersPerGPU": "W",
 	// AI + Orchestrator
-	"aiServiceRegistry": "B",
+	"aiServiceRegistry":  "B",
 	"aiMinRunnerVersion": "O",
 	// Combined roles
 	"maxSessions": "O,B,T", "pixelsPerUnit": "O,B", "priceFeedAddr": "O,B",
