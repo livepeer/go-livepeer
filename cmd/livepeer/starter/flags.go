@@ -63,6 +63,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.AIRunnerImageOverrides = fs.String("aiRunnerImageOverrides", *cfg.AIRunnerImageOverrides, `Specify overrides for the Docker images used by the AI runner. Example: '{"default": "livepeer/ai-runner:v1.0", "batch": {"text-to-speech": "livepeer/ai-runner:text-to-speech-v1.0"}, "live": {"another-pipeline": "livepeer/ai-runner:another-pipeline-v1.0"}}'`)
 	cfg.AIProcessingRetryTimeout = fs.Duration("aiProcessingRetryTimeout", *cfg.AIProcessingRetryTimeout, "Timeout for retrying to initiate AI processing request")
 	cfg.AIRunnerContainersPerGPU = fs.Int("aiRunnerContainersPerGPU", *cfg.AIRunnerContainersPerGPU, "Number of AI runner containers to run per GPU; default to 1")
+	cfg.AIRuntime = fs.String("aiRuntime", *cfg.AIRuntime, "Container runtime for AI worker containers. Set to \"gvisor\" to use gVisor (runsc) sandboxing. Default uses Docker's default runtime.")
 	cfg.AIMinRunnerVersion = fs.String("aiMinRunnerVersion", *cfg.AIMinRunnerVersion, `JSON specifying the min runner versions for each pipeline. It works ONLY for warm runner containers, SHOULD NOT be used for cold runners. Example: '[{"model_id": "noop", "pipeline": "live-video-to-video", "minVersion": "0.0.2"}]'; if not set, the runner's min version is used"`)
 
 	// Live AI:
