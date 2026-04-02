@@ -661,6 +661,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
+			// Store self-check function for on-demand transcoder health verification
+			selfCheckDevices, selfCheckFactory := devices, tf
+			n.TranscoderSelfCheck = func() error {
+				_, err := core.TestTranscoderCapabilities(selfCheckDevices, selfCheckFactory)
+				return err
+			}
 		} else {
 			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
 			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
