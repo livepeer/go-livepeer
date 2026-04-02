@@ -673,6 +673,7 @@ func TestActivateOrchestratorHandler_Success(t *testing.T) {
 	client.On("CurrentRoundLocked").Return(false, nil).Once()
 	client.On("CheckTx", mock.Anything).Return(nil).Once()
 	client.On("GetServiceURI", addr).Return(serviceURI, nil).Once()
+	client.On("GetDelegator", addr).Return(&types.Delegator{}, nil).Once()
 
 	status, _ := postForm(handler, url.Values{
 		"blockRewardCut": {"0.5"},
