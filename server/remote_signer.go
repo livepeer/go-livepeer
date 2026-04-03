@@ -361,6 +361,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
 
+	// Load or initialize state
 	var (
 		state *RemotePaymentState
 		err   error

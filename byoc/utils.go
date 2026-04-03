@@ -48,6 +48,7 @@ func (g *gatewayJob) sign() error {
 	g.Job.Req.Sender = gateway.Address().Hex()
 	g.Job.Req.Sig = "0x" + hex.EncodeToString(sig)
 
+	//create the job request header with the signature
 	jobReqEncoded, err := json.Marshal(g.Job.Req)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
