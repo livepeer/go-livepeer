@@ -31,6 +31,7 @@ import (
 var sendJobReqWithTimeout = sendReqWithTimeout
 
 func (g *gatewayJob) sign() error {
+	//sign the request
 	gateway := g.node.OrchestratorPool.Broadcaster()
 
 	sigPayload := FlattenBYOCJob(&BYOCJobSigningInput{
