@@ -1395,12 +1395,13 @@ func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 
 	orchInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{Capabilities: caps.ToNetCapabilities()})
 
 	assert.Nil(t, err)
 	assert.Nil(t, orchInfo.Hardware)
-	assert.Nil(t, orchInfo.CapabilitiesPrices)
+	assert.Empty(t, orchInfo.CapabilitiesPrices)
 }
 
 type mockAICapacityOrch struct {
