@@ -336,7 +336,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 }
 
 func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
-	if orch.node == nil {
+	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
 
@@ -356,7 +356,7 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 }
 
 func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
-	if orch.node == nil {
+	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
 
@@ -373,24 +373,10 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		price = fixedPrice
 	}
 
-	result := &net.PriceInfo{
+	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
-	}
-
-	// For BYOC capabilities, set Capability and Constraint so the remote signer
-	// can identify this as a BYOC price and extract the capability name.
-	if caps != nil && caps.Constraints != nil {
-		if byocConstraint, ok := caps.Constraints.PerCapability[uint32(Capability_BYOC)]; ok {
-			result.Capability = uint32(Capability_BYOC)
-			for name := range byocConstraint.Models {
-				result.Constraint = name
-				break
-			}
-		}
-	}
-
-	return result, nil
+	}, nil
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat

@@ -339,6 +339,32 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	}
 }
 
+func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
+	require := require.New(t)
+
+	byocPrice := &net.PriceInfo{
+		PricePerUnit:  9,
+		PixelsPerUnit: 1,
+		Capability:    uint32(core.Capability_BYOC),
+		Constraint:    "acme/model",
+	}
+
+	oInfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  3,
+			PixelsPerUnit: 1,
+		},
+		CapabilitiesPrices: []*net.PriceInfo{
+			byocPrice,
+		},
+	}
+
+	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, ""))
+	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model"))
+	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model"))
+	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, ""))
+}
+
 func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 	require := require.New(t)
 

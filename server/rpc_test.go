@@ -1082,6 +1082,22 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	assert.EqualError(t, err, expErr.Error())
 }
 
+func TestGetOrchestrator_CapabilitiesPricesError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	expErr := errors.New("capabilities prices error")
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("Nodes").Return(nil)
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return(nil, expErr)
+
+	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert.EqualError(t, err, expErr.Error())
+}
+
 func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 	orch := &mockOrchestrator{}
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -1531,10 +1547,10 @@ func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.M
 func (o *mockOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
 	args := o.Called(sender)
 	if args.Get(0) != nil {
-		return args.Get(0).([]*net.PriceInfo), nil
+		return args.Get(0).([]*net.PriceInfo), args.Error(1)
 	}
 
-	return []*net.PriceInfo{}, nil
+	return nil, args.Error(1)
 }
 
 func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
@@ -1743,7 +1759,7 @@ func Test_setLiveAICapacity(t *testing.T) {
 	}
 }
 
-func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPrices(t *testing.T) {
+func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_IncludesCapabilitiesPrices(t *testing.T) {
 	require := require.New(t)
 
 	oldNodeStorage := drivers.NodeStorage
@@ -1752,17 +1768,20 @@ func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPric
 
 	orch := &mockOrchestrator{}
 	addr := ethcommon.HexToAddress("0x1")
+	capPrices := []*net.PriceInfo{{PricePerUnit: 5, PixelsPerUnit: 1}}
+	priceInfo := &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1}
 
 	orch.On("Nodes").Return()
 	orch.On("Address").Return(addr)
+	orch.On("GetCapabilitiesPrices", addr).Return(capPrices, nil)
+	orch.On("PriceInfoForCaps", addr, core.ManifestID(""), mock.Anything).Return(priceInfo, nil)
 	orch.On("TicketParams", addr, mock.Anything).Return(&net.TicketParams{Recipient: pm.RandBytes(32)}, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{Token: []byte("tok"), SessionId: "sess", Expiration: time.Now().Add(time.Hour).Unix()})
 
 	nonNilEmptyCaps := core.NewCapabilities(nil, nil).ToNetCapabilities()
 	info, err := orchestratorInfoWithCaps(orch, addr, "https://orch.example.com", "", nonNilEmptyCaps)
 	require.NoError(err)
-	require.Nil(info.CapabilitiesPrices, "non-nil (even if empty) caps should not return capabilities prices")
+	require.Equal(capPrices, info.CapabilitiesPrices)
 
-	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
 	orch.AssertNotCalled(t, "PriceInfo", mock.Anything)
 }

@@ -72,12 +72,11 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 
 // SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
 type SignBYOCJobRequestInput struct {
-	ID              string `json:"id"`
-	Capability      string `json:"capability"`
-	Request         string `json:"request"`
-	Parameters      string `json:"parameters"`
-	TimeoutSeconds  int    `json:"timeout_seconds"`
-	SignatureFormat string `json:"signature_format,omitempty"`
+	ID             string `json:"id"`
+	Capability     string `json:"capability"`
+	Request        string `json:"request"`
+	Parameters     string `json:"parameters"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
 type SignBYOCJobRequestResponse struct {
@@ -117,9 +116,6 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 		Parameters:     req.Parameters,
 		TimeoutSeconds: req.TimeoutSeconds,
 	})
-	if req.SignatureFormat == "v0" {
-		sigPayload = []byte(req.Request + req.Parameters)
-	}
 
 	sig, err := gw.Sign(sigPayload)
 	if err != nil {
