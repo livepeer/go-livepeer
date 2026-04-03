@@ -440,7 +440,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	}
 
-	if !orch.node.AutoAdjustPrice || orch.node.Recipient == nil {
+	if !orch.node.AutoAdjustPrice {
 		return basePrice, nil
 	}
 
