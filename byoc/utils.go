@@ -31,16 +31,23 @@ import (
 var sendJobReqWithTimeout = sendReqWithTimeout
 
 func (g *gatewayJob) sign() error {
-	//sign the request
 	gateway := g.node.OrchestratorPool.Broadcaster()
-	sig, err := gateway.Sign([]byte(g.Job.Req.Request + g.Job.Req.Parameters))
+
+	sigPayload := FlattenBYOCJob(&BYOCJobSigningInput{
+		ID:             g.Job.Req.ID,
+		Capability:     g.Job.Req.Capability,
+		Request:        g.Job.Req.Request,
+		Parameters:     g.Job.Req.Parameters,
+		TimeoutSeconds: g.Job.Req.Timeout,
+	})
+
+	sig, err := gateway.Sign(sigPayload)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
 	}
 	g.Job.Req.Sender = gateway.Address().Hex()
 	g.Job.Req.Sig = "0x" + hex.EncodeToString(sig)
 
-	//create the job request header with the signature
 	jobReqEncoded, err := json.Marshal(g.Job.Req)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))

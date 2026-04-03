@@ -455,10 +455,13 @@ func (bso *BYOCOrchestratorServer) ProcessStreamPayment() http.Handler {
 		orch := bso.orch
 		ctx := r.Context()
 
-		//this will validate the request and process the payment
 		orchJob, err := bso.setupOrchJob(ctx, r, false)
 		if err != nil {
-			respondWithError(w, fmt.Sprintf("Failed to process payment, request not valid err=%v", err), http.StatusBadRequest)
+			code := http.StatusBadRequest
+			if err == errInsufficientBalance {
+				code = http.StatusPaymentRequired
+			}
+			respondWithError(w, fmt.Sprintf("Failed to process payment err=%v", err), code)
 			return
 		}
 		ctx = clog.AddVal(ctx, "stream_id", orchJob.Details.StreamId)

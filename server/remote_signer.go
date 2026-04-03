@@ -16,6 +16,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
@@ -69,10 +70,14 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
-// SignBYOCJobRequest signs a BYOC job request (request + parameters) for authentication
+// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
 type SignBYOCJobRequestInput struct {
-	Request    string `json:"request"`
-	Parameters string `json:"parameters"`
+	ID              string `json:"id"`
+	Capability      string `json:"capability"`
+	Request         string `json:"request"`
+	Parameters      string `json:"parameters"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	SignatureFormat string `json:"signature_format,omitempty"`
 }
 
 type SignBYOCJobRequestResponse struct {
@@ -94,9 +99,29 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Sign the request + parameters (same as Go gateway does for BYOC)
-	dataToSign := req.Request + req.Parameters
-	sig, err := gw.Sign([]byte(dataToSign))
+	if req.ID == "" || req.Capability == "" {
+		err := fmt.Errorf("sign-byoc-job requires non-empty id and capability")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
+		ID:             req.ID,
+		Capability:     req.Capability,
+		Request:        req.Request,
+		Parameters:     req.Parameters,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
+	if req.SignatureFormat == "v0" {
+		sigPayload = []byte(req.Request + req.Parameters)
+	}
+
+	sig, err := gw.Sign(sigPayload)
 	if err != nil {
 		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -254,6 +279,36 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
+// resolvePriceInfo returns the effective PriceInfo for a payment request.
+// For BYOC, pricing may only be advertised in CapabilitiesPrices rather than the
+// top-level PriceInfo, so we search for a matching capability-specific entry.
+func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, manifestID string) *net.PriceInfo {
+	top := oInfo.PriceInfo
+	if reqType != RemoteType_BYOC {
+		return top
+	}
+
+	if top != nil && top.PricePerUnit > 0 && top.PixelsPerUnit > 0 &&
+		top.Capability == uint32(core.Capability_BYOC) && top.Constraint != "" {
+		return top
+	}
+
+	for _, cp := range oInfo.CapabilitiesPrices {
+		if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
+			continue
+		}
+		if cp.Capability != uint32(core.Capability_BYOC) {
+			continue
+		}
+		if manifestID != "" && cp.Constraint != manifestID {
+			continue
+		}
+		return cp
+	}
+
+	return top
+}
+
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -288,9 +343,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	priceInfo := oInfo.PriceInfo
+
+	priceInfo := resolvePriceInfo(&oInfo, req.Type, req.ManifestID)
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
-		err := fmt.Errorf("missing or zero priceInfo")
+		detail := "missing or zero priceInfo"
+		if req.Type == RemoteType_BYOC {
+			detail = fmt.Sprintf("missing or zero priceInfo for BYOC capability %q; "+
+				"ensure the orchestrator advertises capability-specific pricing "+
+				"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)",
+				req.ManifestID)
+		}
+		err := errors.New(detail)
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -302,7 +365,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
 
-	// Load or initialize state
 	var (
 		state *RemotePaymentState
 		err   error
