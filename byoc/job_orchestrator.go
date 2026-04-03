@@ -569,7 +569,7 @@ func (bso *BYOCOrchestratorServer) verifyJobCreds(ctx context.Context, jobCreds 
 
 	sender := ethcommon.HexToAddress(jobData.Sender)
 
-	// Try V1 structured binary format first
+	// Verify V1 structured binary format
 	v1Payload := FlattenBYOCJob(&BYOCJobSigningInput{
 		ID:             jobData.ID,
 		Capability:     jobData.Capability,
@@ -578,17 +578,6 @@ func (bso *BYOCOrchestratorServer) verifyJobCreds(ctx context.Context, jobCreds 
 		TimeoutSeconds: jobData.Timeout,
 	})
 	if bso.orch.VerifySig(sender, string(v1Payload), sigByte) {
-		if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
-			return nil, errZeroCapacity
-		}
-		jobData.CapabilityUrl = bso.orch.GetUrlForCapability(jobData.Capability)
-		return jobData, nil
-	}
-
-	// TODO: remove this fallback once all jobs are using V1 format
-	// Fallback: V0 legacy format (request + parameters concatenation)
-	if bso.orch.VerifySig(sender, jobData.Request+jobData.Parameters, sigByte) {
-		clog.Warningf(ctx, "BYOC job using deprecated V0 signature format sender=%v", jobData.Sender)
 		if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
 			return nil, errZeroCapacity
 		}
