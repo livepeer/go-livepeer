@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -692,11 +693,12 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
 
-	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
+	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
 		reqBody, err := json.Marshal(RemotePaymentRequest{
 			Orchestrator: orchBlob,
 			ManifestID:   "manifest",
 			InPixels:     1,
+			State:        state,
 		})
 		require.NoError(err)
 
@@ -705,6 +707,16 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		rr := httptest.NewRecorder()
 		ls.GenerateLivePayment(rr, req)
 		return rr
+	}
+	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
+		return doPaymentWithState(requestHeader, RemotePaymentStateSig{})
+	}
+	parseResponseState := func(rr *httptest.ResponseRecorder) RemotePaymentState {
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		var state RemotePaymentState
+		require.NoError(json.Unmarshal(resp.State.State, &state))
+		return state
 	}
 
 	t.Run("callback omitted succeeds", func(t *testing.T) {
@@ -725,7 +737,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 			require.Equal("application/json", r.Header.Get("Content-Type"))
 			require.NoError(json.NewDecoder(r.Body).Decode(&payload))
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`ok`))
+			_, _ = w.Write([]byte(`{}`))
 		}))
 		defer webhook.Close()
 
@@ -743,6 +755,75 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal([]string{"req-123"}, payload.Headers["X-Request-Id"])
 		require.NotNil(payload.State)
 		require.Equal("pmSession", payload.State.PMSessionID)
+	})
+
+	t.Run("callback 200 with expiry sets state auth expiry", func(t *testing.T) {
+		expiry := time.Now().Add(5 * time.Minute).Unix()
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-expiry-set")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal(expiry, state.AuthExpiry)
+	})
+
+	t.Run("sequential requests skip callback while auth expiry still valid", func(t *testing.T) {
+		callbackCalls := 0
+		expiry := time.Now().Add(5 * time.Minute).Unix()
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		first := doPayment("req-skip-first")
+		require.Equal(http.StatusOK, first.Code)
+
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		second := doPaymentWithState("req-skip-second", firstResp.State)
+		require.Equal(http.StatusOK, second.Code)
+		require.Equal(1, callbackCalls)
+	})
+
+	t.Run("expired auth expiry triggers callback on next request", func(t *testing.T) {
+		callbackCalls := 0
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			expiry := time.Now().Add(-1 * time.Minute).Unix()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		first := doPayment("req-expired-first")
+		require.Equal(http.StatusOK, first.Code)
+
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		second := doPaymentWithState("req-expired-second", firstResp.State)
+		require.Equal(http.StatusOK, second.Code)
+		require.Equal(2, callbackCalls)
 	})
 
 	t.Run("callback non-200 returns same status in api error", func(t *testing.T) {
