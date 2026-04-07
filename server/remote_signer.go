@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -183,6 +184,11 @@ type RemotePaymentResponse struct {
 	State    RemotePaymentStateSig `json:"state"`
 }
 
+type generateLivePaymentWebhookBody struct {
+	Headers map[string][]string `json:"headers"`
+	State   *RemotePaymentState `json:"state,omitempty"`
+}
+
 // Signs the serialized state with the remote signer's Ethereum key.
 func signState(ls *LivepeerServer, stateBytes []byte) ([]byte, error) {
 	if ls == nil || ls.LivepeerNode == nil || ls.LivepeerNode.Eth == nil {
@@ -206,6 +212,42 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 		return fmt.Errorf("invalid state signature")
 	}
 	return nil
+}
+
+func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentState) (int, string) {
+	if ls == nil || ls.LivepeerNode == nil {
+		return http.StatusOK, ""
+	}
+	callbackURL := ls.LivepeerNode.RemoteSignerWebhookURL
+	callbackHeaders := ls.LivepeerNode.RemoteSignerWebhookHeaders
+	if callbackURL == nil {
+		return http.StatusOK, ""
+	}
+
+	body, err := json.Marshal(generateLivePaymentWebhookBody{Headers: r.Header, State: state})
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("failed to encode remote signer webhook payload: %v", err)
+	}
+	webhookReq, err := http.NewRequest(http.MethodPost, callbackURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("failed to build remote signer webhook request: %v", err)
+	}
+	webhookReq.Header.Set("Content-Type", "application/json")
+	for key, value := range callbackHeaders {
+		webhookReq.Header.Set(key, value)
+	}
+
+	resp, err := http.DefaultClient.Do(webhookReq)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("failed to call remote signer webhook: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("failed to read remote signer webhook response: %v", err)
+	}
+	return resp.StatusCode, string(respBody)
 }
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
@@ -485,6 +527,13 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		err = fmt.Errorf("remote signer failed to retrieve nonce: %w", err)
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	callbackStatus, callbackBody := ls.authLivePayment(r, state)
+	if callbackStatus != http.StatusOK {
+		err = fmt.Errorf("remote signer webhook returned status %d: %s", callbackStatus, callbackBody)
+		respondJsonError(ctx, w, err, callbackStatus)
 		return
 	}
 
