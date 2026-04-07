@@ -74,6 +74,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/scope", lp.StartScope())
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
@@ -297,6 +298,183 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
 			ManifestId:   &mid,
+		})
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			closeSession()
+			return
+		}
+
+		took := time.Since(startTime)
+		clog.Info(ctx, "Processed request", "cap", cap, "modelID", modelID, "took", took)
+		respondJsonOk(w, jsonData)
+	})
+}
+
+func (h *lphttp) StartScope() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(context.Background(), clog.ClientIP, remoteAddr)
+
+		gatewayRequestID := r.Header.Get("requestID")
+		manifestID := string(core.RandomManifestID())
+
+		var req worker.GenLiveVideoToVideoJSONRequestBody
+		if err := jsonDecoder(&req, r); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if req.ModelId == nil || *req.ModelId != "scope" {
+			respondWithError(w, "model_id must be \"scope\" for /scope", http.StatusBadRequest)
+			return
+		}
+
+		if req.GatewayRequestId != nil && *req.GatewayRequestId != "" {
+			gatewayRequestID = *req.GatewayRequestId
+		}
+		ctx = clog.AddVal(ctx, "request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "manifest_id", manifestID)
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := "scope"
+		clog.Info(ctx, "Received request", "cap", cap, "modelID", modelID)
+
+		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
+		err := orch.CreateStorageForRequest(manifestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+			return
+		}
+
+		// Check if there is capacity for the request
+		hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
+		if !hasCapacity {
+			clog.Errorf(ctx, "Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID)
+			respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Start trickle server for scope
+		baseURL := orch.ServiceURI().JoinPath(TrickleHTTPPath, manifestID).String()
+		controlURL := baseURL + "-control"
+		eventsURL := baseURL + "-events"
+
+		// Handle initial payment, the rest of the payments are done separately from the stream processing
+		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+		sender := getPaymentSender(payment)
+		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(manifestID)); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(manifestID)) {
+			respondWithError(w, "Insufficient balance", http.StatusBadRequest)
+			return
+		}
+
+		// Scope only pre-creates control + events channels.
+		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, manifestID+"-control", "application/json")
+		controlPubCh.CreateChannel()
+		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, manifestID+"-events", "application/json")
+		eventsCh.CreateChannel()
+
+		ctx, cancel := context.WithCancel(ctx)
+		closeSession := func() {
+			eventsCh.Close()
+			controlPubCh.Close()
+			cancel()
+		}
+
+		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
+		priceInfo := payment.GetExpectedPrice()
+		var paymentProcessor *LivePaymentProcessor
+		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+			accountPaymentFunc := func(inPixels int64) error {
+				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
+					sender:    sender,
+					inPixels:  inPixels,
+					priceInfo: priceInfo,
+					sessionID: manifestID,
+				})
+				if err != nil {
+					clog.Errorf(ctx, "Error accounting payment, stopping stream processing", err)
+					closeSession()
+				}
+				return err
+			}
+			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+		} else {
+			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
+		}
+
+		// For every event segment, check payments
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, manifestID+"-events")
+			for {
+				// Set seq to next segment in case the subscriber is outside
+				// the server's retention window
+				sub.SetSeq(-1)
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					closeSession()
+					return
+				}
+				if paymentProcessor != nil {
+					paymentProcessor.process(ctx)
+				}
+				// read the segment so we know when it is complete, otherwise sub.Read()
+				// would rapidly request follow-on segments that do not yet exist
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
+
+		// Prepare request to worker
+		workerControlURL := overwriteHost(h.node.LiveAITrickleHostForRunner, controlURL)
+		workerEventsURL := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsURL)
+
+		workerReq := worker.LiveVideoToVideoParams{
+			ModelId:          req.ModelId,
+			EventsUrl:        &workerEventsURL,
+			ControlUrl:       &workerControlURL,
+			Params:           req.Params,
+			GatewayRequestId: &gatewayRequestID,
+			ManifestId:       &manifestID,
+		}
+
+		_, err = orch.LiveVideoToVideo(ctx, manifestID, workerReq)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
+			}
+
+			closeSession()
+			var hsErr *worker.ServerlessHandshakeError
+			if errors.As(err, &hsErr) && hsErr.StatusCode == http.StatusUnauthorized {
+				respondWithError(w, err.Error(), http.StatusUnauthorized)
+			} else {
+				respondWithError(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
+			ControlUrl:   &controlURL,
+			EventsUrl:    &eventsURL,
+			ManifestId:   &manifestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
