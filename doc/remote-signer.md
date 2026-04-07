@@ -138,6 +138,88 @@ If there are errors about too many tickets (eg `numTickets ... exceeds maximum o
 
 For PM configuration details and how these knobs interact, see `doc/payments.md`.
 
+### Payment Authentication
+
+The remote signer's payment endpoint (POST `/generate-live-payment`) supports an optional authentication webhook that is called during every request. This allows operators to enforce external authorization or policy checks before the signer commits to updated payment state.
+
+Configure the webhook with:
+
+- `-remoteSignerWebhookUrl <url>`: the endpoint that receives the callback
+- `-remoteSignerWebhookHeaders 'key:val,key2:val2'`: headers attached to the outbound webhook request for authenticating against the webhook service itself (e.g. `Authorization:Bearer <token>,X-API-Key:<key>`)
+
+Headers follow the same comma-separated `key:value` format used by `-liveAIHeartbeatHeaders`. The headers flag is only meaningful when a webhook URL is configured.
+
+Omit `-remoteSignerWebhookUrl` to disable the webhook entirely.
+
+Example:
+
+```bash
+./livepeer \
+  -remoteSigner \
+  -network mainnet \
+  -httpAddr 127.0.0.1:7936 \
+  -remoteSignerWebhookUrl https://auth.example.com/livepeer/authorize \
+  -remoteSignerWebhookHeaders 'Authorization:Bearer s3cret,X-Tenant:acme' \
+  -ethUrl <eth-rpc-url> \
+  -ethPassword <password-or-password-file> \
+  ...
+```
+
+#### Webhook request
+
+The signer sends a `POST` with `Content-Type: application/json` to the configured URL. The JSON body contains:
+
+| Field     | Type                          | Description                                                      |
+|-----------|-------------------------------|------------------------------------------------------------------|
+| `headers` | `map[string][]string`         | The incoming HTTP request headers from the gateway's payment call |
+| `state`   | `RemotePaymentState` (object) | The current payment state, after all updates |
+
+Example body:
+
+```json
+{
+  "headers": {
+    "Content-Type": ["application/json"],
+    "X-Request-Id": ["abc-123"]
+  },
+  "state": {
+    "StateID": "xYz",
+    "PMSessionID": "session-1",
+    "LastUpdate": "2026-04-07T20:00:00Z",
+    "OrchestratorAddress": "0x1234...",
+    "AuthExpiry": 0,
+    "SenderNonce": 7,
+    "Balance": "500/1",
+    "InitialPricePerUnit": 1200,
+    "InitialPixelsPerUnit": 1,
+    "SequenceNumber": 3
+  }
+}
+```
+
+#### Webhook response
+
+- **HTTP 200**: the signer proceeds to encode and sign the state as normal.
+- **Any other status**: the signer aborts and returns the webhook's status code and body to the gateway caller, wrapped in the standard API error JSON envelope.
+
+This means the webhook can return domain-specific HTTP codes (e.g. 401, 403, 429) and they will propagate all the way back to the gateway.
+
+#### Timing
+
+The webhook fires after the payment state is fully updated (balance, nonce, timestamps) and immediately before the state is marshalled and signed. If the webhook rejects the request, no updated state is returned to the caller and it will be as if the payment were never made.
+
+### Auth webhook expiry caching
+
+When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth webhook on every `POST /generate-live-payment` request by default. The webhook can opt in to caching its authorization result by returning an `expiry` field in its HTTP 200 JSON response body:
+
+```json
+{"expiry": 1775574245}
+```
+
+- `expiry` is a Unix timestamp in seconds. While the current time has not exceeded this value, subsequent payment requests reuse the cached authorization and skip the outbound webhook call.
+- When the expiry is reached, the signer calls the webhook normally.
+- A zero, negative, or absent `expiry` means every request triggers the webhook, if one was configured.
+
 ## Operational + security guidance
 
 For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service.

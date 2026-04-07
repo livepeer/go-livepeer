@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -669,6 +670,101 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	node.Sender = newMockSender(mockSenderConfig{})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
+		reqBody, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   "manifest",
+			InPixels:     1,
+		})
+		require.NoError(err)
+
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		req.Header.Set("X-Request-ID", requestHeader)
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		return rr
+	}
+
+	t.Run("callback omitted succeeds", func(t *testing.T) {
+		ls.LivepeerNode.RemoteSignerWebhookURL = nil
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("no-callback")
+		require.Equal(http.StatusOK, rr.Code)
+	})
+
+	t.Run("callback receives request headers and outbound auth headers", func(t *testing.T) {
+		callbackCalled := false
+		var payload generateLivePaymentWebhookBody
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalled = true
+			require.Equal("Bearer abc", r.Header.Get("Authorization"))
+			require.Equal("secret", r.Header.Get("X-API-Key"))
+			require.Equal("application/json", r.Header.Get("Content-Type"))
+			require.NoError(json.NewDecoder(r.Body).Decode(&payload))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`ok`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = map[string]string{
+			"Authorization": "Bearer abc",
+			"X-API-Key":     "secret",
+		}
+
+		rr := doPayment("req-123")
+		require.Equal(http.StatusOK, rr.Code)
+		require.True(callbackCalled)
+		require.Equal([]string{"req-123"}, payload.Headers["X-Request-Id"])
+		require.NotNil(payload.State)
+		require.Equal("pmSession", payload.State.PMSessionID)
+	})
+
+	t.Run("callback non-200 returns same status in api error", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`denied`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-401")
+		require.Equal(http.StatusUnauthorized, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "remote signer webhook returned status 401")
+		require.Contains(apiErr.Error.Message, "denied")
+	})
 }
 
 func TestRemoteSigner_Discovery(t *testing.T) {
