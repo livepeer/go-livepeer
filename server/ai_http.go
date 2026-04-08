@@ -472,9 +472,9 @@ func (h *lphttp) StartScope() http.Handler {
 		}
 
 		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
-			ControlUrl:   &controlURL,
-			EventsUrl:    &eventsURL,
-			ManifestId:   &manifestID,
+			ControlUrl: &controlURL,
+			EventsUrl:  &eventsURL,
+			ManifestId: &manifestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
