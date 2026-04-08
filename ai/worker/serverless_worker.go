@@ -571,22 +571,24 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 					if createInbound {
 						channelName := manifestID + "-" + streamCountStr + "-in"
+						channelURL := buildTrickleURL(channelName)
 						ch := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 						ch.CreateChannel()
-						openChannels[channelName] = ch
+						openChannels[channelURL] = ch
 						newChannels = append(newChannels, channelInfo{
-							URL:       buildTrickleURL(channelName),
+							URL:       channelURL,
 							Direction: "in",
 							MimeType:  mimeType,
 						})
 					}
 					if createOutbound {
 						channelName := manifestID + "-" + streamCountStr + "-out"
+						channelURL := buildTrickleURL(channelName)
 						ch := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 						ch.CreateChannel()
-						openChannels[channelName] = ch
+						openChannels[channelURL] = ch
 						newChannels = append(newChannels, channelInfo{
-							URL:       buildTrickleURL(channelName),
+							URL:       channelURL,
 							Direction: "out",
 							MimeType:  mimeType,
 						})
