@@ -153,28 +153,29 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		return nil, fmt.Errorf("serverless worker requires manifest ID for live-video-to-video")
 	}
 
-	if req.SubscribeUrl == "" {
-		return nil, fmt.Errorf("serverless worker requires subscribe URL for live-video-to-video")
+	if req.ControlUrl == nil || *req.ControlUrl == "" {
+		return nil, fmt.Errorf("serverless worker requires control URL for live-video-to-video")
 	}
-	subscribeURL, err := url.Parse(req.SubscribeUrl)
+	controlURL, err := url.Parse(*req.ControlUrl)
 	if err != nil {
-		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
+		return nil, fmt.Errorf("invalid control URL: %w", err)
 	}
-	if !strings.HasSuffix(subscribeURL.Path, manifestID) {
-		return nil, fmt.Errorf("subscribe URL path %q must end with manifest ID %q", subscribeURL.Path, manifestID)
+	controlPathSuffix := manifestID + "-control"
+	if !strings.HasSuffix(controlURL.Path, controlPathSuffix) {
+		return nil, fmt.Errorf("control URL path %q must end with manifest ID suffix %q", controlURL.Path, controlPathSuffix)
 	}
-	trickleBasePath := strings.TrimSuffix(subscribeURL.Path, manifestID)
+	trickleBasePath := strings.TrimSuffix(controlURL.Path, controlPathSuffix)
 	buildTrickleURL := func(channelName string) string {
 		if trickleBasePath == "" {
 			return ""
 		}
-		u := *subscribeURL
+		u := *controlURL
 		u.Path = trickleBasePath
 		u = *u.JoinPath(channelName)
 		return u.String()
 	}
 	if buildTrickleURL(manifestID+"-test") == "" {
-		return nil, fmt.Errorf("could not construct trickle channel URL from subscribe URL %q", req.SubscribeUrl)
+		return nil, fmt.Errorf("could not construct trickle channel URL from control URL %q", *req.ControlUrl)
 	}
 
 	wsURL := f.wsURL
