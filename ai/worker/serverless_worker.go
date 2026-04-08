@@ -81,6 +81,12 @@ type wsResponseMessage struct {
 	Channels  []channelInfo `json:"channels"`
 }
 
+type wsPingMessage struct {
+	Type      string `json:"type"`
+	RequestID string `json:"request_id,omitempty"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+}
+
 type channelInfo struct {
 	URL       string `json:"url"`
 	Direction string `json:"direction"`
@@ -381,10 +387,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			maxMissedPongs = int32(3)
 		)
 		var missedPongs atomic.Int32
-		websocketConn.SetPongHandler(func(string) error {
-			missedPongs.Store(0)
-			return nil
-		})
 		pingDone := make(chan struct{})
 		defer close(pingDone)
 		go func() {
@@ -393,8 +395,18 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			for {
 				select {
 				case <-ticker.C:
+					pingPayload := wsPingMessage{
+						Type:      "ping",
+						RequestID: fmt.Sprintf("ping-%d", time.Now().UnixNano()),
+						Timestamp: time.Now().UnixMilli(),
+					}
+					pingJSON, err := json.Marshal(pingPayload)
+					if err != nil {
+						slog.Warn("Failed to marshal app ping", "error", err)
+						continue
+					}
 					writeMu.Lock()
-					err := websocketConn.WriteMessage(websocket.PingMessage, nil)
+					err = websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
 					writeMu.Unlock()
 					if err != nil {
 						slog.Warn("Failed to send ping", "error", err)
@@ -469,6 +481,9 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				}
 
 				switch generic.Type {
+				case "pong":
+					missedPongs.Store(0)
+
 				case "ready":
 					// This is a retry, maybe due to plugin install / uninstall.
 
