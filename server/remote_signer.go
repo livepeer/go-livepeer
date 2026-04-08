@@ -238,7 +238,7 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Sprintf("failed to encode remote signer webhook payload: %v", err)
 	}
-	webhookReq, err := http.NewRequest(http.MethodPost, callbackURL.String(), bytes.NewReader(body))
+	webhookReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, callbackURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Sprintf("failed to build remote signer webhook request: %v", err)
 	}
@@ -247,7 +247,8 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 		webhookReq.Header.Set(key, value)
 	}
 
-	resp, err := http.DefaultClient.Do(webhookReq)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(webhookReq)
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Sprintf("failed to call remote signer webhook: %v", err)
 	}

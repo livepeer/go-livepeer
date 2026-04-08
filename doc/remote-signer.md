@@ -140,7 +140,7 @@ For PM configuration details and how these knobs interact, see `doc/payments.md`
 
 ### Payment Authentication
 
-The remote signer's payment endpoint (POST `/generate-live-payment`) supports an optional authentication webhook that is called during every request. This allows operators to enforce external authorization or policy checks before the signer commits to updated payment state.
+The remote signer's payment endpoint (POST `/generate-live-payment`) supports an optional authentication webhook that can be called during every request. This allows operators to enforce external authorization or policy checks before the signer commits to updated payment state.
 
 Configure the webhook with:
 
