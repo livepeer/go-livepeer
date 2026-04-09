@@ -275,7 +275,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			}
 			return writeErr
 		},
-		nil,
 	)
 	if err != nil {
 		_ = websocketConn.Close()
@@ -534,9 +533,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 							}
 							return writeErr
 						},
-						func() {
-							missedPongs.Store(0)
-						},
 					)
 					if err != nil {
 						slog.Error("Handshake retry failed", "error", err)
@@ -716,7 +712,6 @@ func performHandshake(
 	readyMsg []byte,
 	readMsg func() ([]byte, error),
 	sendReq func() error,
-	onPong func(),
 ) error {
 	var readyResponse wsHandshakeMessage
 	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
@@ -731,41 +726,32 @@ func performHandshake(
 		return fmt.Errorf("failed to send request message: %w", err)
 	}
 
-	for {
-		startedMsg, err := readMsg()
-		if err != nil {
-			return fmt.Errorf("failed to read started message: %w", err)
-		}
-
-		var startedResponse wsHandshakeMessage
-		if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
-			return fmt.Errorf("failed to parse started message: %w", err)
-		}
-		if startedResponse.Type == "pong" {
-			if onPong != nil {
-				onPong()
-			}
-			slog.Info("Ignoring pong message during handshake")
-			continue
-		}
-		if startedResponse.Type == "error" {
-			statusCode := http.StatusInternalServerError
-			if startedResponse.Code == "ACCESS_DENIED" {
-				statusCode = http.StatusUnauthorized
-			}
-			return &ServerlessHandshakeError{
-				StatusCode: statusCode,
-				Code:       startedResponse.Code,
-				Message:    firstNonEmpty(startedResponse.Error, startedResponse.Message),
-			}
-		}
-		if startedResponse.Type != "started" {
-			return fmt.Errorf("unexpected message type %q between ready and started", startedResponse.Type)
-		}
-		slog.Info("Received started message")
-
-		return nil
+	startedMsg, err := readMsg()
+	if err != nil {
+		return fmt.Errorf("failed to read started message: %w", err)
 	}
+
+	var startedResponse wsHandshakeMessage
+	if err := json.Unmarshal(startedMsg, &startedResponse); err != nil {
+		return fmt.Errorf("failed to parse started message: %w", err)
+	}
+	if startedResponse.Type == "error" {
+		statusCode := http.StatusInternalServerError
+		if startedResponse.Code == "ACCESS_DENIED" {
+			statusCode = http.StatusUnauthorized
+		}
+		return &ServerlessHandshakeError{
+			StatusCode: statusCode,
+			Code:       startedResponse.Code,
+			Message:    firstNonEmpty(startedResponse.Error, startedResponse.Message),
+		}
+	}
+	if startedResponse.Type != "started" {
+		return fmt.Errorf("unexpected message type %q between ready and started", startedResponse.Type)
+	}
+	slog.Info("Received started message")
+
+	return nil
 }
 
 func firstNonEmpty(values ...string) string {
