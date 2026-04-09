@@ -87,6 +87,11 @@ type wsPingMessage struct {
 	Timestamp int64  `json:"timestamp,omitempty"`
 }
 
+type wsRestartingMessage struct {
+	Type      string `json:"type"`
+	RequestID string `json:"request_id"`
+}
+
 type channelInfo struct {
 	URL       string `json:"url"`
 	Direction string `json:"direction"`
@@ -381,45 +386,30 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			slog.Warn("No events URL provided, cannot detect stream end via trickle")
 		}
 
-		// Track missed pongs and terminate after 3 missed pongs
+		// Track missed pongs and terminate after 3 missed pongs.
 		const (
 			pingInterval   = 10 * time.Second
 			maxMissedPongs = int32(3)
 		)
 		var missedPongs atomic.Int32
-		pingDone := make(chan struct{})
-		defer close(pingDone)
-		go func() {
-			ticker := time.NewTicker(pingInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					pingPayload := wsPingMessage{
-						Type:      "ping",
-						RequestID: fmt.Sprintf("ping-%d", time.Now().UnixNano()),
-						Timestamp: time.Now().UnixMilli(),
-					}
-					pingJSON, err := json.Marshal(pingPayload)
-					if err != nil {
-						slog.Warn("Failed to marshal app ping", "error", err)
-						continue
-					}
-					writeMu.Lock()
-					err = websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
-					writeMu.Unlock()
-					if err != nil {
-						slog.Warn("Failed to send ping", "error", err)
-						return
-					}
-					if missedPongs.Add(1) >= maxMissedPongs {
-						slog.Warn("Too many missed pongs, closing websocket", "missed", missedPongs.Load())
-						_ = websocketConn.Close()
-						return
-					}
-				case <-pingDone:
-					return
-				}
+		stopPings := startPinging(
+			pingInterval,
+			maxMissedPongs,
+			&missedPongs,
+			func(pingJSON []byte) error {
+				writeMu.Lock()
+				err := websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
+				writeMu.Unlock()
+				return err
+			},
+			func(missed int32) {
+				slog.Warn("Too many missed pongs, closing websocket", "missed", missed)
+				_ = websocketConn.Close()
+			},
+		)
+		defer func() {
+			if stopPings != nil {
+				stopPings()
 			}
 		}()
 
@@ -538,7 +528,47 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						slog.Error("Handshake retry failed", "error", err)
 						return
 					}
+					if stopPings != nil {
+						stopPings()
+					}
+					stopPings = startPinging(
+						pingInterval,
+						maxMissedPongs,
+						&missedPongs,
+						func(pingJSON []byte) error {
+							writeMu.Lock()
+							err := websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
+							writeMu.Unlock()
+							return err
+						},
+						func(missed int32) {
+							slog.Warn("Too many missed pongs, closing websocket", "missed", missed)
+							_ = websocketConn.Close()
+						},
+					)
+					missedPongs.Store(0)
 					slog.Info("Handshake retry completed")
+
+				case "restarting":
+					if stopPings != nil {
+						stopPings()
+						stopPings = nil
+					}
+					// Hack: Run this in a goroutine so we can accommodate other in-flight
+					// 			 messages, mostly pongs
+					go func(rawMessage []byte) {
+						respJSON, err := handleRestartingMessage(rawMessage, &missedPongs)
+						if err != nil {
+							slog.Warn("Failed to handle restarting message", "error", err)
+							return
+						}
+						writeMu.Lock()
+						err = websocketConn.WriteMessage(websocket.TextMessage, respJSON)
+						writeMu.Unlock()
+						if err != nil {
+							slog.Warn("Failed to send restarting response", "error", err)
+						}
+					}(msg.message)
 
 				case "create_channels":
 					var startMsg createChannelsMessage
@@ -754,6 +784,49 @@ func performHandshake(
 	return nil
 }
 
+func startPinging(
+	pingInterval time.Duration,
+	maxMissedPongs int32,
+	missedPongs *atomic.Int32,
+	sendPing func([]byte) error,
+	onMaxMissedPongs func(int32),
+) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		ticker := time.NewTicker(pingInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				pingPayload := wsPingMessage{
+					Type:      "ping",
+					RequestID: fmt.Sprintf("ping-%d", time.Now().UnixNano()),
+					Timestamp: time.Now().UnixMilli(),
+				}
+				pingJSON, err := json.Marshal(pingPayload)
+				if err != nil {
+					slog.Warn("Failed to marshal app ping", "error", err)
+					continue
+				}
+				if err := sendPing(pingJSON); err != nil {
+					slog.Warn("Failed to send ping", "error", err)
+					return
+				}
+				if missedPongs.Add(1) >= maxMissedPongs {
+					onMaxMissedPongs(missedPongs.Load())
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return cancel
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -761,4 +834,44 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func handleRestartingMessage(
+	message []byte,
+	missedPongs *atomic.Int32,
+) ([]byte, error) {
+	var restartingMsg wsRestartingMessage
+	if err := json.Unmarshal(message, &restartingMsg); err != nil {
+		return nil, fmt.Errorf("failed to parse restarting message: %w", err)
+	}
+
+	// First wait for any pending pongs so they don't gum up the re-handshake
+	if currentMissed := missedPongs.Load(); currentMissed > 0 {
+		const (
+			pongWaitAttempts = 3
+			pongWaitInterval = 100 * time.Millisecond
+		)
+		for i := 0; i < pongWaitAttempts; i++ {
+			if missedPongs.Load() == 0 {
+				slog.Info("Recovered from a pending pong, good job")
+				break
+			}
+			time.Sleep(pongWaitInterval)
+		}
+		if remainingMissed := missedPongs.Load(); remainingMissed > 0 {
+			slog.Warn("Continuing restart without pong recovery", "missedPongs", remainingMissed)
+		}
+	}
+	missedPongs.Store(0)
+
+	resp := wsResponseMessage{
+		Type:      "response",
+		RequestID: restartingMsg.RequestID,
+	}
+	respJSON, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal restarting response: %w", err)
+	}
+
+	return respJSON, nil
 }
