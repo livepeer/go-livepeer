@@ -232,7 +232,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	}
 
 	// Dial before starting goroutines so errors can be returned to caller
-	websocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	rawWebsocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
 		f.mu.Lock()
 		f.inUse--
@@ -245,7 +245,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	// Marshal request to JSON and send.
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
-		_ = websocketConn.Close()
+		_ = rawWebsocketConn.Close()
 		f.mu.Lock()
 		f.inUse--
 		remainingInUse := f.inUse
@@ -253,6 +253,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		slog.Error("Failed to marshal request", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	websocketConn := newLockedWebSocket(rawWebsocketConn)
 
 	// Wait for connection readiness before starting background processing or returning.
 	_, readyMsg, err := websocketConn.ReadMessage()
@@ -272,14 +273,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			_, msg, readErr := websocketConn.ReadMessage()
 			return msg, readErr
 		},
-		func() error {
-			slog.Info("Sending request to websocket", "request", string(reqJSON))
-			writeErr := websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
-			if writeErr == nil {
-				slog.Info("Sent request to websocket", "request", string(reqJSON))
-			}
-			return writeErr
-		},
+		websocketConn,
+		reqJSON,
 	)
 	if err != nil {
 		_ = websocketConn.Close()
@@ -293,7 +288,6 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 	// Start websocket processing in a goroutine
 	go func() {
-		var writeMu sync.Mutex
 		openChannels := map[string]*trickle.TrickleLocalPublisher{}
 
 		// Ensure we decrement the counter and close all channels when this goroutine exits
@@ -396,16 +390,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			pingInterval,
 			maxMissedPongs,
 			&missedPongs,
-			func(pingJSON []byte) error {
-				writeMu.Lock()
-				err := websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
-				writeMu.Unlock()
-				return err
-			},
-			func(missed int32) {
-				slog.Warn("Too many missed pongs, closing websocket", "missed", missed)
-				_ = websocketConn.Close()
-			},
+			websocketConn,
 		)
 		defer func() {
 			if stopPings != nil {
@@ -513,16 +498,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 							}
 							return nextMsg.message, nil
 						},
-						func() error {
-							slog.Info("Retrying handshake request over websocket", "request", string(reqJSON))
-							writeMu.Lock()
-							defer writeMu.Unlock()
-							writeErr := websocketConn.WriteMessage(websocket.TextMessage, reqJSON)
-							if writeErr == nil {
-								slog.Info("Sent retried handshake request to websocket", "request", string(reqJSON))
-							}
-							return writeErr
-						},
+						websocketConn,
+						reqJSON,
 					)
 					if err != nil {
 						slog.Error("Handshake retry failed", "error", err)
@@ -535,16 +512,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						pingInterval,
 						maxMissedPongs,
 						&missedPongs,
-						func(pingJSON []byte) error {
-							writeMu.Lock()
-							err := websocketConn.WriteMessage(websocket.TextMessage, pingJSON)
-							writeMu.Unlock()
-							return err
-						},
-						func(missed int32) {
-							slog.Warn("Too many missed pongs, closing websocket", "missed", missed)
-							_ = websocketConn.Close()
-						},
+						websocketConn,
 					)
 					missedPongs.Store(0)
 					slog.Info("Handshake retry completed")
@@ -562,9 +530,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 							slog.Warn("Failed to handle restarting message", "error", err)
 							return
 						}
-						writeMu.Lock()
-						err = websocketConn.WriteMessage(websocket.TextMessage, respJSON)
-						writeMu.Unlock()
+						err = websocketConn.Write(respJSON)
 						if err != nil {
 							slog.Warn("Failed to send restarting response", "error", err)
 						}
@@ -634,9 +600,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						slog.Warn("Failed to marshal response message", "error", err)
 						continue
 					}
-					writeMu.Lock()
-					err = websocketConn.WriteMessage(websocket.TextMessage, respJSON)
-					writeMu.Unlock()
+					err = websocketConn.Write(respJSON)
 					if err != nil {
 						slog.Warn("Failed to send response message", "error", err)
 						return
@@ -741,7 +705,8 @@ func (f *ServerlessWorker) Version() []Version {
 func performHandshake(
 	readyMsg []byte,
 	readMsg func() ([]byte, error),
-	sendReq func() error,
+	websocketConn *lockedWebSocket,
+	reqJSON []byte,
 ) error {
 	var readyResponse wsHandshakeMessage
 	if err := json.Unmarshal(readyMsg, &readyResponse); err != nil {
@@ -752,7 +717,11 @@ func performHandshake(
 	}
 	slog.Info("Received ready message", "message", readyResponse.Message)
 
-	if err := sendReq(); err != nil {
+	if len(reqJSON) == 0 {
+		return fmt.Errorf("empty request payload")
+	}
+	slog.Info("Sending handshake request", "request", string(reqJSON))
+	if err := websocketConn.Write(reqJSON); err != nil {
 		return fmt.Errorf("failed to send request message: %w", err)
 	}
 
@@ -788,8 +757,7 @@ func startPinging(
 	pingInterval time.Duration,
 	maxMissedPongs int32,
 	missedPongs *atomic.Int32,
-	sendPing func([]byte) error,
-	onMaxMissedPongs func(int32),
+	websocketConn *lockedWebSocket,
 ) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -810,12 +778,13 @@ func startPinging(
 					slog.Warn("Failed to marshal app ping", "error", err)
 					continue
 				}
-				if err := sendPing(pingJSON); err != nil {
+				if err := websocketConn.Write(pingJSON); err != nil {
 					slog.Warn("Failed to send ping", "error", err)
 					return
 				}
 				if missedPongs.Add(1) >= maxMissedPongs {
-					onMaxMissedPongs(missedPongs.Load())
+					slog.Warn("Too many missed pongs, closing websocket", "missed", missedPongs.Load())
+					_ = websocketConn.Close()
 					return
 				}
 			case <-ctx.Done():
@@ -874,4 +843,32 @@ func handleRestartingMessage(
 	}
 
 	return respJSON, nil
+}
+
+type lockedWebSocket struct {
+	conn      *websocket.Conn
+	writeMu   sync.Mutex
+	closeOnce sync.Once
+}
+
+func newLockedWebSocket(conn *websocket.Conn) *lockedWebSocket {
+	return &lockedWebSocket{conn: conn}
+}
+
+func (ws *lockedWebSocket) ReadMessage() (int, []byte, error) {
+	return ws.conn.ReadMessage()
+}
+
+func (ws *lockedWebSocket) Write(payload []byte) error {
+	ws.writeMu.Lock()
+	defer ws.writeMu.Unlock()
+	return ws.conn.WriteMessage(websocket.TextMessage, payload)
+}
+
+func (ws *lockedWebSocket) Close() error {
+	var closeErr error
+	ws.closeOnce.Do(func() {
+		closeErr = ws.conn.Close()
+	})
+	return closeErr
 }
