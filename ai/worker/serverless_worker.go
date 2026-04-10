@@ -113,6 +113,26 @@ func NewServerlessWorker(wsURL string, capacity int) (*ServerlessWorker, error) 
 	}, nil
 }
 
+func getServerlessTimeout() time.Duration {
+	timeout := 1 * time.Hour
+	timeoutEnv := strings.TrimSpace(os.Getenv("LIVE_AI_SERVERLESS_TIMEOUT"))
+	if timeoutEnv == "" {
+		return timeout
+	}
+
+	parsedTimeout, err := time.ParseDuration(timeoutEnv)
+	if err != nil {
+		slog.Warn("Invalid serverless timeout, using default", "timeout", timeoutEnv, "default", timeout, "error", err)
+		return timeout
+	}
+	if parsedTimeout <= 0 {
+		slog.Warn("Serverless timeout must be positive, using default", "timeout", timeoutEnv, "default", timeout)
+		return timeout
+	}
+
+	return parsedTimeout
+}
+
 func (f *ServerlessWorker) SetTrickleServer(srv *trickle.Server) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -398,8 +418,9 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 			}
 		}()
 
-		// Create a 1-hour timeout as a fail-safe to avoid big bills
-		timeout := time.NewTimer(1 * time.Hour)
+		// Fail-safe timeout to avoid big bills.
+		serverlessTimeout := getServerlessTimeout()
+		timeout := time.NewTimer(serverlessTimeout)
 		defer timeout.Stop()
 
 		// Create a channel to receive messages
@@ -436,7 +457,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		for {
 			select {
 			case <-timeout.C:
-				slog.Info("Websocket connection timeout reached (1 hour), closing connection")
+				// TODO notify the runner so it can notify the client. Wait for grace then close.
+				slog.Info("Websocket connection timeout reached, closing connection", "timeout", serverlessTimeout)
 				return
 
 			case msg := <-messageChan:
