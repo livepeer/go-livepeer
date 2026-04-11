@@ -17,6 +17,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
@@ -69,11 +70,76 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
+// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
+type SignBYOCJobRequestInput struct {
+	ID             string `json:"id"`
+	Capability     string `json:"capability"`
+	Request        string `json:"request"`
+	Parameters     string `json:"parameters"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
+type SignBYOCJobRequestResponse struct {
+	Sender    string `json:"sender"`
+	Signature string `json:"signature"`
+}
+
+func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "BYOC job signing request", "ip", remoteAddr)
+
+	gw := core.NewBroadcaster(ls.LivepeerNode)
+
+	var req SignBYOCJobRequestInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		clog.Errorf(ctx, "Failed to decode SignBYOCJobRequest err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" || req.Capability == "" {
+		err := fmt.Errorf("sign-byoc-job requires non-empty id and capability")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
+		ID:             req.ID,
+		Capability:     req.Capability,
+		Request:        req.Request,
+		Parameters:     req.Parameters,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
+
+	sig, err := gw.Sign(sigPayload)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	response := SignBYOCJobRequestResponse{
+		Sender:    gw.Address().Hex(),
+		Signature: "0x" + hex.EncodeToString(sig),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	ls.HTTPMux.Handle("POST /sign-byoc-job", http.HandlerFunc(ls.SignBYOCJobRequest))
 	if ls.LivepeerNode.RemoteDiscovery {
 		rdp := RemoteDiscoveryConfig{
 			Pool:     ls.LivepeerNode.OrchestratorPool,
