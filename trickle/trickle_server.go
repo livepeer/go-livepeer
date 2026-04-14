@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -62,8 +63,9 @@ type Segment struct {
 	idx    int
 	mutex  *sync.Mutex
 	cond   *sync.Cond
-	buffer *bytes.Buffer
+	buffer *segmentBuffer
 	closed bool
+	done   atomic.Bool
 
 	// to shut down any pending publishers
 	closeCh chan bool
@@ -629,7 +631,7 @@ func newSegment(idx int) *Segment {
 	mu := &sync.Mutex{}
 	return &Segment{
 		idx:     idx,
-		buffer:  new(bytes.Buffer),
+		buffer:  newSegmentBuffer(),
 		cond:    sync.NewCond(mu),
 		mutex:   mu,
 		closeCh: make(chan bool),
@@ -641,29 +643,43 @@ func (segment *Segment) writeData(data []byte) {
 	defer segment.mutex.Unlock()
 
 	// Write to buffer
-	segment.buffer.Write(data)
+	segment.buffer.write(data)
 
 	// Signal waiting readers
 	segment.cond.Broadcast()
 }
 
-func (s *Segment) readData(startPos int) ([]byte, bool) {
+func (s *Segment) readData(readPos int) ([]byte, int, bool) {
+	data, nextPos, atTail, invalid, _ := s.buffer.readChunk(readPos)
+	if invalid {
+		slog.Info("Invalid start pos, invoking eof")
+		return nil, readPos, true
+	}
+	if len(data) > 0 {
+		// A concurrent write+close can land after readChunk() snapshots published.
+		// Only signal EOF from the fast path if a fresh published load still
+		// matches the returned cursor.
+		if atTail && s.done.Load() && nextPos == int(s.buffer.published.Load()) {
+			return data, nextPos, true
+		}
+		return data, nextPos, false
+	}
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	for {
-		totalLen := s.buffer.Len()
-		if startPos < totalLen {
-			data := s.buffer.Bytes()[startPos:totalLen]
-			return data, s.closed
+		data, nextPos, atTail, invalid, published := s.buffer.readChunk(readPos)
+		if len(data) > 0 {
+			return data, nextPos, s.closed && atTail && nextPos == published
 		}
-		if startPos > totalLen {
+		if invalid {
 			slog.Info("Invalid start pos, invoking eof")
 			// This might happen if the buffer was reset
 			// eg because of a repeated POST
-			return nil, true
+			return nil, readPos, true
 		}
 		if s.closed {
-			return nil, true
+			return nil, readPos, true
 		}
 		// Wait for new data
 		s.cond.Wait()
@@ -678,6 +694,7 @@ func (s *Segment) close() {
 	defer s.mutex.Unlock()
 	if !s.closed {
 		s.closed = true
+		s.done.Store(true)
 		close(s.closeCh)
 		s.cond.Broadcast()
 	}
@@ -687,11 +704,11 @@ func (s *Segment) isFresh() bool {
 	// fresh segments have not been written to yet
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return !s.closed && s.buffer.Len() == 0
+	return !s.closed && s.buffer.isEmpty()
 }
 
 func (ss *SegmentSubscriber) readData() ([]byte, bool) {
-	data, eof := ss.segment.readData(ss.readPos)
-	ss.readPos += len(data)
+	data, nextPos, eof := ss.segment.readData(ss.readPos)
+	ss.readPos = nextPos
 	return data, eof
 }
