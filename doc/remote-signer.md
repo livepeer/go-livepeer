@@ -101,12 +101,14 @@ Currently, remote discovery can only be enabled for nodes in remote signing mode
 Configure a gateway to use a remote signer with:
 
 - `-remoteSignerUrl <url>`: base URL of the remote signer service (**gateway only**)
+- `-remoteSignerHeaders 'key:val,key2:val2'`: headers attached to outbound gateway requests to the remote signer (`/sign-orchestrator-info`, `/generate-live-payment`, and `/discover-orchestrators`)
 
 If `-remoteSignerUrl` is set, the gateway will query the signer at startup and fail fast if it cannot reach the signer.
 
 **No Ethereum flags are necessary on the gateway** in this mode. Omit the `-network` flag entirely here; this makes the gateway run in offchain mode, but it will still be able to send work to on-chain orchestrators with the `-remoteSignerUrl` flag enabled.
 
 By default, if no URL scheme is provided, https is assumed and prepended to the remote signer URL. To override this (eg, to use a http:// URL) then include the scheme, eg `-remoteSignerUrl http://signer-host:port`
+Headers follow the same comma-separated `key:value` format used by `-liveAIHeartbeatHeaders`.
 
 If the gateway is configured with a remote signer URL but no orchestrators (`-orchWebhookUrl` or `-orchAddr`) then it will attempt to use the remote signer's discovery endpoint. Note that not all remote signers may be offering discovery.
 
@@ -117,6 +119,7 @@ Example:
   -gateway \
   -httpAddr :9935 \
   -remoteSignerUrl http://127.0.0.1:7936 \
+  -remoteSignerHeaders 'Authorization:Bearer gateway-token,X-Tenant:acme' \
   -orchAddr localhost:8935 \
   -v 6
 ```

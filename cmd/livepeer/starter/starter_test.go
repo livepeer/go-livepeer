@@ -384,10 +384,12 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
 	cfg := NewLivepeerConfig(fs)
 	err := fs.Parse([]string{
+		"-remoteSignerHeaders", "Authorization:Bearer gateway-token",
 		"-remoteSignerWebhookUrl", "https://example.com/webhook",
 		"-remoteSignerWebhookHeaders", "Authorization:Bearer abc,X-API-Key:secret",
 	})
 	require.NoError(err)
+	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
 	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }

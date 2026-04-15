@@ -633,7 +633,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 }
 
 // Gateway helper that calls the remote signer service for the GetOrchestratorInfo signature
-func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
+func GetOrchInfoSig(remoteSignerHost *url.URL, headers map[string]string) (*OrchInfoSigResponse, error) {
 
 	url := remoteSignerHost.ResolveReference(&url.URL{Path: "/sign-orchestrator-info"})
 
@@ -642,8 +642,17 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 		Timeout: 30 * time.Second,
 	}
 
+	req, err := http.NewRequest(http.MethodPost, url.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
 	// Make the request
-	resp, err := client.Post(url.String(), "application/json", nil)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call remote signer: %w", err)
 	}
