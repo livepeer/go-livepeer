@@ -199,10 +199,30 @@ Example body:
 
 #### Webhook response
 
-- **HTTP 200**: the signer proceeds to encode and sign the state as normal.
-- **Any other status**: the signer aborts and returns the webhook's status code and body to the gateway caller, wrapped in the standard API error JSON envelope.
+The webhook itself must return **HTTP 200** and include a JSON body with:
 
-This means the webhook can return domain-specific HTTP codes (e.g. 401, 403, 429) and they will propagate all the way back to the gateway.
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `status` | `int`   | Yes      | The status code the signer should use to decide whether to proceed |
+| `reason` | `string`| No       | Error message returned to the gateway caller when `status` is not `200` |
+| `expiry` | `int64` | No       | Unix timestamp in seconds until which the authorization can be reused |
+
+Example success response:
+
+```json
+{"status": 200, "expiry": 1775574245}
+```
+
+Example rejection response:
+
+```json
+{"status": 403, "reason": "denied"}
+```
+
+- **HTTP 200 with `status: 200`**: the signer proceeds to encode and sign the state as normal.
+- **HTTP 200 with `status != 200`**: the signer aborts and returns that `status` to the gateway caller, wrapped in the standard API error JSON envelope. If `reason` is present it is used as the error message. This can be used by implementers to steer downstream caller behavior.
+- **Any non-200 webhook HTTP response**: the signer treats this as an internal webhook failure (eg, webhook service error or signer misconfiguration) and returns HTTP 500.
+- **Missing, zero, malformed, or otherwise invalid `status`**: the signer returns HTTP 500.
 
 #### Timing
 
@@ -210,10 +230,10 @@ The webhook fires after the payment state is fully updated (balance, nonce, time
 
 ### Auth webhook expiry caching
 
-When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth webhook on every `POST /generate-live-payment` request by default. The webhook can opt in to caching its authorization result by returning an `expiry` field in its HTTP 200 JSON response body:
+When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth webhook on every `POST /generate-live-payment` request by default. The webhook can opt in to caching its authorization result by returning an `expiry` field alongside `status: 200` in its HTTP 200 JSON response body:
 
 ```json
-{"expiry": 1775574245}
+{"status": 200, "expiry": 1775574245}
 ```
 
 - `expiry` is a Unix timestamp in seconds. While the current time has not exceeded this value, subsequent payment requests reuse the cached authorization and skip the outbound webhook call.
