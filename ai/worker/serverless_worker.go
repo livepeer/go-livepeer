@@ -51,6 +51,9 @@ func (e *ServerlessHandshakeError) Error() string {
 	if e == nil {
 		return "serverless handshake failed"
 	}
+	if e.StatusCode == http.StatusBadRequest && e.Message != "" {
+		return e.Message
+	}
 	if e.Code != "" && e.Message != "" {
 		return fmt.Sprintf("serverless handshake failed (%s): %s", e.Code, e.Message)
 	}
@@ -215,16 +218,28 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		if wsURLRaw, ok := (*req.Params)["ws_url"]; ok {
 			wsURLOverride, ok := wsURLRaw.(string)
 			if !ok {
-				return nil, fmt.Errorf("invalid params.ws_url: must be a string")
+				return nil, &ServerlessHandshakeError{
+					StatusCode: http.StatusBadRequest,
+					Code:       "INVALID_WS",
+					Message:    "invalid params.ws_url: must be a string",
+				}
 			}
 			if wsURLOverride != "" {
 				wsURLOverride = strings.ToLower(wsURLOverride)
 				if !strings.HasPrefix(wsURLOverride, wsURLPrefix) {
-					return nil, fmt.Errorf("unacceptable params.ws_url")
+					return nil, &ServerlessHandshakeError{
+						StatusCode: http.StatusBadRequest,
+						Code:       "INVALID_WS",
+						Message:    "unacceptable params.ws_url",
+					}
 				}
 				parsedWSURL, err := url.Parse(wsURLOverride)
 				if err != nil || parsedWSURL.Host == "" {
-					return nil, fmt.Errorf("invalid params.ws_url")
+					return nil, &ServerlessHandshakeError{
+						StatusCode: http.StatusBadRequest,
+						Code:       "INVALID_WS",
+						Message:    "invalid params.ws_url",
+					}
 				}
 				wsURL = wsURLOverride
 			}

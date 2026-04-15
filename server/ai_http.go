@@ -98,6 +98,19 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 	})
 }
 
+func serverlessHandshakeHTTPStatus(err error) (int, bool) {
+	var hsErr *worker.ServerlessHandshakeError
+	if !errors.As(err, &hsErr) {
+		return 0, false
+	}
+	switch hsErr.StatusCode {
+	case http.StatusBadRequest, http.StatusUnauthorized:
+		return hsErr.StatusCode, true
+	default:
+		return 0, false
+	}
+}
+
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
@@ -462,9 +475,8 @@ func (h *lphttp) StartScope() http.Handler {
 			}
 
 			closeSession()
-			var hsErr *worker.ServerlessHandshakeError
-			if errors.As(err, &hsErr) && hsErr.StatusCode == http.StatusUnauthorized {
-				respondWithError(w, err.Error(), http.StatusUnauthorized)
+			if statusCode, ok := serverlessHandshakeHTTPStatus(err); ok {
+				respondWithError(w, err.Error(), statusCode)
 			} else {
 				respondWithError(w, err.Error(), http.StatusInternalServerError)
 			}
