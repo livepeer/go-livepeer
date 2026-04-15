@@ -737,7 +737,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 			require.Equal("application/json", r.Header.Get("Content-Type"))
 			require.NoError(json.NewDecoder(r.Body).Decode(&payload))
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
+			_, _ = w.Write([]byte(`{"status":200}`))
 		}))
 		defer webhook.Close()
 
@@ -757,11 +757,27 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal("pmSession", payload.State.PMSessionID)
 	})
 
+	t.Run("callback 200 with status 200 succeeds", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-status-200")
+		require.Equal(http.StatusOK, rr.Code)
+	})
+
 	t.Run("callback 200 with expiry sets state auth expiry", func(t *testing.T) {
 		expiry := time.Now().Add(5 * time.Minute).Unix()
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -782,7 +798,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			callbackCalls++
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -807,7 +823,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 			callbackCalls++
 			expiry := time.Now().Add(-1 * time.Minute).Unix()
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"expiry":%d}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -826,7 +842,67 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal(2, callbackCalls)
 	})
 
-	t.Run("callback non-200 returns same status in api error", func(t *testing.T) {
+	t.Run("callback 200 missing status returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"expiry":123}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-missing-status")
+		require.Equal(http.StatusInternalServerError, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
+	})
+
+	t.Run("callback 200 with rejection status returns reason", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":403,"reason":"denied"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-rejected")
+		require.Equal(http.StatusForbidden, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "denied")
+	})
+
+	t.Run("callback 200 with rejection status and no reason uses fallback", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":429}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-no-reason")
+		require.Equal(http.StatusTooManyRequests, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "signer auth rejected request with status 429")
+	})
+
+	t.Run("callback HTTP non-200 returns 500", func(t *testing.T) {
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`denied`))
@@ -839,12 +915,11 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
 		rr := doPayment("req-401")
-		require.Equal(http.StatusUnauthorized, rr.Code)
+		require.Equal(http.StatusInternalServerError, rr.Code)
 
 		var apiErr apiErrorResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
-		require.Contains(apiErr.Error.Message, "remote signer webhook returned status 401")
-		require.Contains(apiErr.Error.Message, "denied")
+		require.Equal("Internal Server Error", apiErr.Error.Message)
 	})
 }
 
