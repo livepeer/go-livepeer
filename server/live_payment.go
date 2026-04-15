@@ -239,6 +239,9 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		Type:         RemoteType_LiveVideoToVideo,
 		Capabilities: capsBytes,
 	}
+	if r.node.GatewayRemoteSignerAddress != (ethcommon.Address{}) {
+		reqPayload.SignerAddress = r.node.GatewayRemoteSignerAddress.Hex()
+	}
 
 	body, err := json.Marshal(reqPayload)
 	if err != nil {

@@ -51,7 +51,7 @@ The remote signer is intended to be its own standalone node type. The `-remoteSi
 
 **The remote signer requires an on-chain network**. It cannot run with `-network=offchain` because it must have on-chain Ethereum connectivity to sign and manage payment tickets.
 
-The remote signer must have typical Ethereum flags configured (examples: `-network`, `-ethUrl`, `-ethController`, keystore/password flags). See the go-livepeer [devtool](https://github.com/livepeer/go-livepeer/blob/92bdb59f169056e3d1beba9b511554ea5d9eda72/cmd/devtool/devtool.go#L200-L212) for an example of what flags might be required.
+The remote signer requires the standard Ethereum flags: `-network`, `-ethUrl`, `-ethController`, and either keystore/password flags (local keystore) or `-turnkeyOrg` (Turnkey — see [Turnkey mode](#turnkey-mode-remote-signer) below). See the go-livepeer [devtool](https://github.com/livepeer/go-livepeer/blob/92bdb59f169056e3d1beba9b511554ea5d9eda72/cmd/devtool/devtool.go#L200-L212) for a full example.
 
 The remote signer listens to the standard go-livepeer HTTP port (8935) by default. To change the listening port or interface, use the `-httpAddr` flag.
 
@@ -137,6 +137,61 @@ When running a gateway in offchain mode (ie, with `-remoteSignerUrl` and no Ethe
 If there are errors about too many tickets (eg `numTickets ... exceeds maximum of 100`), increase the ticket EV on the remote signer so each signing call produces fewer tickets. A good target is ~1–3 tickets per remote signer call.
 
 For PM configuration details and how these knobs interact, see `doc/payments.md`.
+
+## Turnkey mode (remote signer)
+
+In Turnkey mode, the remote signer delegates Ethereum key custody to [Turnkey](https://www.turnkey.com/) secure enclaves instead of a local keystore. Private keys are generated and stored entirely within Turnkey; the node holds only an API key.
+
+### Flags
+
+- **`-turnkeyOrg <organizationId>`** — Turnkey organization ID. **Must** be used with `-remoteSigner`. When set, the node uses Turnkey for all signing and skips the local keystore. The standard chain flags (`-ethUrl`, `-network`, `-ethController`) are still required.
+- **`-turnkeyApiKeyName <name>`** — Name of the API key loaded from `~/.turnkey/keys/<name>/` (default: `default`). Follows the [tkhq/go-sdk](https://github.com/tkhq/go-sdk) key-store convention.
+
+If the organization has no Ethereum accounts on first start, the node automatically creates a Turnkey wallet and logs its address.
+
+### Signing semantics
+
+The Turnkey integration keeps Ethereum hashing in `go-livepeer` and uses Turnkey only for custody plus ECDSA signing. The signer computes the final 32-byte Ethereum digest locally before calling `SignRawPayload`:
+
+- **`Sign(msg)`** uses the EIP-191 text-hash path (`accounts.TextHash(msg)`).
+- **`SignTypedData(...)`** computes the EIP-712 digest locally.
+- **`SignTx(...)`** stays on Turnkey's transaction-signing API rather than the raw-payload path.
+
+Because the raw-payload request already receives the final digest, the signer sends that value to Turnkey with **`HASH_FUNCTION_NO_OP`**. This preserves parity with the local keystore implementation and avoids applying an extra hash inside Turnkey.
+
+Do **not** switch this flow to **`HASH_FUNCTION_KECCAK256`** unless the payload contract changes as well. In the current design, that would hash an already-computed Ethereum digest a second time and produce signatures that no longer match the rest of the stack.
+
+### Multi-address signing
+
+A single Turnkey remote signer can manage multiple Ethereum addresses. The node maintains an address book of all Ethereum-format accounts in the organization and uses it to authorize signing requests.
+
+- **`POST /sign-orchestrator-info?address=0x…`** — Selects which address signs the orchestrator info response. Defaults to the node’s current default signing address.
+- **`POST /generate-live-payment`** — Accepts an optional JSON field **`signerAddress`** to select which identity signs PM tickets for that session. The returned `state` blob records the chosen address, so all follow-up requests remain pinned to the same identity.
+
+Gateways pin a specific remote signer identity with:
+
+- **`-remoteSignerAddress 0x…`** — Passed as `signerAddress` in every `/generate-live-payment` request and as the `?address` parameter on `/sign-orchestrator-info`, ensuring the gateway consistently uses one Turnkey address.
+
+### Wallet management API
+
+When Turnkey mode is active, the signer exposes the following management endpoints on the same HTTP server. Apply the same network controls used for the rest of the signer.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/turnkey/wallets` | List all wallet IDs, account IDs, and Ethereum addresses in the org |
+| `POST` | `/turnkey/create-wallet` | Body: `{"walletName":"..."}` — create a new HD wallet and derive its first Ethereum account |
+| `POST` | `/turnkey/create-account` | Body: `{"walletId":"..."}` — derive the next `m/44'/60'/0'/0/n` Ethereum account from an existing wallet |
+| `POST` | `/turnkey/select-address` | Body: `{"address":"0x..."}` — set the node’s default signing address |
+
+`livepeer-cli` displays Turnkey menu entries only when `/status` reports `turnkeyMode: true`.
+
+### Observability
+
+`/status` exposes three Turnkey-specific fields:
+
+- **`turnkeyMode`** — `true` when the node is using Turnkey signing.
+- **`turnkeyOrgId`** — The configured organization ID.
+- **`turnkeyAddresses`** — Sorted list of Ethereum addresses (hex) currently in the org’s address book.
 
 ## Operational + security guidance
 

@@ -40,6 +40,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/verification"
+	sdk "github.com/tkhq/go-sdk"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -169,7 +170,10 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
 	RemoteSignerUrl            *string
+	RemoteSignerAddress        *string
 	RemoteDiscovery            *bool
+	TurnkeyOrg                 *string
+	TurnkeyApiKeyName          *string
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -307,7 +311,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
 	defaultRemoteSignerUrl := ""
+	defaultRemoteSignerAddress := ""
 	defaultRemoteDiscovery := false
+	defaultTurnkeyOrg := ""
+	defaultTurnkeyApiKeyName := "default"
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -429,9 +436,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// Flags
 		TestOrchAvail:   &defaultTestOrchAvail,
-		RemoteSigner:    &defaultRemoteSigner,
-		RemoteSignerUrl: &defaultRemoteSignerUrl,
-		RemoteDiscovery: &defaultRemoteDiscovery,
+		RemoteSigner:          &defaultRemoteSigner,
+		RemoteSignerUrl:       &defaultRemoteSignerUrl,
+		RemoteSignerAddress:   &defaultRemoteSignerAddress,
+		RemoteDiscovery:       &defaultRemoteDiscovery,
+		TurnkeyOrg:            &defaultTurnkeyOrg,
+		TurnkeyApiKeyName:     &defaultTurnkeyApiKeyName,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -475,6 +485,8 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
+	var turnkeyAdminClient *sdk.Client
+
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
 			glog.Exit("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
@@ -694,6 +706,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			exit("Remote signer mode requires on-chain network")
 		}
 	}
+	if *cfg.TurnkeyOrg != "" && !*cfg.RemoteSigner {
+		exit("-turnkeyOrg requires -remoteSigner")
+	}
 
 	if *cfg.Redeemer {
 		n.NodeType = core.RedeemerNode
@@ -835,15 +850,72 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		defer gpm.Stop()
 
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
-		if err != nil {
-			glog.Errorf("Error creating Ethereum account manager: %v", err)
-			return
-		}
+		var am eth.AccountManager
+		if *cfg.TurnkeyOrg != "" {
+			if n.NodeType != core.RemoteSignerNode {
+				glog.Exit("-turnkeyOrg is only supported when running as a remote signer (-remoteSigner)")
+			}
+			tkClient, err := sdk.New(sdk.WithAPIKeyName(*cfg.TurnkeyApiKeyName))
+			if err != nil {
+				glog.Exit("Failed to create Turnkey client: ", err)
+			}
+			turnkeyAdminClient = tkClient
+			orgID := *cfg.TurnkeyOrg
+			accts, err := eth.ListTurnkeyEthereumAccounts(tkClient, orgID)
+			if err != nil {
+				glog.Exit("Failed to list Turnkey Ethereum accounts: ", err)
+			}
+			var signAddr ethcommon.Address
+			if *cfg.EthAcctAddr != "" {
+				signAddr = ethcommon.HexToAddress(*cfg.EthAcctAddr)
+				found := false
+				for _, a := range accts {
+					if a.Address == signAddr {
+						found = true
+						break
+					}
+				}
+				if !found {
+					glog.Exit("-ethAcctAddr does not match any Turnkey Ethereum account in the organization")
+				}
+			} else if len(accts) > 0 {
+				signAddr = accts[0].Address
+			} else {
+				wname := fmt.Sprintf("livepeer-remote-signer-%d", time.Now().Unix())
+				_, addr, err := eth.TurnkeyCreateWallet(tkClient, orgID, wname)
+				if err != nil {
+					glog.Exit("No Turnkey wallets in org and failed to create one: ", err)
+				}
+				glog.Infof("Created Turnkey wallet with default Ethereum address %s", addr.Hex())
+				signAddr = addr
+				accts, err = eth.ListTurnkeyEthereumAccounts(tkClient, orgID)
+				if err != nil {
+					glog.Errorf("Warning: failed to refresh Turnkey account list: %v", err)
+					accts = []eth.TurnkeyWalletAccount{{OrganizationID: orgID, Address: signAddr}}
+				}
+			}
+			tkAm := eth.NewTurnkeyAccountManager(tkClient, orgID, chainID, signAddr)
+			am = tkAm
+			n.TurnkeyMode = true
+			n.TurnkeyOrgID = orgID
+			n.TurnkeyAccount = tkAm
+			addrList := make([]ethcommon.Address, 0, len(accts))
+			for _, a := range accts {
+				addrList = append(addrList, a.Address)
+			}
+			n.ReplaceTurnkeyAddressBook(addrList)
+		} else {
+			var err error
+			am, err = eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
+			if err != nil {
+				glog.Errorf("Error creating Ethereum account manager: %v", err)
+				return
+			}
 
-		if err := am.Unlock(*cfg.EthPassword); err != nil {
-			glog.Errorf("Error unlocking Ethereum account: %v", err)
-			return
+			if err := am.Unlock(*cfg.EthPassword); err != nil {
+				glog.Errorf("Error unlocking Ethereum account: %v", err)
+				return
+			}
 		}
 
 		tm := eth.NewTransactionManager(backend, gpm, am, *cfg.TxTimeout, *cfg.MaxTxReplacements)
@@ -1602,7 +1674,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
-			fields, err := server.GetOrchInfoSig(url)
+			pinAddr := ""
+			if *cfg.RemoteSignerAddress != "" {
+				pinAddr = *cfg.RemoteSignerAddress
+				n.GatewayRemoteSignerAddress = ethcommon.HexToAddress(pinAddr)
+			}
+			fields, err := server.GetOrchInfoSig(url, pinAddr)
 			if err != nil {
 				glog.Exit("Unable to query remote signer: ", err)
 			}
@@ -1833,6 +1910,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		exit("Error creating Livepeer server: err=%q", err)
 	}
+	s.TurnkeyAdmin = turnkeyAdminClient
 
 	ec := make(chan error)
 	tc := make(chan struct{})

@@ -956,3 +956,22 @@ func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
 		require.Equal([]string{"live-video-to-video/model-b"}, resp[0].Capabilities)
 	})
 }
+
+func TestRegisterRemoteSignerHandlers_DoesNotExposeTurnkeyRoutes(t *testing.T) {
+	require := require.New(t)
+
+	ls := &LivepeerServer{
+		HTTPMux: http.NewServeMux(),
+		LivepeerNode: &core.LivepeerNode{
+			TurnkeyMode:     true,
+			RemoteDiscovery: false,
+		},
+	}
+
+	registerRemoteSignerHandlers(ls)
+
+	req := httptest.NewRequest(http.MethodGet, "/turnkey/wallets", nil)
+	rr := httptest.NewRecorder()
+	ls.HTTPMux.ServeHTTP(rr, req)
+	require.Equal(http.StatusNotFound, rr.Code)
+}

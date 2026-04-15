@@ -254,6 +254,27 @@ func TestGetContractAddresses(t *testing.T) {
 	assert.Equal("{}", string(body))
 }
 
+func TestTurnkeyRoutesRegisteredOnCliServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
+	n.TurnkeyMode = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, _ := NewLivepeerServer(ctx, "127.0.0.1:1938", n, true, "")
+	mux := s.cliWebServerHandlers("addr")
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	res, err := http.Get(fmt.Sprintf("%s/turnkey/wallets", srv.URL))
+	require.NoError(err)
+	defer res.Body.Close()
+	// Route is registered on the CLI server; without Turnkey config the handler
+	// itself returns service unavailable.
+	assert.Equal(http.StatusServiceUnavailable, res.StatusCode)
+}
+
 func TestGetDelegatorInfo(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
@@ -342,8 +363,7 @@ func TestRegisteredOrchestrators(t *testing.T) {
 
 	eth.TranscoderPoolError = errors.New("error")
 	res, err = http.Get(fmt.Sprintf("%s/registeredOrchestrators", srv.URL))
+	require.Nil(err)
 	defer res.Body.Close()
-
-	assert.Nil(err)
 	assert.Equal(http.StatusInternalServerError, res.StatusCode)
 }

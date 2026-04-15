@@ -54,6 +54,7 @@ func main() {
 		w.orchestrator = w.isOrchestrator()
 		w.redeemer = w.isRedeemer()
 		w.checkNet()
+		w.turnkey = w.status().TurnkeyMode
 		w.run()
 
 		return nil
@@ -71,6 +72,7 @@ type wizard struct {
 	redeemer     bool
 	testnet      bool
 	offchain     bool
+	turnkey      bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
@@ -80,6 +82,7 @@ type wizardOpt struct {
 	testnet         bool
 	orchestrator    bool
 	notOrchestrator bool
+	turnkeyOnly     bool
 }
 
 func (w *wizard) initializeOptions() []wizardOpt {
@@ -112,6 +115,10 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		}, testnet: true},
 		{desc: "Sign a message", invoke: w.signMessage},
 		{desc: "Sign typed data", invoke: w.signTypedData},
+		{desc: "Turnkey: List wallets / Ethereum addresses", invoke: w.turnkeyListWallets, turnkeyOnly: true},
+		{desc: "Turnkey: Create new wallet", invoke: w.turnkeyCreateWallet, turnkeyOnly: true},
+		{desc: "Turnkey: Create new account (derive address)", invoke: w.turnkeyCreateAccount, turnkeyOnly: true},
+		{desc: "Turnkey: Select default signing address", invoke: w.turnkeySelectAddress, turnkeyOnly: true},
 		{desc: "Vote in a governance poll", invoke: w.vote, orchestrator: true},
 		{desc: "Vote on a treasury proposal", invoke: w.voteOnProposal, orchestrator: true},
 		{desc: "Set max ticket face value", invoke: w.setMaxFaceValue, orchestrator: true},
@@ -130,6 +137,9 @@ func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
 		if opt.testnet && !w.testnet {
+			continue
+		}
+		if opt.turnkeyOnly && !w.turnkey {
 			continue
 		}
 		if !opt.orchestrator && !opt.notOrchestrator || isOrchestratorOrRedeemer && opt.orchestrator || !isOrchestratorOrRedeemer && opt.notOrchestrator {

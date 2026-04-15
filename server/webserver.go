@@ -112,6 +112,15 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/getLogLevel", getLogLevelHandler())
 	mux.Handle("/debug", s.debugHandler())
 
+	if s.LivepeerNode != nil && s.LivepeerNode.TurnkeyMode {
+		// Turnkey management endpoints are intentionally exposed on the
+		// CLI listener only, not on the remote signer -http listener.
+		mux.Handle("GET /turnkey/wallets", http.HandlerFunc(s.TurnkeyListWallets))
+		mux.Handle("POST /turnkey/create-wallet", http.HandlerFunc(s.TurnkeyCreateWalletHTTP))
+		mux.Handle("POST /turnkey/create-account", http.HandlerFunc(s.TurnkeyCreateAccountHTTP))
+		mux.Handle("POST /turnkey/select-address", http.HandlerFunc(s.TurnkeySelectAddressHTTP))
+	}
+
 	// Metrics
 	if monitor.Enabled {
 		mux.Handle("/metrics", monitor.Exporter)

@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
+	"sort"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -37,6 +38,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpmscore "github.com/livepeer/lpms/core"
+	sdk "github.com/tkhq/go-sdk"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -133,6 +135,9 @@ type LivepeerServer struct {
 	outSegmentTimeout    time.Duration
 
 	byocSrv *byoc.BYOCGatewayServer
+
+	// TurnkeyAdmin is non-nil for remote signers using Turnkey (wallet HTTP API).
+	TurnkeyAdmin *sdk.Client
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -1640,6 +1645,18 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 	}
 
 	res.BroadcasterPrices = s.LivepeerNode.GetBasePrices()
+
+	if s.LivepeerNode != nil {
+		res.TurnkeyMode = s.LivepeerNode.TurnkeyMode
+		res.TurnkeyOrgID = s.LivepeerNode.TurnkeyOrgID
+		addrs := s.LivepeerNode.TurnkeyAddressList()
+		sort.Slice(addrs, func(i, j int) bool {
+			return addrs[i].Hex() < addrs[j].Hex()
+		})
+		for _, a := range addrs {
+			res.TurnkeyAddresses = append(res.TurnkeyAddresses, a.Hex())
+		}
+	}
 
 	return res
 }

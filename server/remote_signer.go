@@ -36,6 +36,19 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	remoteAddr := getRemoteAddr(r)
 	clog.Info(ctx, "Orch info signature request", "ip", remoteAddr)
 
+	if tk := ls.LivepeerNode.TurnkeyAccount; tk != nil {
+		if q := strings.TrimSpace(r.URL.Query().Get("address")); q != "" {
+			addr := ethcommon.HexToAddress(q)
+			if !ls.LivepeerNode.TurnkeySigningAddressAllowed(addr) {
+				respondJsonError(ctx, w, fmt.Errorf("unknown or disallowed signing address"), http.StatusBadRequest)
+				return
+			}
+			prev := tk.SigningAddress()
+			tk.SetSigningAddress(addr)
+			defer tk.SetSigningAddress(prev)
+		}
+	}
+
 	// Get the broadcaster (signer)
 	// In remote signer mode, we may not have an OrchestratorPool, so create a broadcaster directly
 	gw := core.NewBroadcaster(ls.LivepeerNode)
@@ -142,6 +155,7 @@ type RemotePaymentState struct {
 	PMSessionID          string
 	LastUpdate           time.Time
 	OrchestratorAddress  ethcommon.Address
+	SignerAddress        string `json:"signerAddress,omitempty"`
 	SenderNonce          uint32
 	Balance              string
 	InitialPricePerUnit  int64
@@ -174,6 +188,9 @@ type RemotePaymentRequest struct {
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Optional Ethereum address (0x…) selecting which Turnkey identity signs (remote signer Turnkey mode).
+	SignerAddress string `json:"signerAddress,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -196,12 +213,18 @@ func signState(ls *LivepeerServer, stateBytes []byte) ([]byte, error) {
 }
 
 // verifyStateSignature verifies that sig is a valid signature over stateBytes produced
-// by the remote signer's Ethereum account.
-func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) error {
+// by the remote signer's Ethereum account (or the address recorded in state for Turnkey multi-address).
+func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte, state *RemotePaymentState) error {
 	if ls == nil || ls.LivepeerNode == nil || ls.LivepeerNode.Eth == nil {
 		return fmt.Errorf("ethereum client not configured for remote signer")
 	}
 	addr := ls.LivepeerNode.Eth.Account().Address
+	if state != nil && state.SignerAddress != "" {
+		addr = ethcommon.HexToAddress(state.SignerAddress)
+	}
+	if ls.LivepeerNode.TurnkeyAccount != nil && !ls.LivepeerNode.TurnkeySigningAddressAllowed(addr) {
+		return fmt.Errorf("signer address not allowed for Turnkey remote signer")
+	}
 	if !lpcrypto.VerifySig(addr, stateBytes, sig) {
 		return fmt.Errorf("invalid state signature")
 	}
@@ -264,13 +287,13 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	reqState, reqSig := req.State.State, req.State.Sig
 	hasState := len(reqState) != 0 || len(reqSig) != 0
 	if hasState {
-		if err := verifyStateSignature(ls, reqState, reqSig); err != nil {
-			err = errors.New("invalid sig")
+		if err := json.Unmarshal(reqState, &state); err != nil {
+			err = errors.New("invalid state")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		if err := json.Unmarshal(reqState, &state); err != nil {
-			err = errors.New("invalid state")
+		if err := verifyStateSignature(ls, reqState, reqSig, state); err != nil {
+			err = errors.New("invalid sig")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
@@ -278,6 +301,13 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			err := fmt.Errorf("orchestratorAddress mismatch")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
+		}
+		if q := strings.TrimSpace(req.SignerAddress); q != "" && state.SignerAddress != "" {
+			if !strings.EqualFold(q, state.SignerAddress) {
+				err := fmt.Errorf("signerAddress does not match signed state")
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
 		}
 		state.SequenceNumber++
 	} else {
@@ -287,6 +317,37 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			InitialPricePerUnit:  priceInfo.PricePerUnit,
 			InitialPixelsPerUnit: priceInfo.PixelsPerUnit,
 		}
+		if q := strings.TrimSpace(req.SignerAddress); q != "" {
+			state.SignerAddress = ethcommon.HexToAddress(q).Hex()
+		} else {
+			state.SignerAddress = ls.LivepeerNode.Eth.Account().Address.Hex()
+		}
+	}
+
+	effectiveSigner := ls.LivepeerNode.Eth.Account().Address
+	if state.SignerAddress != "" {
+		effectiveSigner = ethcommon.HexToAddress(state.SignerAddress)
+	}
+	if q := strings.TrimSpace(req.SignerAddress); q != "" {
+		reqAddr := ethcommon.HexToAddress(q)
+		if state.SignerAddress != "" && reqAddr != effectiveSigner {
+			err := fmt.Errorf("signerAddress does not match payment state")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		if state.SignerAddress == "" {
+			state.SignerAddress = reqAddr.Hex()
+			effectiveSigner = reqAddr
+		}
+	}
+	if tk := ls.LivepeerNode.TurnkeyAccount; tk != nil {
+		if !ls.LivepeerNode.TurnkeySigningAddressAllowed(effectiveSigner) {
+			respondJsonError(ctx, w, fmt.Errorf("signer address not allowed"), http.StatusBadRequest)
+			return
+		}
+		prev := tk.SigningAddress()
+		tk.SetSigningAddress(effectiveSigner)
+		defer tk.SetSigningAddress(prev)
 	}
 
 	stateID := core.ManifestID(state.StateID)
@@ -549,10 +610,16 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// Gateway helper that calls the remote signer service for the GetOrchestratorInfo signature
-func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
+// Gateway helper that calls the remote signer service for the GetOrchestratorInfo signature.
+// When address is non-empty, it is passed as ?address=0x… for Turnkey multi-address signers.
+func GetOrchInfoSig(remoteSignerHost *url.URL, address string) (*OrchInfoSigResponse, error) {
 
-	url := remoteSignerHost.ResolveReference(&url.URL{Path: "/sign-orchestrator-info"})
+	u := remoteSignerHost.ResolveReference(&url.URL{Path: "/sign-orchestrator-info"})
+	if strings.TrimSpace(address) != "" {
+		q := u.Query()
+		q.Set("address", strings.TrimSpace(address))
+		u.RawQuery = q.Encode()
+	}
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -560,7 +627,7 @@ func GetOrchInfoSig(remoteSignerHost *url.URL) (*OrchInfoSigResponse, error) {
 	}
 
 	// Make the request
-	resp, err := client.Post(url.String(), "application/json", nil)
+	resp, err := client.Post(u.String(), "application/json", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call remote signer: %w", err)
 	}

@@ -39,6 +39,12 @@ type NodeStatus struct {
 	RegisteredTranscoders       []RemoteTranscoderInfo
 	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
 	BroadcasterPrices           map[string]*big.Rat
+	// Turnkey remote signer: true when using Turnkey for Ethereum signing.
+	TurnkeyMode bool `json:"turnkeyMode,omitempty"`
+	// Turnkey organization id (remote signer only).
+	TurnkeyOrgID string `json:"turnkeyOrgId,omitempty"`
+	// Ethereum addresses available in Turnkey for this org (remote signer only).
+	TurnkeyAddresses []string `json:"turnkeyAddresses,omitempty"`
 	// xxx add transcoder's version here
 }
 

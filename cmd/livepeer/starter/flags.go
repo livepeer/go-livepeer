@@ -140,7 +140,10 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.TestOrchAvail = fs.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
 	cfg.RemoteSigner = fs.Bool("remoteSigner", *cfg.RemoteSigner, "Set to true to run remote signer service")
 	cfg.RemoteSignerUrl = fs.String("remoteSignerUrl", *cfg.RemoteSignerUrl, "URL of remote signer service to use (e.g., http://localhost:8935). Gateway only.")
+	cfg.RemoteSignerAddress = fs.String("remoteSignerAddress", *cfg.RemoteSignerAddress, "Gateway only. Optional Ethereum address to pin remote signer identity when the signer uses Turnkey multi-address mode")
 	cfg.RemoteDiscovery = fs.Bool("remoteDiscovery", *cfg.RemoteDiscovery, "Enable orchestrator discovery on remote signers")
+	cfg.TurnkeyOrg = fs.String("turnkeyOrg", *cfg.TurnkeyOrg, "Remote signer only. Turnkey organization id; when set, Ethereum keys are managed in Turnkey instead of a local keystore")
+	cfg.TurnkeyApiKeyName = fs.String("turnkeyApiKeyName", *cfg.TurnkeyApiKeyName, "Name of the Turnkey API key in ~/.turnkey/keys/<name>/ (used with -turnkeyOrg)")
 
 	// Gateway metrics
 	cfg.KafkaBootstrapServers = fs.String("kafkaBootstrapServers", *cfg.KafkaBootstrapServers, "URL of Kafka Bootstrap Servers")
