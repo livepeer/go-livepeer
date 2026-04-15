@@ -169,6 +169,9 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
 	RemoteSignerUrl            *string
+	RemoteSignerHeaders        *string
+	RemoteSignerWebhookURL     *string
+	RemoteSignerWebhookHeaders *string
 	RemoteDiscovery            *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
@@ -307,6 +310,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
 	defaultRemoteSignerUrl := ""
+	defaultRemoteSignerHeaders := ""
+	defaultRemoteSignerWebhookURL := ""
+	defaultRemoteSignerWebhookHeaders := ""
 	defaultRemoteDiscovery := false
 
 	// Gateway logs
@@ -428,10 +434,13 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail:   &defaultTestOrchAvail,
-		RemoteSigner:    &defaultRemoteSigner,
-		RemoteSignerUrl: &defaultRemoteSignerUrl,
-		RemoteDiscovery: &defaultRemoteDiscovery,
+		TestOrchAvail:              &defaultTestOrchAvail,
+		RemoteSigner:               &defaultRemoteSigner,
+		RemoteSignerUrl:            &defaultRemoteSignerUrl,
+		RemoteSignerHeaders:        &defaultRemoteSignerHeaders,
+		RemoteSignerWebhookURL:     &defaultRemoteSignerWebhookURL,
+		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
+		RemoteDiscovery:            &defaultRemoteDiscovery,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1570,6 +1579,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
 		n.LiveAIAuthWebhookURL = parsedUrl
 	}
+	if *cfg.RemoteSignerWebhookURL != "" {
+		parsedURL, err := validateURL(*cfg.RemoteSignerWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting remote signer webhook URL ", err)
+		}
+		glog.Info("Using remote signer webhook URL ", parsedURL.Redacted())
+		n.RemoteSignerWebhookURL = parsedURL
+		if cfg.RemoteSignerWebhookHeaders != nil {
+			n.RemoteSignerWebhookHeaders = parseHeaderMap(*cfg.RemoteSignerWebhookHeaders)
+		}
+	}
 
 	httpIngest := true
 
@@ -1601,8 +1621,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 
+			if cfg.RemoteSignerHeaders != nil {
+				n.RemoteSignerHeaders = parseHeaderMap(*cfg.RemoteSignerHeaders)
+			}
+
 			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
-			fields, err := server.GetOrchInfoSig(url)
+			fields, err := server.GetOrchInfoSig(url, n.RemoteSignerHeaders)
 			if err != nil {
 				glog.Exit("Unable to query remote signer: ", err)
 			}
@@ -1635,13 +1659,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
+			// IMPORTANT: Do not forward RemoteSignerHeaders here. These headers may
+			// contain secrets intended only for the configured remote signer, and a
+			// separate orchestrator discovery webhook must never receive them.
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		} else if n.RemoteSignerUrl != nil {
 			orchDiscoveryURL := n.RemoteSignerUrl.ResolveReference(&url.URL{Path: "/discover-orchestrators"})
 			glog.Info("Using remote signer orchestrator discovery endpoint ", orchDiscoveryURL)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, orchDiscoveryURL, *cfg.DiscoveryTimeout)
+			n.OrchestratorPool = discovery.WebhookPoolConfig{
+				Broadcaster:      bcast,
+				Callback:         orchDiscoveryURL,
+				Headers:          n.RemoteSignerHeaders,
+				DiscoveryTimeout: *cfg.DiscoveryTimeout,
+			}.New()
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
@@ -1807,14 +1839,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.RemoteDiscovery = *cfg.RemoteDiscovery
 	}
 	if cfg.LiveAIHeartbeatHeaders != nil {
-		n.LiveAIHeartbeatHeaders = make(map[string]string)
-		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
-		for _, header := range headers {
-			parts := strings.SplitN(header, ":", 2)
-			if len(parts) == 2 {
-				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
-			}
-		}
+		n.LiveAIHeartbeatHeaders = parseHeaderMap(*cfg.LiveAIHeartbeatHeaders)
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
@@ -2087,6 +2112,17 @@ func validateURL(u string) (*url.URL, error) {
 		return nil, errors.New("URL should be HTTP or HTTPS")
 	}
 	return p, nil
+}
+
+func parseHeaderMap(raw string) map[string]string {
+	headers := make(map[string]string)
+	for _, header := range strings.Split(raw, ",") {
+		parts := strings.SplitN(header, ":", 2)
+		if len(parts) == 2 {
+			headers[parts[0]] = parts[1]
+		}
+	}
+	return headers
 }
 
 func isLocalURL(u string) (bool, error) {
