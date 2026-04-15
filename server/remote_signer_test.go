@@ -1208,3 +1208,29 @@ func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
 		require.Equal([]string{"live-video-to-video/model-b"}, resp[0].Capabilities)
 	})
 }
+
+func TestGetOrchInfoSig_SendsConfiguredHeaders(t *testing.T) {
+	require := require.New(t)
+
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(http.MethodPost, r.Method)
+		require.Equal("/sign-orchestrator-info", r.URL.Path)
+		require.Equal("application/json", r.Header.Get("Content-Type"))
+		require.Equal("Bearer gateway-token", r.Header.Get("Authorization"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"address":   "0x1234",
+			"signature": "0xabcd",
+		})
+	}))
+	defer remoteTS.Close()
+
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	resp, err := GetOrchInfoSig(remoteURL, map[string]string{"Authorization": "Bearer gateway-token"})
+	require.NoError(err)
+	require.Equal([]byte{0x12, 0x34}, []byte(resp.Address))
+	require.Equal([]byte{0xab, 0xcd}, []byte(resp.Signature))
+}

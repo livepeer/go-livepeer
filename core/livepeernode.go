@@ -150,6 +150,7 @@ type LivepeerNode struct {
 
 	// Gateway fields for remote signers
 	RemoteSignerUrl            *url.URL          // URL of remote signer service to use (gateway only)
+	RemoteSignerHeaders        map[string]string // Headers to use for gateway remote signer requests
 	RemoteSignerWebhookURL     *url.URL          // Authentication webhook URL called by remote signer during GenerateLivePayment
 	RemoteSignerWebhookHeaders map[string]string // Headers to use for remote signer webhook requests
 	RemoteEthAddr              ethcommon.Address // eth address of the remote signer
