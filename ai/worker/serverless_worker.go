@@ -95,6 +95,11 @@ type wsRestartingMessage struct {
 	RequestID string `json:"request_id"`
 }
 
+type wsClosingMessage struct {
+	Type    string `json:"type"`
+	Message string `json:"message,omitempty"`
+}
+
 type channelInfo struct {
 	URL       string `json:"url"`
 	Direction string `json:"direction"`
@@ -134,6 +139,26 @@ func getServerlessTimeout() time.Duration {
 	}
 
 	return parsedTimeout
+}
+
+func getServerlessTimeoutGracePeriod() time.Duration {
+	gracePeriod := 5 * time.Second
+	gracePeriodEnv := strings.TrimSpace(os.Getenv("LIVE_AI_SERVERLESS_TIMEOUT_GRACE_PERIOD"))
+	if gracePeriodEnv == "" {
+		return gracePeriod
+	}
+
+	parsedGracePeriod, err := time.ParseDuration(gracePeriodEnv)
+	if err != nil {
+		slog.Warn("Invalid serverless timeout grace period, using default", "grace_period", gracePeriodEnv, "default", gracePeriod, "error", err)
+		return gracePeriod
+	}
+	if parsedGracePeriod <= 0 {
+		slog.Warn("Serverless timeout grace period must be positive, using default", "grace_period", gracePeriodEnv, "default", gracePeriod)
+		return gracePeriod
+	}
+
+	return parsedGracePeriod
 }
 
 func (f *ServerlessWorker) SetTrickleServer(srv *trickle.Server) {
@@ -435,6 +460,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 		// Fail-safe timeout to avoid big bills.
 		serverlessTimeout := getServerlessTimeout()
+		timeoutGracePeriod := getServerlessTimeoutGracePeriod()
 		timeout := time.NewTimer(serverlessTimeout)
 		defer timeout.Stop()
 
@@ -472,8 +498,21 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		for {
 			select {
 			case <-timeout.C:
-				// TODO notify the runner so it can notify the client. Wait for grace then close.
-				slog.Info("Websocket connection timeout reached, closing connection", "timeout", serverlessTimeout)
+				slog.Info("Websocket connection timeout reached, notifying runner before cleanup", "timeout", serverlessTimeout, "grace_period", timeoutGracePeriod)
+				timeoutPayload, err := json.Marshal(wsClosingMessage{
+					Type:    "closing",
+					Message: "scope session timeout reached; terminating shortly",
+				})
+				if err != nil {
+					slog.Warn("Failed to marshal websocket timeout message before cleanup", "error", err)
+					return
+				}
+				if err := websocketConn.Write(timeoutPayload); err != nil {
+					slog.Warn("Failed to notify websocket timeout before cleanup", "error", err)
+					return
+				}
+				// This blocks the loop, so no more processing happens during the grace period.
+				time.Sleep(timeoutGracePeriod)
 				return
 
 			case msg := <-messageChan:
