@@ -272,6 +272,21 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		}
 	}
 
+	daydreamUserID := "daydreamer"
+	if req.Params != nil {
+		if rawUserID, ok := (*req.Params)["daydream_user_id"]; ok {
+			userIDStr, ok := rawUserID.(string)
+			if !ok {
+				slog.Warn("Invalid params.daydream_user_id (not a string), using default", "default", daydreamUserID)
+			} else if userIDStr == "" {
+				slog.Warn("Empty params.daydream_user_id, using default", "default", daydreamUserID)
+			} else {
+				daydreamUserID = userIDStr
+			}
+			// NB: the runner checks daydream_user_id so leave it in the params
+		}
+	}
+
 	f.mu.Lock()
 	trickleSrv := f.trickleSrv
 	if trickleSrv == nil {
@@ -290,6 +305,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		headers.Add("Authorization", "Key "+authToken)
 		slog.Info("Added authorization header from FAL_API_KEY")
 	}
+	headers.Set("Manifest-Id", manifestID)
+	headers.Set("Daydream-User-Id", daydreamUserID)
 
 	// Dial before starting goroutines so errors can be returned to caller
 	rawWebsocketConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
