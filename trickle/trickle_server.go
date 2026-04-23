@@ -605,14 +605,9 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 					latestSeq := s.nextWrite
 					s.mutex.RUnlock()
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
+					w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
 					if closed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
-					} else {
-						// usually happens if a publisher cancels a pending segment right before closing the channel
-						// other times, the subscriber is slow and the segment falls out of the live window
-						// send over latest seq so slow clients can grab leading edge
-						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
-						w.WriteHeader(470)
 					}
 				}
 				return totalWrites, nil

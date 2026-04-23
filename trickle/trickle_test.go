@@ -303,6 +303,36 @@ func TestTrickle_PublisherReset(t *testing.T) {
 	<-writeDone
 }
 
+func TestTrickle_EmptySegment(t *testing.T) {
+	require, channelURL := makeServer(t)
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+
+	pp, err := pub.Next()
+	require.Nil(err)
+
+	n, err := pp.Write(bytes.NewReader(nil))
+	require.Nil(err)
+	require.Equal(int64(0), n)
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+
+	resp, err := sub.Read()
+	defer resp.Body.Close()
+
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal("0", resp.Header.Get("Lp-Trickle-Seq"))
+	require.Equal("", resp.Header.Get("Lp-Trickle-Closed"))
+	require.Equal("1", resp.Header.Get("Lp-Trickle-Latest"))
+
+	body, err := io.ReadAll(resp.Body)
+	require.Nil(err)
+	require.Equal("", string(body))
+}
+
 func TestTrickle_IdleSweep(t *testing.T) {
 	require := require.New(t)
 	mux := http.NewServeMux()
