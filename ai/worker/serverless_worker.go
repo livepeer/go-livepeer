@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -122,6 +121,7 @@ func NewServerlessWorker(wsURL string, capacity int) (*ServerlessWorker, error) 
 }
 
 func getServerlessTimeout() time.Duration {
+	ctx := context.Background()
 	timeout := 1 * time.Hour
 	timeoutEnv := strings.TrimSpace(os.Getenv("LIVE_AI_SERVERLESS_TIMEOUT"))
 	if timeoutEnv == "" {
@@ -130,11 +130,11 @@ func getServerlessTimeout() time.Duration {
 
 	parsedTimeout, err := time.ParseDuration(timeoutEnv)
 	if err != nil {
-		slog.Warn("Invalid serverless timeout, using default", "timeout", timeoutEnv, "default", timeout, "error", err)
+		clog.Warning(ctx, "Invalid serverless timeout, using default", "timeout", timeoutEnv, "default", timeout, "error", err)
 		return timeout
 	}
 	if parsedTimeout <= 0 {
-		slog.Warn("Serverless timeout must be positive, using default", "timeout", timeoutEnv, "default", timeout)
+		clog.Warning(ctx, "Serverless timeout must be positive, using default", "timeout", timeoutEnv, "default", timeout)
 		return timeout
 	}
 
@@ -142,6 +142,7 @@ func getServerlessTimeout() time.Duration {
 }
 
 func getServerlessTimeoutGracePeriod() time.Duration {
+	ctx := context.Background()
 	gracePeriod := 5 * time.Second
 	gracePeriodEnv := strings.TrimSpace(os.Getenv("LIVE_AI_SERVERLESS_TIMEOUT_GRACE_PERIOD"))
 	if gracePeriodEnv == "" {
@@ -150,11 +151,11 @@ func getServerlessTimeoutGracePeriod() time.Duration {
 
 	parsedGracePeriod, err := time.ParseDuration(gracePeriodEnv)
 	if err != nil {
-		slog.Warn("Invalid serverless timeout grace period, using default", "grace_period", gracePeriodEnv, "default", gracePeriod, "error", err)
+		clog.Warning(ctx, "Invalid serverless timeout grace period, using default", "grace_period", gracePeriodEnv, "default", gracePeriod, "error", err)
 		return gracePeriod
 	}
 	if parsedGracePeriod <= 0 {
-		slog.Warn("Serverless timeout grace period must be positive, using default", "grace_period", gracePeriodEnv, "default", gracePeriod)
+		clog.Warning(ctx, "Serverless timeout grace period must be positive, using default", "grace_period", gracePeriodEnv, "default", gracePeriod)
 		return gracePeriod
 	}
 
@@ -277,9 +278,9 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		if rawUserID, ok := (*req.Params)["daydream_user_id"]; ok {
 			userIDStr, ok := rawUserID.(string)
 			if !ok {
-				slog.Warn("Invalid params.daydream_user_id (not a string), using default", "default", daydreamUserID)
+				clog.Warning(ctx, "Invalid params.daydream_user_id (not a string), using default", "default", daydreamUserID)
 			} else if userIDStr == "" {
-				slog.Warn("Empty params.daydream_user_id, using default", "default", daydreamUserID)
+				clog.Warning(ctx, "Empty params.daydream_user_id, using default", "default", daydreamUserID)
 			} else {
 				daydreamUserID = userIDStr
 			}
@@ -297,13 +298,13 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 	currentInUse := f.inUse
 	f.mu.Unlock()
 
-	slog.Info("Starting new job", "inUse", currentInUse, "capacity", f.capacity, "url", wsURL)
+	clog.Info(ctx, "Starting new job", "inUse", currentInUse, "capacity", f.capacity, "url", wsURL)
 
 	// Prepare headers with authorization
 	headers := http.Header{}
 	if authToken := os.Getenv("FAL_API_KEY"); authToken != "" {
 		headers.Add("Authorization", "Key "+authToken)
-		slog.Info("Added authorization header from FAL_API_KEY")
+		clog.Info(ctx, "Added authorization header from FAL_API_KEY")
 	}
 	headers.Set("Manifest-Id", manifestID)
 	headers.Set("Daydream-User-Id", daydreamUserID)
@@ -315,7 +316,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed to connect to websocket", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		clog.Error(ctx, "Failed to connect to websocket", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, fmt.Errorf("failed to connect to websocket: %w", err)
 	}
 
@@ -327,7 +328,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed to marshal request", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		clog.Error(ctx, "Failed to marshal request", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 	websocketConn := newLockedWebSocket(rawWebsocketConn)
@@ -340,11 +341,12 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed to read ready message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
+		clog.Error(ctx, "Failed to read ready message", "error", err, "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, fmt.Errorf("failed to read ready message: %w", err)
 	}
 
 	err = performHandshake(
+		ctx,
 		readyMsg,
 		func() ([]byte, error) {
 			_, msg, readErr := websocketConn.ReadMessage()
@@ -359,7 +361,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		f.inUse--
 		remainingInUse := f.inUse
 		f.mu.Unlock()
-		slog.Error("Failed handshake", "error", err, "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
+		clog.Error(ctx, "Failed handshake", "error", err, "message", string(readyMsg), "inUse", remainingInUse, "capacity", f.capacity)
 		return nil, err
 	}
 
@@ -373,40 +375,40 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 			for name, ch := range openChannels {
 				if err := ch.Close(); err != nil {
-					slog.Warn("Failed to close trickle channel", "channel", name, "error", err)
+					clog.Warning(ctx, "Failed to close trickle channel", "channel", name, "error", err)
 				}
 			}
 			eventsChannelName := manifestID + "-events"
 			eventsCh := trickle.NewLocalPublisher(trickleSrv, eventsChannelName, "application/json")
 			if err := eventsCh.Close(); err != nil {
-				slog.Warn("Failed to close events trickle channel", "channel", eventsChannelName, "error", err)
+				clog.Warning(ctx, "Failed to close events trickle channel", "channel", eventsChannelName, "error", err)
 			}
 			controlChannelName := manifestID + "-control"
 			controlCh := trickle.NewLocalPublisher(trickleSrv, controlChannelName, "application/json")
 			if err := controlCh.Close(); err != nil {
-				slog.Warn("Failed to close control trickle channel", "channel", controlChannelName, "error", err)
+				clog.Warning(ctx, "Failed to close control trickle channel", "channel", controlChannelName, "error", err)
 			}
 
 			f.mu.Lock()
 			f.inUse--
 			remainingInUse := f.inUse
 			f.mu.Unlock()
-			slog.Info("Job ended", "inUse", remainingInUse, "capacity", f.capacity)
+			clog.Info(ctx, "Job ended", "inUse", remainingInUse, "capacity", f.capacity)
 		}()
 
-		slog.Info("Connected to websocket successfully")
+		clog.Info(ctx, "Connected to websocket successfully")
 
 		// Subscribe to the events trickle stream to detect when stream ends
 		if req.EventsUrl != nil && *req.EventsUrl != "" {
 			go func() {
 				eventsUrl := *req.EventsUrl
-				slog.Info("Subscribing to events stream", "url", eventsUrl)
+				clog.Info(ctx, "Subscribing to events stream", "url", eventsUrl)
 
 				subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 					URL: eventsUrl,
 				})
 				if err != nil {
-					slog.Error("Failed to create events subscriber", "error", err)
+					clog.Error(ctx, "Failed to create events subscriber", "error", err)
 					return
 				}
 
@@ -420,7 +422,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						retries = 0
 					} else {
 						if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-							slog.Info("Events stream closed, closing websocket", "reason", err)
+							clog.Info(ctx, "Events stream closed, closing websocket", "reason", err)
 							_ = websocketConn.Close() // This will cause ReadMessage to return an error
 							return
 						}
@@ -432,12 +434,12 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						}
 
 						if retries > maxRetries {
-							slog.Error("Too many errors reading events stream, closing websocket", "error", err)
+							clog.Error(ctx, "Too many errors reading events stream, closing websocket", "error", err)
 							_ = websocketConn.Close()
 							return
 						}
 
-						slog.Warn("Error reading events stream", "error", err, "retry", retries)
+						clog.Warning(ctx, "Error reading events stream", "error", err, "retry", retries)
 						retries++
 						time.Sleep(retryPause)
 						continue
@@ -447,14 +449,14 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					data, err := io.ReadAll(segment.Body)
 					_ = segment.Body.Close()
 					if err != nil {
-						slog.Warn("Error reading event body", "error", err)
+						clog.Warning(ctx, "Error reading event body", "error", err)
 						continue
 					}
-					slog.Info("Received event from trickle stream", "size_bytes", len(data))
+					clog.Info(ctx, "Received event from trickle stream", "size_bytes", len(data))
 				}
 			}()
 		} else {
-			slog.Warn("No events URL provided, cannot detect stream end via trickle")
+			clog.Warning(ctx, "No events URL provided, cannot detect stream end via trickle")
 		}
 
 		// Track missed pongs and terminate after 3 missed pongs.
@@ -464,6 +466,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		)
 		var missedPongs atomic.Int32
 		stopPings := startPinging(
+			ctx,
 			pingInterval,
 			maxMissedPongs,
 			&missedPongs,
@@ -515,17 +518,17 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		for {
 			select {
 			case <-timeout.C:
-				slog.Info("Websocket connection timeout reached, notifying runner before cleanup", "timeout", serverlessTimeout, "grace_period", timeoutGracePeriod)
+				clog.Info(ctx, "Websocket connection timeout reached, notifying runner before cleanup", "timeout", serverlessTimeout, "grace_period", timeoutGracePeriod)
 				timeoutPayload, err := json.Marshal(wsClosingMessage{
 					Type:    "closing",
 					Message: "scope session timeout reached; terminating shortly",
 				})
 				if err != nil {
-					slog.Warn("Failed to marshal websocket timeout message before cleanup", "error", err)
+					clog.Warning(ctx, "Failed to marshal websocket timeout message before cleanup", "error", err)
 					return
 				}
 				if err := websocketConn.Write(timeoutPayload); err != nil {
-					slog.Warn("Failed to notify websocket timeout before cleanup", "error", err)
+					clog.Warning(ctx, "Failed to notify websocket timeout before cleanup", "error", err)
 					return
 				}
 				// This blocks the loop, so no more processing happens during the grace period.
@@ -534,17 +537,17 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 			case msg := <-messageChan:
 				if msg.err != nil {
-					slog.Info("Websocket read ended", "error", msg.err)
+					clog.Info(ctx, "Websocket read ended", "error", msg.err)
 					return
 				}
 
-				slog.Info("Received message from websocket",
+				clog.Info(ctx, "Received message from websocket",
 					"type", msg.messageType,
 					"message", string(msg.message))
 
 				var generic wsMessage
 				if err := json.Unmarshal(msg.message, &generic); err != nil {
-					slog.Warn("Failed to parse message", "error", err)
+					clog.Warning(ctx, "Failed to parse message", "error", err)
 					continue
 				}
 
@@ -566,7 +569,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					}
 					handshakeRetryTimes = filteredRetryTimes
 					if len(handshakeRetryTimes) >= maxHandshakeRetries {
-						slog.Error("Too many handshake retries in short period", "retries", len(handshakeRetryTimes), "window", handshakeRetryWindow)
+						clog.Error(ctx, "Too many handshake retries in short period", "retries", len(handshakeRetryTimes), "window", handshakeRetryWindow)
 						return
 					}
 					handshakeRetryTimes = append(handshakeRetryTimes, now)
@@ -574,7 +577,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					// Close all media channels; active streams do not survive a retry.
 					for channelName, ch := range openChannels {
 						if err := ch.Close(); err != nil {
-							slog.Warn("Failed to close media trickle channel before handshake retry", "channel", channelName, "error", err)
+							clog.Warning(ctx, "Failed to close media trickle channel before handshake retry", "channel", channelName, "error", err)
 							continue
 						}
 						delete(openChannels, channelName)
@@ -583,6 +586,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 
 					// Perform the handshake
 					err := performHandshake(
+						ctx,
 						msg.message,
 						func() ([]byte, error) {
 							nextMsg := <-messageChan
@@ -595,20 +599,21 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						reqJSON,
 					)
 					if err != nil {
-						slog.Error("Handshake retry failed", "error", err)
+						clog.Error(ctx, "Handshake retry failed", "error", err)
 						return
 					}
 					if stopPings != nil {
 						stopPings()
 					}
 					stopPings = startPinging(
+						ctx,
 						pingInterval,
 						maxMissedPongs,
 						&missedPongs,
 						websocketConn,
 					)
 					missedPongs.Store(0)
-					slog.Info("Handshake retry completed")
+					clog.Info(ctx, "Handshake retry completed")
 
 				case "restarting":
 					if stopPings != nil {
@@ -618,21 +623,21 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					// Hack: Run this in a goroutine so we can accommodate other in-flight
 					// 			 messages, mostly pongs
 					go func(rawMessage []byte) {
-						respJSON, err := handleRestartingMessage(rawMessage, &missedPongs)
+						respJSON, err := handleRestartingMessage(ctx, rawMessage, &missedPongs)
 						if err != nil {
-							slog.Warn("Failed to handle restarting message", "error", err)
+							clog.Warning(ctx, "Failed to handle restarting message", "error", err)
 							return
 						}
 						err = websocketConn.Write(respJSON)
 						if err != nil {
-							slog.Warn("Failed to send restarting response", "error", err)
+							clog.Warning(ctx, "Failed to send restarting response", "error", err)
 						}
 					}(msg.message)
 
 				case "create_channels":
 					var startMsg createChannelsMessage
 					if err := json.Unmarshal(msg.message, &startMsg); err != nil {
-						slog.Warn("Failed to parse create_channels message", "error", err)
+						clog.Warning(ctx, "Failed to parse create_channels message", "error", err)
 						continue
 					}
 					mimeType := startMsg.MimeType
@@ -654,7 +659,7 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 						createInbound = true
 						createOutbound = true
 					default:
-						slog.Warn("Ignoring create_channels with unsupported direction", "direction", startMsg.Direction)
+						clog.Warning(ctx, "Ignoring create_channels with unsupported direction", "direction", startMsg.Direction)
 						continue
 					}
 
@@ -690,37 +695,37 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 					}
 					respJSON, err := json.Marshal(resp)
 					if err != nil {
-						slog.Warn("Failed to marshal response message", "error", err)
+						clog.Warning(ctx, "Failed to marshal response message", "error", err)
 						continue
 					}
 					err = websocketConn.Write(respJSON)
 					if err != nil {
-						slog.Warn("Failed to send response message", "error", err)
+						clog.Warning(ctx, "Failed to send response message", "error", err)
 						return
 					}
-					slog.Info("Created trickle channels for create_channels", "count", len(newChannels), "direction", startMsg.Direction, "mimeType", mimeType)
+					clog.Info(ctx, "Created trickle channels for create_channels", "count", len(newChannels), "direction", startMsg.Direction, "mimeType", mimeType)
 
 				case "close_channels":
 					var stopMsg closeChannelsMessage
 					if err := json.Unmarshal(msg.message, &stopMsg); err != nil {
-						slog.Warn("Failed to parse close_channels message", "error", err)
+						clog.Warning(ctx, "Failed to parse close_channels message", "error", err)
 						continue
 					}
 					for _, channelName := range stopMsg.Channels {
 						ch, ok := openChannels[channelName]
 						if !ok {
-							slog.Warn("close_channels channel not found", "channel", channelName)
+							clog.Warning(ctx, "close_channels channel not found", "channel", channelName)
 							continue
 						}
 						if err := ch.Close(); err != nil {
-							slog.Warn("Failed to close close_channels channel", "channel", channelName, "error", err)
+							clog.Warning(ctx, "Failed to close close_channels channel", "channel", channelName, "error", err)
 							continue
 						}
 						delete(openChannels, channelName)
-						slog.Info("Closed trickle channel from close_channels", "channel", channelName)
+						clog.Info(ctx, "Closed trickle channel from close_channels", "channel", channelName)
 					}
 				default:
-					slog.Error("Received unrecognized websocket message type", "type", generic.Type, "message", string(msg.message))
+					clog.Error(ctx, "Received unrecognized websocket message type", "type", generic.Type, "message", string(msg.message))
 					return
 				}
 			}
@@ -796,6 +801,7 @@ func (f *ServerlessWorker) Version() []Version {
 }
 
 func performHandshake(
+	ctx context.Context,
 	readyMsg []byte,
 	readMsg func() ([]byte, error),
 	websocketConn *lockedWebSocket,
@@ -808,12 +814,12 @@ func performHandshake(
 	if readyResponse.Type != "ready" {
 		return fmt.Errorf("did not receive ready message from websocket")
 	}
-	slog.Info("Received ready message", "message", readyResponse.Message)
+	clog.Info(ctx, "Received ready message", "message", readyResponse.Message)
 
 	if len(reqJSON) == 0 {
 		return fmt.Errorf("empty request payload")
 	}
-	slog.Info("Sending handshake request", "request", string(reqJSON))
+	clog.Info(ctx, "Sending handshake request", "request", string(reqJSON))
 	if err := websocketConn.Write(reqJSON); err != nil {
 		return fmt.Errorf("failed to send request message: %w", err)
 	}
@@ -841,12 +847,13 @@ func performHandshake(
 	if startedResponse.Type != "started" {
 		return fmt.Errorf("unexpected message type %q between ready and started", startedResponse.Type)
 	}
-	slog.Info("Received started message")
+	clog.Info(ctx, "Received started message")
 
 	return nil
 }
 
 func startPinging(
+	logCtx context.Context,
 	pingInterval time.Duration,
 	maxMissedPongs int32,
 	missedPongs *atomic.Int32,
@@ -868,15 +875,15 @@ func startPinging(
 				}
 				pingJSON, err := json.Marshal(pingPayload)
 				if err != nil {
-					slog.Warn("Failed to marshal app ping", "error", err)
+					clog.Warning(logCtx, "Failed to marshal app ping", "error", err)
 					continue
 				}
 				if err := websocketConn.Write(pingJSON); err != nil {
-					slog.Warn("Failed to send ping", "error", err)
+					clog.Warning(logCtx, "Failed to send ping", "error", err)
 					return
 				}
 				if missedPongs.Add(1) >= maxMissedPongs {
-					slog.Warn("Too many missed pongs, closing websocket", "missed", missedPongs.Load())
+					clog.Warning(logCtx, "Too many missed pongs, closing websocket", "missed", missedPongs.Load())
 					_ = websocketConn.Close()
 					return
 				}
@@ -899,6 +906,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func handleRestartingMessage(
+	ctx context.Context,
 	message []byte,
 	missedPongs *atomic.Int32,
 ) ([]byte, error) {
@@ -915,13 +923,13 @@ func handleRestartingMessage(
 		)
 		for i := 0; i < pongWaitAttempts; i++ {
 			if missedPongs.Load() == 0 {
-				slog.Info("Recovered from a pending pong, good job")
+				clog.Info(ctx, "Recovered from a pending pong, good job")
 				break
 			}
 			time.Sleep(pongWaitInterval)
 		}
 		if remainingMissed := missedPongs.Load(); remainingMissed > 0 {
-			slog.Warn("Continuing restart without pong recovery", "missedPongs", remainingMissed)
+			clog.Warning(ctx, "Continuing restart without pong recovery", "missedPongs", remainingMissed)
 		}
 	}
 	missedPongs.Store(0)
