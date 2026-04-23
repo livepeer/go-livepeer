@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -62,8 +63,9 @@ type Segment struct {
 	idx    int
 	mutex  *sync.Mutex
 	cond   *sync.Cond
-	buffer *bytes.Buffer
+	buffer *segmentBuffer
 	closed bool
+	done   atomic.Bool
 
 	// to shut down any pending publishers
 	closeCh chan bool
@@ -117,6 +119,7 @@ func ConfigureServer(config TrickleServerConfig) *Server {
 	)
 
 	mux.HandleFunc("POST "+basePath+"{streamName}", streamManager.handleCreate)
+	mux.HandleFunc("GET "+basePath+"{streamName}/next", streamManager.handleNext)
 	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
 	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
 	mux.HandleFunc("DELETE "+basePath+"{streamName}/{idx}", streamManager.closeSeq)
@@ -373,6 +376,19 @@ func (tr *timeoutReader) Close() error {
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, _ := s.getForWrite(idx)
 
+	if r.Header.Get("Lp-Trickle-Reset") != "" {
+		// Usually means the publisher had to restart for some reason.
+		// Close prior segments to unblock subscribers for any hanging writes
+		// but allow for preconnected segments (sometimes they come out-of-order)
+		s.mutex.Lock()
+		for _, seg := range s.segments {
+			if seg != nil && seg.idx < segment.idx {
+				seg.close()
+			}
+		}
+		s.mutex.Unlock()
+	}
+
 	// Wrap the request body with the custom timeoutReader so we can send
 	// provisional headers (keepalives) until receiving the first byte
 	reader := &timeoutReader{
@@ -393,7 +409,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 			if totalRead == 0 {
 				startedAt = time.Now()
 				s.mutex.Lock()
-				s.nextWrite = idx + 1
+				s.nextWrite = segment.idx + 1
 				s.writeTime = startedAt
 				s.mutex.Unlock()
 			}
@@ -417,9 +433,10 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 					s.mutex.Lock()
 					isClosed := s.closed
 					// increment seq anyway: avoids clients erroring out on next seq
-					s.nextWrite = idx + 1
+					s.nextWrite = segment.idx + 1
 					s.writeTime = startedAt
 					s.mutex.Unlock()
+					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 					if isClosed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
 					}
@@ -439,6 +456,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	}
 
 	// Mark segment as closed
+	w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 	segment.close()
 	slog.Info("POST completed", "stream", s.name, "idx", idx, "bytes", totalRead, "took", time.Since(startedAt))
 }
@@ -507,6 +525,25 @@ func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	stream.handleGet(w, r, idx)
 }
 
+func (sm *Server) handleNext(w http.ResponseWriter, r *http.Request) {
+	stream, exists := sm.getStream(r.PathValue("streamName"))
+	if !exists {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+	stream.mutex.RLock()
+	nextWrite := stream.nextWrite
+	closed := stream.closed
+	stream.mutex.RUnlock()
+
+	next := strconv.Itoa(nextWrite)
+	w.Header().Set("Lp-Trickle-Latest", next)
+	if closed {
+		w.Header().Set("Lp-Trickle-Closed", "terminated")
+	}
+	w.Write([]byte(next))
+}
+
 func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, latestSeq, exists, closed := s.getForRead(idx)
 	if !exists {
@@ -568,14 +605,9 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 					latestSeq := s.nextWrite
 					s.mutex.RUnlock()
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
+					w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
 					if closed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
-					} else {
-						// usually happens if a publisher cancels a pending segment right before closing the channel
-						// other times, the subscriber is slow and the segment falls out of the live window
-						// send over latest seq so slow clients can grab leading edge
-						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
-						w.WriteHeader(470)
 					}
 				}
 				return totalWrites, nil
@@ -594,7 +626,7 @@ func newSegment(idx int) *Segment {
 	mu := &sync.Mutex{}
 	return &Segment{
 		idx:     idx,
-		buffer:  new(bytes.Buffer),
+		buffer:  newSegmentBuffer(),
 		cond:    sync.NewCond(mu),
 		mutex:   mu,
 		closeCh: make(chan bool),
@@ -606,29 +638,43 @@ func (segment *Segment) writeData(data []byte) {
 	defer segment.mutex.Unlock()
 
 	// Write to buffer
-	segment.buffer.Write(data)
+	segment.buffer.write(data)
 
 	// Signal waiting readers
 	segment.cond.Broadcast()
 }
 
-func (s *Segment) readData(startPos int) ([]byte, bool) {
+func (s *Segment) readData(readPos int) ([]byte, int, bool) {
+	data, nextPos, atTail, invalid, _ := s.buffer.readChunk(readPos)
+	if invalid {
+		slog.Info("Invalid start pos, invoking eof")
+		return nil, readPos, true
+	}
+	if len(data) > 0 {
+		// A concurrent write+close can land after readChunk() snapshots published.
+		// Only signal EOF from the fast path if a fresh published load still
+		// matches the returned cursor.
+		if atTail && s.done.Load() && nextPos == int(s.buffer.published.Load()) {
+			return data, nextPos, true
+		}
+		return data, nextPos, false
+	}
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	for {
-		totalLen := s.buffer.Len()
-		if startPos < totalLen {
-			data := s.buffer.Bytes()[startPos:totalLen]
-			return data, s.closed
+		data, nextPos, atTail, invalid, published := s.buffer.readChunk(readPos)
+		if len(data) > 0 {
+			return data, nextPos, s.closed && atTail && nextPos == published
 		}
-		if startPos > totalLen {
+		if invalid {
 			slog.Info("Invalid start pos, invoking eof")
 			// This might happen if the buffer was reset
 			// eg because of a repeated POST
-			return nil, true
+			return nil, readPos, true
 		}
 		if s.closed {
-			return nil, true
+			return nil, readPos, true
 		}
 		// Wait for new data
 		s.cond.Wait()
@@ -643,6 +689,7 @@ func (s *Segment) close() {
 	defer s.mutex.Unlock()
 	if !s.closed {
 		s.closed = true
+		s.done.Store(true)
 		close(s.closeCh)
 		s.cond.Broadcast()
 	}
@@ -652,11 +699,11 @@ func (s *Segment) isFresh() bool {
 	// fresh segments have not been written to yet
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return !s.closed && s.buffer.Len() == 0
+	return !s.closed && s.buffer.isEmpty()
 }
 
 func (ss *SegmentSubscriber) readData() ([]byte, bool) {
-	data, eof := ss.segment.readData(ss.readPos)
-	ss.readPos += len(data)
+	data, nextPos, eof := ss.segment.readData(ss.readPos)
+	ss.readPos = nextPos
 	return data, eof
 }

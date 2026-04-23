@@ -2,6 +2,7 @@ package starter
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"math/big"
 	"os"
@@ -366,6 +367,31 @@ func TestPrintConfigRedaction(t *testing.T) {
 
 	// Verify non-sensitive values are still shown
 	assert.Contains(output, testServiceAddr, "ServiceAddr should not be redacted")
+}
+
+func TestParseHeaderMap(t *testing.T) {
+	require := require.New(t)
+	headers := parseHeaderMap("Authorization:Bearer abc,X-API-Key:secret,invalid")
+	require.Equal("Bearer abc", headers["Authorization"])
+	require.Equal("secret", headers["X-API-Key"])
+	_, exists := headers["invalid"]
+	require.False(exists)
+}
+
+func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	err := fs.Parse([]string{
+		"-remoteSignerHeaders", "Authorization:Bearer gateway-token",
+		"-remoteSignerWebhookUrl", "https://example.com/webhook",
+		"-remoteSignerWebhookHeaders", "Authorization:Bearer abc,X-API-Key:secret",
+	})
+	require.NoError(err)
+	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
+	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
+	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }
 
 // Helper struct to capture output for testing
