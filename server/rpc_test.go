@@ -1082,20 +1082,29 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	assert.EqualError(t, err, expErr.Error())
 }
 
-func TestGetOrchestrator_CapabilitiesPricesError(t *testing.T) {
+func TestGetOrchestrator_CapabilitiesPricesError_IsIgnored(t *testing.T) {
+	// GetCapabilitiesPrices errors are intentionally non-fatal so a transient
+	// capability-prices failure does not block discovery.
 	orch := &mockOrchestrator{}
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	expErr := errors.New("capabilities prices error")
+
+	expectedPrice := &net.PriceInfo{PricePerUnit: 2, PixelsPerUnit: 3}
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
 	orch.On("Nodes").Return(nil)
 	orch.On("Address").Return(ethcommon.Address{})
-	orch.On("GetCapabilitiesPrices", mock.Anything).Return(nil, expErr)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return(nil, errors.New("capabilities prices error"))
 
-	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
-	assert.EqualError(t, err, expErr.Error())
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(expectedPrice, oInfo.PriceInfo)
+	assert.Empty(oInfo.CapabilitiesPrices)
 }
 
 func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
