@@ -361,6 +361,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
 
+	manifestID := req.ManifestID
+	if req.Type == RemoteType_BYOC {
+		if priceInfo.Constraint == "" || priceInfo.Capability != uint32(core.Capability_BYOC) {
+			err := errors.New("missing BYOC capability in OrchestratorInfo price_info.constraint")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		// For BYOC, use capability name as manifest ID for shared balance tracking
+		manifestID = priceInfo.Constraint
+	}
+
 	// Load or initialize state
 	var (
 		state *RemotePaymentState
@@ -398,13 +409,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "state_id", state.StateID)
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
-	manifestID := req.ManifestID
-	byocCapability := ""
-	if req.Type == RemoteType_BYOC {
-		if priceInfo.Capability == uint32(core.Capability_BYOC) && priceInfo.Constraint != "" {
-			byocCapability = priceInfo.Constraint
-		}
-	}
 	if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.
@@ -412,12 +416,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		if req.Type == RemoteType_BYOC && byocCapability != "" {
-			// For BYOC, use capability name as manifest ID for shared balance tracking
-			manifestID = byocCapability
-		} else {
-			manifestID = string(core.RandomManifestID())
-		}
+		manifestID = string(core.RandomManifestID())
 	}
 	ctx = clog.AddVal(ctx, "manifest_id", manifestID)
 
@@ -507,11 +506,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	} else if req.Type == RemoteType_BYOC {
 		// BYOC uses time-based pricing: price per unit of time (typically seconds)
 		// The pixelsPerUnit in the price info represents the time scaling factor
-		if byocCapability == "" {
-			err = errors.New("missing BYOC capability in OrchestratorInfo price_info.constraint")
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
 		now := time.Now()
 		lastUpdate := state.LastUpdate
 		if lastUpdate.IsZero() {
