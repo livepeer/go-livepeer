@@ -235,7 +235,7 @@ type RemotePaymentRequest struct {
 	Orchestrator []byte `json:"orchestrator"`
 
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
-	ManifestID string `json:"ManifestID,omitempty"`
+	ManifestID string `json:"manifestID,omitempty"`
 
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
