@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -95,6 +96,7 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 
 	gw := core.NewBroadcaster(ls.LivepeerNode)
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB
 	var req SignBYOCJobRequestInput
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		clog.Errorf(ctx, "Failed to decode SignBYOCJobRequest err=%q", err)
@@ -140,6 +142,7 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
+	// These endpoints sign caller-supplied payloads and must only be exposed on trusted networks.
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
@@ -496,18 +499,18 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 	case RemoteType_BYOC:
-		if billableSecs <= 0 {
+		secondsToPrefund := billableSecs
+		if secondsToPrefund <= 0 {
 			// Preload for expected job duration (floored to the orchestrator's
 			// minimum balance requirement) so batch jobs size the initial ticket
 			// batch to match the work, instead of using a fixed buffer.
-			billableSecs = float64(max(req.TimeoutSeconds, minPreloadSecs))
+			secondsToPrefund = float64(max(req.TimeoutSeconds, minPreloadSecs))
 		}
-		// BYOC uses time-based pricing: pixelsPerUnit is the time scaling factor
-		// (typically 1 per second). Units = seconds × pixelsPerUnit, floored to 1.
-		pixels = int64(billableSecs * float64(priceInfo.PixelsPerUnit))
-		if pixels < priceInfo.PixelsPerUnit {
-			pixels = priceInfo.PixelsPerUnit
+		if secondsToPrefund < 1 {
+			secondsToPrefund = 1
 		}
+		// BYOC pre-funding is ceil(seconds) of work at the advertised unit scale.
+		pixels = int64(math.Ceil(secondsToPrefund)) * priceInfo.PixelsPerUnit
 	case "":
 		// caller supplied req.InPixels directly
 	default:
