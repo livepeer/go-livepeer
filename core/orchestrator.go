@@ -382,7 +382,7 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
-	if manifestID != "" && orch.node.Balances != nil {
+	if manifestID != "" {
 		if balances, ok := orch.node.Balances.balances[sender]; ok {
 			fixedPrice := balances.FixedPrice(manifestID)
 			if fixedPrice != nil {
