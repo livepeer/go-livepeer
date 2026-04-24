@@ -224,14 +224,14 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "invalid job type",
 		},
 		{
-			name: "byoc missing capability constraint",
+			name: "byoc missing manifestID",
 			req: func() RemotePaymentRequest {
 				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
 				oInfo.PriceInfo = &net.PriceInfo{
 					PricePerUnit:  1,
 					PixelsPerUnit: 1,
 					Capability:    uint32(core.Capability_BYOC),
-					Constraint:    "",
+					Constraint:    "acme/model",
 				}
 				return RemotePaymentRequest{
 					Orchestrator: makeOrchBlob(oInfo),
@@ -239,7 +239,26 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				}
 			}(),
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "missing BYOC capability in OrchestratorInfo price_info.constraint",
+			wantMsg:    "missing manifestID for BYOC capability",
+		},
+		{
+			name: "byoc no matching capability price",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_BYOC),
+					Constraint:    "other/model",
+				}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					Type:         RemoteType_BYOC,
+					ManifestID:   "acme/model",
+				}
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    `missing or zero priceInfo for BYOC capability "acme/model"`,
 		},
 		{
 			name: "missing pixels without type",
@@ -359,10 +378,19 @@ func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
 		},
 	}
 
-	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, ""))
-	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model"))
-	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model"))
-	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, ""))
+	got, err := resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model")
+	require.NoError(err)
+	require.Same(byocPrice, got)
+
+	_, err = resolvePriceInfo(oInfo, RemoteType_BYOC, "")
+	require.ErrorContains(err, "missing manifestID for BYOC capability")
+
+	_, err = resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model")
+	require.ErrorContains(err, `missing or zero priceInfo for BYOC capability "other/model"`)
+
+	got, err = resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, "")
+	require.NoError(err)
+	require.Same(oInfo.PriceInfo, got)
 }
 
 func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {

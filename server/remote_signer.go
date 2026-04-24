@@ -32,6 +32,10 @@ const RemoteType_LiveVideoToVideo = "lv2v"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const RemoteType_BYOC = "byoc"
 
+// minPreloadSecs is the orchestrator's minimum required balance (seconds), used
+// as the floor when preloading an initial BYOC ticket batch.
+const minPreloadSecs = 60
+
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
@@ -241,6 +245,11 @@ type RemotePaymentRequest struct {
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Expected job duration. Used as the initial preload when there is no prior
+	// state, so that short BYOC batch jobs don't over-reserve. Floored to the
+	// orchestrator's minimum balance requirement (minPreloadSecs). Optional.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -275,34 +284,37 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
-// resolvePriceInfo returns the effective PriceInfo for a payment request.
-// For BYOC, pricing may only be advertised in CapabilitiesPrices rather than the
-// top-level PriceInfo, so we search for a matching capability-specific entry.
-func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, manifestID string) *net.PriceInfo {
-	top := oInfo.PriceInfo
-	if reqType != RemoteType_BYOC {
-		return top
+// resolvePriceInfo returns the effective PriceInfo for a payment request and
+// validates that it is usable (non-nil with non-zero price and pixels per unit).
+// For BYOC, pricing may only be advertised in CapabilitiesPrices rather than
+// the top-level PriceInfo, so we search for the capability-specific entry that
+// matches the requested ManifestID.
+func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, manifestID string) (*net.PriceInfo, error) {
+	if reqType == RemoteType_BYOC {
+		if manifestID == "" {
+			return nil, errors.New("missing manifestID for BYOC capability")
+		}
+		byocCap := uint32(core.Capability_BYOC)
+		candidates := append([]*net.PriceInfo{oInfo.PriceInfo}, oInfo.CapabilitiesPrices...)
+		for _, cp := range candidates {
+			if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
+				continue
+			}
+			if cp.Capability != byocCap || cp.Constraint != manifestID {
+				continue
+			}
+			return cp, nil
+		}
+		return nil, fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
+			"ensure the orchestrator advertises capability-specific pricing "+
+			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", manifestID)
 	}
 
-	if top != nil && top.PricePerUnit > 0 && top.PixelsPerUnit > 0 &&
-		top.Capability == uint32(core.Capability_BYOC) && top.Constraint != "" {
-		return top
+	p := oInfo.PriceInfo
+	if p == nil || p.PricePerUnit == 0 || p.PixelsPerUnit == 0 {
+		return nil, errors.New("missing or zero priceInfo")
 	}
-
-	for _, cp := range oInfo.CapabilitiesPrices {
-		if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
-			continue
-		}
-		if cp.Capability != uint32(core.Capability_BYOC) {
-			continue
-		}
-		if manifestID != "" && cp.Constraint != manifestID {
-			continue
-		}
-		return cp
-	}
-
-	return top
+	return p, nil
 }
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
@@ -340,16 +352,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	priceInfo := resolvePriceInfo(&oInfo, req.Type, req.ManifestID)
-	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
-		detail := "missing or zero priceInfo"
-		if req.Type == RemoteType_BYOC {
-			detail = fmt.Sprintf("missing or zero priceInfo for BYOC capability %q; "+
-				"ensure the orchestrator advertises capability-specific pricing "+
-				"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)",
-				req.ManifestID)
-		}
-		err := errors.New(detail)
+	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, req.ManifestID)
+	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -360,23 +364,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
-
 	manifestID := req.ManifestID
-	if req.Type == RemoteType_BYOC {
-		if priceInfo.Constraint == "" || priceInfo.Capability != uint32(core.Capability_BYOC) {
-			err := errors.New("missing BYOC capability in OrchestratorInfo price_info.constraint")
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		// For BYOC, use capability name as manifest ID for shared balance tracking
-		manifestID = priceInfo.Constraint
-	}
 
 	// Load or initialize state
-	var (
-		state *RemotePaymentState
-		err   error
-	)
+	var state *RemotePaymentState
 	reqState, reqSig := req.State.State, req.State.Sig
 	hasState := len(reqState) != 0 || len(reqSig) != 0
 	if hasState {
@@ -495,33 +486,31 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
+	switch req.Type {
+	case RemoteType_LiveVideoToVideo:
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
-			billableSecs = (60 * time.Second).Seconds()
+			billableSecs = 60
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	} else if req.Type == RemoteType_BYOC {
-		// BYOC uses time-based pricing: price per unit of time (typically seconds)
-		// The pixelsPerUnit in the price info represents the time scaling factor
-		now := time.Now()
-		lastUpdate := state.LastUpdate
-		if lastUpdate.IsZero() {
-			// Preload with 120 seconds (2 minutes) of data by default.
-			// The orchestrator requires minimum 60 seconds balance, so we use 2 minutes
-			// to have a buffer (matching the Go gateway's approach).
-			lastUpdate = now.Add(-120 * time.Second)
+	case RemoteType_BYOC:
+		if billableSecs <= 0 {
+			// Preload for expected job duration (floored to the orchestrator's
+			// minimum balance requirement) so batch jobs size the initial ticket
+			// batch to match the work, instead of using a fixed buffer.
+			billableSecs = float64(max(req.TimeoutSeconds, minPreloadSecs))
 		}
-		secSinceLastProcessed := now.Sub(lastUpdate).Seconds()
-		// For BYOC, "pixels" represents time units; pixelsPerUnit is typically 1 (per second)
-		// We calculate units as: seconds × pixelsPerUnit (which is typically 1)
-		pixels = int64(secSinceLastProcessed * float64(priceInfo.PixelsPerUnit))
+		// BYOC uses time-based pricing: pixelsPerUnit is the time scaling factor
+		// (typically 1 per second). Units = seconds × pixelsPerUnit, floored to 1.
+		pixels = int64(billableSecs * float64(priceInfo.PixelsPerUnit))
 		if pixels < priceInfo.PixelsPerUnit {
-			pixels = priceInfo.PixelsPerUnit // Minimum 1 unit
+			pixels = priceInfo.PixelsPerUnit
 		}
-	} else if req.Type != "" {
+	case "":
+		// caller supplied req.InPixels directly
+	default:
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
