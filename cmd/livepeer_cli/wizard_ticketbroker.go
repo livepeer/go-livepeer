@@ -59,7 +59,7 @@ func (w *wizard) deposit() {
 		"depositAmount": {depositAmount.String()},
 		"reserveAmount": {reserveAmount.String()},
 	}
-	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
+	fmt.Println(w.httpPostTxWithParams("fund deposit and reserve", fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
 
 	return
 }
