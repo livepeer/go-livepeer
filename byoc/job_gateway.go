@@ -444,10 +444,20 @@ func getJobSender(ctx context.Context, node *core.LivepeerNode) (*JobSender, err
 	addr := ethcommon.BytesToAddress(orchReq.Address)
 	jobSender := &JobSender{
 		Addr: addr.Hex(),
-		Sig:  "0x" + hex.EncodeToString(orchReq.Sig),
+		Sig:  encodeJobSig(orchReq.Sig),
 	}
 
 	return jobSender, nil
+}
+
+// encodeJobSig hex-encodes a signature with the "0x" prefix. Returns an empty
+// string for empty signatures, which can occur in offchain mode when the
+// broadcaster has no Eth keystore (see core.broadcaster.Sign).
+func encodeJobSig(sig []byte) string {
+	if len(sig) == 0 {
+		return ""
+	}
+	return "0x" + hex.EncodeToString(sig)
 }
 
 func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) {
