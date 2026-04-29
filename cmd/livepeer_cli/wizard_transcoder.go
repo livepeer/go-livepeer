@@ -165,13 +165,17 @@ func (w *wizard) activateOrchestrator() {
 		}
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
-	if !ok {
-		fmt.Printf("Error activating orchestrator: %v\n", result)
-		return
-	}
-	// TODO we should confirm if the transaction was actually sent
-	fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+			if !ok {
+				fmt.Printf("Error activating orchestrator: %v\n", result)
+				return
+			}
+			// TODO we should confirm if the transaction was actually sent
+			fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
+		}
 }
 
 func (w *wizard) setOrchestratorConfig() {
@@ -185,14 +189,18 @@ func (w *wizard) setOrchestratorConfig() {
 
 	val := w.getOrchestratorConfigFormValues()
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
 
-	if !ok {
-		fmt.Printf("Error applying configuration: %s\n", result)
-		return
-	}
+			if !ok {
+				fmt.Printf("Error applying configuration: %s\n", result)
+				return
+			}
 
-	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
+			fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
+		}
 }
 
 func (w *wizard) getOrchestratorConfigFormValues() url.Values {
@@ -269,13 +277,17 @@ func (w *wizard) vote() {
 		"choiceID": {fmt.Sprintf("%v", int(choice))},
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
 
-	if !ok {
-		fmt.Printf("Error voting: %s\n", result)
-		return
-	}
-	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
+			if !ok {
+				fmt.Printf("Error voting: %s\n", result)
+				return
+			}
+			fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
+		}
 }
 
 func (w *wizard) voteOnProposal() {
@@ -327,13 +339,17 @@ func (w *wizard) voteOnProposal() {
 		"reason":     {reason},
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/voteOnProposal", w.host, w.httpPort), data)
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/voteOnProposal", w.host, w.httpPort), data)
 
-	if !ok {
-		fmt.Printf("Error voting: %s\n", result)
-		return
-	}
-	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
+			if !ok {
+				fmt.Printf("Error voting: %s\n", result)
+				return
+			}
+			fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
+		}
 }
 
 func (w *wizard) showVoteChoices() {
@@ -364,14 +380,18 @@ func (w *wizard) setMaxFaceValue() {
 	data := url.Values{
 		"maxfacevalue": {fmt.Sprintf("%v", mfv.String())},
 	}
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxFaceValue", w.host, w.httpPort), data)
-	if ok {
-		fmt.Printf("Ticket max face value set")
-		return
-	} else {
-		fmt.Printf("Error setting max face value: %v", result)
-		return
-	}
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxFaceValue", w.host, w.httpPort), data)
+			if ok {
+				fmt.Printf("Ticket max face value set")
+				return
+			} else {
+				fmt.Printf("Error setting max face value: %v", result)
+				return
+			}
+		}
 }
 
 func (w *wizard) setPriceForBroadcaster() {
@@ -400,14 +420,18 @@ func (w *wizard) setPriceForBroadcaster() {
 		"pixelsPerUnit":      {fmt.Sprintf("%v", pixels)},
 		"broadcasterEthAddr": {fmt.Sprintf("%v", ethaddr)},
 	}
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForBroadcaster", w.host, w.httpPort), data)
-	if ok {
-		fmt.Printf("Price for broadcaster %v set to %v %v per %v pixels", ethaddr, price, currency, pixels)
-		return
-	} else {
-		fmt.Printf("Error setting price for broadcaster: %v", result)
-		return
-	}
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForBroadcaster", w.host, w.httpPort), data)
+			if ok {
+				fmt.Printf("Price for broadcaster %v set to %v %v per %v pixels", ethaddr, price, currency, pixels)
+				return
+			} else {
+				fmt.Printf("Error setting price for broadcaster: %v", result)
+				return
+			}
+		}
 
 }
 
@@ -425,12 +449,16 @@ func (w *wizard) setMaxSessions() {
 	data := url.Values{
 		"maxSessions": {fmt.Sprintf("%v", maxSessions)},
 	}
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxSessions", w.host, w.httpPort), data)
-	if ok {
-		fmt.Print(result)
-		return
-	} else {
-		fmt.Printf("Error setting max sessions: %v", result)
-		return
-	}
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxSessions", w.host, w.httpPort), data)
+			if ok {
+				fmt.Print(result)
+				return
+			} else {
+				fmt.Printf("Error setting max sessions: %v", result)
+				return
+			}
+		}
 }
