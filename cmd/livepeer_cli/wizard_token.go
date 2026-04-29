@@ -41,5 +41,9 @@ func (w *wizard) transferTokens() {
 }
 
 func (w *wizard) requestTokens() {
-	httpPost(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPost(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
+		}
 }

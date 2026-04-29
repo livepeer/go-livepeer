@@ -183,7 +183,11 @@ func (w *wizard) bond() {
 		"toAddr": {fmt.Sprintf("%v", tAddr.Hex())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) rebond() {
@@ -243,7 +247,11 @@ func (w *wizard) rebond() {
 		val["toAddr"] = []string{fmt.Sprintf("%v", toAddr.Hex())}
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/rebond", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/rebond", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) unbond() {
@@ -290,7 +298,11 @@ func (w *wizard) unbond() {
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) withdrawStake() {
@@ -327,7 +339,11 @@ func (w *wizard) withdrawStake() {
 		"unbondingLockId": {fmt.Sprintf("%v", strconv.FormatInt(unbondingLockID, 10))},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawStake", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawStake", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) withdrawFees() {
@@ -341,5 +357,9 @@ func (w *wizard) withdrawFees() {
 		"amount": {fmt.Sprintf("%v", dInfo.PendingFees.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort), val)
+		}
 }
