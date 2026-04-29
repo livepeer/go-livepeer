@@ -329,3 +329,17 @@ func httpPost(url string) string {
 
 	return string(result)
 }
+
+func (w *wizard) confirmAndPost(url string, val url.Values, confirmMessage string) (string, bool) {
+	fmt.Printf("%s (y/n) - ", confirmMessage)
+	input := w.readStringYesOrNo()
+
+	if input == "n" {
+		fmt.Println("Transaction cancelled.")
+		return "Transaction cancelled by user", false
+	}
+
+	result, ok := httpPostWithParams(url, val)
+	return result, ok
+}
+
