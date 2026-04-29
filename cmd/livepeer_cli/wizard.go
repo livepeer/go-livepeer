@@ -329,3 +329,23 @@ func httpPost(url string) string {
 
 	return string(result)
 }
+
+// confirmTx shows estimated tx cost and asks user for confirmation
+// Returns true if user confirms, false otherwise
+func (w *wizard) confirmTx(txType string, description string) bool {
+	estimateURL := fmt.Sprintf("http://%v:%v/estimateTxCost?txType=%s", w.host, w.httpPort, txType)
+	estimate := httpGet(estimateURL)
+
+	fmt.Printf("\n⚠️  Transaction: %s\n", description)
+	if estimate != "" {
+		fmt.Printf("💰 Estimated cost: %s\n", estimate)
+	}
+	fmt.Printf("Do you want to proceed? [y/N]: ")
+
+	input := strings.ToLower(strings.TrimSpace(w.read()))
+	if input != "y" && input != "yes" {
+		fmt.Printf("Transaction cancelled.\n")
+		return false
+	}
+	return true
+}
