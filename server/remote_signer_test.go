@@ -39,6 +39,27 @@ type apiErrorResponse struct {
 	} `json:"error"`
 }
 
+func makeBYOCCapsBlob(t *testing.T, capabilityName string) []byte {
+	t.Helper()
+	caps := &net.Capabilities{
+		Capacities: map[uint32]uint32{
+			uint32(core.Capability_BYOC): 1,
+		},
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_BYOC): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						capabilityName: {},
+					},
+				},
+			},
+		},
+	}
+	capsBlob, err := proto.Marshal(caps)
+	require.NoError(t, err)
+	return capsBlob
+}
+
 func newTestEthClient(t *testing.T) *testEthClient {
 	t.Helper()
 
@@ -214,14 +235,24 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "refresh session for remote signer",
 		},
 		{
-			name: "bare BYOC type is invalid without capability name",
+			name: "invalid arbitrary job type",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = "acme/model"
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "invalid job type",
+		},
+		{
+			name: "byoc type requires capability constraint",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
 				r.Type = RemoteType_BYOC
 				return r
 			}(),
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "invalid job type",
+			wantMsg:    "missing BYOC capability constraint",
 		},
 		{
 			name: "byoc no matching capability price",
@@ -235,7 +266,8 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				}
 				return RemotePaymentRequest{
 					Orchestrator: makeOrchBlob(oInfo),
-					Type:         "acme/model",
+					Type:         RemoteType_BYOC,
+					Capabilities: makeBYOCCapsBlob(t, "acme/model"),
 				}
 			}(),
 			wantStatus: http.StatusBadRequest,
@@ -359,14 +391,14 @@ func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
 		},
 	}
 
-	got, err := resolvePriceInfo(oInfo, "acme/model")
+	got, err := resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model")
 	require.NoError(err)
 	require.Equal(byocPrice, got)
 
-	_, err = resolvePriceInfo(oInfo, "other/model")
+	_, err = resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model")
 	require.ErrorContains(err, `missing or zero priceInfo for BYOC capability "other/model"`)
 
-	got, err = resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo)
+	got, err = resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, "")
 	require.NoError(err)
 	require.Equal(oInfo.PriceInfo, got)
 }
@@ -416,7 +448,8 @@ func TestGenerateLivePayment_BYOC_UsesCeilForFractionalSeconds(t *testing.T) {
 	reqBody, err := json.Marshal(RemotePaymentRequest{
 		Orchestrator: orchBlob,
 		ManifestID:   "ignored-byoc-manifest",
-		Type:         "acme/model",
+		Type:         RemoteType_BYOC,
+		Capabilities: makeBYOCCapsBlob(t, "acme/model"),
 		State:        RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
 	})
 	require.NoError(err)
@@ -653,7 +686,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	node.Sender = sender
 	ls := &LivepeerServer{LivepeerNode: node}
 
-	doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, net.Payment) {
+	doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, *net.Payment) {
 		reqBody, err := json.Marshal(reqPayload)
 		require.NoError(err)
 
@@ -672,7 +705,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		var payment net.Payment
 		require.NoError(proto.Unmarshal(paymentBytes, &payment))
 
-		return resp, payment
+		return resp, &payment
 	}
 
 	ev, err := sender.EV("pmSession")

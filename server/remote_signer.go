@@ -246,7 +246,8 @@ type RemotePaymentRequest struct {
 	// Job type to automatically calculate payments. Valid values: `lv2v`, `byoc`. Optional.
 	Type string `json:"type"`
 
-	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
+	// Capabilities to include in the ticket. Required for the byoc job type, where
+	// the BYOC model constraint identifies the external capability being paid for.
 	Capabilities []byte `json:"capabilities"`
 
 	// Expected job duration. Used as the initial preload when there is no prior
@@ -287,33 +288,59 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
-func byocCapabilityName(reqType string) string {
-	if reqType != "" && reqType != RemoteType_LiveVideoToVideo && reqType != RemoteType_BYOC {
-		return reqType
+func validateRemotePaymentType(reqType string) error {
+	switch reqType {
+	case "", RemoteType_LiveVideoToVideo, RemoteType_BYOC:
+		return nil
+	default:
+		return errors.New("invalid job type")
 	}
-	return ""
+}
+
+func byocCapabilityName(caps *net.Capabilities) (string, error) {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return "", errors.New("missing BYOC capability constraint")
+	}
+
+	byocConstraints := caps.Constraints.PerCapability[uint32(core.Capability_BYOC)]
+	if byocConstraints == nil || len(byocConstraints.Models) == 0 {
+		return "", errors.New("missing BYOC capability constraint")
+	}
+	if len(byocConstraints.Models) > 1 {
+		return "", errors.New("BYOC payment requires exactly one capability constraint")
+	}
+	var name string
+	for k := range byocConstraints.Models {
+		name = k
+		break
+	}
+	if name == "" {
+		return "", errors.New("missing BYOC capability constraint")
+	}
+	return name, nil
 }
 
 // resolvePriceInfo returns the effective PriceInfo for a payment request and
 // validates that it is usable (non-nil with non-zero price and pixels per unit).
-// For BYOC, the request type is the capability name, and pricing may only be
-// advertised in CapabilitiesPrices rather than the top-level PriceInfo.
-func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string) (*net.PriceInfo, error) {
-	if capabilityName := byocCapabilityName(reqType); capabilityName != "" {
+// For BYOC, the capability name comes from the BYOC capability constraint, and
+// pricing may only be advertised in CapabilitiesPrices rather than the top-level
+// PriceInfo.
+func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, byocCapability string) (*net.PriceInfo, error) {
+	if reqType == RemoteType_BYOC {
 		byocCap := uint32(core.Capability_BYOC)
 		candidates := append([]*net.PriceInfo{oInfo.PriceInfo}, oInfo.CapabilitiesPrices...)
 		for _, cp := range candidates {
 			if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
 				continue
 			}
-			if cp.Capability != byocCap || cp.Constraint != capabilityName {
+			if cp.Capability != byocCap || cp.Constraint != byocCapability {
 				continue
 			}
 			return cp, nil
 		}
 		return nil, fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
 			"ensure the orchestrator advertises capability-specific pricing "+
-			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", capabilityName)
+			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
 	}
 
 	p := oInfo.PriceInfo
@@ -358,7 +385,36 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	priceInfo, err := resolvePriceInfo(&oInfo, req.Type)
+	if err := validateRemotePaymentType(req.Type); err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	streamParams := &core.StreamParameters{
+		// Embedded within genSegCreds, may be used by orch for payment accounting
+		ManifestID: core.ManifestID(req.ManifestID),
+	}
+	var caps *net.Capabilities
+	if len(req.Capabilities) > 0 {
+		caps = &net.Capabilities{}
+		if err := proto.Unmarshal(req.Capabilities, caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(caps)
+	}
+	byocCapability := ""
+	if req.Type == RemoteType_BYOC {
+		var err error
+		byocCapability, err = byocCapabilityName(caps)
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+	}
+
+	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, byocCapability)
 	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
@@ -370,7 +426,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
-	byocCapability := byocCapabilityName(req.Type)
 	manifestID := req.ManifestID
 
 	// Load or initialize state
@@ -407,7 +462,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "state_id", state.StateID)
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
-	if byocCapability != "" {
+	if req.Type == RemoteType_BYOC {
 		manifestID = state.StateID
 	} else if manifestID == "" {
 		if hasState {
@@ -419,20 +474,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		manifestID = string(core.RandomManifestID())
 	}
 	ctx = clog.AddVal(ctx, "manifest_id", manifestID)
-
-	streamParams := &core.StreamParameters{
-		// Embedded within genSegCreds, may be used by orch for payment accounting
-		ManifestID: core.ManifestID(manifestID),
-	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
-	}
+	streamParams.ManifestID = core.ManifestID(manifestID)
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
 	if pmParams == nil {
