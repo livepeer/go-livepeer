@@ -287,30 +287,33 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
+func byocCapabilityName(reqType string) string {
+	if reqType != "" && reqType != RemoteType_LiveVideoToVideo && reqType != RemoteType_BYOC {
+		return reqType
+	}
+	return ""
+}
+
 // resolvePriceInfo returns the effective PriceInfo for a payment request and
 // validates that it is usable (non-nil with non-zero price and pixels per unit).
-// For BYOC, pricing may only be advertised in CapabilitiesPrices rather than
-// the top-level PriceInfo, so we search for the capability-specific entry that
-// matches the requested ManifestID.
-func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, manifestID string) (*net.PriceInfo, error) {
-	if reqType == RemoteType_BYOC {
-		if manifestID == "" {
-			return nil, errors.New("missing manifestID for BYOC capability")
-		}
+// For BYOC, the request type is the capability name, and pricing may only be
+// advertised in CapabilitiesPrices rather than the top-level PriceInfo.
+func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string) (*net.PriceInfo, error) {
+	if capabilityName := byocCapabilityName(reqType); capabilityName != "" {
 		byocCap := uint32(core.Capability_BYOC)
 		candidates := append([]*net.PriceInfo{oInfo.PriceInfo}, oInfo.CapabilitiesPrices...)
 		for _, cp := range candidates {
 			if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
 				continue
 			}
-			if cp.Capability != byocCap || cp.Constraint != manifestID {
+			if cp.Capability != byocCap || cp.Constraint != capabilityName {
 				continue
 			}
 			return cp, nil
 		}
 		return nil, fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
 			"ensure the orchestrator advertises capability-specific pricing "+
-			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", manifestID)
+			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", capabilityName)
 	}
 
 	p := oInfo.PriceInfo
@@ -355,7 +358,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, req.ManifestID)
+	priceInfo, err := resolvePriceInfo(&oInfo, req.Type)
 	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
@@ -367,6 +370,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
+	byocCapability := byocCapabilityName(req.Type)
 	manifestID := req.ManifestID
 
 	// Load or initialize state
@@ -403,7 +407,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "state_id", state.StateID)
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
-	if manifestID == "" {
+	if byocCapability != "" {
+		manifestID = state.StateID
+	} else if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.
 			err := errors.New("missing manifestID")
@@ -489,8 +495,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	switch req.Type {
-	case RemoteType_LiveVideoToVideo:
+	switch {
+	case req.Type == RemoteType_LiveVideoToVideo:
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
@@ -498,7 +504,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	case RemoteType_BYOC:
+	case byocCapability != "":
 		secondsToPrefund := billableSecs
 		if secondsToPrefund <= 0 {
 			// Preload for expected job duration (floored to the orchestrator's
@@ -511,7 +517,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		// BYOC pre-funding is ceil(seconds) of work at the advertised unit scale.
 		pixels = int64(math.Ceil(secondsToPrefund)) * priceInfo.PixelsPerUnit
-	case "":
+	case req.Type == "":
 		// caller supplied req.InPixels directly
 	default:
 		err = errors.New("invalid job type")
