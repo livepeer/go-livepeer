@@ -37,7 +37,7 @@ var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
 var ErrPixelsAbsent = errors.New("PixelsAbsent")
 var errPMCheckFailed = errors.New("PM Check Failed")
 
-type Params struct {
+type VerificationParams struct {
 	// ManifestID should go away once we do direct push of video
 	ManifestID core.ManifestID
 
@@ -72,7 +72,7 @@ type Results struct {
 }
 
 type Verifier interface {
-	Verify(params *Params) (*Results, error)
+	Verify(params *VerificationParams) (*Results, error)
 }
 
 type Policy struct {
@@ -91,7 +91,7 @@ type Policy struct {
 }
 
 type SegmentVerifierResults struct {
-	params *Params
+	params *VerificationParams
 	res    *Results
 }
 
@@ -108,15 +108,27 @@ type SegmentVerifier struct {
 	results   []SegmentVerifierResults
 	count     int
 	verifySig sigVerifyFn
+	sm        *SlashingManager
 }
 
 func NewSegmentVerifier(p *Policy) *SegmentVerifier {
-	return &SegmentVerifier{policy: p, verifySig: lpcrypto.VerifySig}
+	return &SegmentVerifier{policy: p, verifySig: lpcrypto.VerifySig, sm: &SlashingManager{}}
 }
 
-func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
+func (sv *SegmentVerifier) Verify(params *VerificationParams) (*VerificationParams, error) {
 	if err := sv.sigVerification(params); err != nil {
 		return nil, err
+	}
+
+	if sv.sm != nil {
+		slashable, err := sv.sm.checkSlashing(params)
+		if err != nil {
+			glog.Error("Error checking for slashing: ", err)
+		}
+		if slashable != nil {
+			glog.Info("Slashing opportunity found against ", params.Orchestrator.Address)
+			// TODO: Submit slashing evidence to the smart contracts
+		}
 	}
 
 	if sv.policy == nil {
@@ -183,7 +195,7 @@ func IsRetryable(err error) bool {
 	return retryable || IsFatal(err)
 }
 
-func (sv *SegmentVerifier) sigVerification(params *Params) error {
+func (sv *SegmentVerifier) sigVerification(params *VerificationParams) error {
 	if params.Orchestrator == nil || params.Orchestrator.Address == nil || params.Orchestrator.TicketParams == nil {
 		return nil
 	}
@@ -214,7 +226,7 @@ func (sv *SegmentVerifier) sigVerification(params *Params) error {
 	return nil
 }
 
-func countPixelParams(params *Params) ([]int64, error) {
+func countPixelParams(params *VerificationParams) ([]int64, error) {
 
 	if len(params.Results.Segments) != len(params.Renditions) {
 		return nil, ErrPixelsAbsent
