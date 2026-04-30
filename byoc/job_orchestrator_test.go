@@ -910,7 +910,7 @@ func TestProcessPayment(t *testing.T) {
 			}
 
 			before := orch.Balance(sender, core.ManifestID(tc.capability)).FloatString(0)
-			bal, err := bso.processPayment(ctx, sender, tc.capability, testPmtHdr)
+			bal, err := bso.processPayment(ctx, sender, tc.capability, tc.capability, testPmtHdr)
 			after := orch.Balance(sender, core.ManifestID(tc.capability)).FloatString(0)
 			t.Logf("Balance before: %s, after: %s", before, after)
 			assert.NoError(t, err)

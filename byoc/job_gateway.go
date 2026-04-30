@@ -121,7 +121,7 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 				continue
 			}
 
-			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.ID, time.Since(start))
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance)
 			w.Write(data)
 			return
@@ -186,7 +186,7 @@ func (bsg *BYOCGatewayServer) submitJob(ctx context.Context, w http.ResponseWrit
 				}
 			}
 
-			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(bsg.node, orchToken, gatewayJob.Job.Req.ID, time.Since(start))
 
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance.FloatString(0))
 		}
@@ -468,7 +468,11 @@ func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) 
 	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig}, nil
 }
 
-func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capability, sender, senderSig string) (*JobToken, error) {
+// getToken fetches a JobToken from an Orchestrator. If jobID is non-empty,
+// the orchestrator will return the per-job balance keyed by that ID — used
+// when refreshing tokens for an existing stream so the gateway can
+// reconcile its local balance with the orchestrator's view.
+func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capability, jobID, sender, senderSig string) (*JobToken, error) {
 	start := time.Now()
 	tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl+"/process/token", nil)
 	jobSender := JobSender{Addr: sender, Sig: senderSig}
@@ -476,6 +480,9 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 	reqSenderStr, _ := json.Marshal(jobSender)
 	tokenReq.Header.Set(jobEthAddressHdr, base64.StdEncoding.EncodeToString(reqSenderStr))
 	tokenReq.Header.Set(jobCapabilityHdr, capability)
+	if jobID != "" {
+		tokenReq.Header.Set(jobIdHdr, jobID)
+	}
 	if err != nil {
 		clog.Errorf(ctx, "Failed to create request for Orchestrator to verify job token request err=%v", err)
 		return nil, err

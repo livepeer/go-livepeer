@@ -26,6 +26,7 @@ const (
 	jobRequestHdr                   = "Livepeer"
 	jobEthAddressHdr                = "Livepeer-Eth-Address"
 	jobCapabilityHdr                = "Livepeer-Capability"
+	jobIdHdr                        = "Livepeer-Job-Id"
 	jobPaymentHeaderHdr             = "Livepeer-Payment"
 	jobPaymentBalanceHdr            = "Livepeer-Balance"
 	jobOrchSearchTimeoutHdr         = "Livepeer-Orch-Search-Timeout"

@@ -88,20 +88,21 @@ func (bsg *BYOCGatewayServer) createPayment(ctx context.Context, jobReq *JobRequ
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
 	sessionID := bsg.node.Sender.StartSession(*pmTicketParams(orchToken.TicketParams))
 
-	//setup balances and update Gateway balance to Orchestrator balance, log differences
-	//Orchestrator tracks balance paid and will not perform work if the balance it
-	//has is not sufficient
+	// Balances are keyed per-job (ManifestID = jobReq.ID) so each job/stream
+	// gets an isolated balance bucket — no aggregation at the sender or
+	// capability level. This mirrors how live-video-to-video uses a fresh
+	// ManifestID per stream (see server/ai_process.go clearSessionBalance).
 	orchBal := big.NewRat(orchToken.Balance, 1)
 	price := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
 	cost := new(big.Rat).Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
 	minBal := new(big.Rat).Mul(price, big.NewRat(120, 1)) //minimum 2 minute balance, Orchestrator requires 1 minute.  Use 2 to have a buffer.
-	balance, diffToOrch, minBalCovered, resetToZero := compareAndUpdateBalance(bsg, orchAddr, jobReq.Capability, orchBal, minBal)
+	balance, diffToOrch, minBalCovered, resetToZero := compareAndUpdateBalance(bsg, orchAddr, jobReq.ID, orchBal, minBal)
 
 	if diffToOrch.Sign() != 0 {
-		clog.Infof(ctx, "Updated balance for sender=%v capability=%v by %v to match Orchestrator reported balance %v", sender.Hex(), jobReq.Capability, diffToOrch.FloatString(3), orchBal.FloatString(3))
+		clog.Infof(ctx, "Updated balance for sender=%v job_id=%v capability=%v by %v to match Orchestrator reported balance %v", sender.Hex(), jobReq.ID, jobReq.Capability, diffToOrch.FloatString(3), orchBal.FloatString(3))
 	}
 	if resetToZero {
-		clog.Infof(ctx, "Reset balance to zero for to match Orchestrator reported balance sender=%v capability=%v", sender.Hex(), jobReq.Capability)
+		clog.Infof(ctx, "Reset balance to zero to match Orchestrator reported balance sender=%v job_id=%v capability=%v", sender.Hex(), jobReq.ID, jobReq.Capability)
 	}
 	if minBalCovered {
 		createTickets = false
@@ -110,7 +111,7 @@ func (bsg *BYOCGatewayServer) createPayment(ctx context.Context, jobReq *JobRequ
 			ExpectedPrice: orchToken.Price,
 		}
 	}
-	clog.V(common.DEBUG).Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
+	clog.V(common.DEBUG).Infof(ctx, "current balance for sender=%v job_id=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.ID, jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
 
 	if !createTickets {
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))
@@ -134,7 +135,7 @@ func (bsg *BYOCGatewayServer) createPayment(ctx context.Context, jobReq *JobRequ
 		fv := big.NewRat(tickets.FaceValue.Int64(), 1)
 		pmtTotal := new(big.Rat).Mul(fv, winProb)
 		pmtTotal = new(big.Rat).Mul(pmtTotal, big.NewRat(int64(ticketCnt), 1))
-		bsg.node.Balances.Credit(orchAddr, core.ManifestID(jobReq.Capability), pmtTotal)
+		bsg.node.Balances.Credit(orchAddr, core.ManifestID(jobReq.ID), pmtTotal)
 		//create the payment
 		payment = &net.Payment{
 			Sender:        sender.Bytes(),
@@ -157,13 +158,14 @@ func (bsg *BYOCGatewayServer) createPayment(ctx context.Context, jobReq *JobRequ
 		payment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(payment.ExpectedPrice)
-		balanceForOrch := bsg.node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
+		balanceForOrch := bsg.node.Balances.Balance(orchAddr, core.ManifestID(jobReq.ID))
 		balanceForOrchStr := ""
 		if balanceForOrch != nil {
 			balanceForOrchStr = balanceForOrch.FloatString(3)
 		}
 
-		clog.V(common.DEBUG).Infof(ctx, "Created new payment - capability=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v balance=%v",
+		clog.V(common.DEBUG).Infof(ctx, "Created new payment - job_id=%v capability=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v balance=%v",
+			jobReq.ID,
 			jobReq.Capability,
 			tickets.Recipient.Hex(),
 			eth.FormatUnits(tickets.FaceValue, "ETH"),
@@ -202,15 +204,16 @@ func ticketCountForCost(cost *big.Rat, ticketEv *big.Rat, timeoutSeconds int64) 
 	return int64(math.Max(0, math.Ceil(ticketCnt)))
 }
 
-func updateGatewayBalance(node *core.LivepeerNode, orchToken JobToken, capability string, took time.Duration) *big.Rat {
+// updateGatewayBalance debits the gateway-side balance for a job by the cost
+// of the elapsed time. The balance is keyed per-job (jobID is used as the
+// ManifestID), giving each job its own isolated balance bucket.
+func updateGatewayBalance(node *core.LivepeerNode, orchToken JobToken, jobID string, took time.Duration) *big.Rat {
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
-	// update for usage of compute
 	orchPrice := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
 	cost := new(big.Rat).Mul(orchPrice, big.NewRat(int64(math.Ceil(took.Seconds())), 1))
-	node.Balances.Debit(orchAddr, core.ManifestID(capability), cost)
+	node.Balances.Debit(orchAddr, core.ManifestID(jobID), cost)
 
-	//get the updated balance
-	balance := node.Balances.Balance(orchAddr, core.ManifestID(capability))
+	balance := node.Balances.Balance(orchAddr, core.ManifestID(jobID))
 	if balance == nil {
 		return big.NewRat(0, 1)
 	}
