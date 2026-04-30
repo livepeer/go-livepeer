@@ -124,7 +124,7 @@ func (bsg *BYOCGatewayServer) sendStopStreamToOrch(ctx context.Context, streamID
 		return nil, fmt.Errorf("error getting job sender: %w", err)
 	}
 
-	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, stopJob.Job.Req.Capability, jobSender.Addr, jobSender.Sig)
+	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, stopJob.Job.Req.Capability, streamID, jobSender.Addr, jobSender.Sig)
 	if err != nil {
 		return nil, fmt.Errorf("error converting session to token: %w", err)
 	}
@@ -295,7 +295,7 @@ func (bsg *BYOCGatewayServer) runStream(gatewayJob *gatewayJob) {
 
 func (bsg *BYOCGatewayServer) refreshToken(ctx context.Context, streamID string, orch JobToken, gatewayJob *gatewayJob) JobToken {
 	clog.Infof(ctx, "Refreshing token for orchestrator %v", orch.ServiceAddr)
-	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
+	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, gatewayJob.Job.Req.Capability, streamID, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting token for orch=%v err=%v", orch.ServiceAddr, err)
 		return orch
@@ -366,7 +366,7 @@ func (bsg *BYOCGatewayServer) sendPaymentForStream(ctx context.Context, streamID
 
 	// fetch new JobToken with each payment
 	// update the session for the LivePipeline with new token
-	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
+	newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, stream.Pipeline, streamID, jobSender.Addr, jobSender.Sig)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting new token for %s: %v", orch.ServiceAddr, err)
 		return err
@@ -383,7 +383,8 @@ func (bsg *BYOCGatewayServer) sendPaymentForStream(ctx context.Context, streamID
 		clog.Errorf(ctx, "Error marshalling job details: %v", err)
 		return err
 	}
-	req := &JobRequest{Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Pipeline,
+	// ID must be set so orch keys per-stream balance correctly
+	req := &JobRequest{ID: streamID, Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Pipeline,
 		Sender:  jobSender.Addr,
 		Timeout: 70,
 	}
@@ -639,7 +640,7 @@ func (bsg *BYOCGatewayServer) setupStream(ctx context.Context, r *http.Request, 
 			pipeline:               pipeline,
 			sendErrorEvent:         sendErrorEvent,
 
-			manifestID: pipeline, //byoc uses one balance per capability name
+			manifestID: pipeline, // log/segment-file label only; balance is keyed per-stream by streamID via JobRequest.ID
 		},
 	}
 
@@ -997,7 +998,7 @@ func (bsg *BYOCGatewayServer) UpdateStream() http.Handler {
 		orch := params.liveParams.orchToken
 		params.liveParams.mu.Unlock()
 
-		newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, updateJob.Job.Req.Capability, jobSender.Addr, jobSender.Sig)
+		newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, updateJob.Job.Req.Capability, streamId, jobSender.Addr, jobSender.Sig)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)

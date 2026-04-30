@@ -170,11 +170,19 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 			return
 		}
 
-		capBal := orch.Balance(senderAddr, core.ManifestID(jobCapsHdr))
+		// Balances are keyed per-job. If the gateway is refreshing a token
+		// for an existing job/stream it sends Livepeer-Job-Id; we look up
+		// the per-job balance against that key. For initial token requests
+		// no job exists yet, so balance is 0.
+		jobIDHdr := r.Header.Get(jobIdHdr)
+		var capBal *big.Rat
+		if jobIDHdr != "" {
+			capBal = orch.Balance(senderAddr, core.ManifestID(jobIDHdr))
+		}
 		if capBal != nil {
 			capBal, err = common.PriceToInt64(capBal)
 			if err != nil {
-				clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
+				clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v job_id=%v err=%v", senderAddr.Hex(), jobIDHdr, err.Error())
 				capBal = big.NewRat(0, 1)
 			}
 		} else {
@@ -183,7 +191,7 @@ func (bso *BYOCOrchestratorServer) GetJobToken() http.Handler {
 		//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
 		capBalInt, err := common.PriceToFixed(capBal)
 		if err != nil {
-			glog.Errorf("could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
+			glog.Errorf("could not convert balance to int64 sender=%v job_id=%v err=%v", senderAddr.Hex(), jobIDHdr, err.Error())
 			capBalInt = 0
 		} else {
 			// Remove the last three digits from capBalInt
@@ -291,8 +299,8 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
 		}
 
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
 		return
 	}
@@ -301,8 +309,8 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 	if resp.StatusCode == http.StatusUnauthorized {
 		clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
 		bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 		http.Error(w, "job not able to be processed, removing capability err=worker auth token failed", http.StatusInternalServerError)
 		return
 	}
@@ -322,8 +330,8 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		if err != nil {
 			clog.Errorf(ctx, "Unable to read response err=%v", err)
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -332,16 +340,16 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		if resp.StatusCode > 399 {
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 			//return error response from the worker
 			http.Error(w, string(data), resp.StatusCode)
 			return
 		}
 
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 		w.Write(data)
 		//request completed and returned a response
 
@@ -354,15 +362,15 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		//send payment balance back so client can determine if payment is needed
-		bso.addPaymentBalanceHeader(w, orchJob.Sender, orchJob.Req.Capability)
+		bso.addPaymentBalanceHeader(w, orchJob.Sender, orchJob.Req.ID)
 
 		// Flush to ensure data is sent immediately
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			clog.Errorf(ctx, "streaming not supported")
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.ID)
+			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
@@ -378,7 +386,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			for scanner.Scan() {
 				select {
 				case <-respCtx.Done():
-					orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.Capability))
+					orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.ID))
 					if orchBal == nil {
 						orchBal = big.NewRat(0, 1)
 					}
@@ -388,7 +396,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 				default:
 					line := scanner.Text()
 					if strings.Contains(line, "[DONE]") {
-						orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.Capability))
+						orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.ID))
 						if orchBal == nil {
 							orchBal = big.NewRat(0, 1)
 						}
@@ -412,8 +420,8 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 				//skips if price is 0
 				jobPriceRat := big.NewRat(orchJob.JobPrice.PricePerUnit, orchJob.JobPrice.PixelsPerUnit)
 				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-					bso.orch.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, 5)
-					senderBalance := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+					bso.orch.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.ID), orchJob.JobPrice, 5)
+					senderBalance := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID)
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
 							w.Write([]byte("event: insufficient balance\n"))
@@ -433,7 +441,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		}
 
 		//capacity released with defer stmt above
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.ID).FloatString(0))
 	}
 }
 
@@ -461,7 +469,7 @@ func (bso *BYOCOrchestratorServer) setupOrchJob(ctx context.Context, r *http.Req
 		return nil, errors.New("Could not get job price")
 	}
 
-	pmtErr := bso.confirmPayment(ctx, sender, jobReq.Capability, jobPrice, r.Header.Get(jobPaymentHeaderHdr))
+	pmtErr := bso.confirmPayment(ctx, sender, jobReq.ID, jobReq.Capability, jobPrice, r.Header.Get(jobPaymentHeaderHdr))
 	if pmtErr != nil {
 		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
 		return nil, pmtErr
@@ -478,7 +486,13 @@ func (bso *BYOCOrchestratorServer) setupOrchJob(ctx context.Context, r *http.Req
 	return &orchJob{Req: jobReq, Sender: sender, JobPrice: jobPrice, Details: &jobDetails}, nil
 }
 
-func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender ethcommon.Address, capability string, jobPrice *net.PriceInfo, paymentHdr string) error {
+// confirmPayment validates and applies any payment present in the request,
+// and verifies the sender has at least a minimum balance for the job.
+//
+// jobID is used as the ManifestID for balance keying — each job/stream gets
+// an isolated balance bucket. capability is only used for capacity-slot
+// management on payment failure (FreeExternalCapabilityCapacity).
+func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender ethcommon.Address, jobID, capability string, jobPrice *net.PriceInfo, paymentHdr string) error {
 
 	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 
@@ -488,7 +502,7 @@ func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender et
 	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
 		minBal := new(big.Rat).Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
 		//process payment if included
-		orchBal, pmtErr := bso.processPayment(ctx, sender, capability, paymentHdr)
+		orchBal, pmtErr := bso.processPayment(ctx, sender, jobID, capability, paymentHdr)
 		if pmtErr != nil {
 			//log if there are payment errors but continue, balance will runout and clean up
 			clog.Infof(ctx, "job payment error: %v", pmtErr)
@@ -502,8 +516,10 @@ func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender et
 	return nil
 }
 
-// process payment and return balance
-func (bso *BYOCOrchestratorServer) processPayment(ctx context.Context, sender ethcommon.Address, capability string, paymentHdr string) (*big.Rat, error) {
+// processPayment processes the ticket payment (if any) keyed by jobID and
+// returns the resulting per-job balance. capability is used only to release
+// the capacity slot on failure.
+func (bso *BYOCOrchestratorServer) processPayment(ctx context.Context, sender ethcommon.Address, jobID, capability string, paymentHdr string) (*big.Rat, error) {
 	if paymentHdr != "" {
 		payment, err := getPayment(paymentHdr)
 		if err != nil {
@@ -511,13 +527,13 @@ func (bso *BYOCOrchestratorServer) processPayment(ctx context.Context, sender et
 			return nil, errPaymentError
 		}
 
-		if err := bso.orch.ProcessPayment(ctx, payment, core.ManifestID(capability)); err != nil {
+		if err := bso.orch.ProcessPayment(ctx, payment, core.ManifestID(jobID)); err != nil {
 			bso.orch.FreeExternalCapabilityCapacity(capability)
 			clog.Errorf(ctx, "Error processing payment: %v", err)
 			return nil, errPaymentError
 		}
 	}
-	orchBal := bso.getPaymentBalance(sender, capability)
+	orchBal := bso.getPaymentBalance(sender, jobID)
 
 	return orchBal, nil
 
