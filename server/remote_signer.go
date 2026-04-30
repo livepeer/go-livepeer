@@ -390,10 +390,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	streamParams := &core.StreamParameters{
-		// Embedded within genSegCreds, may be used by orch for payment accounting
-		ManifestID: core.ManifestID(req.ManifestID),
-	}
 	var caps *net.Capabilities
 	if len(req.Capabilities) > 0 {
 		caps = &net.Capabilities{}
@@ -402,7 +398,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(caps)
 	}
 	byocCapability := ""
 	if req.Type == RemoteType_BYOC {
@@ -474,7 +469,14 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		manifestID = string(core.RandomManifestID())
 	}
 	ctx = clog.AddVal(ctx, "manifest_id", manifestID)
-	streamParams.ManifestID = core.ManifestID(manifestID)
+
+	streamParams := &core.StreamParameters{
+		// Embedded within genSegCreds, may be used by orch for payment accounting
+		ManifestID: core.ManifestID(manifestID),
+	}
+	if caps != nil {
+		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(caps)
+	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
 	if pmParams == nil {
