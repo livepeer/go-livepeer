@@ -320,31 +320,51 @@ func byocCapabilityName(caps *net.Capabilities) (string, error) {
 	return name, nil
 }
 
-// resolvePriceInfo returns the effective PriceInfo for a payment request and
-// validates that it is usable (non-nil with non-zero price and pixels per unit).
-// For BYOC, the capability name comes from the BYOC capability constraint, and
-// pricing may only be advertised in CapabilitiesPrices rather than the top-level
-// PriceInfo.
+func missingBYOCPriceInfoError(byocCapability string) error {
+	return fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
+		"ensure the orchestrator advertises capability-specific pricing "+
+		"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
+}
+
+func usablePriceInfo(priceInfo *net.PriceInfo) bool {
+	return priceInfo != nil && priceInfo.PricePerUnit != 0 && priceInfo.PixelsPerUnit != 0
+}
+
+func matchesBYOCPriceInfo(priceInfo *net.PriceInfo, byocCapability string) bool {
+	return usablePriceInfo(priceInfo) &&
+		priceInfo.Capability == uint32(core.Capability_BYOC) &&
+		priceInfo.Constraint == byocCapability
+}
+
+// resolvePriceInfo returns the effective PriceInfo for a payment request.
+// For BYOC, PriceInfo must remain the top-level effective price because
+// TicketParams commit to it; CapabilitiesPrices are used to verify that the
+// requested BYOC capability is advertised.
 func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, byocCapability string) (*net.PriceInfo, error) {
 	if reqType == RemoteType_BYOC {
-		byocCap := uint32(core.Capability_BYOC)
-		candidates := append([]*net.PriceInfo{oInfo.PriceInfo}, oInfo.CapabilitiesPrices...)
-		for _, cp := range candidates {
-			if cp == nil || cp.PricePerUnit == 0 || cp.PixelsPerUnit == 0 {
-				continue
-			}
-			if cp.Capability != byocCap || cp.Constraint != byocCapability {
-				continue
-			}
-			return cp, nil
+		p := oInfo.PriceInfo
+		if !usablePriceInfo(p) {
+			return nil, missingBYOCPriceInfoError(byocCapability)
 		}
-		return nil, fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
-			"ensure the orchestrator advertises capability-specific pricing "+
-			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
+
+		if p.Capability != 0 || p.Constraint != "" {
+			if matchesBYOCPriceInfo(p, byocCapability) {
+				return p, nil
+			}
+			return nil, missingBYOCPriceInfoError(byocCapability)
+		}
+
+		for _, cp := range oInfo.CapabilitiesPrices {
+			if matchesBYOCPriceInfo(cp, byocCapability) {
+				return p, nil
+			}
+		}
+
+		return nil, missingBYOCPriceInfoError(byocCapability)
 	}
 
 	p := oInfo.PriceInfo
-	if p == nil || p.PricePerUnit == 0 || p.PixelsPerUnit == 0 {
+	if !usablePriceInfo(p) {
 		return nil, errors.New("missing or zero priceInfo")
 	}
 	return p, nil

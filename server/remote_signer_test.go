@@ -371,9 +371,13 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	}
 }
 
-func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
+func TestResolvePriceInfo_BYOCUsesEffectiveTopLevelPrice(t *testing.T) {
 	require := require.New(t)
 
+	effectivePrice := &net.PriceInfo{
+		PricePerUnit:  12,
+		PixelsPerUnit: 10,
+	}
 	byocPrice := &net.PriceInfo{
 		PricePerUnit:  9,
 		PixelsPerUnit: 1,
@@ -382,10 +386,7 @@ func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
 	}
 
 	oInfo := &net.OrchestratorInfo{
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  3,
-			PixelsPerUnit: 1,
-		},
+		PriceInfo: effectivePrice,
 		CapabilitiesPrices: []*net.PriceInfo{
 			byocPrice,
 		},
@@ -393,7 +394,7 @@ func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
 
 	got, err := resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model")
 	require.NoError(err)
-	require.Equal(byocPrice, got)
+	require.Equal(effectivePrice, got)
 
 	_, err = resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model")
 	require.ErrorContains(err, `missing or zero priceInfo for BYOC capability "other/model"`)
@@ -420,7 +421,7 @@ func TestGenerateLivePayment_BYOC_UsesCeilForFractionalSeconds(t *testing.T) {
 	}
 	oInfo := &net.OrchestratorInfo{
 		Address:            ethClient.addr.Bytes(),
-		PriceInfo:          &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		PriceInfo:          byocPrice,
 		CapabilitiesPrices: []*net.PriceInfo{byocPrice},
 		TicketParams: &net.TicketParams{
 			Recipient: pm.RandAddress().Bytes(),
@@ -468,6 +469,10 @@ func TestGenerateLivePayment_BYOC_UsesCeilForFractionalSeconds(t *testing.T) {
 	var payment net.Payment
 	require.NoError(proto.Unmarshal(paymentBytes, &payment))
 	require.NotEmpty(payment.TicketSenderParams)
+	require.Equal(byocPrice.PricePerUnit, payment.ExpectedPrice.PricePerUnit)
+	require.Equal(byocPrice.PixelsPerUnit, payment.ExpectedPrice.PixelsPerUnit)
+	require.Equal(byocPrice.Capability, payment.ExpectedPrice.Capability)
+	require.Equal(byocPrice.Constraint, payment.ExpectedPrice.Constraint)
 
 	segCredsBytes, err := base64.StdEncoding.DecodeString(resp.SegCreds)
 	require.NoError(err)
