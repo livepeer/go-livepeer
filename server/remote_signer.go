@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
@@ -27,8 +29,15 @@ import (
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
-const RemoteType_LiveVideoToVideo = "lv2v"
+const (
+	RemoteType_LiveVideoToVideo = "lv2v"
+	RemoteType_BYOC             = "byoc"
+)
 const PipelineLiveVideoToVideo = "live-video-to-video"
+
+// minPreloadSecs is the orchestrator's minimum required balance (seconds), used
+// as the floor when preloading an initial BYOC ticket batch.
+const minPreloadSecs = 60
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +77,78 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
+// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
+type SignBYOCJobRequestInput struct {
+	ID             string `json:"id"`
+	Capability     string `json:"capability"`
+	Request        string `json:"request"`
+	Parameters     string `json:"parameters"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
+type SignBYOCJobRequestResponse struct {
+	Sender    string `json:"sender"`
+	Signature string `json:"signature"`
+}
+
+func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "BYOC job signing request", "ip", remoteAddr)
+
+	gw := core.NewBroadcaster(ls.LivepeerNode)
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB
+	var req SignBYOCJobRequestInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		clog.Errorf(ctx, "Failed to decode SignBYOCJobRequest err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" || req.Capability == "" {
+		err := fmt.Errorf("sign-byoc-job requires non-empty id and capability")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
+		ID:             req.ID,
+		Capability:     req.Capability,
+		Request:        req.Request,
+		Parameters:     req.Parameters,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
+
+	sig, err := gw.Sign(sigPayload)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	response := SignBYOCJobRequestResponse{
+		Sender:    gw.Address().Hex(),
+		Signature: "0x" + hex.EncodeToString(sig),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
+	// These endpoints sign caller-supplied payloads and must only be exposed on trusted networks.
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	ls.HTTPMux.Handle("POST /sign-byoc-job", http.HandlerFunc(ls.SignBYOCJobRequest))
 	if ls.LivepeerNode.RemoteDiscovery {
 		rdp := RemoteDiscoveryConfig{
 			Pool:     ls.LivepeerNode.OrchestratorPool,
@@ -164,16 +240,23 @@ type RemotePaymentRequest struct {
 	Orchestrator []byte `json:"orchestrator"`
 
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
-	ManifestID string
+	ManifestID string `json:"manifestID,omitempty"`
 
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
+	// Job type to automatically calculate payments. Valid values: `lv2v`, `byoc`. Optional.
 	Type string `json:"type"`
 
-	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
+	// Capabilities to include in the ticket. Required for the byoc job type, where
+	// the BYOC model constraint identifies the external capability being paid for.
+	// Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Expected job duration. Used as the initial preload when there is no prior
+	// state, so that short BYOC batch jobs don't over-reserve. Floored to the
+	// orchestrator's minimum balance requirement (minPreloadSecs). Optional.
+	PreloadSeconds int `json:"preloadSeconds,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -242,9 +325,20 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
+
+	var caps *net.Capabilities
+	if len(req.Capabilities) > 0 {
+		caps = &net.Capabilities{}
+		if err := proto.Unmarshal(req.Capabilities, caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+	}
+
 	priceInfo := oInfo.PriceInfo
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
-		err := fmt.Errorf("missing or zero priceInfo")
+		err := errors.New("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -257,10 +351,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
 
 	// Load or initialize state
-	var (
-		state *RemotePaymentState
-		err   error
-	)
+	var state *RemotePaymentState
 	reqState, reqSig := req.State.State, req.State.Sig
 	hasState := len(reqState) != 0 || len(reqSig) != 0
 	if hasState {
@@ -294,7 +385,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
 	manifestID := req.ManifestID
-	if manifestID == "" {
+	if req.Type == RemoteType_BYOC {
+		manifestID = state.StateID
+	} else if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.
 			err := errors.New("missing manifestID")
@@ -309,14 +402,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
 	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+	if caps != nil {
+		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(caps)
 	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
@@ -380,21 +467,37 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
+	switch {
+	case req.Type == RemoteType_LiveVideoToVideo:
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
-			billableSecs = (60 * time.Second).Seconds()
+			billableSecs = 60
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	} else if req.Type != "" {
-		err = errors.New("invalid job type")
+	case req.Type == RemoteType_BYOC:
+		preloadSecs := float64(max(req.PreloadSeconds, minPreloadSecs))
+		if billableSecs <= 0 {
+			// Preload for expected job duration (floored to the orchestrator's
+			// minimum balance requirement) so batch jobs size the initial ticket
+			// batch to match the work, instead of using a fixed buffer.
+			billableSecs = preloadSecs
+		} else {
+			// At least 1s for sub-second wall-clock deltas.
+			billableSecs = max(1, billableSecs)
+		}
+		// BYOC pre-funding is ceil(seconds) of work at the advertised unit scale.
+		pixels = int64(math.Ceil(billableSecs)) * priceInfo.PixelsPerUnit
+	case req.Type == "":
+		// caller supplied req.InPixels directly
+	default:
+		err := errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
 	if pixels <= 0 {
-		err = errors.New("missing pixels or job type")
+		err := errors.New("missing pixels or job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}

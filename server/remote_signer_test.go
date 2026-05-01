@@ -39,6 +39,27 @@ type apiErrorResponse struct {
 	} `json:"error"`
 }
 
+func makeBYOCCapsBlob(t *testing.T, capabilityName string) []byte {
+	t.Helper()
+	caps := &net.Capabilities{
+		Capacities: map[uint32]uint32{
+			uint32(core.Capability_BYOC): 1,
+		},
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(core.Capability_BYOC): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						capabilityName: {},
+					},
+				},
+			},
+		},
+	}
+	capsBlob, err := proto.Marshal(caps)
+	require.NoError(t, err)
+	return capsBlob
+}
+
 func newTestEthClient(t *testing.T) *testEthClient {
 	t.Helper()
 
@@ -214,10 +235,10 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "refresh session for remote signer",
 		},
 		{
-			name: "invalid job type",
+			name: "invalid arbitrary job type",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
-				r.Type = "bogus"
+				r.Type = "acme/model"
 				return r
 			}(),
 			wantStatus: http.StatusBadRequest,
@@ -319,6 +340,98 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
 		})
 	}
+}
+
+func TestGenerateLivePayment_BYOC_UsesCeilForFractionalSeconds(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	node.Sender = newMockSender(mockSenderConfig{ev: big.NewRat(35, 1)})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	byocPrice := &net.PriceInfo{
+		PricePerUnit:  5,
+		PixelsPerUnit: 10,
+		Capability:    uint32(core.Capability_BYOC),
+		Constraint:    "acme/model",
+	}
+	oInfo := &net.OrchestratorInfo{
+		Address:            ethClient.addr.Bytes(),
+		PriceInfo:          byocPrice,
+		CapabilitiesPrices: []*net.PriceInfo{byocPrice},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	initialState := &RemotePaymentState{
+		StateID:              "byoc-fractional-state",
+		OrchestratorAddress:  ethClient.addr,
+		Balance:              "0",
+		InitialPricePerUnit:  byocPrice.PricePerUnit,
+		InitialPixelsPerUnit: byocPrice.PixelsPerUnit,
+		LastUpdate:           time.Now().Add(-1100 * time.Millisecond),
+		PMSessionID:          "pmSession",
+		SenderNonce:          7,
+	}
+	stateBytes, err := json.Marshal(initialState)
+	require.NoError(err)
+	stateSig, err := signState(ls, stateBytes)
+	require.NoError(err)
+
+	reqBody, err := json.Marshal(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		ManifestID:   "ignored-byoc-manifest",
+		Type:         RemoteType_BYOC,
+		Capabilities: makeBYOCCapsBlob(t, "acme/model"),
+		State:        RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+	rr := httptest.NewRecorder()
+	ls.GenerateLivePayment(rr, req)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var resp RemotePaymentResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.NotEmpty(resp.Payment)
+
+	paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+	require.NoError(err)
+	var payment net.Payment
+	require.NoError(proto.Unmarshal(paymentBytes, &payment))
+	require.NotEmpty(payment.TicketSenderParams)
+	require.Equal(byocPrice.PricePerUnit, payment.ExpectedPrice.PricePerUnit)
+	require.Equal(byocPrice.PixelsPerUnit, payment.ExpectedPrice.PixelsPerUnit)
+	require.Equal(byocPrice.Capability, payment.ExpectedPrice.Capability)
+	require.Equal(byocPrice.Constraint, payment.ExpectedPrice.Constraint)
+
+	segCredsBytes, err := base64.StdEncoding.DecodeString(resp.SegCreds)
+	require.NoError(err)
+	var segCreds net.SegData
+	require.NoError(proto.Unmarshal(segCredsBytes, &segCreds))
+	require.Equal([]byte(initialState.StateID), segCreds.ManifestId)
+
+	var nextState RemotePaymentState
+	require.NoError(json.Unmarshal(resp.State.State, &nextState))
+	newBal := new(big.Rat)
+	_, ok := newBal.SetString(nextState.Balance)
+	require.True(ok)
+
+	ev, err := node.Sender.EV("pmSession")
+	require.NoError(err)
+	observedFee := new(big.Rat).Mul(new(big.Rat).SetInt64(int64(len(payment.TicketSenderParams))), ev)
+	observedFee.Sub(observedFee, newBal)
+
+	// billableSecs is ~1.1s, so ceil(seconds)=2 and pixels=2*10.
+	expectedFee := calculateFee(20, &net.PriceInfo{PricePerUnit: 5, PixelsPerUnit: 10})
+	require.Zero(observedFee.Cmp(expectedFee), "unexpected BYOC fee from fractional seconds: got=%s want=%s", observedFee.RatString(), expectedFee.RatString())
 }
 
 func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
@@ -516,7 +629,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	node.Sender = sender
 	ls := &LivepeerServer{LivepeerNode: node}
 
-	doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, net.Payment) {
+	doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, *net.Payment) {
 		reqBody, err := json.Marshal(reqPayload)
 		require.NoError(err)
 
@@ -535,7 +648,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		var payment net.Payment
 		require.NoError(proto.Unmarshal(paymentBytes, &payment))
 
-		return resp, payment
+		return resp, &payment
 	}
 
 	ev, err := sender.EV("pmSession")
