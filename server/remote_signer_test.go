@@ -60,13 +60,6 @@ func makeBYOCCapsBlob(t *testing.T, capabilityName string) []byte {
 	return capsBlob
 }
 
-func mustBYOCCaps(t *testing.T, capabilityName string) *net.Capabilities {
-	t.Helper()
-	var caps net.Capabilities
-	require.NoError(t, proto.Unmarshal(makeBYOCCapsBlob(t, capabilityName), &caps))
-	return &caps
-}
-
 func newTestEthClient(t *testing.T) *testEthClient {
 	t.Helper()
 
@@ -252,35 +245,6 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "invalid job type",
 		},
 		{
-			name: "byoc type requires capability constraint",
-			req: func() RemotePaymentRequest {
-				r := baseReq()
-				r.Type = RemoteType_BYOC
-				return r
-			}(),
-			wantStatus: http.StatusBadRequest,
-			wantMsg:    "missing BYOC capability constraint",
-		},
-		{
-			name: "byoc no matching capability price",
-			req: func() RemotePaymentRequest {
-				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
-				oInfo.PriceInfo = &net.PriceInfo{
-					PricePerUnit:  1,
-					PixelsPerUnit: 1,
-					Capability:    uint32(core.Capability_BYOC),
-					Constraint:    "other/model",
-				}
-				return RemotePaymentRequest{
-					Orchestrator: makeOrchBlob(oInfo),
-					Type:         RemoteType_BYOC,
-					Capabilities: makeBYOCCapsBlob(t, "acme/model"),
-				}
-			}(),
-			wantStatus: http.StatusBadRequest,
-			wantMsg:    `missing or zero priceInfo for BYOC capability "acme/model"`,
-		},
-		{
 			name: "missing pixels without type",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
@@ -376,56 +340,6 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
 		})
 	}
-}
-
-func TestResolvePriceInfo_BYOCUsesEffectiveTopLevelPrice(t *testing.T) {
-	require := require.New(t)
-
-	effectivePrice := &net.PriceInfo{
-		PricePerUnit:  12,
-		PixelsPerUnit: 10,
-	}
-	byocPrice := &net.PriceInfo{
-		PricePerUnit:  9,
-		PixelsPerUnit: 1,
-		Capability:    uint32(core.Capability_BYOC),
-		Constraint:    "acme/model",
-	}
-
-	oInfo := &net.OrchestratorInfo{
-		PriceInfo: effectivePrice,
-		CapabilitiesPrices: []*net.PriceInfo{
-			byocPrice,
-		},
-	}
-
-	got, err := resolvePriceInfo(oInfo, RemoteType_BYOC, mustBYOCCaps(t, "acme/model"))
-	require.NoError(err)
-	require.Equal(effectivePrice, got)
-
-	_, err = resolvePriceInfo(oInfo, RemoteType_BYOC, mustBYOCCaps(t, "other/model"))
-	require.ErrorContains(err, `missing or zero priceInfo for BYOC capability "other/model"`)
-
-	got, err = resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, nil)
-	require.NoError(err)
-	require.Equal(oInfo.PriceInfo, got)
-}
-
-func TestResolvePriceInfo_BYOC_AggregateWhenCapabilitiesPricesOmitted(t *testing.T) {
-	require := require.New(t)
-
-	effectivePrice := &net.PriceInfo{
-		PricePerUnit:  12,
-		PixelsPerUnit: 10,
-	}
-	oInfo := &net.OrchestratorInfo{
-		PriceInfo:          effectivePrice,
-		CapabilitiesPrices: nil,
-	}
-
-	got, err := resolvePriceInfo(oInfo, RemoteType_BYOC, mustBYOCCaps(t, "acme/model"))
-	require.NoError(err)
-	require.Equal(effectivePrice, got)
 }
 
 func TestGenerateLivePayment_BYOC_UsesCeilForFractionalSeconds(t *testing.T) {

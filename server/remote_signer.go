@@ -291,89 +291,6 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
-// resolvePriceInfo returns the effective PriceInfo for a payment request.
-// Non-BYOC requests use the orchestrator aggregate PriceInfo only.
-// For BYOC, PriceInfo must remain the top-level effective price because
-// TicketParams commit to it; CapabilitiesPrices are used to verify that the
-// requested BYOC capability is advertised.
-func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, caps *net.Capabilities) (*net.PriceInfo, error) {
-	usablePriceInfo := func(priceInfo *net.PriceInfo) bool {
-		return priceInfo != nil && priceInfo.PricePerUnit != 0 && priceInfo.PixelsPerUnit != 0
-	}
-	matchesBYOCPriceInfo := func(priceInfo *net.PriceInfo, byocCapability string) bool {
-		return usablePriceInfo(priceInfo) &&
-			priceInfo.Capability == uint32(core.Capability_BYOC) &&
-			priceInfo.Constraint == byocCapability
-	}
-	missingBYOCPriceInfoError := func(byocCapability string) error {
-		return fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
-			"ensure the orchestrator advertises capability-specific pricing "+
-			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
-	}
-	byocCapabilityName := func(caps *net.Capabilities) (string, error) {
-		if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
-			return "", errors.New("missing BYOC capability constraint")
-		}
-
-		byocConstraints := caps.Constraints.PerCapability[uint32(core.Capability_BYOC)]
-		if byocConstraints == nil || len(byocConstraints.Models) == 0 {
-			return "", errors.New("missing BYOC capability constraint")
-		}
-		if len(byocConstraints.Models) > 1 {
-			return "", errors.New("BYOC payment requires exactly one capability constraint")
-		}
-		var name string
-		for k := range byocConstraints.Models {
-			name = k
-			break
-		}
-		if name == "" {
-			return "", errors.New("missing BYOC capability constraint")
-		}
-		return name, nil
-	}
-
-	if reqType != RemoteType_BYOC {
-		p := oInfo.PriceInfo
-		if !usablePriceInfo(p) {
-			return nil, errors.New("missing or zero priceInfo")
-		}
-		return p, nil
-	}
-
-	byocCapability, err := byocCapabilityName(caps)
-	if err != nil {
-		return nil, err
-	}
-
-	p := oInfo.PriceInfo
-	if !usablePriceInfo(p) {
-		return nil, missingBYOCPriceInfoError(byocCapability)
-	}
-
-	if p.Capability != 0 || p.Constraint != "" {
-		if matchesBYOCPriceInfo(p, byocCapability) {
-			return p, nil
-		}
-		return nil, missingBYOCPriceInfoError(byocCapability)
-	}
-
-	for _, cp := range oInfo.CapabilitiesPrices {
-		if matchesBYOCPriceInfo(cp, byocCapability) {
-			return p, nil
-		}
-	}
-
-	// GetOrchestrator with non-nil capabilities uses orchestratorInfoWithCaps:
-	// aggregate PriceInfo only, and CapabilitiesPrices is not populated. Tickets
-	// already commit to this top-level price for the requested capability set.
-	if len(oInfo.CapabilitiesPrices) == 0 {
-		return p, nil
-	}
-
-	return nil, missingBYOCPriceInfoError(byocCapability)
-}
-
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -419,8 +336,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, caps)
-	if err != nil {
+	priceInfo := oInfo.PriceInfo
+	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
+		err := errors.New("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -574,12 +492,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	case req.Type == "":
 		// caller supplied req.InPixels directly
 	default:
-		err = errors.New("invalid job type")
+		err := errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
 	if pixels <= 0 {
-		err = errors.New("missing pixels or job type")
+		err := errors.New("missing pixels or job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
