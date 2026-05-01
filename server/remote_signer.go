@@ -446,7 +446,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	orchAddr := ethcommon.BytesToAddress(oInfo.Address)
-	manifestID := req.ManifestID
 
 	// Load or initialize state
 	var state *RemotePaymentState
@@ -482,6 +481,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "state_id", state.StateID)
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
+	manifestID := req.ManifestID
 	if req.Type == RemoteType_BYOC {
 		manifestID = state.StateID
 	} else if manifestID == "" {
