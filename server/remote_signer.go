@@ -560,18 +560,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 	case req.Type == RemoteType_BYOC:
 		preloadSecs := float64(max(req.PreloadSeconds, minPreloadSecs))
-		var secondsToPrefund float64
 		if billableSecs <= 0 {
 			// Preload for expected job duration (floored to the orchestrator's
 			// minimum balance requirement) so batch jobs size the initial ticket
 			// batch to match the work, instead of using a fixed buffer.
-			secondsToPrefund = preloadSecs
+			billableSecs = preloadSecs
 		} else {
 			// At least 1s for sub-second wall-clock deltas.
-			secondsToPrefund = max(1, billableSecs)
+			billableSecs = max(1, billableSecs)
 		}
 		// BYOC pre-funding is ceil(seconds) of work at the advertised unit scale.
-		pixels = int64(math.Ceil(secondsToPrefund)) * priceInfo.PixelsPerUnit
+		pixels = int64(math.Ceil(billableSecs)) * priceInfo.PixelsPerUnit
 	case req.Type == "":
 		// caller supplied req.InPixels directly
 	default:
