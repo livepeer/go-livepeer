@@ -29,9 +29,11 @@ import (
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
-const RemoteType_LiveVideoToVideo = "lv2v"
+const (
+	RemoteType_LiveVideoToVideo = "lv2v"
+	RemoteType_BYOC             = "byoc"
+)
 const PipelineLiveVideoToVideo = "live-video-to-video"
-const RemoteType_BYOC = "byoc"
 
 // minPreloadSecs is the orchestrator's minimum required balance (seconds), used
 // as the floor when preloading an initial BYOC ticket batch.
