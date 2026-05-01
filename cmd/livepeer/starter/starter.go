@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
@@ -97,6 +98,7 @@ type LivepeerConfig struct {
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
 	AIServerless               *bool
+	UseLiveWorkers             *bool
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -237,6 +239,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
 	defaultAIServerless := false
+	defaultUseLiveWorkers := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -363,6 +366,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
 		AIServerless:             &defaultAIServerless,
+		UseLiveWorkers:           &defaultUseLiveWorkers,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -1326,6 +1330,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
+	if *cfg.UseLiveWorkers {
+		n.LiveRunnerManager = runner.NewLiveRunnerRegistry()
+	}
+
 	if *cfg.AIWorker {
 		gpus := []string{}
 		if *cfg.Nvidia != "" {
@@ -1429,6 +1437,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
 				modelsCount := 1
+
 				if config.Capacity != 0 {
 					if config.URL == "" {
 						// Use multiple same configs if External Container is not used and capacity is set

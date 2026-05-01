@@ -57,6 +57,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.AIServiceRegistry = fs.Bool("aiServiceRegistry", *cfg.AIServiceRegistry, "Set to true to use an AI ServiceRegistry contract address")
 	cfg.AIWorker = fs.Bool("aiWorker", *cfg.AIWorker, "Set to true to run an AI worker")
 	cfg.AIServerless = fs.Bool("aiServerless", *cfg.AIServerless, "Set to true to use serverless AI worker")
+	cfg.UseLiveWorkers = fs.Bool("useLiveWorkers", *cfg.UseLiveWorkers, "Set to true to use LiveRunner-backed workers for supported pipelines")
 	cfg.AIModels = fs.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
 	cfg.AIModelsDir = fs.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 	cfg.AIRunnerImage = fs.String("aiRunnerImage", *cfg.AIRunnerImage, "[Deprecated] Specify the base Docker image for the AI runner. Example: livepeer/ai-runner:0.0.1. Use -aiRunnerImageOverrides instead.")

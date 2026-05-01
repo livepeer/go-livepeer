@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -126,6 +127,7 @@ type LivepeerNode struct {
 	// AI worker public fields
 	AIWorker                  AI
 	AIWorkerManager           *RemoteAIWorkerManager
+	LiveRunnerManager         runner.LiveRunnerManager
 	AIProcesssingRetryTimeout time.Duration
 
 	// Transcoder public fields

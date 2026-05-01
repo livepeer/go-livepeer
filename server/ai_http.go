@@ -24,6 +24,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -76,9 +77,95 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/scope", lp.StartScope())
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
+	lp.transRPC.HandleFunc("POST /runners/heartbeat", lp.LiveRunnerHeartbeat)
+	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
+}
+
+func (h *lphttp) liveRunnerManager() (runner.LiveRunnerManager, bool) {
+	if h.node == nil || h.node.LiveRunnerManager == nil {
+		return nil, false
+	}
+	return h.node.LiveRunnerManager, true
+}
+
+func (h *lphttp) validLiveRunnerAuth(r *http.Request) bool {
+	auth := r.Header.Get("Authorization")
+	secret := h.orchestrator.TranscoderSecret()
+	return auth == secret
+}
+
+func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if !h.validLiveRunnerAuth(r) {
+		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
+		return
+	}
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	var req runner.LiveRunnerHeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := manager.Heartbeat(req)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
+	if !h.validLiveRunnerAuth(r) {
+		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
+		return
+	}
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	manager.Unregister(r.PathValue("runner_id"))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type liveRunnerDiscoveryEntry struct {
+	Address string                             `json:"address,omitempty"`
+	Runners []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+}
+
+func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	address := ""
+	if h.orchestrator != nil && h.orchestrator.ServiceURI() != nil {
+		address = h.orchestrator.ServiceURI().String()
+	}
+	resp := []liveRunnerDiscoveryEntry{{
+		Address: address,
+		Runners: manager.Runners(),
+	}}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
 }
 
 // aiHttpHandle handles AI requests by decoding the request body and processing it.
@@ -477,6 +564,8 @@ func (h *lphttp) StartScope() http.Handler {
 			closeSession()
 			if statusCode, ok := serverlessHandshakeHTTPStatus(err); ok {
 				respondWithError(w, err.Error(), statusCode)
+			} else if errors.Is(err, runner.ErrNoLiveRunnerCapacity) {
+				respondWithError(w, err.Error(), http.StatusServiceUnavailable)
 			} else {
 				respondWithError(w, err.Error(), http.StatusInternalServerError)
 			}
