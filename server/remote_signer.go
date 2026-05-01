@@ -250,6 +250,7 @@ type RemotePaymentRequest struct {
 
 	// Capabilities to include in the ticket. Required for the byoc job type, where
 	// the BYOC model constraint identifies the external capability being paid for.
+	// Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
 
 	// Expected job duration. Used as the initial preload when there is no prior
@@ -299,89 +300,87 @@ func validateRemotePaymentType(reqType string) error {
 	}
 }
 
-func byocCapabilityName(caps *net.Capabilities) (string, error) {
-	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
-		return "", errors.New("missing BYOC capability constraint")
-	}
-
-	byocConstraints := caps.Constraints.PerCapability[uint32(core.Capability_BYOC)]
-	if byocConstraints == nil || len(byocConstraints.Models) == 0 {
-		return "", errors.New("missing BYOC capability constraint")
-	}
-	if len(byocConstraints.Models) > 1 {
-		return "", errors.New("BYOC payment requires exactly one capability constraint")
-	}
-	var name string
-	for k := range byocConstraints.Models {
-		name = k
-		break
-	}
-	if name == "" {
-		return "", errors.New("missing BYOC capability constraint")
-	}
-	return name, nil
-}
-
-func missingBYOCPriceInfoError(byocCapability string) error {
-	return fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
-		"ensure the orchestrator advertises capability-specific pricing "+
-		"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
-}
-
-func usablePriceInfo(priceInfo *net.PriceInfo) bool {
-	return priceInfo != nil && priceInfo.PricePerUnit != 0 && priceInfo.PixelsPerUnit != 0
-}
-
-func matchesBYOCPriceInfo(priceInfo *net.PriceInfo, byocCapability string) bool {
-	return usablePriceInfo(priceInfo) &&
-		priceInfo.Capability == uint32(core.Capability_BYOC) &&
-		priceInfo.Constraint == byocCapability
-}
-
 // resolvePriceInfo returns the effective PriceInfo for a payment request.
+// Non-BYOC requests use the orchestrator aggregate PriceInfo only.
 // For BYOC, PriceInfo must remain the top-level effective price because
 // TicketParams commit to it; CapabilitiesPrices are used to verify that the
 // requested BYOC capability is advertised.
 func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, caps *net.Capabilities) (*net.PriceInfo, error) {
-	if reqType == RemoteType_BYOC {
-		byocCapability, err := byocCapabilityName(caps)
-		if err != nil {
-			return nil, err
+	usablePriceInfo := func(priceInfo *net.PriceInfo) bool {
+		return priceInfo != nil && priceInfo.PricePerUnit != 0 && priceInfo.PixelsPerUnit != 0
+	}
+	matchesBYOCPriceInfo := func(priceInfo *net.PriceInfo, byocCapability string) bool {
+		return usablePriceInfo(priceInfo) &&
+			priceInfo.Capability == uint32(core.Capability_BYOC) &&
+			priceInfo.Constraint == byocCapability
+	}
+	missingBYOCPriceInfoError := func(byocCapability string) error {
+		return fmt.Errorf("missing or zero priceInfo for BYOC capability %q; "+
+			"ensure the orchestrator advertises capability-specific pricing "+
+			"(CapabilitiesPrices with Capability=BYOC and Constraint=<name>)", byocCapability)
+	}
+	byocCapabilityName := func(caps *net.Capabilities) (string, error) {
+		if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+			return "", errors.New("missing BYOC capability constraint")
 		}
 
+		byocConstraints := caps.Constraints.PerCapability[uint32(core.Capability_BYOC)]
+		if byocConstraints == nil || len(byocConstraints.Models) == 0 {
+			return "", errors.New("missing BYOC capability constraint")
+		}
+		if len(byocConstraints.Models) > 1 {
+			return "", errors.New("BYOC payment requires exactly one capability constraint")
+		}
+		var name string
+		for k := range byocConstraints.Models {
+			name = k
+			break
+		}
+		if name == "" {
+			return "", errors.New("missing BYOC capability constraint")
+		}
+		return name, nil
+	}
+
+	if reqType != RemoteType_BYOC {
 		p := oInfo.PriceInfo
 		if !usablePriceInfo(p) {
-			return nil, missingBYOCPriceInfoError(byocCapability)
+			return nil, errors.New("missing or zero priceInfo")
 		}
+		return p, nil
+	}
 
-		if p.Capability != 0 || p.Constraint != "" {
-			if matchesBYOCPriceInfo(p, byocCapability) {
-				return p, nil
-			}
-			return nil, missingBYOCPriceInfoError(byocCapability)
-		}
-
-		for _, cp := range oInfo.CapabilitiesPrices {
-			if matchesBYOCPriceInfo(cp, byocCapability) {
-				return p, nil
-			}
-		}
-
-		// GetOrchestrator with non-nil capabilities uses orchestratorInfoWithCaps:
-		// aggregate PriceInfo only, and CapabilitiesPrices is not populated. Tickets
-		// already commit to this top-level price for the requested capability set.
-		if len(oInfo.CapabilitiesPrices) == 0 {
-			return p, nil
-		}
-
-		return nil, missingBYOCPriceInfoError(byocCapability)
+	byocCapability, err := byocCapabilityName(caps)
+	if err != nil {
+		return nil, err
 	}
 
 	p := oInfo.PriceInfo
 	if !usablePriceInfo(p) {
-		return nil, errors.New("missing or zero priceInfo")
+		return nil, missingBYOCPriceInfoError(byocCapability)
 	}
-	return p, nil
+
+	if p.Capability != 0 || p.Constraint != "" {
+		if matchesBYOCPriceInfo(p, byocCapability) {
+			return p, nil
+		}
+		return nil, missingBYOCPriceInfoError(byocCapability)
+	}
+
+	for _, cp := range oInfo.CapabilitiesPrices {
+		if matchesBYOCPriceInfo(cp, byocCapability) {
+			return p, nil
+		}
+	}
+
+	// GetOrchestrator with non-nil capabilities uses orchestratorInfoWithCaps:
+	// aggregate PriceInfo only, and CapabilitiesPrices is not populated. Tickets
+	// already commit to this top-level price for the requested capability set.
+	if len(oInfo.CapabilitiesPrices) == 0 {
+		return p, nil
+	}
+
+	return nil, missingBYOCPriceInfoError(byocCapability)
 }
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
