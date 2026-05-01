@@ -441,16 +441,17 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	var priceInfo *net.PriceInfo
 	var capsPrices []*net.PriceInfo
 	var err error
-	//get capability prices
-	capsPrices, err = orch.GetCapabilitiesPrices(addr)
-
 	if caps == nil {
+		//get capability prices
+		capsPrices, err = orch.GetCapabilitiesPrices(addr)
+
 		//get base price
 		priceInfo, err = getPriceInfo(orch, addr, manifestID)
 		if err != nil {
 			return nil, err
 		}
 	} else {
+		var err error
 		priceInfo, err = orch.PriceInfoForCaps(addr, manifestID, caps)
 		if err != nil {
 			return nil, err

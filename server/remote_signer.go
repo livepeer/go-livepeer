@@ -255,7 +255,7 @@ type RemotePaymentRequest struct {
 	// Expected job duration. Used as the initial preload when there is no prior
 	// state, so that short BYOC batch jobs don't over-reserve. Floored to the
 	// orchestrator's minimum balance requirement (minPreloadSecs). Optional.
-	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	PreloadSeconds int `json:"preloadSeconds,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -342,8 +342,13 @@ func matchesBYOCPriceInfo(priceInfo *net.PriceInfo, byocCapability string) bool 
 // For BYOC, PriceInfo must remain the top-level effective price because
 // TicketParams commit to it; CapabilitiesPrices are used to verify that the
 // requested BYOC capability is advertised.
-func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, byocCapability string) (*net.PriceInfo, error) {
+func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, caps *net.Capabilities) (*net.PriceInfo, error) {
 	if reqType == RemoteType_BYOC {
+		byocCapability, err := byocCapabilityName(caps)
+		if err != nil {
+			return nil, err
+		}
+
 		p := oInfo.PriceInfo
 		if !usablePriceInfo(p) {
 			return nil, missingBYOCPriceInfoError(byocCapability)
@@ -360,6 +365,13 @@ func resolvePriceInfo(oInfo *net.OrchestratorInfo, reqType string, byocCapabilit
 			if matchesBYOCPriceInfo(cp, byocCapability) {
 				return p, nil
 			}
+		}
+
+		// GetOrchestrator with non-nil capabilities uses orchestratorInfoWithCaps:
+		// aggregate PriceInfo only, and CapabilitiesPrices is not populated. Tickets
+		// already commit to this top-level price for the requested capability set.
+		if len(oInfo.CapabilitiesPrices) == 0 {
+			return p, nil
 		}
 
 		return nil, missingBYOCPriceInfoError(byocCapability)
@@ -421,17 +433,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	byocCapability := ""
-	if req.Type == RemoteType_BYOC {
-		var err error
-		byocCapability, err = byocCapabilityName(caps)
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-	}
 
-	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, byocCapability)
+	priceInfo, err := resolvePriceInfo(&oInfo, req.Type, caps)
 	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
@@ -570,8 +573,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	case byocCapability != "":
-		preloadSecs := float64(max(req.TimeoutSeconds, minPreloadSecs))
+	case req.Type == RemoteType_BYOC:
+		preloadSecs := float64(max(req.PreloadSeconds, minPreloadSecs))
 		var secondsToPrefund float64
 		if billableSecs <= 0 {
 			// Preload for expected job duration (floored to the orchestrator's
