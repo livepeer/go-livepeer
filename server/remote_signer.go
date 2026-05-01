@@ -291,15 +291,6 @@ func verifyStateSignature(ls *LivepeerServer, stateBytes []byte, sig []byte) err
 	return nil
 }
 
-func validateRemotePaymentType(reqType string) error {
-	switch reqType {
-	case "", RemoteType_LiveVideoToVideo, RemoteType_BYOC:
-		return nil
-	default:
-		return errors.New("invalid job type")
-	}
-}
-
 // resolvePriceInfo returns the effective PriceInfo for a payment request.
 // Non-BYOC requests use the orchestrator aggregate PriceInfo only.
 // For BYOC, PriceInfo must remain the top-level effective price because
@@ -414,11 +405,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	var oInfo net.OrchestratorInfo
 	if err := proto.Unmarshal(req.Orchestrator, &oInfo); err != nil {
 		clog.Errorf(ctx, "Failed to unmarshal orch info err=%q", err)
-		respondJsonError(ctx, w, err, http.StatusBadRequest)
-		return
-	}
-
-	if err := validateRemotePaymentType(req.Type); err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
