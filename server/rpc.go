@@ -164,12 +164,18 @@ type GetOrchestratorInfoParams struct {
 func (bs *BroadcastSession) Transcoder() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
+	if bs.OrchestratorInfo == nil {
+		return ""
+	}
 	return bs.OrchestratorInfo.Transcoder
 }
 
 func (bs *BroadcastSession) Address() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
+	if bs.OrchestratorInfo == nil {
+		return ""
+	}
 	return hexutil.Encode(bs.OrchestratorInfo.Address)
 }
 
