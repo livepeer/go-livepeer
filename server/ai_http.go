@@ -147,7 +147,12 @@ type liveRunnerDiscoveryEntry struct {
 
 func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
-	if !ok {
+	var serverlessWorker *worker.ServerlessWorker
+	var hasServerlessWorker bool
+	if h.node != nil {
+		serverlessWorker, hasServerlessWorker = h.node.AIWorker.(*worker.ServerlessWorker)
+	}
+	if !ok && !hasServerlessWorker {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
 		return
 	}
@@ -156,9 +161,79 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	if h.orchestrator != nil && h.orchestrator.ServiceURI() != nil {
 		address = h.orchestrator.ServiceURI().String()
 	}
+
+	var runners []runner.LiveRunnerDiscoveryRunner
+	if ok {
+		runners = append(runners, manager.Runners()...)
+	}
+	if hasServerlessWorker {
+		pipeline := "live-video-to-video"
+		capability := core.Capability_LiveVideoToVideo
+		var capConstraints *core.CapabilityConstraints
+		if h.node.Capabilities != nil {
+			capConstraints = h.node.Capabilities.PerCapability()[capability]
+		}
+
+		var priceInfo *runner.LiveRunnerPriceInfo
+		versionFallback := ""
+		versions := h.node.AIWorker.Version()
+		for _, version := range versions {
+			if versionFallback == "" && version.Version != "" {
+				versionFallback = version.Version
+			}
+		}
+
+		if capConstraints != nil {
+			capabilities := make([]runner.LiveRunnerDiscoveryCapability, 0, len(capConstraints.Models))
+			for modelID := range capConstraints.Models {
+				versionString := versionFallback
+				for _, version := range versions {
+					if version.Pipeline == pipeline && version.ModelId == modelID && version.Version != "" {
+						versionString = version.Version
+						break
+					}
+				}
+
+				capacity := serverlessWorker.GetLiveAICapacity(pipeline, modelID)
+				capabilities = append(capabilities, runner.LiveRunnerDiscoveryCapability{
+					Pipeline:          pipeline,
+					Model:             modelID,
+					Capacity:          capacity.ContainersIdle + capacity.ContainersInUse,
+					CapacityAvailable: capacity.ContainersIdle,
+					CapacityInUse:     capacity.ContainersInUse,
+					Version:           versionString,
+				})
+
+				if priceInfo == nil {
+					price := h.node.GetBasePriceForCap("default", capability, modelID)
+					if price != nil {
+						priceInt64, err := common.PriceToInt64(price)
+						if err != nil {
+							glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
+						} else {
+							priceInfo = &runner.LiveRunnerPriceInfo{
+								PricePerUnit:  priceInt64.Num().Int64(),
+								PixelsPerUnit: priceInt64.Denom().Int64(),
+							}
+						}
+					}
+				}
+			}
+
+			if len(capabilities) > 0 {
+				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
+					Endpoint:     address,
+					GPU:          &runner.LiveRunnerGPU{Name: "H100"},
+					PriceInfo:    priceInfo,
+					Capabilities: capabilities,
+				})
+			}
+		}
+	}
+
 	resp := []liveRunnerDiscoveryEntry{{
 		Address: address,
-		Runners: manager.Runners(),
+		Runners: runners,
 	}}
 	data, err := json.Marshal(resp)
 	if err != nil {

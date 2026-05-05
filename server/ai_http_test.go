@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/runner"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,6 +162,69 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.Equal(t, 1, resp[0].Runners[0].Capabilities[0].CapacityAvailable)
 }
 
+func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
+	lp := newServerlessLiveRunnerHTTP(t, false, 3)
+	lp.node.SetBasePriceForCap("default", core.Capability_LiveVideoToVideo, "scope", core.NewFixedPrice(big.NewRat(7, 1)))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Equal(t, "http://localhost:1234", resp[0].Address)
+	require.Len(t, resp[0].Runners, 1)
+
+	discoveryRunner := resp[0].Runners[0]
+	require.Equal(t, "http://localhost:1234", discoveryRunner.Endpoint)
+	require.NotNil(t, discoveryRunner.GPU)
+	require.Equal(t, "H100", discoveryRunner.GPU.Name)
+	require.NotNil(t, discoveryRunner.PriceInfo)
+	require.Equal(t, int64(7), discoveryRunner.PriceInfo.PricePerUnit)
+	require.Equal(t, int64(1), discoveryRunner.PriceInfo.PixelsPerUnit)
+	require.Len(t, discoveryRunner.Capabilities, 1)
+
+	capability := discoveryRunner.Capabilities[0]
+	require.Equal(t, "live-video-to-video", capability.Pipeline)
+	require.Equal(t, "scope", capability.Model)
+	require.Equal(t, 3, capability.Capacity)
+	require.Equal(t, 3, capability.CapacityAvailable)
+	require.Equal(t, 0, capability.CapacityInUse)
+	require.Equal(t, "serverless-1.0.0", capability.Version)
+}
+
+func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
+	lp := newServerlessLiveRunnerHTTP(t, true, 2)
+	_, err := lp.node.LiveRunnerManager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  "runner-1",
+		RunnerURL: "https://runner.example.com",
+		Version:   "1.2.3",
+		Status:    "ready",
+		GPUs:      []runner.LiveRunnerGPU{{Name: "NVIDIA L40S", VRAMMB: 46068}},
+		Models: []runner.LiveRunnerModel{{
+			Pipeline: "live-video-to-video",
+			Model:    "scope",
+			Capacity: 1,
+		}},
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Len(t, resp[0].Runners, 2)
+	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].Endpoint)
+	require.Equal(t, "http://localhost:1234", resp[0].Runners[1].Endpoint)
+	require.Equal(t, "H100", resp[0].Runners[1].GPU.Name)
+}
+
 func TestLiveRunnerHeartbeat(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
@@ -199,6 +264,21 @@ func TestLiveRunnerEndpointsUnsupportedWithoutManager(t *testing.T) {
 	require.Contains(t, w.Body.String(), "live runners are not supported")
 }
 
+func TestLiveRunnerDiscoverySupportedWithoutManagerWhenServerlessWorkerPresent(t *testing.T) {
+	lp := newServerlessLiveRunnerHTTP(t, false, 1)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader([]byte(`{}`)))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "live runners are not supported")
+}
+
 func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
@@ -206,6 +286,25 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	if withManager {
 		node.LiveRunnerManager = runner.NewLiveRunnerRegistry()
 	}
+	return newLiveRunnerHTTPWithNode(t, node)
+}
+
+func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *lphttp {
+	t.Helper()
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	if withManager {
+		node.LiveRunnerManager = runner.NewLiveRunnerRegistry()
+	}
+	serverlessWorker, err := worker.NewServerlessWorker("ws://serverless.example.com/ws", capacity)
+	require.NoError(t, err)
+	node.AIWorker = serverlessWorker
+	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("live-video-to-video", "scope")
+	return newLiveRunnerHTTPWithNode(t, node)
+}
+
+func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
+	t.Helper()
 	lp := &lphttp{
 		orchestrator: newStubOrchestrator(),
 		node:         node,
