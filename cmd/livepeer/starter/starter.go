@@ -98,7 +98,7 @@ type LivepeerConfig struct {
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
 	AIServerless               *bool
-	UseLiveWorkers             *bool
+	UseLiveRunners             *bool
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -239,7 +239,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
 	defaultAIServerless := false
-	defaultUseLiveWorkers := false
+	defaultUseLiveRunners := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -366,7 +366,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
 		AIServerless:             &defaultAIServerless,
-		UseLiveWorkers:           &defaultUseLiveWorkers,
+		UseLiveRunners:           &defaultUseLiveRunners,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -1330,8 +1330,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
-	if *cfg.UseLiveWorkers {
-		n.LiveRunnerManager = runner.NewLiveRunnerRegistry()
+	if *cfg.UseLiveRunners {
+		if n.OrchSecret == "" {
+			glog.Exit("running with -useLiveRunners requires -orchSecret")
+		}
+		n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.WithPriceConverterFactory(server.NewLiveRunnerPriceConverter))
 	}
 
 	if *cfg.AIWorker {

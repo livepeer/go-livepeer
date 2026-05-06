@@ -10,11 +10,13 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -392,6 +394,36 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
 	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
+}
+
+func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-useLiveRunners"}))
+	require.True(*cfg.UseLiveRunners)
+}
+
+func TestNewLivepeerConfig_UseLiveWorkersFlagRemoved(t *testing.T) {
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	NewLivepeerConfig(fs)
+	require.Error(t, fs.Parse([]string{"-useLiveWorkers"}))
+}
+
+func TestLiveRunnerOrchSecretLiteralBehavior(t *testing.T) {
+	secret, err := common.ReadFromFile("literal-secret")
+	require.Error(t, err)
+	require.Equal(t, "literal-secret", secret)
+	require.NotEmpty(t, secret)
+}
+
+func TestLiveRunnerManagerConstruction(t *testing.T) {
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+
+	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.WithPriceConverterFactory(server.NewLiveRunnerPriceConverter))
+	require.NotNil(t, node.LiveRunnerManager)
 }
 
 // Helper struct to capture output for testing
