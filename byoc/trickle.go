@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -393,14 +392,25 @@ func (bsg *BYOCGatewayServer) ffmpegOutput(ctx context.Context, outputUrl string
 			"-f", "flv",
 			outputUrl,
 		)
-		// Change Cancel function to send a SIGTERM instead of SIGKILL. Still send a SIGKILL after 5s (WaitDelay) if it's stuck.
-		cmd.Cancel = func() error {
-			return cmd.Process.Signal(syscall.SIGTERM)
-		}
+		// Don't kill ffmpeg on ctx cancel. The trickle-subscriber
+		// goroutine that feeds outWriter calls Close on shutdown,
+		// which sends stdin EOF and lets ffmpeg finalize the FLV
+		// trailer cleanly. Sending SIGTERM here interrupts that
+		// drain and produces spurious "Broken pipe" / "Error
+		// writing trailer" logs at every /stream/stop. WaitDelay
+		// still hard-kills ffmpeg if it hangs after I/O closes.
+		cmd.Cancel = func() error { return nil }
 		cmd.WaitDelay = 5 * time.Second
 		cmd.Stdin = outWriter.MakeReader() // start at leading edge of output for each retry
 		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process err=%v output: %s", err, output)
+		if ctx.Err() != nil {
+			// Expected shutdown — suppress any residual ffmpeg
+			// stderr (e.g. RTMP destination disconnected before
+			// trailer flush completed).
+			clog.V(common.DEBUG).Infof(ctx, "ffmpeg exited (ctx cancelled) err=%v", err)
+		} else {
+			clog.Infof(ctx, "Process err=%v output: %s", err, output)
+		}
 
 		select {
 		case <-ctx.Done():
