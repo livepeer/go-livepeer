@@ -9,20 +9,18 @@ func liveRunnerTestHeartbeat(runnerID string) LiveRunnerHeartbeatRequest {
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
 		Status:    "ready",
-		GPUs: []LiveRunnerGPU{{
+		GPU: &LiveRunnerGPU{
 			ID:     "gpu-0",
 			Name:   "NVIDIA L40S",
 			VRAMMB: 46068,
-		}},
-		PriceInfo: &LiveRunnerPriceInfo{
-			PricePerUnit:  1000,
-			PixelsPerUnit: 1,
 		},
-		Models: []LiveRunnerModel{{
-			Pipeline: "new-ai-pipeline",
-			Model:    "model-a",
-			Capacity: 1,
-		}},
+		App:      "new-ai-pipeline/model-a",
+		Capacity: 1,
+		PriceInfo: LiveRunnerPriceInfo{
+			PricePerUnit:  1250,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
 	}
 }
 
@@ -45,12 +43,14 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 		Label:     "test-runner",
 		RunnerURL: "https://runner.example.com",
 		Status:    "ready",
-		Models: []LiveRunnerModel{{
-			Pipeline: "new-ai-pipeline",
-			Model:    "model-a",
-			Capacity: 2,
-			InUse:    []string{"job-1"},
-		}},
+		App:       "new-ai-pipeline/model-a",
+		Capacity:  2,
+		InUse:     []string{"job-1"},
+		PriceInfo: LiveRunnerPriceInfo{
+			PricePerUnit:  1250,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,47 +94,13 @@ func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
 	if runner.GPU == nil || runner.GPU.Name != "NVIDIA L40S" {
 		t.Fatalf("unexpected gpu: %+v", runner.GPU)
 	}
-	if runner.PriceInfo == nil || runner.PriceInfo.PricePerUnit != 1000 || runner.PriceInfo.PixelsPerUnit != 1 {
-		t.Fatalf("unexpected price info: %+v", runner.PriceInfo)
+	if runner.App != "new-ai-pipeline/model-a" {
+		t.Fatalf("unexpected app: %s", runner.App)
 	}
-	if len(runner.Capabilities) != 1 {
-		t.Fatalf("expected one capability, got %d", len(runner.Capabilities))
+	if runner.PriceInfo.Unit != "USD" {
+		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
 	}
-	capability := runner.Capabilities[0]
-	if capability.Pipeline != "new-ai-pipeline" || capability.Model != "model-a" {
-		t.Fatalf("unexpected capability identity: %+v", capability)
-	}
-	if capability.Capacity != 1 || capability.CapacityAvailable != 1 || capability.CapacityInUse != 0 {
-		t.Fatalf("unexpected capability capacity: %+v", capability)
-	}
-	if capability.Version != "1.2.3" {
-		t.Fatalf("unexpected capability version: %s", capability.Version)
-	}
-}
-
-func TestLiveRunnerRegistry_SelectRunnerRequiresAvailableCapacity(t *testing.T) {
-	registry := NewLiveRunnerRegistry()
-	req := liveRunnerTestHeartbeat("runner_busy_1")
-	req.Models[0].Capacity = 1
-	req.Models[0].InUse = []string{"job-1"}
-
-	if _, err := registry.Heartbeat(req); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := registry.SelectRunner("new-ai-pipeline", "model-a"); err != ErrNoLiveRunnerCapacity {
-		t.Fatalf("expected no capacity error, got %v", err)
-	}
-
-	req.Models[0].Capacity = 2
-	if _, err := registry.Heartbeat(req); err != nil {
-		t.Fatal(err)
-	}
-	runner, err := registry.SelectRunner("new-ai-pipeline", "model-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runner.Endpoint != "https://runner.example.com" {
-		t.Fatalf("unexpected selected endpoint: %s", runner.Endpoint)
+	if runner.Version != "1.2.3" {
+		t.Fatalf("unexpected runner version: %s", runner.Version)
 	}
 }

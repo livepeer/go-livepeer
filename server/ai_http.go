@@ -85,11 +85,18 @@ func startAIServer(lp *lphttp) error {
 	return nil
 }
 
-func (h *lphttp) liveRunnerManager() (runner.LiveRunnerManager, bool) {
-	if h.node == nil || h.node.LiveRunnerManager == nil {
+type liveRunnerManager interface {
+	Heartbeat(req runner.LiveRunnerHeartbeatRequest) (*runner.LiveRunnerHeartbeatResponse, error)
+	Unregister(runnerID string)
+	Runners() []runner.LiveRunnerDiscoveryRunner
+}
+
+func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
+	if h.node == nil {
 		return nil, false
 	}
-	return h.node.LiveRunnerManager, true
+	manager, ok := h.node.LiveRunnerManager.(liveRunnerManager)
+	return manager, ok
 }
 
 func (h *lphttp) validLiveRunnerAuth(r *http.Request) bool {
@@ -118,6 +125,10 @@ func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := discoveryPriceConverters.upsertRunner(resp.RunnerID, req); err != nil {
+		glog.Errorf("error upserting live runner price converter runnerID=%v err=%v", resp.RunnerID, err)
+	}
+	discoveryPriceConverters.cleanupStale(manager.Runners())
 	data, err := json.Marshal(resp)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
@@ -136,7 +147,9 @@ func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
 		return
 	}
-	manager.Unregister(r.PathValue("runner_id"))
+	runnerID := r.PathValue("runner_id")
+	manager.Unregister(runnerID)
+	discoveryPriceConverters.unregisterRunner(runnerID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -147,10 +160,9 @@ type liveRunnerDiscoveryEntry struct {
 
 func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
-	var serverlessWorker *worker.ServerlessWorker
 	var hasServerlessWorker bool
 	if h.node != nil {
-		serverlessWorker, hasServerlessWorker = h.node.AIWorker.(*worker.ServerlessWorker)
+		_, hasServerlessWorker = h.node.AIWorker.(*worker.ServerlessWorker)
 	}
 	if !ok && !hasServerlessWorker {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
@@ -165,6 +177,8 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	var runners []runner.LiveRunnerDiscoveryRunner
 	if ok {
 		runners = append(runners, manager.Runners()...)
+		discoveryPriceConverters.applyConvertedPrices(runners)
+		discoveryPriceConverters.cleanupStale(runners)
 	}
 	if hasServerlessWorker {
 		pipeline := "live-video-to-video"
@@ -174,7 +188,6 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 			capConstraints = h.node.Capabilities.PerCapability()[capability]
 		}
 
-		var priceInfo *runner.LiveRunnerPriceInfo
 		versionFallback := ""
 		versions := h.node.AIWorker.Version()
 		for _, version := range versions {
@@ -184,7 +197,6 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if capConstraints != nil {
-			capabilities := make([]runner.LiveRunnerDiscoveryCapability, 0, len(capConstraints.Models))
 			for modelID := range capConstraints.Models {
 				versionString := versionFallback
 				for _, version := range versions {
@@ -194,38 +206,27 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
-				capacity := serverlessWorker.GetLiveAICapacity(pipeline, modelID)
-				capabilities = append(capabilities, runner.LiveRunnerDiscoveryCapability{
-					Pipeline:          pipeline,
-					Model:             modelID,
-					Capacity:          capacity.ContainersIdle + capacity.ContainersInUse,
-					CapacityAvailable: capacity.ContainersIdle,
-					CapacityInUse:     capacity.ContainersInUse,
-					Version:           versionString,
-				})
-
-				if priceInfo == nil {
-					price := h.node.GetBasePriceForCap("default", capability, modelID)
-					if price != nil {
-						priceInt64, err := common.PriceToInt64(price)
-						if err != nil {
-							glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
-						} else {
-							priceInfo = &runner.LiveRunnerPriceInfo{
-								PricePerUnit:  priceInt64.Num().Int64(),
-								PixelsPerUnit: priceInt64.Denom().Int64(),
-							}
+				var priceInfo runner.LiveRunnerPriceInfo
+				price := h.node.GetBasePriceForCap("default", capability, modelID)
+				if price != nil {
+					priceInt64, err := common.PriceToInt64(price)
+					if err != nil {
+						glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
+					} else {
+						priceInfo = runner.LiveRunnerPriceInfo{
+							PricePerUnit:  priceInt64.Num().Int64(),
+							PixelsPerUnit: priceInt64.Denom().Int64(),
+							Unit:          "WEI",
 						}
 					}
 				}
-			}
 
-			if len(capabilities) > 0 {
 				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
-					Endpoint:     address,
-					GPU:          &runner.LiveRunnerGPU{Name: "H100"},
-					PriceInfo:    priceInfo,
-					Capabilities: capabilities,
+					Endpoint:  address,
+					GPU:       &runner.LiveRunnerGPU{Name: "H100"},
+					App:       pipeline + "/" + modelID,
+					Version:   versionString,
+					PriceInfo: priceInfo,
 				})
 			}
 		}
@@ -639,8 +640,6 @@ func (h *lphttp) StartScope() http.Handler {
 			closeSession()
 			if statusCode, ok := serverlessHandshakeHTTPStatus(err); ok {
 				respondWithError(w, err.Error(), statusCode)
-			} else if errors.Is(err, runner.ErrNoLiveRunnerCapacity) {
-				respondWithError(w, err.Error(), http.StatusServiceUnavailable)
 			} else {
 				respondWithError(w, err.Error(), http.StatusInternalServerError)
 			}

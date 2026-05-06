@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -16,26 +15,9 @@ const (
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
 )
 
-var (
-	ErrNoLiveRunnerCapacity = errors.New("no live runners have capacity")
-)
-
 type Capacity struct {
 	ContainersIdle  int
 	ContainersInUse int
-}
-
-type Version struct {
-	Pipeline string `json:"pipeline,omitempty"`
-	ModelId  string `json:"model_id,omitempty"`
-	Version  string `json:"version,omitempty"`
-}
-
-type LiveRunnerModel struct {
-	Pipeline string   `json:"pipeline"`
-	Model    string   `json:"model"`
-	Capacity int      `json:"capacity"`
-	InUse    []string `json:"active,omitempty"`
 }
 
 type LiveRunnerGPU struct {
@@ -45,19 +27,22 @@ type LiveRunnerGPU struct {
 }
 
 type LiveRunnerPriceInfo struct {
-	PricePerUnit  int64 `json:"price_per_unit"`
-	PixelsPerUnit int64 `json:"pixels_per_unit"`
+	PricePerUnit  int64  `json:"price_per_unit"`
+	PixelsPerUnit int64  `json:"pixels_per_unit"`
+	Unit          string `json:"unit,omitempty"`
 }
 
 type LiveRunnerHeartbeatRequest struct {
-	RunnerID  string               `json:"runner_id,omitempty"`
-	Label     string               `json:"label,omitempty"`
-	RunnerURL string               `json:"runner_url"`
-	Version   string               `json:"version,omitempty"`
-	Status    string               `json:"status,omitempty"`
-	GPUs      []LiveRunnerGPU      `json:"gpus,omitempty"`
-	PriceInfo *LiveRunnerPriceInfo `json:"price_info,omitempty"`
-	Models    []LiveRunnerModel    `json:"models,omitempty"`
+	RunnerID  string              `json:"runner_id,omitempty"`
+	Label     string              `json:"label,omitempty"`
+	RunnerURL string              `json:"runner_url"`
+	Version   string              `json:"version,omitempty"`
+	Status    string              `json:"status,omitempty"`
+	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
+	App       string              `json:"app"`
+	Capacity  int                 `json:"capacity"`
+	InUse     []string            `json:"active,omitempty"`
+	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
 type LiveRunnerHeartbeatResponse struct {
@@ -66,31 +51,16 @@ type LiveRunnerHeartbeatResponse struct {
 	HeartbeatTTL      string `json:"heartbeat_ttl"`
 }
 
-type LiveRunnerDiscoveryCapability struct {
-	Pipeline          string `json:"pipeline"`
-	Model             string `json:"model"`
-	Capacity          int    `json:"capacity"`
-	CapacityAvailable int    `json:"capacity_available"`
-	CapacityInUse     int    `json:"capacity_in_use"`
-	Version           string `json:"version,omitempty"`
-}
-
 type LiveRunnerDiscoveryRunner struct {
-	Endpoint     string                          `json:"endpoint"`
-	GPU          *LiveRunnerGPU                  `json:"gpu,omitempty"`
-	PriceInfo    *LiveRunnerPriceInfo            `json:"price_info,omitempty"`
-	Capabilities []LiveRunnerDiscoveryCapability `json:"capabilities"`
+	Endpoint  string              `json:"endpoint"`
+	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
+	App       string              `json:"app"`
+	Version   string              `json:"version,omitempty"`
+	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
 type liveRunner struct {
-	ID            string
-	Label         string
-	URL           string
-	Version       string
-	Status        string
-	GPUs          []LiveRunnerGPU
-	PriceInfo     *LiveRunnerPriceInfo
-	Models        map[string]LiveRunnerModel
+	LiveRunnerHeartbeatRequest
 	LastHeartbeat time.Time
 }
 
@@ -109,10 +79,6 @@ func NewLiveRunnerRegistry() *LiveRunnerRegistry {
 	}
 }
 
-func liveRunnerModelKey(pipeline, model string) string {
-	return pipeline + "/" + model
-}
-
 func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRunnerHeartbeatResponse, error) {
 	req.RunnerID = strings.TrimSpace(req.RunnerID)
 	if req.RunnerID == "" {
@@ -127,10 +93,10 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
-	r.runners[runner.ID] = runner
+	r.runners[runner.RunnerID] = runner
 
 	return &LiveRunnerHeartbeatResponse{
-		RunnerID:          runner.ID,
+		RunnerID:          runner.RunnerID,
 		HeartbeatInterval: r.heartbeatInterval.String(),
 		HeartbeatTTL:      r.heartbeatTTL.String(),
 	}, nil
@@ -145,25 +111,33 @@ func normalizeLiveRunner(runnerID string, req LiveRunnerHeartbeatRequest) (*live
 		return nil, fmt.Errorf("runner_url must use http or https")
 	}
 
-	models := make(map[string]LiveRunnerModel)
-	for _, model := range req.Models {
-		model = normalizeLiveRunnerModel(model)
-		if model.Pipeline == "" || model.Model == "" {
-			return nil, fmt.Errorf("runner model must include pipeline and model")
-		}
-		models[liveRunnerModelKey(model.Pipeline, model.Model)] = model
+	if req.PriceInfo.PixelsPerUnit <= 0 || req.PriceInfo.PricePerUnit <= 0 {
+		return nil, fmt.Errorf("runner must include positive price_info")
 	}
+	if strings.TrimSpace(req.PriceInfo.Unit) == "" {
+		return nil, fmt.Errorf("runner must include price_info.unit")
+	}
+	if req.PriceInfo.Unit != strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit)) {
+		return nil, fmt.Errorf("price_info.unit must be uppercase and trimmed")
+	}
+	if req.App == "" {
+		return nil, fmt.Errorf("runner must include app")
+	}
+	if req.App != strings.TrimSpace(req.App) {
+		return nil, fmt.Errorf("app must be trimmed")
+	}
+	if req.Status != strings.ToLower(strings.TrimSpace(req.Status)) {
+		return nil, fmt.Errorf("status must be lowercase and trimmed")
+	}
+	if req.Capacity < 0 {
+		return nil, fmt.Errorf("capacity must be >= 0")
+	}
+	req.RunnerID = runnerID
+	req.InUse = cloneStringSlice(req.InUse)
 
 	return &liveRunner{
-		ID:            runnerID,
-		Label:         req.Label,
-		URL:           req.RunnerURL,
-		Version:       req.Version,
-		Status:        normalizeLiveRunnerStatus(req.Status),
-		GPUs:          req.GPUs,
-		PriceInfo:     req.PriceInfo,
-		Models:        models,
-		LastHeartbeat: time.Now(),
+		LiveRunnerHeartbeatRequest: req,
+		LastHeartbeat:              time.Now(),
 	}, nil
 }
 
@@ -173,50 +147,25 @@ func (r *LiveRunnerRegistry) Unregister(runnerID string) {
 	r.removeRunnerLocked(runnerID)
 }
 
-func (r *LiveRunnerRegistry) HasCapacity(pipeline, model string) bool {
-	return r.GetCapacity(pipeline, model).ContainersIdle > 0
-}
-
 func (r *LiveRunnerRegistry) GetCapacity(pipeline, model string) Capacity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
 
+	appKey := pipeline + "/" + model
 	var capacity Capacity
 	for _, runner := range r.runners {
-		runnerModel, ok := runner.Models[liveRunnerModelKey(pipeline, model)]
-		if !ok || runner.Status != "ready" {
+		if runner.App != appKey || !isReadyStatus(runner.Status) {
 			continue
 		}
-		inUse := runnerModel.inUseCount()
+		inUse := len(runner.InUse)
 		capacity.ContainersInUse += inUse
-		idle := runnerModel.Capacity - inUse
+		idle := runner.Capacity - inUse
 		if idle > 0 {
 			capacity.ContainersIdle += idle
 		}
 	}
 	return capacity
-}
-
-func (r *LiveRunnerRegistry) Version() []Version {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	versions := make([]Version, 0, len(r.runners))
-	for _, runner := range r.runners {
-		if runner.Version == "" {
-			continue
-		}
-		for _, model := range runner.Models {
-			versions = append(versions, Version{
-				Pipeline: model.Pipeline,
-				ModelId:  model.Model,
-				Version:  runner.Version,
-			})
-		}
-	}
-	return versions
 }
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
@@ -226,34 +175,13 @@ func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 
 	runners := make([]LiveRunnerDiscoveryRunner, 0, len(r.runners))
 	for _, runner := range r.runners {
-		if runner.Status != "ready" {
+		if !isReadyStatus(runner.Status) {
 			continue
 		}
 		discoveryRunner := runner.discoveryRunner()
-		if len(discoveryRunner.Capabilities) == 0 {
-			continue
-		}
 		runners = append(runners, discoveryRunner)
 	}
 	return runners
-}
-
-func (r *LiveRunnerRegistry) SelectRunner(pipeline, model string) (*LiveRunnerDiscoveryRunner, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	key := liveRunnerModelKey(pipeline, model)
-	for _, runner := range r.runners {
-		runnerModel, ok := runner.Models[key]
-		if !ok || !runner.available(runnerModel) {
-			continue
-		}
-		discoveryRunner := runner.discoveryRunnerForModel(runnerModel)
-		return &discoveryRunner, nil
-	}
-
-	return nil, ErrNoLiveRunnerCapacity
 }
 
 func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
@@ -268,88 +196,33 @@ func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
 	delete(r.runners, runnerID)
 }
 
-func (runner *liveRunner) available(model LiveRunnerModel) bool {
-	if runner.Status != "ready" {
-		return false
-	}
-	return model.Capacity > model.inUseCount()
-}
-
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
-	capabilities := make([]LiveRunnerDiscoveryCapability, 0, len(runner.Models))
-	for _, model := range runner.Models {
-		capabilities = append(capabilities, runner.discoveryCapability(model))
-	}
 	return LiveRunnerDiscoveryRunner{
-		Endpoint:     runner.URL,
-		GPU:          firstLiveRunnerGPU(runner.GPUs),
-		PriceInfo:    cloneLiveRunnerPriceInfo(runner.PriceInfo),
-		Capabilities: capabilities,
+		Endpoint:  runner.RunnerURL,
+		GPU:       cloneLiveRunnerGPU(runner.GPU),
+		App:       runner.App,
+		Version:   runner.Version,
+		PriceInfo: runner.PriceInfo,
 	}
 }
 
-func (runner *liveRunner) discoveryRunnerForModel(model LiveRunnerModel) LiveRunnerDiscoveryRunner {
-	return LiveRunnerDiscoveryRunner{
-		Endpoint:     runner.URL,
-		GPU:          firstLiveRunnerGPU(runner.GPUs),
-		PriceInfo:    cloneLiveRunnerPriceInfo(runner.PriceInfo),
-		Capabilities: []LiveRunnerDiscoveryCapability{runner.discoveryCapability(model)},
-	}
+func isReadyStatus(status string) bool {
+	return status == "" || status == "ready"
 }
 
-func (runner *liveRunner) discoveryCapability(model LiveRunnerModel) LiveRunnerDiscoveryCapability {
-	inUse := model.inUseCount()
-	available := model.Capacity - inUse
-	if available < 0 {
-		available = 0
-	}
-	return LiveRunnerDiscoveryCapability{
-		Pipeline:          model.Pipeline,
-		Model:             model.Model,
-		Capacity:          model.Capacity,
-		CapacityAvailable: available,
-		CapacityInUse:     inUse,
-		Version:           runner.Version,
-	}
-}
-
-func normalizeLiveRunnerModel(model LiveRunnerModel) LiveRunnerModel {
-	if model.Capacity < 0 {
-		model.Capacity = 0
-	}
-	return model
-}
-
-func (model LiveRunnerModel) inUseCount() int {
-	return len(model.InUse)
-}
-
-func normalizeLiveRunnerStatus(status string) string {
-	if status == "" {
-		return "ready"
-	}
-	return strings.ToLower(status)
-}
-
-func firstLiveRunnerGPU(gpus []LiveRunnerGPU) *LiveRunnerGPU {
-	if len(gpus) == 0 {
+func cloneLiveRunnerGPU(gpu *LiveRunnerGPU) *LiveRunnerGPU {
+	if gpu == nil {
 		return nil
 	}
-	gpu := gpus[0]
-	return &gpu
-}
-
-func cloneLiveRunnerPriceInfo(price *LiveRunnerPriceInfo) *LiveRunnerPriceInfo {
-	if price == nil {
-		return nil
-	}
-	copy := *price
+	copy := *gpu
 	return &copy
 }
 
-type LiveRunnerManager interface {
-	Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRunnerHeartbeatResponse, error)
-	Unregister(runnerID string)
-	Runners() []LiveRunnerDiscoveryRunner
-	SelectRunner(pipeline, model string) (*LiveRunnerDiscoveryRunner, error)
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	copied := make([]string, len(values))
+	copy(copied, values)
+	return copied
 }

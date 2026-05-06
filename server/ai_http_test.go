@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -15,9 +16,24 @@ import (
 	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubPriceFeedWatcher struct {
+	price eth.PriceData
+}
+
+func (s stubPriceFeedWatcher) Currencies() (string, string, error) {
+	return "ETH", "USD", nil
+}
+
+func (s stubPriceFeedWatcher) Current() (eth.PriceData, error) {
+	return s.price, nil
+}
+
+func (s stubPriceFeedWatcher) Subscribe(context.Context, chan<- eth.PriceData) {}
 
 func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
 	var l lphttp
@@ -131,19 +147,25 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 
 func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	_, err := lp.node.LiveRunnerManager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  "runner-1",
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
 		Status:    "ready",
-		GPUs:      []runner.LiveRunnerGPU{{Name: "NVIDIA L40S", VRAMMB: 46068}},
-		PriceInfo: &runner.LiveRunnerPriceInfo{PricePerUnit: 1000, PixelsPerUnit: 1},
-		Models: []runner.LiveRunnerModel{{
-			Pipeline: "live-video-to-video",
-			Model:    "scope",
-			Capacity: 2,
-			InUse:    []string{"job-1"},
-		}},
+		GPU:       &runner.LiveRunnerGPU{Name: "NVIDIA L40S", VRAMMB: 46068},
+		App:       "live-video-to-video/scope",
+		Capacity:  2,
+		InUse:     []string{"job-1"},
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
 	})
 	require.NoError(t, err)
 
@@ -157,9 +179,8 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 1)
 	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].Endpoint)
-	require.Len(t, resp[0].Runners[0].Capabilities, 1)
-	require.Equal(t, "live-video-to-video", resp[0].Runners[0].Capabilities[0].Pipeline)
-	require.Equal(t, 1, resp[0].Runners[0].Capabilities[0].CapacityAvailable)
+	require.Equal(t, "live-video-to-video/scope", resp[0].Runners[0].App)
+	require.NotZero(t, resp[0].Runners[0].PriceInfo.PricePerUnit)
 }
 
 func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
@@ -181,33 +202,32 @@ func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
 	require.Equal(t, "http://localhost:1234", discoveryRunner.Endpoint)
 	require.NotNil(t, discoveryRunner.GPU)
 	require.Equal(t, "H100", discoveryRunner.GPU.Name)
-	require.NotNil(t, discoveryRunner.PriceInfo)
+	require.Equal(t, "live-video-to-video/scope", discoveryRunner.App)
+	require.Equal(t, "serverless-1.0.0", discoveryRunner.Version)
 	require.Equal(t, int64(7), discoveryRunner.PriceInfo.PricePerUnit)
 	require.Equal(t, int64(1), discoveryRunner.PriceInfo.PixelsPerUnit)
-	require.Len(t, discoveryRunner.Capabilities, 1)
-
-	capability := discoveryRunner.Capabilities[0]
-	require.Equal(t, "live-video-to-video", capability.Pipeline)
-	require.Equal(t, "scope", capability.Model)
-	require.Equal(t, 3, capability.Capacity)
-	require.Equal(t, 3, capability.CapacityAvailable)
-	require.Equal(t, 0, capability.CapacityInUse)
-	require.Equal(t, "serverless-1.0.0", capability.Version)
 }
 
 func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	lp := newServerlessLiveRunnerHTTP(t, true, 2)
-	_, err := lp.node.LiveRunnerManager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  "runner-1",
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
 		Status:    "ready",
-		GPUs:      []runner.LiveRunnerGPU{{Name: "NVIDIA L40S", VRAMMB: 46068}},
-		Models: []runner.LiveRunnerModel{{
-			Pipeline: "live-video-to-video",
-			Model:    "scope",
-			Capacity: 1,
-		}},
+		GPU:       &runner.LiveRunnerGPU{Name: "NVIDIA L40S", VRAMMB: 46068},
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
 	})
 	require.NoError(t, err)
 
@@ -230,11 +250,13 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  "runner-1",
 		RunnerURL: "https://runner.example.com",
-		Models: []runner.LiveRunnerModel{{
-			Pipeline: "live-video-to-video",
-			Model:    "scope",
-			Capacity: 1,
-		}},
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
 	})
 	require.NoError(t, err)
 
@@ -246,6 +268,25 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	var resp runner.LiveRunnerHeartbeatResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Equal(t, "runner-1", resp.RunnerID)
+}
+
+func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	body := []byte(`{
+		"runner_id":"runner-1",
+		"runner_url":"https://runner.example.com",
+		"price_info":{"price_per_unit":1,"pixels_per_unit":1},
+		"app":"live-video-to-video/scope",
+		"capacity":1,
+		"pricing":{"usd_per_hour":10}
+	}`)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "price_info.unit")
 }
 
 func TestLiveRunnerEndpointsUnsupportedWithoutManager(t *testing.T) {
