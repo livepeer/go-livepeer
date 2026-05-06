@@ -2,23 +2,21 @@ package runner
 
 import (
 	"fmt"
+	"log/slog"
+	"math/big"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 )
 
 const (
 	defaultLiveRunnerHeartbeatInterval = 5 * time.Second
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
 )
-
-type Capacity struct {
-	ContainersIdle  int
-	ContainersInUse int
-}
 
 type LiveRunnerGPU struct {
 	ID     string `json:"id,omitempty"`
@@ -62,6 +60,8 @@ type LiveRunnerDiscoveryRunner struct {
 type liveRunner struct {
 	LiveRunnerHeartbeatRequest
 	LastHeartbeat time.Time
+	priceSource   LiveRunnerPriceInfo
+	converter     *core.AutoConvertedPrice
 }
 
 type LiveRunnerRegistry struct {
@@ -85,7 +85,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 		req.RunnerID = "runner_" + common.RandomIDGenerator(4)
 	}
 
-	runner, err := normalizeLiveRunner(req.RunnerID, req)
+	req, err := normalizeLiveRunnerRequest(req.RunnerID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,15 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
-	r.runners[runner.RunnerID] = runner
+
+	runner := r.runners[req.RunnerID]
+	if runner == nil {
+		runner = &liveRunner{}
+		r.runners[req.RunnerID] = runner
+	}
+	runner.LiveRunnerHeartbeatRequest = req
+	runner.LastHeartbeat = time.Now()
+	runner.updatePriceConverterLocked()
 
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
@@ -102,70 +110,42 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 	}, nil
 }
 
-func normalizeLiveRunner(runnerID string, req LiveRunnerHeartbeatRequest) (*liveRunner, error) {
+func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest) (LiveRunnerHeartbeatRequest, error) {
 	u, err := url.ParseRequestURI(req.RunnerURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return nil, fmt.Errorf("invalid runner_url")
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("runner_url must use http or https")
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("invalid runner_url")
 	}
 
 	if req.PriceInfo.PixelsPerUnit <= 0 || req.PriceInfo.PricePerUnit <= 0 {
-		return nil, fmt.Errorf("runner must include positive price_info")
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("runner must include positive price_info")
 	}
-	if strings.TrimSpace(req.PriceInfo.Unit) == "" {
-		return nil, fmt.Errorf("runner must include price_info.unit")
+	unit := strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit))
+	if unit != "USD" && unit != "WEI" {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("price_info.unit must be USD or WEI")
 	}
-	if req.PriceInfo.Unit != strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit)) {
-		return nil, fmt.Errorf("price_info.unit must be uppercase and trimmed")
-	}
-	if req.App == "" {
-		return nil, fmt.Errorf("runner must include app")
-	}
-	if req.App != strings.TrimSpace(req.App) {
-		return nil, fmt.Errorf("app must be trimmed")
+	if req.App == "" || req.App != strings.TrimSpace(req.App) {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("app must be trimmed")
 	}
 	if req.Status != strings.ToLower(strings.TrimSpace(req.Status)) {
-		return nil, fmt.Errorf("status must be lowercase and trimmed")
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("status must be lowercase and trimmed")
 	}
 	if req.Capacity < 0 {
-		return nil, fmt.Errorf("capacity must be >= 0")
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("capacity must be >= 0")
+	}
+	if req.Capacity == 0 {
+		req.Capacity = 1
 	}
 	req.RunnerID = runnerID
+	req.PriceInfo.Unit = unit
 	req.InUse = cloneStringSlice(req.InUse)
 
-	return &liveRunner{
-		LiveRunnerHeartbeatRequest: req,
-		LastHeartbeat:              time.Now(),
-	}, nil
+	return req, nil
 }
 
 func (r *LiveRunnerRegistry) Unregister(runnerID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.removeRunnerLocked(runnerID)
-}
-
-func (r *LiveRunnerRegistry) GetCapacity(pipeline, model string) Capacity {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	appKey := pipeline + "/" + model
-	var capacity Capacity
-	for _, runner := range r.runners {
-		if runner.App != appKey || !isReadyStatus(runner.Status) {
-			continue
-		}
-		inUse := len(runner.InUse)
-		capacity.ContainersInUse += inUse
-		idle := runner.Capacity - inUse
-		if idle > 0 {
-			capacity.ContainersIdle += idle
-		}
-	}
-	return capacity
 }
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
@@ -193,17 +173,83 @@ func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
 }
 
 func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
+	if runner := r.runners[runnerID]; runner != nil {
+		runner.stopPriceConverterLocked()
+	}
 	delete(r.runners, runnerID)
 }
 
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
+	priceInfo := runner.PriceInfo
+	if runner.converter != nil {
+		converted, err := convertedPriceInfo(runner.converter)
+		if err != nil {
+			slog.Error("error reading converted live runner price", "app", runner.App, "endpoint", runner.RunnerURL, "err", err)
+		} else {
+			priceInfo = converted
+		}
+	}
 	return LiveRunnerDiscoveryRunner{
 		Endpoint:  runner.RunnerURL,
 		GPU:       cloneLiveRunnerGPU(runner.GPU),
 		App:       runner.App,
 		Version:   runner.Version,
-		PriceInfo: runner.PriceInfo,
+		PriceInfo: priceInfo,
 	}
+}
+
+func (runner *liveRunner) updatePriceConverterLocked() {
+	// Heartbeats call this each time, but converter rebuild work is only done when
+	// price_info changes (or when a converter is missing after a prior failure).
+	if runner.converter != nil && runner.priceSource == runner.PriceInfo {
+		return
+	}
+	runner.stopPriceConverterLocked()
+	converter, err := newConverterForRunner(runner.PriceInfo)
+	if err != nil {
+		slog.Error("error creating live runner price converter", "runner_id", runner.RunnerID, "app", runner.App, "endpoint", runner.RunnerURL, "err", err)
+		return
+	}
+	runner.priceSource = runner.PriceInfo
+	runner.converter = converter
+}
+
+func (runner *liveRunner) stopPriceConverterLocked() {
+	if runner.converter == nil {
+		return
+	}
+	runner.converter.Stop()
+	runner.converter = nil
+}
+
+func newConverterForRunner(priceInfo LiveRunnerPriceInfo) (*core.AutoConvertedPrice, error) {
+	if strings.ToUpper(priceInfo.Unit) != "USD" {
+		return nil, nil
+	}
+
+	usdPerPixel := usdPerPixelFromUSDPerHour(priceInfo)
+	return core.NewAutoConvertedPrice("USD", usdPerPixel, nil)
+}
+
+func usdPerPixelFromUSDPerHour(priceInfo LiveRunnerPriceInfo) *big.Rat {
+	pixelsPerHour := 1280 * 720 * 30 * 3600 // 720p @ 30fps
+	usdPerHour := new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
+	return new(big.Rat).Quo(usdPerHour, new(big.Rat).SetInt64(int64(pixelsPerHour)))
+}
+
+func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo, error) {
+	if converter == nil {
+		return LiveRunnerPriceInfo{}, nil
+	}
+	priceFixed, err := common.PriceToFixed(converter.Value())
+	if err != nil {
+		return LiveRunnerPriceInfo{}, err
+	}
+	return LiveRunnerPriceInfo{
+		PricePerUnit:  priceFixed,
+		PixelsPerUnit: 1,
+		Unit:          "WEI",
+	}, nil
 }
 
 func isReadyStatus(status string) bool {

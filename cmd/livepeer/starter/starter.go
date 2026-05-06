@@ -1334,7 +1334,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if n.OrchSecret == "" {
 			glog.Exit("running with -useLiveRunners requires -orchSecret")
 		}
-		n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.WithPriceConverterFactory(server.NewLiveRunnerPriceConverter))
+		n.LiveRunnerManager = runner.NewLiveRunnerRegistry()
 	}
 
 	if *cfg.AIWorker {

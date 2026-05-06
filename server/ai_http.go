@@ -125,10 +125,6 @@ func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := discoveryPriceConverters.upsertRunner(resp.RunnerID, req); err != nil {
-		glog.Errorf("error upserting live runner price converter runnerID=%v err=%v", resp.RunnerID, err)
-	}
-	discoveryPriceConverters.cleanupStale(manager.Runners())
 	data, err := json.Marshal(resp)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
@@ -149,7 +145,6 @@ func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
 	}
 	runnerID := r.PathValue("runner_id")
 	manager.Unregister(runnerID)
-	discoveryPriceConverters.unregisterRunner(runnerID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -177,8 +172,6 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	var runners []runner.LiveRunnerDiscoveryRunner
 	if ok {
 		runners = append(runners, manager.Runners()...)
-		discoveryPriceConverters.applyConvertedPrices(runners)
-		discoveryPriceConverters.cleanupStale(runners)
 	}
 	if hasServerlessWorker {
 		pipeline := "live-video-to-video"

@@ -16,7 +16,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
-	"github.com/livepeer/go-livepeer/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -422,7 +421,7 @@ func TestLiveRunnerManagerConstruction(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
 
-	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.WithPriceConverterFactory(server.NewLiveRunnerPriceConverter))
+	node.LiveRunnerManager = runner.NewLiveRunnerRegistry()
 	require.NotNil(t, node.LiveRunnerManager)
 }
 
