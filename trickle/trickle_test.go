@@ -97,6 +97,201 @@ func TestTrickle_Close(t *testing.T) {
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
 
+func TestTrickle_BeforeCreate(t *testing.T) {
+	t.Run("called before creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		var called bool
+		var server *Server
+		server = ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				called = true
+				require.Equal("created", streamName)
+				require.Equal("text/plain", r.Header.Get("Expect-Content"))
+				_, exists := server.getStream(streamName)
+				require.False(exists)
+				return nil
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/created", nil)
+		require.NoError(err)
+		req.Header.Set("Expect-Content", "text/plain")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+		require.True(called)
+		resp, err = http.Get(ts.URL + "/created/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("request error prevents creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				return &RequestError{StatusCode: http.StatusForbidden, Message: "nope"}
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/blocked", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusForbidden, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/blocked/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("generic error prevents creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				return errors.New("boom")
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/errored", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusInternalServerError, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/errored/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+}
+
+func TestTrickle_BeforeDelete(t *testing.T) {
+	t.Run("called before deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		var called bool
+		var server *Server
+		server = ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				called = true
+				require.Equal("deleted", streamName)
+				_, exists := server.getStream(streamName)
+				require.True(exists)
+				return nil
+			},
+		})
+		NewLocalPublisher(server, "deleted", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/deleted", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+		require.True(called)
+		resp, err = http.Get(ts.URL + "/deleted/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("request error prevents deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		server := ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				return &RequestError{StatusCode: http.StatusUnauthorized, Message: "nope"}
+			},
+		})
+		NewLocalPublisher(server, "blocked-delete", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/blocked-delete", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusUnauthorized, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/blocked-delete/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("generic error prevents deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		server := ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				return errors.New("boom")
+			},
+		})
+		NewLocalPublisher(server, "errored-delete", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/errored-delete", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusInternalServerError, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/errored-delete/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+}
+
+func TestTrickle_Delete(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	ConfigureServer(TrickleServerConfig{
+		Mux:        mux,
+		Autocreate: true,
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/delete-test", "text/plain", nil)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/delete-test", nil)
+	require.NoError(err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+}
+
 func TestTrickle_SetSeq(t *testing.T) {
 	require, channelURL := makeServer(t)
 

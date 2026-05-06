@@ -37,6 +37,14 @@ type TrickleServerConfig struct {
 
 	// How often to sweep for idle channels (default 1 minute)
 	SweepInterval time.Duration
+
+	// BeforeCreate runs before HTTP channel creation.
+	// Return RequestError for expected client/policy failures.
+	BeforeCreate func(r *http.Request, streamName string) error
+
+	// BeforeDelete runs before HTTP channel deletion.
+	// Return RequestError for expected client/policy failures.
+	BeforeDelete func(r *http.Request, streamName string) error
 }
 
 type Server struct {
@@ -84,6 +92,29 @@ type Changefeed struct {
 const maxSegmentsPerStream = 5
 
 var FirstByteTimeout = errors.New("pending read timeout")
+
+// RequestError represents an expected request or policy failure from a hook.
+type RequestError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *RequestError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.StatusCode != 0 {
+		return http.StatusText(e.StatusCode)
+	}
+	return http.StatusText(http.StatusBadRequest)
+}
+
+func (e *RequestError) httpStatus() int {
+	if e.StatusCode >= 400 && e.StatusCode < 500 {
+		return e.StatusCode
+	}
+	return http.StatusBadRequest
+}
 
 func applyDefaults(config *TrickleServerConfig) {
 	if config.BasePath == "" {
@@ -261,6 +292,12 @@ func (sm *Server) closeStream(streamName string) error {
 
 func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	streamName := r.PathValue("streamName")
+	if sm.config.BeforeDelete != nil {
+		if err := sm.config.BeforeDelete(r, streamName); err != nil {
+			writeHookError(w, err)
+			return
+		}
+	}
 	if err := sm.closeStream(streamName); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -290,11 +327,28 @@ func (sm *Server) closeSeq(w http.ResponseWriter, r *http.Request) {
 }
 
 func (sm *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
-	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Expect-Content"), false)
+	streamName := r.PathValue("streamName")
+	mimeType := r.Header.Get("Expect-Content")
+	if sm.config.BeforeCreate != nil {
+		if err := sm.config.BeforeCreate(r, streamName); err != nil {
+			writeHookError(w, err)
+			return
+		}
+	}
+	stream := sm.getOrCreateStream(streamName, mimeType, false)
 	if stream == nil {
 		http.Error(w, "Stream not found", http.StatusNotFound)
 		return
 	}
+}
+
+func writeHookError(w http.ResponseWriter, err error) {
+	var requestErr *RequestError
+	if errors.As(err, &requestErr) {
+		http.Error(w, requestErr.Error(), requestErr.httpStatus())
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 func (sm *Server) handlePost(w http.ResponseWriter, r *http.Request) {
