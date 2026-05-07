@@ -6,12 +6,14 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/trickle"
 )
 
 const (
@@ -70,12 +72,28 @@ type LiveRunnerDiscoveryRunner struct {
 	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
+type LiveRunnerTrickleChannel struct {
+	Name        string `json:"name"`
+	ChannelName string `json:"channel_name"`
+	URL         string `json:"url"`
+	MimeType    string `json:"mime_type"`
+}
+
 type liveRunner struct {
 	LiveRunnerHeartbeatRequest
 	LastHeartbeat time.Time
-	sessions      map[string]struct{}
+	sessions      map[string]*liveRunnerSession
 	priceSource   LiveRunnerPriceInfo
 	converter     *core.AutoConvertedPrice
+}
+
+type liveRunnerSession struct {
+	channels map[string]*liveRunnerTrickleChannel
+}
+
+type liveRunnerTrickleChannel struct {
+	info      LiveRunnerTrickleChannel
+	publisher *trickle.TrickleLocalPublisher
 }
 
 type LiveRunnerRegistry struct {
@@ -83,7 +101,11 @@ type LiveRunnerRegistry struct {
 	runners           map[string]*liveRunner
 	heartbeatInterval time.Duration
 	heartbeatTTL      time.Duration
+	trickleSrv        *trickle.Server
+	trickleBaseURL    string
 }
+
+var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func NewLiveRunnerRegistry() *LiveRunnerRegistry {
 	return &LiveRunnerRegistry{
@@ -91,6 +113,13 @@ func NewLiveRunnerRegistry() *LiveRunnerRegistry {
 		heartbeatInterval: defaultLiveRunnerHeartbeatInterval,
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
 	}
+}
+
+func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, baseURL string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.trickleSrv = srv
+	r.trickleBaseURL = baseURL
 }
 
 func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRunnerHeartbeatResponse, error) {
@@ -111,7 +140,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 	runner := r.runners[req.RunnerID]
 	if runner == nil {
 		runner = &liveRunner{
-			sessions: make(map[string]struct{}),
+			sessions: make(map[string]*liveRunnerSession),
 		}
 		r.runners[req.RunnerID] = runner
 	}
@@ -183,7 +212,9 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, er
 		}
 		sessionID = "session_" + common.RandomIDGenerator(4)
 	}
-	runner.sessions[sessionID] = struct{}{}
+	runner.sessions[sessionID] = &liveRunnerSession{
+		channels: make(map[string]*liveRunnerTrickleChannel),
+	}
 	return sessionID, runner.RunnerURL, nil
 }
 
@@ -196,7 +227,7 @@ func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
 	if runner == nil {
 		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
-	delete(runner.sessions, sessionID)
+	runner.releaseSessionLocked(sessionID)
 	return nil
 }
 
@@ -213,6 +244,75 @@ func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string
 		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
 	}
 	return runner.RunnerURL, nil
+}
+
+func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (LiveRunnerTrickleChannel, error) {
+	name, channelName, err := normalizeTrickleChannelName(sessionID, name)
+	if err != nil {
+		return LiveRunnerTrickleChannel{}, err
+	}
+	if strings.TrimSpace(mimeType) == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	if r.trickleSrv == nil {
+		return LiveRunnerTrickleChannel{}, fmt.Errorf("trickle server is required")
+	}
+	channelURL, err := url.JoinPath(r.trickleBaseURL, channelName)
+	if err != nil {
+		return LiveRunnerTrickleChannel{}, err
+	}
+
+	session, err := r.liveRunnerSessionLocked(runnerID, sessionID)
+	if err != nil {
+		return LiveRunnerTrickleChannel{}, err
+	}
+	if channel := session.channels[name]; channel != nil {
+		return channel.info, nil
+	}
+
+	publisher := trickle.NewLocalPublisher(r.trickleSrv, channelName, mimeType)
+	publisher.CreateChannel()
+	channel := &liveRunnerTrickleChannel{
+		info: LiveRunnerTrickleChannel{
+			Name:        name,
+			ChannelName: channelName,
+			URL:         channelURL,
+			MimeType:    mimeType,
+		},
+		publisher: publisher,
+	}
+	session.channels[name] = channel
+	return channel.info, nil
+}
+
+func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name string) error {
+	name, _, err := normalizeTrickleChannelName(sessionID, name)
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	session, err := r.liveRunnerSessionLocked(runnerID, sessionID)
+	if err != nil {
+		return err
+	}
+	channel := session.channels[name]
+	if channel == nil {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "trickle channel not found"}
+	}
+	if err := channel.close(); err != nil {
+		return err
+	}
+	delete(session.channels, name)
+	return nil
 }
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
@@ -241,9 +341,60 @@ func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
 
 func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
 	if runner := r.runners[runnerID]; runner != nil {
+		for sessionID := range runner.sessions {
+			runner.releaseSessionLocked(sessionID)
+		}
 		runner.stopPriceConverterLocked()
 	}
 	delete(r.runners, runnerID)
+}
+
+func (runner *liveRunner) releaseSessionLocked(sessionID string) {
+	if session := runner.sessions[sessionID]; session != nil {
+		session.closeChannelsLocked()
+	}
+	delete(runner.sessions, sessionID)
+}
+
+func (r *LiveRunnerRegistry) liveRunnerSessionLocked(runnerID, sessionID string) (*liveRunnerSession, error) {
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	session := runner.sessions[sessionID]
+	if session == nil {
+		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
+	}
+	return session, nil
+}
+
+func normalizeTrickleChannelName(sessionID, name string) (string, string, error) {
+	name = strings.ReplaceAll(strings.TrimSpace(name), "/", "-")
+	if name == "" {
+		return "", "", &RunnerError{StatusCode: http.StatusBadRequest, Message: "trickle channel name is required"}
+	}
+	if !liveRunnerChannelNamePattern.MatchString(name) {
+		return "", "", &RunnerError{StatusCode: http.StatusBadRequest, Message: "trickle channel name may only contain alphanumerics, underscores, or hyphens"}
+	}
+	return name, sessionID + "-" + name, nil
+}
+
+func (session *liveRunnerSession) closeChannelsLocked() {
+	for name, channel := range session.channels {
+		if err := channel.close(); err != nil {
+			slog.Error("error closing live runner trickle channel", "channel", channel.info.ChannelName, "err", err)
+		}
+		delete(session.channels, name)
+	}
+}
+
+func (channel *liveRunnerTrickleChannel) close() error {
+	if channel == nil || channel.publisher == nil {
+		return nil
+	}
+	err := channel.publisher.Close()
+	channel.publisher = nil
+	return err
 }
 
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {

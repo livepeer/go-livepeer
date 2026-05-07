@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -431,6 +432,162 @@ func TestLiveRunnerProxyRejectsInvalidSession(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"foo/bar","mime_type":"video/MP2T"},{"name":"events","mime_type":"application/json"}]}`)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerTrickleChannelsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Channels, 2)
+	require.Equal(t, "foo-bar", resp.Channels[0].Name)
+	require.Equal(t, sessionID+"-foo-bar", resp.Channels[0].ChannelName)
+	require.Equal(t, "video/MP2T", resp.Channels[0].MimeType)
+	require.Equal(t, "http://localhost:1234/ai/trickle/"+sessionID+"-foo-bar", resp.Channels[0].URL)
+	require.Equal(t, sessionID+"-events", resp.Channels[1].ChannelName)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/ai/trickle/"+sessionID+"-foo-bar/next", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"video/MP2T"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var first liveRunnerTrickleChannelsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &first))
+
+	w = httptest.NewRecorder()
+	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"application/json"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var second liveRunnerTrickleChannelsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &second))
+	require.Equal(t, first, second)
+	require.Equal(t, "video/MP2T", second.Channels[0].MimeType)
+}
+
+func TestLiveRunnerCreateTrickleChannelRejectsInvalidSessionAndName(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/missing/channels", `{"channels":[{"name":"valid"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+	w = httptest.NewRecorder()
+	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"bad.name"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestLiveRunnerTrickleChannelRequiresAuth(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", strings.NewReader(`{"channels":[{"name":"unauthorized"}]}`))
+	req.Header.Set("Authorization", "wrong-secret")
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", strings.NewReader(`{"channels":["unauthorized"]}`))
+	req.Header.Set("Authorization", "wrong-secret")
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestLiveRunnerTrickleChannelBatchLimit(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	createReq := liveRunnerTrickleChannelsRequest{Channels: make([]liveRunnerTrickleChannelRequest, maxLiveRunnerTrickleChannelsPerRequest+1)}
+	deleteReq := deleteLiveRunnerTrickleChannelsRequest{Channels: make([]string, maxLiveRunnerTrickleChannelsPerRequest+1)}
+	for i := range createReq.Channels {
+		name := fmt.Sprintf("channel-%d", i)
+		createReq.Channels[i] = liveRunnerTrickleChannelRequest{Name: name}
+		deleteReq.Channels[i] = name
+	}
+
+	body, err := json.Marshal(createReq)
+	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	body, err = json.Marshal(deleteReq)
+	require.NoError(t, err)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestLiveRunnerDeleteTrickleChannel(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"delete-me"},{"name":"delete-me-too"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = newLiveRunnerChannelRequest(lp, http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":["delete-me","delete-me-too"]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp deleteLiveRunnerTrickleChannelsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, []string{"delete-me", "delete-me-too"}, resp.Deleted)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/ai/trickle/"+sessionID+"-delete-me/next", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestLiveRunnerStopSessionClosesTrickleChannels(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"stop-cleanup"}]}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/ai/trickle/"+sessionID+"-stop-cleanup/next", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
@@ -495,4 +652,10 @@ func reserveLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string) string 
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.SessionID)
 	return resp.SessionID
+}
+
+func newLiveRunnerChannelRequest(lp *lphttp, method, target, body string) *http.Request {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	return req
 }

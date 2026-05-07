@@ -5,12 +5,14 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/trickle"
 )
 
 type stubPriceFeedWatcher struct {
@@ -258,6 +260,137 @@ func TestLiveRunnerRegistry_ReleaseSessionFreesCapacity(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_CreateTrickleChannelForSession(t *testing.T) {
+	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
+	registry := NewLiveRunnerRegistry()
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	channel, err := registry.CreateTrickleChannel("runner-1", sessionID, "foo/bar", "video/MP2T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedName := sessionID + "-foo-bar"
+	if channel.ChannelName != expectedName {
+		t.Fatalf("unexpected channel name channel=%+v want=%s", channel, expectedName)
+	}
+	if channel.Name != "foo-bar" {
+		t.Fatalf("unexpected sanitized name: %s", channel.Name)
+	}
+	if channel.URL != channelBaseURL+expectedName {
+		t.Fatalf("unexpected channel URL: %s", channel.URL)
+	}
+}
+
+func TestLiveRunnerRegistry_CreateTrickleChannelReturnsExisting(t *testing.T) {
+	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
+	registry := NewLiveRunnerRegistry()
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := registry.CreateTrickleChannel("runner-1", sessionID, "existing", "video/MP2T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := registry.CreateTrickleChannel("runner-1", sessionID, "existing", "application/json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.URL != second.URL || second.MimeType != "video/MP2T" {
+		t.Fatalf("expected existing channel metadata, first=%+v second=%+v", first, second)
+	}
+}
+
+func TestLiveRunnerRegistry_CreateTrickleChannelRejectsInvalidName(t *testing.T) {
+	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
+	registry := NewLiveRunnerRegistry()
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := registry.CreateTrickleChannel("runner-1", sessionID, "bad.name", ""); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected bad request for invalid channel name, got %v", err)
+	}
+	if _, err := registry.CreateTrickleChannel("runner-1", sessionID, "", ""); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected bad request for empty channel name, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
+	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
+	registry := NewLiveRunnerRegistry()
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := registry.CreateTrickleChannel("runner-1", sessionID, "cleanup", ""); err != nil {
+		t.Fatal(err)
+	}
+	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusOK {
+		t.Fatalf("expected channel to exist, got status=%d", status)
+	}
+	if err := registry.ReleaseSession("runner-1", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
+		t.Fatalf("expected release to close channel, got status=%d", status)
+	}
+
+	sessionID, _, err = registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.CreateTrickleChannel("runner-1", sessionID, "cleanup", ""); err != nil {
+		t.Fatal(err)
+	}
+	registry.Unregister("runner-1")
+	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
+		t.Fatalf("expected unregister to close channel, got status=%d", status)
+	}
+
+	registry.heartbeatTTL = defaultLiveRunnerHeartbeatTTL
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-2")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err = registry.ReserveSession("runner-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.CreateTrickleChannel("runner-2", sessionID, "cleanup", ""); err != nil {
+		t.Fatal(err)
+	}
+	registry.heartbeatTTL = time.Nanosecond
+	time.Sleep(time.Millisecond)
+	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected expired runner to be removed, got %v", err)
+	}
+	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
+		t.Fatalf("expected expiry to close channel, got status=%d", status)
+	}
+}
+
 func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
 	registry := NewLiveRunnerRegistry()
 	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
@@ -301,4 +434,27 @@ func TestLiveRunnerRegistry_NotReadyCannotReserveSession(t *testing.T) {
 func isRunnerErrorStatus(err error, statusCode int) bool {
 	var runnerErr *RunnerError
 	return errors.As(err, &runnerErr) && runnerErr.StatusCode == statusCode
+}
+
+func newLiveRunnerTestTrickleServer(t *testing.T) (*trickle.Server, string, func(string) int) {
+	t.Helper()
+	mux := http.NewServeMux()
+	trickleSrv := trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:      mux,
+		BasePath: "/ai/trickle/",
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	channelBaseURL := ts.URL + "/ai/trickle/"
+	channelStatus := func(channelName string) int {
+		t.Helper()
+		resp, err := http.Get(channelBaseURL + channelName + "/next")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	return trickleSrv, channelBaseURL, channelStatus
 }

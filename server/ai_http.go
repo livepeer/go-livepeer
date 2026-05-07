@@ -39,6 +39,8 @@ var MaxAIRequestSize = 3000000000 // 3GB
 
 var TrickleHTTPPath = "/ai/trickle/"
 
+const maxLiveRunnerTrickleChannelsPerRequest = 25
+
 func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -66,6 +68,9 @@ func startAIServer(lp *lphttp) error {
 	if sw, ok := lp.node.AIWorker.(*worker.ServerlessWorker); ok {
 		sw.SetTrickleServer(lp.trickleSrv)
 	}
+	if manager, ok := lp.liveRunnerManager(); ok {
+		manager.SetTrickleServer(lp.trickleSrv, lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String())
+	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
@@ -81,6 +86,8 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
 	lp.transRPC.HandleFunc("POST /runners/heartbeat", lp.LiveRunnerHeartbeat)
 	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/channels", lp.CreateLiveRunnerTrickleChannel)
+	lp.transRPC.HandleFunc("DELETE /runner/{runner_id}/session/{session_id}/channels", lp.DeleteLiveRunnerTrickleChannels)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
@@ -96,6 +103,9 @@ type liveRunnerManager interface {
 	ReserveSession(runnerID string) (string, string, error)
 	ReleaseSession(runnerID, sessionID string) error
 	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
+	SetTrickleServer(srv *trickle.Server, baseURL string)
+	CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (runner.LiveRunnerTrickleChannel, error)
+	DeleteTrickleChannel(runnerID, sessionID, name string) error
 }
 
 func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
@@ -161,6 +171,27 @@ type liveRunnerSessionResponse struct {
 	AppURL    string `json:"app_url"`
 }
 
+type liveRunnerTrickleChannelRequest struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mime_type"`
+}
+
+type liveRunnerTrickleChannelsRequest struct {
+	Channels []liveRunnerTrickleChannelRequest `json:"channels"`
+}
+
+type liveRunnerTrickleChannelsResponse struct {
+	Channels []runner.LiveRunnerTrickleChannel `json:"channels"`
+}
+
+type deleteLiveRunnerTrickleChannelsRequest struct {
+	Channels []string `json:"channels"`
+}
+
+type deleteLiveRunnerTrickleChannelsResponse struct {
+	Deleted []string `json:"deleted"`
+}
+
 func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
 	if !ok {
@@ -193,6 +224,91 @@ func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *lphttp) CreateLiveRunnerTrickleChannel(w http.ResponseWriter, r *http.Request) {
+	if !h.validLiveRunnerAuth(r) {
+		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
+		return
+	}
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	var req liveRunnerTrickleChannelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) == 0 {
+		respondWithError(w, "channels is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) > maxLiveRunnerTrickleChannelsPerRequest {
+		respondWithError(w, fmt.Sprintf("channels cannot contain more than %d entries", maxLiveRunnerTrickleChannelsPerRequest), http.StatusBadRequest)
+		return
+	}
+
+	channels := make([]runner.LiveRunnerTrickleChannel, 0, len(req.Channels))
+	for _, channelReq := range req.Channels {
+		channel, err := manager.CreateTrickleChannel(
+			r.PathValue("runner_id"),
+			r.PathValue("session_id"),
+			channelReq.Name,
+			channelReq.MimeType,
+		)
+		if err != nil {
+			respondWithLiveRunnerError(w, err)
+			return
+		}
+		channels = append(channels, channel)
+	}
+	data, err := json.Marshal(liveRunnerTrickleChannelsResponse{Channels: channels})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) DeleteLiveRunnerTrickleChannels(w http.ResponseWriter, r *http.Request) {
+	if !h.validLiveRunnerAuth(r) {
+		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
+		return
+	}
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	var req deleteLiveRunnerTrickleChannelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) == 0 {
+		respondWithError(w, "channels is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) > maxLiveRunnerTrickleChannelsPerRequest {
+		respondWithError(w, fmt.Sprintf("channels cannot contain more than %d entries", maxLiveRunnerTrickleChannelsPerRequest), http.StatusBadRequest)
+		return
+	}
+	for _, channelName := range req.Channels {
+		if err := manager.DeleteTrickleChannel(r.PathValue("runner_id"), r.PathValue("session_id"), channelName); err != nil {
+			respondWithLiveRunnerError(w, err)
+			return
+		}
+	}
+	data, err := json.Marshal(deleteLiveRunnerTrickleChannelsResponse{Deleted: req.Channels})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
 }
 
 func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
