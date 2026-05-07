@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,7 +161,6 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 		GPU:       &runner.LiveRunnerGPU{Name: "NVIDIA L40S", VRAMMB: 46068},
 		App:       "live-video-to-video/scope",
 		Capacity:  2,
-		InUse:     []string{"job-1"},
 		PriceInfo: runner.LiveRunnerPriceInfo{
 			PricePerUnit:  10,
 			PixelsPerUnit: 1,
@@ -321,6 +321,116 @@ func TestLiveRunnerDiscoverySupportedWithoutManagerWhenServerlessWorkerPresent(t
 	require.Contains(t, w.Body.String(), "live runners are not supported")
 }
 
+func TestLiveRunnerReserveSession(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerSessionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.SessionID)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
+}
+
+func TestLiveRunnerReserveSessionNoCapacity(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeader(t *testing.T) {
+	var gotPath, gotQuery, gotSessionID string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		w.Header().Set("X-Upstream", "ok")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("proxied"))
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", upstream.URL+"/base", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/session/"+sessionID+"/app/v1/foo/bar?x=1&y=two", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "proxied", w.Body.String())
+	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
+	require.Equal(t, "/base/v1/foo/bar", gotPath)
+	require.Equal(t, "x=1&y=two", gotQuery)
+	require.Equal(t, sessionID, gotSessionID)
+}
+
+func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
+	var gotMethod, gotBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		gotBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", upstream.URL, 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/app/generate", strings.NewReader(`{"prompt":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.MethodPost, gotMethod)
+	require.Equal(t, `{"prompt":"hi"}`, gotBody)
+}
+
+func TestLiveRunnerProxyRejectsInvalidSession(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/session/missing/app/v1/foo", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
@@ -354,4 +464,35 @@ func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
 	}
 	require.NoError(t, startAIServer(lp))
 	return lp
+}
+
+func registerLiveRunnerForSession(t *testing.T, lp *lphttp, runnerID, runnerURL string, capacity int) {
+	t.Helper()
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  runnerID,
+		RunnerURL: runnerURL,
+		Status:    "ready",
+		App:       "live-video-to-video/scope",
+		Capacity:  capacity,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "WEI",
+		},
+	})
+	require.NoError(t, err)
+}
+
+func reserveLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerSessionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.SessionID)
+	return resp.SessionID
 }

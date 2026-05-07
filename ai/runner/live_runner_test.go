@@ -2,8 +2,11 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -57,7 +60,7 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 		t.Fatal("expected runner id")
 	}
 	runner := registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 1 || len(runner.InUse) != 0 {
+	if runner == nil || runner.Capacity != 1 {
 		t.Fatalf("unexpected initial runner state: %+v", runner)
 	}
 
@@ -68,7 +71,6 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 		Status:    "ready",
 		App:       "new-ai-pipeline/model-a",
 		Capacity:  2,
-		InUse:     []string{"job-1"},
 		PriceInfo: LiveRunnerPriceInfo{
 			PricePerUnit:  1250,
 			PixelsPerUnit: 1,
@@ -79,7 +81,7 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner = registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 2 || len(runner.InUse) != 1 {
+	if runner == nil || runner.Capacity != 2 {
 		t.Fatalf("unexpected heartbeat runner state: %+v", runner)
 	}
 }
@@ -96,7 +98,7 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 		t.Fatalf("expected supplied runner id to be used, got %s", resp.RunnerID)
 	}
 	runner := registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 1 || len(runner.InUse) != 0 {
+	if runner == nil || runner.Capacity != 1 {
 		t.Fatalf("unexpected state after create-by-unknown-id heartbeat: %+v", runner)
 	}
 }
@@ -199,4 +201,104 @@ func TestLiveRunnerRegistry_SharedEndpointAppKeepsPerRunnerPrices(t *testing.T) 
 	if got := runners[0].PriceInfo.PricePerUnit; got != 20 {
 		t.Fatalf("expected remaining runner price to stay isolated, got %d", got)
 	}
+}
+
+func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
+	registry := NewLiveRunnerRegistry()
+	req := liveRunnerTestHeartbeat("runner-1")
+	req.Capacity = 2
+	if _, err := registry.Heartbeat(req); err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID1, endpoint, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint != req.RunnerURL {
+		t.Fatalf("unexpected endpoint: %s", endpoint)
+	}
+	sessionID2, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionID1 == sessionID2 {
+		t.Fatalf("expected unique session IDs, got %s", sessionID1)
+	}
+
+	registry.mu.Lock()
+	active := len(registry.runners["runner-1"].sessions)
+	registry.mu.Unlock()
+	if active != 2 {
+		t.Fatalf("expected 2 active sessions, got %d", active)
+	}
+
+	if _, _, err := registry.ReserveSession("runner-1"); !isRunnerErrorStatus(err, http.StatusServiceUnavailable) {
+		t.Fatalf("expected no capacity runner error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_ReleaseSessionFreesCapacity(t *testing.T) {
+	registry := NewLiveRunnerRegistry()
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ReserveSession("runner-1"); !isRunnerErrorStatus(err, http.StatusServiceUnavailable) {
+		t.Fatalf("expected no capacity runner error, got %v", err)
+	}
+	if err := registry.ReleaseSession("runner-1", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ReserveSession("runner-1"); err != nil {
+		t.Fatalf("expected capacity after release, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
+	registry := NewLiveRunnerRegistry()
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1")); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.heartbeatTTL = time.Nanosecond
+	time.Sleep(time.Millisecond)
+	if _, err := registry.RunnerEndpointForSession("runner-1", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected expired runner to be removed, got %v", err)
+	}
+
+	registry.heartbeatTTL = defaultLiveRunnerHeartbeatTTL
+	if _, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-2")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ReserveSession("runner-2"); err != nil {
+		t.Fatal(err)
+	}
+	registry.Unregister("runner-2")
+	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected unregistered runner to be removed, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_NotReadyCannotReserveSession(t *testing.T) {
+	registry := NewLiveRunnerRegistry()
+	req := liveRunnerTestHeartbeat("runner-1")
+	req.Status = "busy"
+	if _, err := registry.Heartbeat(req); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ReserveSession("runner-1"); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected not-ready runner to be unavailable, got %v", err)
+	}
+}
+
+func isRunnerErrorStatus(err error, statusCode int) bool {
+	var runnerErr *RunnerError
+	return errors.As(err, &runnerErr) && runnerErr.StatusCode == statusCode
 }

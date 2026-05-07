@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -17,6 +18,18 @@ const (
 	defaultLiveRunnerHeartbeatInterval = 5 * time.Second
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
 )
+
+type RunnerError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *RunnerError) Error() string {
+	if e == nil {
+		return "runner error"
+	}
+	return e.Message
+}
 
 type LiveRunnerGPU struct {
 	ID     string `json:"id,omitempty"`
@@ -39,7 +52,6 @@ type LiveRunnerHeartbeatRequest struct {
 	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
 	App       string              `json:"app"`
 	Capacity  int                 `json:"capacity"`
-	InUse     []string            `json:"active,omitempty"`
 	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
@@ -61,6 +73,7 @@ type LiveRunnerDiscoveryRunner struct {
 type liveRunner struct {
 	LiveRunnerHeartbeatRequest
 	LastHeartbeat time.Time
+	sessions      map[string]struct{}
 	priceSource   LiveRunnerPriceInfo
 	converter     *core.AutoConvertedPrice
 }
@@ -97,7 +110,9 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 
 	runner := r.runners[req.RunnerID]
 	if runner == nil {
-		runner = &liveRunner{}
+		runner = &liveRunner{
+			sessions: make(map[string]struct{}),
+		}
 		r.runners[req.RunnerID] = runner
 	}
 	runner.LiveRunnerHeartbeatRequest = req
@@ -138,7 +153,6 @@ func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest)
 	}
 	req.RunnerID = runnerID
 	req.PriceInfo.Unit = unit
-	req.InUse = cloneStringSlice(req.InUse)
 
 	return req, nil
 }
@@ -147,6 +161,58 @@ func (r *LiveRunnerRegistry) Unregister(runnerID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.removeRunnerLocked(runnerID)
+}
+
+func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return "", "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if len(runner.sessions) >= runner.Capacity {
+		return "", "", &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: "no capacity available for runner"}
+	}
+
+	sessionID := "session_" + common.RandomIDGenerator(4)
+	for {
+		if _, exists := runner.sessions[sessionID]; !exists {
+			break
+		}
+		sessionID = "session_" + common.RandomIDGenerator(4)
+	}
+	runner.sessions[sessionID] = struct{}{}
+	return sessionID, runner.RunnerURL, nil
+}
+
+func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	delete(runner.sessions, sessionID)
+	return nil
+}
+
+func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if _, exists := runner.sessions[sessionID]; !exists {
+		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
+	}
+	return runner.RunnerURL, nil
 }
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
@@ -263,13 +329,4 @@ func cloneLiveRunnerGPU(gpu *LiveRunnerGPU) *LiveRunnerGPU {
 	}
 	copy := *gpu
 	return &copy
-}
-
-func cloneStringSlice(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	copied := make([]string, len(values))
-	copy(copied, values)
-	return copied
 }

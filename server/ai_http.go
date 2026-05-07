@@ -15,6 +15,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/http/httputil"
 	url2 "net/url"
 	"strconv"
 	"strings"
@@ -80,6 +81,9 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
 	lp.transRPC.HandleFunc("POST /runners/heartbeat", lp.LiveRunnerHeartbeat)
 	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
+	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -89,6 +93,9 @@ type liveRunnerManager interface {
 	Heartbeat(req runner.LiveRunnerHeartbeatRequest) (*runner.LiveRunnerHeartbeatResponse, error)
 	Unregister(runnerID string)
 	Runners() []runner.LiveRunnerDiscoveryRunner
+	ReserveSession(runnerID string) (string, string, error)
+	ReleaseSession(runnerID, sessionID string) error
+	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
 }
 
 func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
@@ -147,6 +154,97 @@ func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
 	runnerID := r.PathValue("runner_id")
 	manager.Unregister(runnerID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type liveRunnerSessionResponse struct {
+	SessionID string `json:"session_id"`
+	AppURL    string `json:"app_url"`
+}
+
+func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID, _, err := manager.ReserveSession(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
+	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	if err := manager.ReleaseSession(r.PathValue("runner_id"), r.PathValue("session_id")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	endpoint, err := manager.RunnerEndpointForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	target, err := url2.Parse(endpoint)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	appPath := r.PathValue("app_path")
+	proxyPath, err := url2.JoinPath("/", target.Path, appPath)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(req *httputil.ProxyRequest) {
+			req.Out.URL.Scheme = target.Scheme
+			req.Out.URL.Host = target.Host
+			req.Out.URL.Path = proxyPath
+			req.Out.URL.RawPath = ""
+			req.Out.URL.RawQuery = req.In.URL.RawQuery
+			req.Out.Host = target.Host
+			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
+		},
+		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+			respondWithError(w, err.Error(), http.StatusBadGateway)
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+func respondWithLiveRunnerError(w http.ResponseWriter, err error) {
+	var runnerErr *runner.RunnerError
+	if errors.As(err, &runnerErr) {
+		respondWithError(w, runnerErr.Error(), runnerErr.StatusCode)
+		return
+	}
+	respondWithError(w, err.Error(), http.StatusInternalServerError)
 }
 
 type liveRunnerDiscoveryEntry struct {
