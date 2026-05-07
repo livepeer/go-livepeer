@@ -268,6 +268,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	var resp runner.LiveRunnerHeartbeatResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Equal(t, "runner-1", resp.RunnerID)
+	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
 }
 
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {

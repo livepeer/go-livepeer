@@ -45,6 +45,7 @@ type LiveRunnerHeartbeatRequest struct {
 
 type LiveRunnerHeartbeatResponse struct {
 	RunnerID          string `json:"runner_id"`
+	Orchestrator      string `json:"orchestrator,omitempty"`
 	HeartbeatInterval string `json:"heartbeat_interval"`
 	HeartbeatTTL      string `json:"heartbeat_ttl"`
 }
