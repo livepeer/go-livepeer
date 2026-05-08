@@ -413,3 +413,84 @@ func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
 func subConfig(t *testing.T, url string) TrickleSubscriberConfig {
 	return TrickleSubscriberConfig{URL: url, Ctx: t.Context()}
 }
+
+// trickleProbeMux returns a mux that records POST slot URLs and serves a
+// caller-supplied /next handler. Always handles DELETE on baseURL so the
+// publisher's Close() doesn't error out.
+func trickleProbeMux(channel string, nextHandler http.HandlerFunc) (*http.ServeMux, <-chan string) {
+	postedIdx := make(chan string, 8)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+channel+"/next", nextHandler)
+	mux.HandleFunc("POST "+channel+"/{idx}", func(w http.ResponseWriter, r *http.Request) {
+		// Drain the body first so we record completion order (which is
+		// deterministic — the segment with actual data closes its pipe
+		// first, the preconnected next segment closes only on Close()).
+		// Recording on invocation would race with goroutine scheduling.
+		io.Copy(io.Discard, r.Body)
+		select {
+		case postedIdx <- r.PathValue("idx"):
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("DELETE "+channel, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux, postedIdx
+}
+
+// TestTrickle_PublisherProbeFallback verifies NewTricklePublisher gracefully
+// falls back to slot 0 on a server that doesn't expose /next. Existing
+// tests already exercise this path implicitly on master (no /next route),
+// but pinning it explicitly documents the contract: probe failure MUST
+// resolve to a fresh-channel default, never to a sentinel that races the
+// server's own slot resolution.
+func TestTrickle_PublisherProbeFallback(t *testing.T) {
+	require := require.New(t)
+
+	mux, postedIdx := trickleProbeMux("/testest", func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a pre-#3925 orchestrator: no /next route → 400 with no header.
+		http.Error(w, "Invalid idx", http.StatusBadRequest)
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	pub, err := NewTricklePublisher(ts.URL + "/testest")
+	require.Nil(err)
+	require.Nil(pub.Write(bytes.NewReader([]byte("first"))))
+	require.Nil(pub.Close())
+
+	select {
+	case idx := <-postedIdx:
+		require.Equal("0", idx, "first POST should target slot 0 on probe failure")
+	case <-time.After(2 * time.Second):
+		t.Fatal("first POST never arrived at server")
+	}
+}
+
+// TestTrickle_PublisherProbeSuccess verifies NewTricklePublisher reads the
+// server-reported nextWrite from /next and posts the first segment there.
+// Uses a mock /next that returns 7 to confirm the publisher honors the
+// probed value rather than always starting at 0.
+func TestTrickle_PublisherProbeSuccess(t *testing.T) {
+	require := require.New(t)
+
+	mux, postedIdx := trickleProbeMux("/testest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Lp-Trickle-Latest", "7")
+		w.Write([]byte("7"))
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	pub, err := NewTricklePublisher(ts.URL + "/testest")
+	require.Nil(err)
+	require.Nil(pub.Write(bytes.NewReader([]byte("first"))))
+	require.Nil(pub.Close())
+
+	select {
+	case idx := <-postedIdx:
+		require.Equal("7", idx, "first POST should target server-reported nextWrite")
+	case <-time.After(2 * time.Second):
+		t.Fatal("first POST never arrived at server")
+	}
+}

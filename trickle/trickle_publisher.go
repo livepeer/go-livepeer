@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -44,12 +45,18 @@ type pendingPost struct {
 	client  *TricklePublisher
 }
 
-// NewTricklePublisher creates a new trickle stream client
+// NewTricklePublisher creates a new trickle stream client. Probes /next
+// for the next-write slot; falls back to 0 when /next is unavailable.
 func NewTricklePublisher(url string) (*TricklePublisher, error) {
 	c := &TricklePublisher{
 		baseURL:     url,
 		contentType: "video/MP2T",
 		client:      httpClient(),
+		index:       -1, // sentinel: resolved before first POST. Mirrors the
+		// subscriber's `Next = -1` and the Python SDK's start_seq=-1.
+	}
+	if c.index < 0 {
+		c.index = c.resolveNextSeq()
 	}
 	p, err := c.preconnect()
 	if err != nil {
@@ -58,6 +65,32 @@ func NewTricklePublisher(url string) (*TricklePublisher, error) {
 	c.pendingPost = p
 
 	return c, nil
+}
+
+// resolveNextSeq probes /next for the server's next-write slot. Returns 0
+// on any failure — returning -1 would race the server's slot resolution
+// since we don't read back Lp-Trickle-Seq from the POST response.
+func (c *TricklePublisher) resolveNextSeq() int {
+	url := fmt.Sprintf("%s/next", c.baseURL)
+	resp, err := c.client.Get(url)
+	if err != nil {
+		slog.Debug("Trickle /next probe failed; assuming fresh channel", "url", url, "err", err)
+		return 0
+	}
+	defer resp.Body.Close()
+
+	latest := resp.Header.Get("Lp-Trickle-Latest")
+	if latest == "" {
+		slog.Debug("Trickle /next missing Lp-Trickle-Latest; assuming fresh channel", "url", url, "status", resp.StatusCode)
+		return 0
+	}
+	seq, err := strconv.Atoi(latest)
+	if err != nil {
+		slog.Debug("Trickle /next returned invalid Lp-Trickle-Latest; assuming fresh channel", "url", url, "value", latest, "err", err)
+		return 0
+	}
+	slog.Debug("Trickle resolved seq from /next", "url", url, "seq", seq)
+	return seq
 }
 
 // NB expects to have the lock already since we mutate the index
