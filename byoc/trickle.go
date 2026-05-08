@@ -794,12 +794,31 @@ func (bsg *BYOCGatewayServer) startDataSubscribe(ctx context.Context, url *url.U
 		return
 	}
 
+	// The data subscriber outlives /stream/stop's ctx cancellation by
+	// drainTimeout so we can read the runner's final emit_data segment(s)
+	// published from on_stream_stop before tearing down the SSE proxy.
+	// The trickle channel closes cleanly when the runner SDK tears down
+	// its data publisher (DELETE → trickle.EOS on the next Read), at which
+	// point we exit normally below. The timeout caps the drain so a hung
+	// runner can't keep this goroutine alive forever.
+	const drainTimeout = 10 * time.Second
+	drainCtx, drainCancel := context.WithCancel(context.Background())
+	go func() {
+		<-ctx.Done()
+		select {
+		case <-time.After(drainTimeout):
+			drainCancel()
+		case <-drainCtx.Done():
+		}
+	}()
+
 	// subscribe to the outputs
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 		URL: url.String(),
-		Ctx: ctx,
+		Ctx: drainCtx,
 	})
 	if err != nil {
+		drainCancel()
 		clog.Infof(ctx, "Failed to create data subscriber: %s", err)
 		return
 	}
@@ -809,6 +828,7 @@ func (bsg *BYOCGatewayServer) startDataSubscribe(ctx context.Context, url *url.U
 	// read segments from trickle subscription
 	go func() {
 		defer dataWriter.Close()
+		defer drainCancel()
 
 		var err error
 		firstSegment := true
@@ -819,12 +839,15 @@ func (bsg *BYOCGatewayServer) startDataSubscribe(ctx context.Context, url *url.U
 		const maxRetries = 5
 		for {
 			select {
-			case <-ctx.Done():
+			case <-drainCtx.Done():
 				clog.Info(ctx, "data subscribe done")
 				return
 			default:
 			}
-			if !params.inputStreamExists(params.liveParams.streamID) {
+			// Skip the input-stream-exists guard once /stream/stop has fired —
+			// during the drain window the input stream has already gone away,
+			// but we still want to read the runner's pending final segments.
+			if ctx.Err() == nil && !params.inputStreamExists(params.liveParams.streamID) {
 				clog.Infof(ctx, "data subscribe stopping, input stream does not exist.")
 				break
 			}
