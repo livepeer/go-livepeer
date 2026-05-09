@@ -162,7 +162,7 @@ type LivepeerNode struct {
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
-	jobPriceInfo     map[string]map[string]*big.Rat
+	jobPriceInfo     map[string]map[string]*AutoConvertedPrice
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
 	Nodes            []string // instance URLs of this orch available to do work
@@ -203,8 +203,8 @@ type LivePipeline struct {
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
-	extCapPrices := make(map[string]map[string]*big.Rat)
-	extCapPrices["default"] = make(map[string]*big.Rat)
+	extCapPrices := make(map[string]map[string]*AutoConvertedPrice)
+	extCapPrices["default"] = make(map[string]*AutoConvertedPrice)
 
 	return &LivepeerNode{
 		Eth:                  e,
@@ -366,18 +366,34 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 }
 
 func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {
+	if price == nil {
+		n.SetAutoPriceForExternalCapability(senderEthAddress, extCapability, nil)
+		return
+	}
+	n.SetAutoPriceForExternalCapability(senderEthAddress, extCapability, NewFixedPrice(price))
+}
+
+func (n *LivepeerNode) SetAutoPriceForExternalCapability(senderEthAddress string, extCapability string, price *AutoConvertedPrice) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	//default price list initialized at startup
 	// check if the senderEthAddress is initialized if not default
 	if _, ok := n.jobPriceInfo[senderEthAddress]; !ok {
-		n.jobPriceInfo[senderEthAddress] = make(map[string]*big.Rat)
+		n.jobPriceInfo[senderEthAddress] = make(map[string]*AutoConvertedPrice)
 	}
 
 	//set the price
 	senderPrices := n.jobPriceInfo[senderEthAddress]
+	prevPrice := senderPrices[extCapability]
 	senderPrices[extCapability] = price
-	glog.Infof("Set price for %s to %s", extCapability, price.FloatString(2))
+	if prevPrice != nil && prevPrice != price {
+		prevPrice.Stop()
+	}
+	if price == nil {
+		glog.Infof("Cleared price for %s", extCapability)
+		return
+	}
+	glog.Infof("Set price for %s to %s", extCapability, price.Value().FloatString(2))
 }
 
 func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability string) *big.Rat {
@@ -390,8 +406,8 @@ func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability str
 	}
 	jobPrice := big.NewRat(0, 1)
 
-	if extCapInfo, ok := senderPrices[extCapability]; ok {
-		jobPrice = extCapInfo
+	if extCapInfo, ok := senderPrices[extCapability]; ok && extCapInfo != nil {
+		jobPrice = extCapInfo.Value()
 	}
 
 	return jobPrice

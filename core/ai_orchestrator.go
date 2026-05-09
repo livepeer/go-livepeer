@@ -1128,7 +1128,7 @@ func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings strin
 	}
 
 	//set the price for the capability
-	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
+	orch.node.SetAutoPriceForExternalCapability("default", cap.Name, cap.price)
 
 	return cap, nil
 }
