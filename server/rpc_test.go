@@ -209,6 +209,9 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
+func (r *stubOrchestrator) RegistrationSecret() string {
+	return r.TranscoderSecret()
+}
 func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
@@ -1482,6 +1485,9 @@ func (o *mockOrchestrator) Address() ethcommon.Address {
 func (o *mockOrchestrator) TranscoderSecret() string {
 	o.Called()
 	return ""
+}
+func (o *mockOrchestrator) RegistrationSecret() string {
+	return o.TranscoderSecret()
 }
 func (o *mockOrchestrator) Sign(msg []byte) ([]byte, error) {
 	o.Called(msg)

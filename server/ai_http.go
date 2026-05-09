@@ -97,12 +97,14 @@ func startAIServer(lp *lphttp) error {
 }
 
 type liveRunnerManager interface {
-	Heartbeat(req runner.LiveRunnerHeartbeatRequest) (*runner.LiveRunnerHeartbeatResponse, error)
-	Unregister(runnerID string)
+	Heartbeat(req runner.LiveRunnerHeartbeatRequest, auth string) (*runner.LiveRunnerHeartbeatResponse, error)
+	Unregister(runnerID, auth string) error
 	Runners() []runner.LiveRunnerDiscoveryRunner
 	ReserveSession(runnerID string) (string, string, error)
 	ReleaseSession(runnerID, sessionID string) error
 	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
+	SessionTokenForSession(runnerID, sessionID string) (string, error)
+	ValidSessionToken(runnerID, sessionID, token string) error
 	SetTrickleServer(srv *trickle.Server, baseURL string)
 	CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (runner.LiveRunnerTrickleChannel, error)
 	DeleteTrickleChannel(runnerID, sessionID, name string) error
@@ -116,17 +118,7 @@ func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
 	return manager, ok
 }
 
-func (h *lphttp) validLiveRunnerAuth(r *http.Request) bool {
-	auth := r.Header.Get("Authorization")
-	secret := h.orchestrator.TranscoderSecret()
-	return auth == secret
-}
-
 func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if !h.validLiveRunnerAuth(r) {
-		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
-		return
-	}
 	manager, ok := h.liveRunnerManager()
 	if !ok {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
@@ -137,12 +129,11 @@ func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := manager.Heartbeat(req)
+	resp, err := manager.Heartbeat(req, r.Header.Get("Authorization"))
 	if err != nil {
-		respondWithError(w, err.Error(), http.StatusBadRequest)
+		respondWithLiveRunnerError(w, err)
 		return
 	}
-	resp.Orchestrator = h.orchestrator.ServiceURI().String()
 	data, err := json.Marshal(resp)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
@@ -152,17 +143,16 @@ func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
-	if !h.validLiveRunnerAuth(r) {
-		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
-		return
-	}
 	manager, ok := h.liveRunnerManager()
 	if !ok {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
 		return
 	}
 	runnerID := r.PathValue("runner_id")
-	manager.Unregister(runnerID)
+	if err := manager.Unregister(runnerID, r.Header.Get("Authorization")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -227,13 +217,15 @@ func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *lphttp) CreateLiveRunnerTrickleChannel(w http.ResponseWriter, r *http.Request) {
-	if !h.validLiveRunnerAuth(r) {
-		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
-		return
-	}
 	manager, ok := h.liveRunnerManager()
 	if !ok {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
 		return
 	}
 
@@ -254,8 +246,8 @@ func (h *lphttp) CreateLiveRunnerTrickleChannel(w http.ResponseWriter, r *http.R
 	channels := make([]runner.LiveRunnerTrickleChannel, 0, len(req.Channels))
 	for _, channelReq := range req.Channels {
 		channel, err := manager.CreateTrickleChannel(
-			r.PathValue("runner_id"),
-			r.PathValue("session_id"),
+			runnerID,
+			sessionID,
 			channelReq.Name,
 			channelReq.MimeType,
 		)
@@ -274,13 +266,15 @@ func (h *lphttp) CreateLiveRunnerTrickleChannel(w http.ResponseWriter, r *http.R
 }
 
 func (h *lphttp) DeleteLiveRunnerTrickleChannels(w http.ResponseWriter, r *http.Request) {
-	if !h.validLiveRunnerAuth(r) {
-		respondWithError(w, "invalid authorization", http.StatusUnauthorized)
-		return
-	}
 	manager, ok := h.liveRunnerManager()
 	if !ok {
 		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
 		return
 	}
 
@@ -298,7 +292,7 @@ func (h *lphttp) DeleteLiveRunnerTrickleChannels(w http.ResponseWriter, r *http.
 		return
 	}
 	for _, channelName := range req.Channels {
-		if err := manager.DeleteTrickleChannel(r.PathValue("runner_id"), r.PathValue("session_id"), channelName); err != nil {
+		if err := manager.DeleteTrickleChannel(runnerID, sessionID, channelName); err != nil {
 			respondWithLiveRunnerError(w, err)
 			return
 		}
@@ -325,6 +319,11 @@ func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) 
 		respondWithLiveRunnerError(w, err)
 		return
 	}
+	sessionToken, err := manager.SessionTokenForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
 
 	target, err := url2.Parse(endpoint)
 	if err != nil {
@@ -346,6 +345,7 @@ func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) 
 			req.Out.URL.RawQuery = req.In.URL.RawQuery
 			req.Out.Host = target.Host
 			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
+			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
 			respondWithError(w, err.Error(), http.StatusBadGateway)

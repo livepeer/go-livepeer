@@ -1330,13 +1330,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
-	if *cfg.UseLiveRunners {
-		if n.OrchSecret == "" {
-			glog.Exit("running with -useLiveRunners requires -orchSecret")
-		}
-		n.LiveRunnerManager = runner.NewLiveRunnerRegistry()
-	}
-
 	if *cfg.AIWorker {
 		gpus := []string{}
 		if *cfg.Nvidia != "" {
@@ -1995,6 +1988,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
+
+		if *cfg.UseLiveRunners {
+			if n.OrchSecret == "" {
+				glog.Exit("running with -useLiveRunners requires -orchSecret")
+			}
+			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+				Host: orch,
+			})
+		}
 
 		go func() {
 			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)

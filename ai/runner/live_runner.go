@@ -1,6 +1,10 @@
 package runner
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base32"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -19,7 +23,11 @@ import (
 const (
 	defaultLiveRunnerHeartbeatInterval = 5 * time.Second
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
+	liveRunnerIDRandomBytes            = 5
+	liveRunnerSeedBytes                = 32
 )
+
+var liveRunnerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 type RunnerError struct {
 	StatusCode int
@@ -62,6 +70,7 @@ type LiveRunnerHeartbeatResponse struct {
 	Orchestrator      string `json:"orchestrator,omitempty"`
 	HeartbeatInterval string `json:"heartbeat_interval"`
 	HeartbeatTTL      string `json:"heartbeat_ttl"`
+	HeartbeatSecret   string `json:"heartbeat_secret,omitempty"`
 }
 
 type LiveRunnerDiscoveryRunner struct {
@@ -81,10 +90,12 @@ type LiveRunnerTrickleChannel struct {
 
 type liveRunner struct {
 	LiveRunnerHeartbeatRequest
-	LastHeartbeat time.Time
-	sessions      map[string]*liveRunnerSession
-	priceSource   LiveRunnerPriceInfo
-	converter     *core.AutoConvertedPrice
+	LastHeartbeat   time.Time
+	seed            []byte
+	heartbeatSecret string
+	sessions        map[string]*liveRunnerSession
+	priceSource     LiveRunnerPriceInfo
+	converter       *core.AutoConvertedPrice
 }
 
 type liveRunnerSession struct {
@@ -99,16 +110,27 @@ type liveRunnerTrickleChannel struct {
 type LiveRunnerRegistry struct {
 	mu                sync.Mutex
 	runners           map[string]*liveRunner
+	host              RunnerHost
 	heartbeatInterval time.Duration
 	heartbeatTTL      time.Duration
 	trickleSrv        *trickle.Server
 	trickleBaseURL    string
 }
 
+type RunnerHost interface {
+	ServiceURI() *url.URL
+	RegistrationSecret() string
+}
+
+type LiveRunnerRegistryConfig struct {
+	Host RunnerHost
+}
+
 var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-func NewLiveRunnerRegistry() *LiveRunnerRegistry {
+func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry {
 	return &LiveRunnerRegistry{
+		host:              config.Host,
 		runners:           make(map[string]*liveRunner),
 		heartbeatInterval: defaultLiveRunnerHeartbeatInterval,
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
@@ -122,15 +144,15 @@ func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, baseURL strin
 	r.trickleBaseURL = baseURL
 }
 
-func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRunnerHeartbeatResponse, error) {
+func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth string) (*LiveRunnerHeartbeatResponse, error) {
 	req.RunnerID = strings.TrimSpace(req.RunnerID)
 	if req.RunnerID == "" {
-		req.RunnerID = "runner_" + common.RandomIDGenerator(4)
+		req.RunnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
 	}
 
 	req, err := normalizeLiveRunnerRequest(req.RunnerID, req)
 	if err != nil {
-		return nil, err
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: err.Error()}
 	}
 
 	r.mu.Lock()
@@ -138,11 +160,24 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 	r.expireLocked(time.Now())
 
 	runner := r.runners[req.RunnerID]
+	// For now, only return the heartbeat secret on first registration.
+	// Return another one later on if the secret needs to be rotated.
+	var responseHeartbeatSecret string
 	if runner == nil {
+		if r.host == nil || !validSecret(auth, r.host.RegistrationSecret()) {
+			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
+		}
+		seed := newRunnerSeed()
+		heartbeatSecret := deriveSecret(seed, "heartbeat")
 		runner = &liveRunner{
-			sessions: make(map[string]*liveRunnerSession),
+			seed:            seed,
+			heartbeatSecret: heartbeatSecret,
+			sessions:        make(map[string]*liveRunnerSession),
 		}
 		r.runners[req.RunnerID] = runner
+		responseHeartbeatSecret = heartbeatSecret
+	} else if !validSecret(auth, runner.heartbeatSecret) {
+		return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 	}
 	runner.LiveRunnerHeartbeatRequest = req
 	runner.LastHeartbeat = time.Now()
@@ -150,8 +185,10 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest) (*LiveRun
 
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
+		Orchestrator:      r.host.ServiceURI().String(),
 		HeartbeatInterval: r.heartbeatInterval.String(),
 		HeartbeatTTL:      r.heartbeatTTL.String(),
+		HeartbeatSecret:   responseHeartbeatSecret,
 	}, nil
 }
 
@@ -186,10 +223,19 @@ func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest)
 	return req, nil
 }
 
-func (r *LiveRunnerRegistry) Unregister(runnerID string) {
+func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+	runner := r.runners[runnerID]
+	if runner == nil {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if !validSecret(auth, runner.heartbeatSecret) {
+		return &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
+	}
 	r.removeRunnerLocked(runnerID)
+	return nil
 }
 
 func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, error) {
@@ -205,12 +251,12 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, er
 		return "", "", &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: "no capacity available for runner"}
 	}
 
-	sessionID := "session_" + common.RandomIDGenerator(4)
+	sessionID := "session_" + randomStr(liveRunnerIDRandomBytes)
 	for {
 		if _, exists := runner.sessions[sessionID]; !exists {
 			break
 		}
-		sessionID = "session_" + common.RandomIDGenerator(4)
+		sessionID = "session_" + randomStr(liveRunnerIDRandomBytes)
 	}
 	runner.sessions[sessionID] = &liveRunnerSession{
 		channels: make(map[string]*liveRunnerTrickleChannel),
@@ -244,6 +290,39 @@ func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string
 		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
 	}
 	return runner.RunnerURL, nil
+}
+
+func (r *LiveRunnerRegistry) SessionTokenForSession(runnerID, sessionID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if _, exists := runner.sessions[sessionID]; !exists {
+		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
+	}
+	return runner.sessionToken(sessionID), nil
+}
+
+func (r *LiveRunnerRegistry) ValidSessionToken(runnerID, sessionID, token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if _, exists := runner.sessions[sessionID]; !exists {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner session not found"}
+	}
+	if !validSecret(token, runner.sessionToken(sessionID)) {
+		return &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
+	}
+	return nil
 }
 
 func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (LiveRunnerTrickleChannel, error) {
@@ -395,6 +474,40 @@ func (channel *liveRunnerTrickleChannel) close() error {
 	err := channel.publisher.Close()
 	channel.publisher = nil
 	return err
+}
+
+func newRunnerSeed() []byte {
+	return secureRandomBytes(liveRunnerSeedBytes)
+}
+
+func randomStr(n int) string {
+	return strings.ToLower(liveRunnerEncoding.EncodeToString(secureRandomBytes(n)))
+}
+
+func secureRandomBytes(n int) []byte {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("generate secure random bytes: %v", err))
+	}
+	return b
+}
+
+func (runner *liveRunner) sessionToken(sessionID string) string {
+	return deriveSecret(runner.seed, "session:"+sessionID)
+}
+
+func deriveSecret(seed []byte, label string) string {
+	return strings.ToLower(liveRunnerEncoding.EncodeToString(deriveSecretBytes(seed, label)))
+}
+
+func deriveSecretBytes(seed []byte, label string) []byte {
+	mac := hmac.New(sha256.New, seed)
+	mac.Write([]byte(label))
+	return mac.Sum(nil)
+}
+
+func validSecret(got, want string) bool {
+	return hmac.Equal([]byte(got), []byte(want))
 }
 
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {

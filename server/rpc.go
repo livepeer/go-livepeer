@@ -50,6 +50,7 @@ type Orchestrator interface {
 	ServiceURI() *url.URL
 	Address() ethcommon.Address
 	TranscoderSecret() string
+	RegistrationSecret() string
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error

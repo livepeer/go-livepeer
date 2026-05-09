@@ -167,7 +167,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 			PixelsPerUnit: 1,
 			Unit:          "USD",
 		},
-	})
+	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
@@ -229,7 +229,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 			PixelsPerUnit: 1,
 			Unit:          "USD",
 		},
-	})
+	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
@@ -263,6 +263,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.RegistrationSecret())
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
@@ -270,6 +271,24 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Equal(t, "runner-1", resp.RunnerID)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
+	require.NotEmpty(t, resp.HeartbeatSecret)
+
+	// Check missing auth after bootstrap.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// Check follow-up heartbeat auth.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Authorization", resp.HeartbeatSecret)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var nextResp runner.LiveRunnerHeartbeatResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &nextResp))
+	require.Equal(t, "runner-1", nextResp.RunnerID)
+	require.Empty(t, nextResp.HeartbeatSecret)
 }
 
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
@@ -368,12 +387,13 @@ func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeader(t *testing.T) {
-	var gotPath, gotQuery, gotSessionID string
+func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
+	var gotPath, gotQuery, gotSessionID, gotSessionToken string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
 		w.Header().Set("X-Upstream", "ok")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("proxied"))
@@ -394,6 +414,7 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeader(t *testing.T) {
 	require.Equal(t, "/base/v1/foo/bar", gotPath)
 	require.Equal(t, "x=1&y=two", gotQuery)
 	require.Equal(t, sessionID, gotSessionID)
+	require.NotEmpty(t, gotSessionToken)
 }
 
 func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
@@ -500,15 +521,37 @@ func TestLiveRunnerTrickleChannelRequiresAuth(t *testing.T) {
 	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
+	// Check missing session token.
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", strings.NewReader(`{"channels":[{"name":"unauthorized"}]}`))
 	req.Header.Set("Authorization", "wrong-secret")
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 
+	// Check delete requires session token too.
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", strings.NewReader(`{"channels":["unauthorized"]}`))
 	req.Header.Set("Authorization", "wrong-secret")
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestLiveRunnerTrickleChannelRejectsTokenForDifferentSession(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 2)
+	sessionID1 := reserveLiveRunnerSession(t, lp, "runner-1")
+	sessionID2 := reserveLiveRunnerSession(t, lp, "runner-1")
+	require.NotEqual(t, sessionID1, sessionID2)
+
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	token1, err := manager.SessionTokenForSession("runner-1", sessionID1)
+	require.NoError(t, err)
+
+	// Check token is scoped to its session.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID2+"/channels", strings.NewReader(`{"channels":[{"name":"wrong-session"}]}`))
+	req.Header.Set("Livepeer-Session-Token", token1)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
@@ -530,7 +573,7 @@ func TestLiveRunnerTrickleChannelBatchLimit(t *testing.T) {
 	require.NoError(t, err)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", bytes.NewReader(body))
-	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	setLiveRunnerSessionToken(t, lp, req, "runner-1", sessionID)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -538,7 +581,7 @@ func TestLiveRunnerTrickleChannelBatchLimit(t *testing.T) {
 	require.NoError(t, err)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", bytes.NewReader(body))
-	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	setLiveRunnerSessionToken(t, lp, req, "runner-1", sessionID)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -592,24 +635,36 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
-	if withManager {
-		node.LiveRunnerManager = runner.NewLiveRunnerRegistry()
+	lp := &lphttp{
+		orchestrator: newStubOrchestrator(),
+		node:         node,
+		transRPC:     http.NewServeMux(),
 	}
-	return newLiveRunnerHTTPWithNode(t, node)
+	if withManager {
+		node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	}
+	require.NoError(t, startAIServer(lp))
+	return lp
 }
 
 func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	lp := &lphttp{
+		orchestrator: newStubOrchestrator(),
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
 	if withManager {
-		node.LiveRunnerManager = runner.NewLiveRunnerRegistry()
+		node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
 	}
 	serverlessWorker, err := worker.NewServerlessWorker("ws://serverless.example.com/ws", capacity)
 	require.NoError(t, err)
 	node.AIWorker = serverlessWorker
 	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("live-video-to-video", "scope")
-	return newLiveRunnerHTTPWithNode(t, node)
+	require.NoError(t, startAIServer(lp))
+	return lp
 }
 
 func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
@@ -638,7 +693,7 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, runnerID, runnerURL 
 			PixelsPerUnit: 1,
 			Unit:          "WEI",
 		},
-	})
+	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
 }
 
@@ -656,6 +711,25 @@ func reserveLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string) string 
 
 func newLiveRunnerChannelRequest(lp *lphttp, method, target, body string) *http.Request {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
-	req.Header.Set("Authorization", lp.orchestrator.TranscoderSecret())
+	path := strings.Split(strings.TrimPrefix(target, "/"), "?")[0]
+	parts := strings.Split(path, "/")
+	if len(parts) >= 5 && parts[0] == "runner" && parts[2] == "session" {
+		setLiveRunnerSessionToken(nil, lp, req, parts[1], parts[3])
+	}
 	return req
+}
+
+func setLiveRunnerSessionToken(t require.TestingT, lp *lphttp, req *http.Request, runnerID, sessionID string) {
+	manager, ok := lp.liveRunnerManager()
+	if !ok {
+		if t != nil {
+			require.FailNow(t, "live runner manager unavailable")
+		}
+		return
+	}
+	token, err := manager.SessionTokenForSession(runnerID, sessionID)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Livepeer-Session-Token", token)
 }

@@ -78,6 +78,10 @@ func (orch *orchestrator) TranscoderSecret() string {
 	return orch.node.OrchSecret
 }
 
+func (orch *orchestrator) RegistrationSecret() string {
+	return orch.TranscoderSecret()
+}
+
 func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	orch.node.segmentMutex.RLock()
 	defer orch.node.segmentMutex.RUnlock()
