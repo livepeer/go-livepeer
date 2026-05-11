@@ -344,6 +344,7 @@ func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) 
 			req.Out.URL.RawPath = ""
 			req.Out.URL.RawQuery = req.In.URL.RawQuery
 			req.Out.Host = target.Host
+			req.Out.Header.Set("Livepeer-Runner-Id", runnerID)
 			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
 			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
 		},

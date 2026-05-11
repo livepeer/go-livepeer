@@ -388,10 +388,11 @@ func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
-	var gotPath, gotQuery, gotSessionID, gotSessionToken string
+	var gotPath, gotQuery, gotRunnerID, gotSessionID, gotSessionToken string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
+		gotRunnerID = r.Header.Get("Livepeer-Runner-Id")
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
 		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
 		w.Header().Set("X-Upstream", "ok")
@@ -413,6 +414,7 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
 	require.Equal(t, "/base/v1/foo/bar", gotPath)
 	require.Equal(t, "x=1&y=two", gotQuery)
+	require.Equal(t, "runner-1", gotRunnerID)
 	require.Equal(t, sessionID, gotSessionID)
 	require.NotEmpty(t, gotSessionToken)
 }
