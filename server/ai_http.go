@@ -69,7 +69,8 @@ func startAIServer(lp *lphttp) error {
 		sw.SetTrickleServer(lp.trickleSrv)
 	}
 	if manager, ok := lp.liveRunnerManager(); ok {
-		manager.SetTrickleServer(lp.trickleSrv, lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String())
+		trickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
+		manager.SetTrickleServer(lp.trickleSrv, overwriteHost(lp.node.LiveAITrickleHostForRunner, trickleBaseURL))
 	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))

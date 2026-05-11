@@ -1994,7 +1994,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("running with -useLiveRunners requires -orchSecret")
 			}
 			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
-				Host: orch,
+				Host: liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
 			})
 		}
 
@@ -2517,4 +2517,19 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 func exit(msg string, args ...any) {
 	glog.Errorf(msg, args...)
 	os.Exit(2)
+}
+
+type liveRunnerHost struct {
+	runner.RunnerHost
+	*core.LivepeerNode
+}
+
+func (h liveRunnerHost) ServiceURI() *url.URL {
+	u := h.RunnerHost.ServiceURI()
+	if h.LivepeerNode == nil || h.LiveAITrickleHostForRunner == "" || u == nil {
+		return u
+	}
+	v := *u
+	v.Host = h.LiveAITrickleHostForRunner
+	return &v
 }

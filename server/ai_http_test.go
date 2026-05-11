@@ -291,6 +291,43 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Empty(t, nextResp.HeartbeatSecret)
 }
 
+func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.serviceURI = "http://runner-trickle.example.com"
+	lp := &lphttp{
+		orchestrator: orch,
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
+	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	require.NoError(t, startAIServer(lp))
+
+	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  "runner-1",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "WEI",
+		},
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.RegistrationSecret())
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp runner.LiveRunnerHeartbeatResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, "http://runner-trickle.example.com", resp.Orchestrator)
+}
+
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	body := []byte(`{
@@ -478,6 +515,32 @@ func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/ai/trickle/"+sessionID+"-foo-bar/next", nil)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.T) {
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	lp := &lphttp{
+		orchestrator: newStubOrchestrator(),
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
+	node.LiveAITrickleHostForRunner = "runner-trickle.example.com"
+	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	require.NoError(t, startAIServer(lp))
+
+	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"override"}]}`)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerTrickleChannelsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Channels, 1)
+	require.Equal(t, "http://runner-trickle.example.com/ai/trickle/"+sessionID+"-override", resp.Channels[0].URL)
 }
 
 func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
