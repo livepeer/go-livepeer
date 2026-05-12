@@ -176,7 +176,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 1)
-	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
+	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
 	require.Equal(t, "live-video-to-video/scope", resp[0].Runners[0].App)
 	require.NotContains(t, w.Body.String(), "endpoint")
 	require.NotContains(t, w.Body.String(), "price_info")
@@ -243,7 +243,7 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 1)
-	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
+	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
 	require.NotNil(t, resp[0].Runners[0].PriceInfo)
 	require.NotZero(t, resp[0].Runners[0].PriceInfo.PricePerUnit)
 	require.Contains(t, w.Body.String(), "price_info")
@@ -307,7 +307,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 2)
-	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
+	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
 	require.Equal(t, "http://localhost:1234", resp[0].Runners[1].URL)
 	require.Equal(t, "H100", resp[0].Runners[1].GPU.Name)
 }
@@ -497,11 +497,11 @@ func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
-	var gotPath, gotQuery, gotRunnerID, gotSessionID, gotSessionToken string
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
-		gotRunnerID = r.Header.Get("Livepeer-Runner-Id")
+		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
 		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
 		w.Header().Set("X-Upstream", "ok")
@@ -523,7 +523,7 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
 	require.Equal(t, "/base/v1/foo/bar", gotPath)
 	require.Equal(t, "x=1&y=two", gotQuery)
-	require.Equal(t, "runner-1", gotRunnerID)
+	require.Equal(t, "runner-1", gotRunnerRoute)
 	require.Equal(t, sessionID, gotSessionID)
 	require.NotEmpty(t, gotSessionToken)
 }
@@ -554,11 +554,11 @@ func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
 }
 
 func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
-	var gotPath, gotQuery, gotRunnerID, gotSessionID, gotSessionToken, gotMethod, gotBody string
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken, gotMethod, gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
-		gotRunnerID = r.Header.Get("Livepeer-Runner-Id")
+		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
 		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
 		gotMethod = r.Method
@@ -584,7 +584,7 @@ func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
 	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
 	require.Equal(t, "/base/v1/foo/bar", gotPath)
 	require.Equal(t, "x=1&y=two", gotQuery)
-	require.Equal(t, "runner-1", gotRunnerID)
+	require.Equal(t, "runner-1", gotRunnerRoute)
 	require.NotEmpty(t, gotSessionID)
 	require.NotEmpty(t, gotSessionToken)
 	require.Equal(t, http.MethodPost, gotMethod)

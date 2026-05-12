@@ -38,6 +38,11 @@ const (
 	liveRunnerModeSingleShotAlias = "single_shot"
 )
 
+const (
+	LiveRunnerRoutingRunnerID = "runner-id"
+	LiveRunnerRoutingLabel    = "label"
+)
+
 var liveRunnerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 type RunnerError struct {
@@ -83,6 +88,7 @@ type StaticLiveRunnerConfig struct {
 
 type StaticLiveRunnerConfigEntry struct {
 	Label             string              `json:"label,omitempty"`
+	Route             string              `json:"routing,omitempty"`
 	RunnerURL         string              `json:"runner_url"`
 	Version           string              `json:"version,omitempty"`
 	Mode              string              `json:"mode,omitempty"`
@@ -118,7 +124,6 @@ type LiveRunnerHeartbeatResponse struct {
 }
 
 type LiveRunnerDiscoveryRunner struct {
-	RunnerID  string               `json:"-"`
 	URL       string               `json:"url"`
 	GPU       *LiveRunnerGPU       `json:"gpu,omitempty"`
 	App       string               `json:"app"`
@@ -142,6 +147,7 @@ type liveRunner struct {
 	static          bool
 	healthURL       string
 	healthStatus    int
+	route           string
 	offchain        bool
 	sessions        map[string]*liveRunnerSession
 	priceSource     LiveRunnerPriceInfo
@@ -267,6 +273,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	}
 	runner.LiveRunnerHeartbeatRequest = req
 	runner.LastHeartbeat = time.Now()
+	runner.route = runner.RunnerID // not doing label based routing here for now
 	runner.updatePriceConverterLocked()
 
 	return &LiveRunnerHeartbeatResponse{
@@ -296,6 +303,13 @@ func (r *LiveRunnerRegistry) RegisterStaticRunnersJSON(data []byte) (*StaticLive
 
 func normalizeStaticLiveRunnerConfig(cfg StaticLiveRunnerConfig) (StaticLiveRunnerConfig, error) {
 	for i := range cfg.Runners {
+		cfg.Runners[i].Route = strings.TrimSpace(cfg.Runners[i].Route)
+		if cfg.Runners[i].Route == "" {
+			cfg.Runners[i].Route = LiveRunnerRoutingRunnerID
+		}
+		if cfg.Runners[i].Route != LiveRunnerRoutingRunnerID && cfg.Runners[i].Route != LiveRunnerRoutingLabel {
+			return StaticLiveRunnerConfig{}, fmt.Errorf("runners[%d]: routing must be %q or %q", i, LiveRunnerRoutingRunnerID, LiveRunnerRoutingLabel)
+		}
 		if cfg.Runners[i].HealthyStatusCode == 0 {
 			cfg.Runners[i].HealthyStatusCode = defaultLiveRunnerHealthStatusCode
 		}
@@ -376,6 +390,9 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		if _, duplicate := seenLabels[entry.Label]; duplicate {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: duplicate label %q", i, entry.Label)}
 		}
+		if entry.Route == LiveRunnerRoutingLabel && strings.Contains(entry.Label, "/") {
+			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: label cannot contain / when routing is %q", i, LiveRunnerRoutingLabel)}
+		}
 		seenLabels[entry.Label] = struct{}{}
 		requests = append(requests, req)
 		health = append(health, r.staticRunnerHealthy(entry.HealthURL, entry.HealthyStatusCode))
@@ -406,7 +423,6 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 				sessions: make(map[string]*liveRunnerSession),
 			}
 			staticRunner.RunnerID = runnerID
-			r.runners[runnerID] = staticRunner
 		}
 
 		req := requests[i]
@@ -425,6 +441,18 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.offchain = r.offchain
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
+		if entry.Route == LiveRunnerRoutingLabel {
+			staticRunner.route = req.Label
+		} else {
+			staticRunner.route = staticRunner.RunnerID
+		}
+		for route, runner := range r.runners {
+			if runner == staticRunner && route != staticRunner.route {
+				// route changed so remove old entry and re-add
+				delete(r.runners, route)
+			}
+		}
+		r.runners[staticRunner.route] = staticRunner
 		staticRunner.updatePriceConverterLocked()
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
@@ -712,9 +740,19 @@ func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 			continue
 		}
 		discoveryRunner := runner.discoveryRunner()
+		discoveryRunner.URL = r.discoveryRunnerURL(runner)
 		runners = append(runners, discoveryRunner)
 	}
 	return runners
+}
+
+func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
+	// Under no circumstances leak the runner URL through discovery.
+	// Discovery must only expose orchestrator proxy URLs; the runner URL is an internal endpoint.
+	if runner.Mode == LiveRunnerModeSingleShot {
+		return r.host.ServiceURI().JoinPath("apps", runner.route, "app").String()
+	}
+	return r.host.ServiceURI().JoinPath("apps", runner.route, "session").String()
 }
 
 func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
@@ -890,8 +928,6 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 		discoveryPriceInfo = &priceInfo
 	}
 	return LiveRunnerDiscoveryRunner{
-		RunnerID:  runner.RunnerID,
-		URL:       runner.RunnerURL,
 		GPU:       cloneLiveRunnerGPU(runner.GPU),
 		App:       runner.App,
 		Version:   runner.Version,

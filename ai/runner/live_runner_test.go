@@ -292,6 +292,9 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	if len(cfg.Runners) != 1 {
 		t.Fatalf("expected one runner, got %d", len(cfg.Runners))
 	}
+	if cfg.Runners[0].Route != LiveRunnerRoutingRunnerID {
+		t.Fatalf("expected default routing %q, got %q", LiveRunnerRoutingRunnerID, cfg.Runners[0].Route)
+	}
 	if cfg.Runners[0].HealthyStatusCode != http.StatusOK {
 		t.Fatalf("expected default health status 200, got %d", cfg.Runners[0].HealthyStatusCode)
 	}
@@ -300,6 +303,19 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	}
 	if cfg.Runners[0].Mode != "" {
 		t.Fatalf("expected raw static config mode to remain empty before registration, got %q", cfg.Runners[0].Mode)
+	}
+}
+
+func TestParseStaticLiveRunnerConfigRoute(t *testing.T) {
+	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","routing":"label","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","health_url":"https://runner.example.com/health"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Runners[0].Route != LiveRunnerRoutingLabel {
+		t.Fatalf("expected routing %q, got %q", LiveRunnerRoutingLabel, cfg.Runners[0].Route)
+	}
+	if _, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","routing":"bad","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","health_url":"https://runner.example.com/health"}]}`)); err == nil || !strings.Contains(err.Error(), "routing") {
+		t.Fatalf("expected invalid routing error, got %v", err)
 	}
 }
 
@@ -344,6 +360,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "static-single-shot",
+		Route:     LiveRunnerRoutingLabel,
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Mode:      LiveRunnerModeSingleShot,
@@ -353,16 +370,19 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerID := resp.Runners[0].RunnerID
 	if resp.Runners[0].Mode != LiveRunnerModeSingleShot {
 		t.Fatalf("expected registration mode %q, got %q", LiveRunnerModeSingleShot, resp.Runners[0].Mode)
 	}
-	mode, err := registry.RunnerMode(runnerID)
+	mode, err := registry.RunnerMode("static-single-shot")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if mode != LiveRunnerModeSingleShot {
 		t.Fatalf("expected runner mode %q, got %q", LiveRunnerModeSingleShot, mode)
+	}
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/apps/static-single-shot/app" {
+		t.Fatalf("unexpected single-shot route discovery: %+v", runners)
 	}
 }
 
@@ -493,6 +513,42 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 	}
 }
 
+func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	_, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{
+		Runners: []StaticLiveRunnerConfigEntry{{
+			Label:     "first",
+			Route:     LiveRunnerRoutingLabel,
+			RunnerURL: "https://runner.example.com",
+			App:       "live-video-to-video/scope",
+			Capacity:  2,
+			HealthURL: healthSrv.URL,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(runners))
+	}
+	if runners[0].URL != "http://localhost:1234/apps/first/session" {
+		t.Fatalf("unexpected label route url: %s", runners[0].URL)
+	}
+	sessionID, _, err := registry.ReserveSession("first")
+	if err != nil {
+		t.Fatalf("expected label route to reserve: %v", err)
+	}
+	if _, err := registry.RunnerEndpointForSession("first", sessionID); err != nil {
+		t.Fatalf("expected label route to resolve: %v", err)
+	}
+}
+
 func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t *testing.T) {
 	statusCode := http.StatusCreated
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -538,10 +594,7 @@ func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
 		t.Fatalf("expected one runner, got %d", len(runners))
 	}
 	runner := runners[0]
-	if runner.RunnerID != "runner_discovery_1" {
-		t.Fatalf("unexpected runner id: %s", runner.RunnerID)
-	}
-	if runner.URL != "https://runner.example.com" {
+	if runner.URL != "http://localhost:1234/apps/runner_discovery_1/session" {
 		t.Fatalf("unexpected url: %s", runner.URL)
 	}
 	if runner.GPU == nil || runner.GPU.Name != "NVIDIA L40S" {

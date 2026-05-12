@@ -388,7 +388,7 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 			req.Out.URL.RawPath = ""
 			req.Out.URL.RawQuery = req.In.URL.RawQuery
 			req.Out.Host = target.Host
-			req.Out.Header.Set("Livepeer-Runner-Id", runnerID)
+			req.Out.Header.Set("Livepeer-Runner-Route", runnerID)
 			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
 			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
 		},
@@ -431,12 +431,7 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 
 	var runners []runner.LiveRunnerDiscoveryRunner
 	if ok {
-		for _, discoveryRunner := range manager.Runners() {
-			if discoveryRunner.Mode == runner.LiveRunnerModeSingleShot && address != "" && discoveryRunner.RunnerID != "" {
-				discoveryRunner.URL = h.orchestrator.ServiceURI().JoinPath("apps", discoveryRunner.RunnerID, "app").String()
-			}
-			runners = append(runners, discoveryRunner)
-		}
+		runners = append(runners, manager.Runners()...)
 	}
 	if hasServerlessWorker {
 		pipeline := "live-video-to-video"
