@@ -302,7 +302,9 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
-	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
 	require.NoError(t, startAIServer(lp))
 
 	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
@@ -331,6 +333,9 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	t.Cleanup(manager.Stop)
+	lp.node.LiveRunnerManager = manager
 	body := []byte(fmt.Sprintf(`{
 		"runner_id":%q,
 		"runner_url":"https://runner.example.com",
@@ -620,7 +625,9 @@ func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.
 		transRPC:     http.NewServeMux(),
 	}
 	node.LiveAITrickleHostForRunner = "runner-trickle.example.com"
-	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
 	require.NoError(t, startAIServer(lp))
 
 	registerLiveRunnerForSession(t, lp, nil)
@@ -802,7 +809,9 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 		transRPC:     http.NewServeMux(),
 	}
 	if withManager {
-		node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		t.Cleanup(manager.Stop)
+		node.LiveRunnerManager = manager
 	}
 	require.NoError(t, startAIServer(lp))
 	return lp
@@ -820,7 +829,9 @@ func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *
 		transRPC:     http.NewServeMux(),
 	}
 	if withManager {
-		node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		t.Cleanup(manager.Stop)
+		node.LiveRunnerManager = manager
 	}
 	serverlessWorker, err := worker.NewServerlessWorker("ws://serverless.example.com/ws", capacity)
 	require.NoError(t, err)

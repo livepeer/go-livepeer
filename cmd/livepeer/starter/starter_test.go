@@ -452,7 +452,9 @@ func TestLiveRunnerManagerConstruction(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
 
-	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
 	require.NotNil(t, node.LiveRunnerManager)
 }
 

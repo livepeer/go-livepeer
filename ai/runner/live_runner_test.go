@@ -47,11 +47,6 @@ func liveRunnerTestHeartbeat(runnerID string) LiveRunnerHeartbeatRequest {
 		},
 		App:      "new-ai-pipeline/model-a",
 		Capacity: 1,
-		PriceInfo: LiveRunnerPriceInfo{
-			PricePerUnit:  1250,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
-		},
 	}
 }
 
@@ -85,6 +80,14 @@ func (liveRunnerTestHostWithoutSecret) RegistrationSecret() string {
 	return ""
 }
 
+func newLiveRunnerTestRegistry() *LiveRunnerRegistry {
+	return NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+}
+
+func newOnchainLiveRunnerTestRegistry() *LiveRunnerRegistry {
+	return NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}, Onchain: true})
+}
+
 func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req LiveRunnerHeartbeatRequest) *LiveRunnerHeartbeatResponse {
 	t.Helper()
 	resp, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
@@ -104,7 +107,7 @@ func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req Live
 }
 
 func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat(""))
 	if resp.RunnerID == "" {
@@ -125,11 +128,6 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 		Status:    "ready",
 		App:       "new-ai-pipeline/model-a",
 		Capacity:  2,
-		PriceInfo: LiveRunnerPriceInfo{
-			PricePerUnit:  1250,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
-		},
 	}, resp.HeartbeatSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +139,7 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner_custom_1")
 
 	resp := liveRunnerTestRegister(t, registry, req)
@@ -163,7 +161,7 @@ func TestLiveRunnerRegistry_HeartbeatDisabledWithoutRegistrationSecret(t *testin
 }
 
 func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner_default_capacity")
 	req.Capacity = 0
 
@@ -177,7 +175,7 @@ func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_DefaultModeWhenUnset(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner_default_mode"))
 
 	mode, err := registry.RunnerMode(resp.RunnerID)
@@ -190,7 +188,7 @@ func TestLiveRunnerRegistry_DefaultModeWhenUnset(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-single-shot")
 	req.Mode = LiveRunnerModeSingleShot
 	resp := liveRunnerTestRegister(t, registry, req)
@@ -205,7 +203,7 @@ func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_InvalidMode(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-invalid-mode")
 	req.Mode = "invalid"
 	if _, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret); !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "mode") {
@@ -213,8 +211,66 @@ func TestLiveRunnerRegistry_InvalidMode(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_OnchainRequiresHeartbeatPriceInfo(t *testing.T) {
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-missing-price")
+
+	_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "price_info") {
+		t.Fatalf("expected missing price_info bad request, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_OnchainRequiresStaticRunnerPriceInfo(t *testing.T) {
+	registry := newOnchainLiveRunnerTestRegistry()
+
+	_, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-missing-price",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: "https://runner.example.com/health",
+	}}})
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "price_info") {
+		t.Fatalf("expected missing price_info bad request, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_OnchainAcceptsWEIPrice(t *testing.T) {
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-wei-price")
+	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "wei"}
+
+	liveRunnerTestRegister(t, registry, req)
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(runners))
+	}
+	if runners[0].PriceInfo != (LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "WEI"}) {
+		t.Fatalf("unexpected runner price info: %+v", runners[0].PriceInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_OffchainIgnoresUSDPriceWatcher(t *testing.T) {
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = nil
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-offchain-usd")
+	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "USD"}
+
+	liveRunnerTestRegister(t, registry, req)
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(runners))
+	}
+	if runners[0].PriceInfo != req.PriceInfo {
+		t.Fatalf("expected offchain price to be preserved without conversion, got %+v", runners[0].PriceInfo)
+	}
+}
+
 func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing.T) {
-	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":"https://runner.example.com/health","gpu":-1}]}`))
+	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"health_url":"https://runner.example.com/health","gpu":-1}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,13 +298,12 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersResolvesHealthPath(t *testing.T
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "path-health",
 		RunnerURL: healthSrv.URL,
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
-		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
 		HealthURL: "/health",
 	}}})
 	if err != nil {
@@ -271,18 +326,13 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "static-single-shot",
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Mode:      LiveRunnerModeSingleShot,
 		Capacity:  1,
-		PriceInfo: LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "WEI",
-		},
 		HealthURL: healthSrv.URL,
 	}}})
 	if err != nil {
@@ -307,17 +357,12 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersHealthAndNoHeartbeatExpiry(t *t
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "static-app",
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
-		PriceInfo: LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "WEI",
-		},
 		HealthURL: healthSrv.URL,
 	}}})
 	if err != nil {
@@ -345,12 +390,11 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersAtomicValidation(t *testing.T) 
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	valid := StaticLiveRunnerConfigEntry{
 		Label:     "runner-a",
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
-		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
 		HealthURL: healthSrv.URL,
 	}
 	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{valid}}); err != nil {
@@ -377,12 +421,11 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersRequiresUniqueLabels(t *testing
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	entry := StaticLiveRunnerConfigEntry{
 		Label:     "runner-a",
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
-		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
 		HealthURL: healthSrv.URL,
 	}
 	duplicate := entry
@@ -404,13 +447,12 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	entry := StaticLiveRunnerConfigEntry{
 		Label:     "first",
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Capacity:  2,
-		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
 		HealthURL: healthSrv.URL,
 	}
 	resp1, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
@@ -443,13 +485,12 @@ func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t 
 	}))
 	defer healthSrv.Close()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:             "custom-health",
 		RunnerURL:         "https://runner.example.com",
 		App:               "live-video-to-video/scope",
 		Capacity:          1,
-		PriceInfo:         LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
 		HealthURL:         healthSrv.URL,
 		HealthyStatusCode: http.StatusCreated,
 	}}})
@@ -473,7 +514,7 @@ func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t 
 }
 
 func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner_discovery_1"))
 
@@ -491,7 +532,7 @@ func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
 	if runner.App != "new-ai-pipeline/model-a" {
 		t.Fatalf("unexpected app: %s", runner.App)
 	}
-	if runner.PriceInfo.Unit != "USD" {
+	if runner.PriceInfo != (LiveRunnerPriceInfo{}) {
 		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
 	}
 	if runner.Version != "1.2.3" {
@@ -504,7 +545,7 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
 
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newOnchainLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-1")
 	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "USD"}
 	liveRunnerTestRegister(t, registry, req)
@@ -528,7 +569,7 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_SharedEndpointAppKeepsPerRunnerPrices(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 
 	req1 := liveRunnerTestHeartbeat("runner-1")
 	req1.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"}
@@ -550,7 +591,7 @@ func TestLiveRunnerRegistry_SharedEndpointAppKeepsPerRunnerPrices(t *testing.T) 
 }
 
 func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-1")
 	req.Capacity = 2
 	liveRunnerTestRegister(t, registry, req)
@@ -586,7 +627,7 @@ func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_ReleaseSessionFreesCapacity(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
@@ -604,7 +645,7 @@ func TestLiveRunnerRegistry_ReleaseSessionFreesCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-1")
 	req.Capacity = 2
 	liveRunnerTestRegister(t, registry, req)
@@ -637,7 +678,7 @@ func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
 
 func TestLiveRunnerRegistry_CreateTrickleChannelForSession(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
@@ -663,7 +704,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelForSession(t *testing.T) {
 
 func TestLiveRunnerRegistry_CreateTrickleChannelReturnsExisting(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
@@ -686,7 +727,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelReturnsExisting(t *testing.T) {
 
 func TestLiveRunnerRegistry_CreateTrickleChannelRejectsInvalidName(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
@@ -704,7 +745,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelRejectsInvalidName(t *testing.T)
 
 func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	resp1 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
@@ -759,7 +800,7 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
@@ -785,7 +826,7 @@ func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_NotReadyCannotReserveSession(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-1")
 	req.Status = "busy"
 	liveRunnerTestRegister(t, registry, req)

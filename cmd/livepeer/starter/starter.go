@@ -1997,7 +1997,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("running with -useLiveRunners requires -orchSecret")
 			}
 			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
-				Host: liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Host:    liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Onchain: *cfg.Network != "offchain",
 			})
 			if n.OrchSecret == "" {
 				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")

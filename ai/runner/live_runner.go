@@ -158,6 +158,7 @@ type LiveRunnerRegistry struct {
 	mu                sync.Mutex
 	runners           map[string]*liveRunner
 	host              RunnerHost
+	offchain          bool
 	heartbeatInterval time.Duration
 	heartbeatTTL      time.Duration
 	trickleSrv        *trickle.Server
@@ -165,6 +166,7 @@ type LiveRunnerRegistry struct {
 	healthClient      *http.Client
 	healthInterval    time.Duration
 	stopHealth        chan struct{}
+	stopHealthOnce    sync.Once
 }
 
 type RunnerHost interface {
@@ -173,7 +175,8 @@ type RunnerHost interface {
 }
 
 type LiveRunnerRegistryConfig struct {
-	Host RunnerHost
+	Host    RunnerHost
+	Onchain bool
 }
 
 var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -181,6 +184,7 @@ var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry {
 	r := &LiveRunnerRegistry{
 		host:              config.Host,
+		offchain:          !config.Onchain,
 		runners:           make(map[string]*liveRunner),
 		heartbeatInterval: defaultLiveRunnerHeartbeatInterval,
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
@@ -199,13 +203,27 @@ func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, baseURL strin
 	r.trickleBaseURL = baseURL
 }
 
+func (r *LiveRunnerRegistry) Stop() {
+	if r == nil {
+		return
+	}
+	r.stopHealthOnce.Do(func() {
+		close(r.stopHealth)
+	})
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, runner := range r.runners {
+		runner.stopPriceConverterLocked()
+	}
+}
+
 func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth string) (*LiveRunnerHeartbeatResponse, error) {
 	req.RunnerID = strings.TrimSpace(req.RunnerID)
 	if req.RunnerID == "" {
 		req.RunnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
 	}
 
-	req, err := normalizeLiveRunnerRequest(req.RunnerID, req)
+	req, err := r.normalizeHeartbeat(req.RunnerID, req)
 	if err != nil {
 		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: err.Error()}
 	}
@@ -245,7 +263,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	}
 	runner.LiveRunnerHeartbeatRequest = req
 	runner.LastHeartbeat = time.Now()
-	runner.updatePriceConverterLocked()
+	runner.updatePriceConverterLocked(r.offchain)
 
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
@@ -347,7 +365,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 	health := make([]bool, 0, len(cfg.Runners))
 	seenLabels := make(map[string]struct{}, len(cfg.Runners))
 	for i, entry := range cfg.Runners {
-		req, err := staticRunnerRequest(entry)
+		req, err := r.buildStaticRunner(entry)
 		if err != nil {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: %v", i, err)}
 		}
@@ -401,7 +419,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.static = true
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
-		staticRunner.updatePriceConverterLocked()
+		staticRunner.updatePriceConverterLocked(r.offchain)
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
@@ -416,7 +434,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 	return &StaticLiveRunnerRegistrationResponse{Runners: registrations}, nil
 }
 
-func staticRunnerRequest(entry StaticLiveRunnerConfigEntry) (LiveRunnerHeartbeatRequest, error) {
+func (r *LiveRunnerRegistry) buildStaticRunner(entry StaticLiveRunnerConfigEntry) (LiveRunnerHeartbeatRequest, error) {
 	if entry.Label == "" || entry.Label != strings.TrimSpace(entry.Label) {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("label is required and must be trimmed")
 	}
@@ -440,22 +458,15 @@ func staticRunnerRequest(entry StaticLiveRunnerConfigEntry) (LiveRunnerHeartbeat
 		Capacity:  entry.Capacity,
 		PriceInfo: entry.PriceInfo,
 	}
-	return normalizeLiveRunnerRequest("static", req)
+	return r.normalizeHeartbeat("static", req)
 }
 
-func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest) (LiveRunnerHeartbeatRequest, error) {
+func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerHeartbeatRequest) (LiveRunnerHeartbeatRequest, error) {
 	u, err := url.ParseRequestURI(req.RunnerURL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("invalid runner_url")
 	}
 
-	if req.PriceInfo.PixelsPerUnit <= 0 || req.PriceInfo.PricePerUnit <= 0 {
-		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("runner must include positive price_info")
-	}
-	unit := strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit))
-	if unit != "USD" && unit != "WEI" {
-		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("price_info.unit must be USD or WEI")
-	}
 	if req.App == "" || req.App != strings.TrimSpace(req.App) {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("app must be trimmed")
 	}
@@ -475,6 +486,18 @@ func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest)
 		req.Capacity = 1
 	}
 	req.RunnerID = runnerID
+
+	if r.offchain {
+		return req, nil
+	}
+
+	if req.PriceInfo.PixelsPerUnit <= 0 || req.PriceInfo.PricePerUnit <= 0 {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("runner must include positive price_info")
+	}
+	unit := strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit))
+	if unit != "USD" && unit != "WEI" {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("price_info.unit must be USD or WEI")
+	}
 	req.PriceInfo.Unit = unit
 
 	return req, nil
@@ -863,7 +886,10 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 	}
 }
 
-func (runner *liveRunner) updatePriceConverterLocked() {
+func (runner *liveRunner) updatePriceConverterLocked(offchain bool) {
+	if offchain {
+		return
+	}
 	// Heartbeats call this each time, but converter rebuild work is only done when
 	// price_info changes (or when a converter is missing after a prior failure).
 	if runner.converter != nil && runner.priceSource == runner.PriceInfo {

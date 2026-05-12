@@ -223,7 +223,9 @@ func TestRegisterLiveRunnersCLIEndpoint(t *testing.T) {
 	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
 	orch := newStubOrchestrator()
-	n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
+	t.Cleanup(manager.Stop)
+	n.LiveRunnerManager = manager
 	s := &LivepeerServer{LivepeerNode: n}
 	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
 	defer srv.Close()
@@ -239,7 +241,6 @@ func TestRegisterLiveRunnersCLIEndpoint(t *testing.T) {
 	require.NotEmpty(t, reg.Runners[0].RunnerID)
 	require.True(t, reg.Runners[0].Healthy)
 
-	manager := n.LiveRunnerManager.(*runner.LiveRunnerRegistry)
 	require.Len(t, manager.Runners(), 1)
 }
 
@@ -253,6 +254,7 @@ func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
 	require.NoError(t, err)
 	orch := newStubOrchestrator()
 	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
+	t.Cleanup(manager.Stop)
 	initialConfig := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL)
 	_, err = manager.RegisterStaticRunnersJSON([]byte(initialConfig))
 	require.NoError(t, err)
