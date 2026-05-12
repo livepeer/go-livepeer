@@ -2,12 +2,14 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +72,17 @@ func (liveRunnerTestHost) ServiceURI() *url.URL {
 
 func (liveRunnerTestHost) RegistrationSecret() string {
 	return liveRunnerTestBootstrapSecret
+}
+
+type liveRunnerTestHostWithoutSecret struct{}
+
+func (liveRunnerTestHostWithoutSecret) ServiceURI() *url.URL {
+	u, _ := url.Parse("http://localhost:1234")
+	return u
+}
+
+func (liveRunnerTestHostWithoutSecret) RegistrationSecret() string {
+	return ""
 }
 
 func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req LiveRunnerHeartbeatRequest) *LiveRunnerHeartbeatResponse {
@@ -141,6 +154,14 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_HeartbeatDisabledWithoutRegistrationSecret(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHostWithoutSecret{}})
+	_, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1"), "")
+	if !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected dynamic registration disabled error, got %v", err)
+	}
+}
+
 func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
 	req := liveRunnerTestHeartbeat("runner_default_capacity")
@@ -152,6 +173,193 @@ func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 	registry.mu.Unlock()
 	if runner == nil || runner.Capacity != 1 {
 		t.Fatalf("expected default capacity=1, got %+v", runner)
+	}
+}
+
+func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing.T) {
+	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":"https://runner.example.com/health","gpu":-1}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(cfg.Runners))
+	}
+	if cfg.Runners[0].HealthyStatusCode != http.StatusOK {
+		t.Fatalf("expected default health status 200, got %d", cfg.Runners[0].HealthyStatusCode)
+	}
+	if cfg.Runners[0].GPU == nil || cfg.Runners[0].GPU.ID != "-1" {
+		t.Fatalf("expected numeric gpu fallback, got %+v", cfg.Runners[0].GPU)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersHealthAndNoHeartbeatExpiry(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-app",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		PriceInfo: LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "WEI",
+		},
+		HealthURL: healthSrv.URL,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Runners) != 1 || resp.Runners[0].RunnerID == "" || !resp.Runners[0].Healthy {
+		t.Fatalf("unexpected static registration response: %+v", resp)
+	}
+	runnerID := resp.Runners[0].RunnerID
+	if _, _, err := registry.ReserveSession(runnerID); err != nil {
+		t.Fatalf("expected healthy static runner to reserve session: %v", err)
+	}
+
+	registry.heartbeatTTL = time.Nanosecond
+	time.Sleep(time.Millisecond)
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected static runner to skip heartbeat expiry, got %d", len(runners))
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersAtomicValidation(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	valid := StaticLiveRunnerConfigEntry{
+		Label:     "runner-a",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
+		HealthURL: healthSrv.URL,
+	}
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{valid}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Runners()) != 1 {
+		t.Fatal("expected initial static runner")
+	}
+
+	invalid := valid
+	invalid.Label = "runner-b"
+	invalid.RunnerURL = "bad url"
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{valid, invalid}}); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected bad request for invalid batch, got %v", err)
+	}
+	if len(registry.Runners()) != 1 {
+		t.Fatalf("expected invalid batch to leave existing runners unchanged, got %d", len(registry.Runners()))
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersRequiresUniqueLabels(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	entry := StaticLiveRunnerConfigEntry{
+		Label:     "runner-a",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
+		HealthURL: healthSrv.URL,
+	}
+	duplicate := entry
+	duplicate.RunnerURL = "https://runner-two.example.com"
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry, duplicate}}); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected duplicate label error, got %v", err)
+	}
+
+	missingLabel := entry
+	missingLabel.Label = ""
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{missingLabel}}); !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "label") {
+		t.Fatalf("expected missing label error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	entry := StaticLiveRunnerConfigEntry{
+		Label:     "first",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Capacity:  2,
+		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
+		HealthURL: healthSrv.URL,
+	}
+	resp1, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp1.Runners[0].RunnerID
+	sessionID, _, err := registry.ReserveSession(runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry.RunnerURL = "https://runner-updated.example.com"
+	resp2, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp2.Runners[0].RunnerID != runnerID {
+		t.Fatalf("expected static runner ID to be preserved, got %s want %s", resp2.Runners[0].RunnerID, runnerID)
+	}
+	if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+		t.Fatalf("expected active session to survive healthy static upsert: %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t *testing.T) {
+	statusCode := http.StatusCreated
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:             "custom-health",
+		RunnerURL:         "https://runner.example.com",
+		App:               "live-video-to-video/scope",
+		Capacity:          1,
+		PriceInfo:         LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
+		HealthURL:         healthSrv.URL,
+		HealthyStatusCode: http.StatusCreated,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp.Runners[0].RunnerID
+	sessionID, _, err := registry.ReserveSession(runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusCode = http.StatusOK
+	registry.checkStaticRunnerHealth()
+	if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected unhealthy static runner to release sessions, got %v", err)
+	}
+	if runners := registry.Runners(); len(runners) != 0 {
+		data, _ := json.Marshal(runners)
+		t.Fatalf("expected unhealthy static runner to be hidden, got %s", data)
 	}
 }
 

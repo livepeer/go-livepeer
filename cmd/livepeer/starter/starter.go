@@ -99,6 +99,7 @@ type LivepeerConfig struct {
 	AIWorker                   *bool
 	AIServerless               *bool
 	UseLiveRunners             *bool
+	LiveRunnerConfig           *string
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -240,6 +241,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIWorker := false
 	defaultAIServerless := false
 	defaultUseLiveRunners := false
+	defaultLiveRunnerConfig := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -367,6 +369,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIWorker:                 &defaultAIWorker,
 		AIServerless:             &defaultAIServerless,
 		UseLiveRunners:           &defaultUseLiveRunners,
+		LiveRunnerConfig:         &defaultLiveRunnerConfig,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -1989,13 +1992,27 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
-		if *cfg.UseLiveRunners {
-			if n.OrchSecret == "" {
+		if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+			if n.OrchSecret == "" && *cfg.LiveRunnerConfig == "" {
 				glog.Exit("running with -useLiveRunners requires -orchSecret")
 			}
 			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
 				Host: liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
 			})
+			if n.OrchSecret == "" {
+				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")
+			}
+			if *cfg.LiveRunnerConfig != "" {
+				configJSON, err := os.ReadFile(*cfg.LiveRunnerConfig)
+				if err != nil {
+					glog.Exitf("error reading -liveRunnerConfig: %v", err)
+				}
+				registration, err := n.LiveRunnerManager.(*runner.LiveRunnerRegistry).RegisterStaticRunnersJSON(configJSON)
+				if err != nil {
+					glog.Exitf("error registering -liveRunnerConfig: %v", err)
+				}
+				glog.Infof("Registered %d static live runners from %s", len(registration.Runners), *cfg.LiveRunnerConfig)
+			}
 		}
 
 		go func() {

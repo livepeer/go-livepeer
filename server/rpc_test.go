@@ -81,6 +81,7 @@ type stubOrchestrator struct {
 	caps         *core.Capabilities
 	authToken    *net.AuthToken
 	jobPriceInfo *net.PriceInfo
+	secret       string
 }
 
 func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
@@ -207,7 +208,7 @@ func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTransco
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
 }
 func (r *stubOrchestrator) TranscoderSecret() string {
-	return ""
+	return r.secret
 }
 func (r *stubOrchestrator) RegistrationSecret() string {
 	return r.TranscoderSecret()

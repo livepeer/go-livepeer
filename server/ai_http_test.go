@@ -296,6 +296,7 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 	require.NoError(t, err)
 	orch := newStubOrchestrator()
 	orch.serviceURI = "http://runner-trickle.example.com"
+	orch.secret = "live-runner-secret"
 	lp := &lphttp{
 		orchestrator: orch,
 		node:         node,
@@ -520,8 +521,10 @@ func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
 	lp := &lphttp{
-		orchestrator: newStubOrchestrator(),
+		orchestrator: orch,
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
@@ -700,8 +703,10 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
 	lp := &lphttp{
-		orchestrator: newStubOrchestrator(),
+		orchestrator: orch,
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
@@ -716,8 +721,10 @@ func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
 	lp := &lphttp{
-		orchestrator: newStubOrchestrator(),
+		orchestrator: orch,
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
@@ -734,8 +741,10 @@ func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *
 
 func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
 	t.Helper()
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
 	lp := &lphttp{
-		orchestrator: newStubOrchestrator(),
+		orchestrator: orch,
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}

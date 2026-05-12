@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -211,6 +212,62 @@ func TestGetStatus(t *testing.T) {
 	expected := fmt.Sprintf(`{"Manifests":{},"InternalManifests":{},"StreamInfo":{},"OrchestratorPool":[],"OrchestratorPoolInfos":null,"Version":"undefined","GolangRuntimeVersion":"%s","GOArch":"%s","GOOS":"%s","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false,"BroadcasterPrices":{}}`,
 		runtime.Version(), runtime.GOARCH, runtime.GOOS)
 	assert.Equal(expected, string(body))
+}
+
+func TestRegisterLiveRunnersCLIEndpoint(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
+	s := &LivepeerServer{LivepeerNode: n}
+	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
+	defer srv.Close()
+
+	body := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL)
+	res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	var reg runner.StaticLiveRunnerRegistrationResponse
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&reg))
+	require.Len(t, reg.Runners, 1)
+	require.NotEmpty(t, reg.Runners[0].RunnerID)
+	require.True(t, reg.Runners[0].Healthy)
+
+	manager := n.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	require.Len(t, manager.Runners(), 1)
+}
+
+func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
+	initialConfig := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL)
+	_, err = manager.RegisterStaticRunnersJSON([]byte(initialConfig))
+	require.NoError(t, err)
+	n.LiveRunnerManager = manager
+	s := &LivepeerServer{LivepeerNode: n}
+	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
+	defer srv.Close()
+
+	body := fmt.Sprintf(`{"runners":[{"label":"runner-b","runner_url":"https://runner-two.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q},{"runner_url":"https://runner-three.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL, healthSrv.URL)
+	res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+	require.Len(t, manager.Runners(), 1)
+	require.Equal(t, "https://runner.example.com", manager.Runners()[0].Endpoint)
 }
 
 func TestGetEthChainID(t *testing.T) {

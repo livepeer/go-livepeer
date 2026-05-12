@@ -404,6 +404,15 @@ func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {
 	require.True(*cfg.UseLiveRunners)
 }
 
+func TestNewLivepeerConfig_LiveRunnerConfigFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerConfig", "/tmp/runners.json"}))
+	require.Equal("/tmp/runners.json", *cfg.LiveRunnerConfig)
+}
+
 func TestNewLivepeerConfig_UseLiveWorkersFlagRemoved(t *testing.T) {
 	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
 	NewLivepeerConfig(fs)

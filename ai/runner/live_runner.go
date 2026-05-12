@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaypipes/ghw"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -23,6 +25,9 @@ import (
 const (
 	defaultLiveRunnerHeartbeatInterval = 5 * time.Second
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
+	defaultLiveRunnerHealthInterval    = 5 * time.Second
+	defaultLiveRunnerHealthStatusCode  = http.StatusOK
+	defaultLiveRunnerHealthTimeout     = 3 * time.Second
 	liveRunnerIDRandomBytes            = 5
 	liveRunnerSeedBytes                = 32
 )
@@ -65,6 +70,36 @@ type LiveRunnerHeartbeatRequest struct {
 	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
+type StaticLiveRunnerConfig struct {
+	Runners []StaticLiveRunnerConfigEntry `json:"runners"`
+}
+
+type StaticLiveRunnerConfigEntry struct {
+	Label             string              `json:"label,omitempty"`
+	RunnerURL         string              `json:"runner_url"`
+	Version           string              `json:"version,omitempty"`
+	GPU               *LiveRunnerGPU      `json:"gpu,omitempty"`
+	App               string              `json:"app"`
+	Capacity          int                 `json:"capacity"`
+	PriceInfo         LiveRunnerPriceInfo `json:"price_info"`
+	HealthURL         string              `json:"health_url"`
+	HealthyStatusCode int                 `json:"healthy_status_code,omitempty"`
+}
+
+type StaticLiveRunnerRegistration struct {
+	RunnerID          string `json:"runner_id"`
+	Label             string `json:"label,omitempty"`
+	App               string `json:"app"`
+	RunnerURL         string `json:"runner_url"`
+	HealthURL         string `json:"health_url"`
+	HealthyStatusCode int    `json:"healthy_status_code"`
+	Healthy           bool   `json:"healthy"`
+}
+
+type StaticLiveRunnerRegistrationResponse struct {
+	Runners []StaticLiveRunnerRegistration `json:"runners"`
+}
+
 type LiveRunnerHeartbeatResponse struct {
 	RunnerID          string `json:"runner_id"`
 	Orchestrator      string `json:"orchestrator,omitempty"`
@@ -93,6 +128,9 @@ type liveRunner struct {
 	LastHeartbeat   time.Time
 	seed            []byte
 	heartbeatSecret string
+	static          bool
+	healthURL       string
+	healthStatus    int
 	sessions        map[string]*liveRunnerSession
 	priceSource     LiveRunnerPriceInfo
 	converter       *core.AutoConvertedPrice
@@ -115,6 +153,9 @@ type LiveRunnerRegistry struct {
 	heartbeatTTL      time.Duration
 	trickleSrv        *trickle.Server
 	trickleBaseURL    string
+	healthClient      *http.Client
+	healthInterval    time.Duration
+	stopHealth        chan struct{}
 }
 
 type RunnerHost interface {
@@ -129,12 +170,17 @@ type LiveRunnerRegistryConfig struct {
 var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry {
-	return &LiveRunnerRegistry{
+	r := &LiveRunnerRegistry{
 		host:              config.Host,
 		runners:           make(map[string]*liveRunner),
 		heartbeatInterval: defaultLiveRunnerHeartbeatInterval,
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
+		healthClient:      &http.Client{Timeout: defaultLiveRunnerHealthTimeout},
+		healthInterval:    defaultLiveRunnerHealthInterval,
+		stopHealth:        make(chan struct{}),
 	}
+	go r.healthLoop()
+	return r
 }
 
 func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, baseURL string) {
@@ -164,7 +210,14 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	// Return another one later on if the secret needs to be rotated.
 	var responseHeartbeatSecret string
 	if runner == nil {
-		if r.host == nil || !validSecret(auth, r.host.RegistrationSecret()) {
+		registrationSecret := ""
+		if r.host != nil {
+			registrationSecret = r.host.RegistrationSecret()
+		}
+		if registrationSecret == "" {
+			return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "dynamic live runner registration is disabled"}
+		}
+		if !validSecret(auth, registrationSecret) {
 			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 		}
 		seed := newRunnerSeed()
@@ -176,6 +229,8 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		}
 		r.runners[req.RunnerID] = runner
 		responseHeartbeatSecret = heartbeatSecret
+	} else if runner.static {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot heartbeat"}
 	} else if !validSecret(auth, runner.heartbeatSecret) {
 		return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 	}
@@ -190,6 +245,168 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		HeartbeatTTL:      r.heartbeatTTL.String(),
 		HeartbeatSecret:   responseHeartbeatSecret,
 	}, nil
+}
+
+func ParseStaticLiveRunnerConfig(data []byte) (StaticLiveRunnerConfig, error) {
+	var cfg StaticLiveRunnerConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return StaticLiveRunnerConfig{}, err
+	}
+	return normalizeStaticLiveRunnerConfig(cfg)
+}
+
+func (r *LiveRunnerRegistry) RegisterStaticRunnersJSON(data []byte) (*StaticLiveRunnerRegistrationResponse, error) {
+	cfg, err := ParseStaticLiveRunnerConfig(data)
+	if err != nil {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: err.Error()}
+	}
+	return r.RegisterStaticRunners(cfg)
+}
+
+func normalizeStaticLiveRunnerConfig(cfg StaticLiveRunnerConfig) (StaticLiveRunnerConfig, error) {
+	for i := range cfg.Runners {
+		if cfg.Runners[i].HealthyStatusCode == 0 {
+			cfg.Runners[i].HealthyStatusCode = defaultLiveRunnerHealthStatusCode
+		}
+	}
+	return cfg, nil
+}
+
+func (g *LiveRunnerGPU) UnmarshalJSON(data []byte) error {
+	var deviceIndex int
+	if err := json.Unmarshal(data, &deviceIndex); err == nil {
+		*g = liveRunnerGPUForIndex(deviceIndex)
+		return nil
+	}
+	type gpuAlias LiveRunnerGPU
+	var parsed gpuAlias
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	*g = LiveRunnerGPU(parsed)
+	return nil
+}
+
+func liveRunnerGPUForIndex(deviceIndex int) LiveRunnerGPU {
+	gpuInfo := LiveRunnerGPU{ID: fmt.Sprintf("%d", deviceIndex)}
+	if deviceIndex < 0 {
+		return gpuInfo
+	}
+	info, err := ghw.GPU()
+	if err != nil || info == nil || deviceIndex >= len(info.GraphicsCards) {
+		return gpuInfo
+	}
+	card := info.GraphicsCards[deviceIndex]
+	if card == nil {
+		return gpuInfo
+	}
+	if card.DeviceInfo != nil {
+		gpuInfo.Name = strings.TrimSpace(card.DeviceInfo.Product.Name)
+	}
+	return gpuInfo
+}
+
+func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (*StaticLiveRunnerRegistrationResponse, error) {
+	cfg, err := normalizeStaticLiveRunnerConfig(cfg)
+	if err != nil {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: err.Error()}
+	}
+	requests := make([]LiveRunnerHeartbeatRequest, 0, len(cfg.Runners))
+	health := make([]bool, 0, len(cfg.Runners))
+	seenLabels := make(map[string]struct{}, len(cfg.Runners))
+	for i, entry := range cfg.Runners {
+		req, err := staticRunnerRequest(entry)
+		if err != nil {
+			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: %v", i, err)}
+		}
+		if _, duplicate := seenLabels[entry.Label]; duplicate {
+			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: duplicate label %q", i, entry.Label)}
+		}
+		seenLabels[entry.Label] = struct{}{}
+		requests = append(requests, req)
+		health = append(health, r.staticRunnerHealthy(entry.HealthURL, entry.HealthyStatusCode))
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existingStatic := make(map[string]*liveRunner)
+	for _, runner := range r.runners {
+		if runner.static && runner.Label != "" {
+			existingStatic[runner.Label] = runner
+		}
+	}
+
+	registrations := make([]StaticLiveRunnerRegistration, 0, len(cfg.Runners))
+	for i, entry := range cfg.Runners {
+		staticRunner := existingStatic[entry.Label]
+		if staticRunner == nil {
+			runnerID := "runner_" + randomStr(liveRunnerIDRandomBytes)
+			for r.runners[runnerID] != nil {
+				// collision lol
+				runnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
+			}
+			staticRunner = &liveRunner{
+				seed:     newRunnerSeed(),
+				static:   true,
+				sessions: make(map[string]*liveRunnerSession),
+			}
+			staticRunner.RunnerID = runnerID
+			r.runners[runnerID] = staticRunner
+		}
+
+		req := requests[i]
+		req.RunnerID = staticRunner.RunnerID
+		if health[i] {
+			req.Status = "ready"
+		} else {
+			req.Status = "unavailable"
+			for sessionID := range staticRunner.sessions {
+				staticRunner.releaseSessionLocked(sessionID)
+			}
+		}
+		staticRunner.LiveRunnerHeartbeatRequest = req
+		staticRunner.LastHeartbeat = time.Now()
+		staticRunner.static = true
+		staticRunner.healthURL = entry.HealthURL
+		staticRunner.healthStatus = entry.HealthyStatusCode
+		staticRunner.updatePriceConverterLocked()
+		registrations = append(registrations, StaticLiveRunnerRegistration{
+			RunnerID:          staticRunner.RunnerID,
+			Label:             req.Label,
+			App:               req.App,
+			RunnerURL:         req.RunnerURL,
+			HealthURL:         entry.HealthURL,
+			HealthyStatusCode: entry.HealthyStatusCode,
+			Healthy:           health[i],
+		})
+	}
+	return &StaticLiveRunnerRegistrationResponse{Runners: registrations}, nil
+}
+
+func staticRunnerRequest(entry StaticLiveRunnerConfigEntry) (LiveRunnerHeartbeatRequest, error) {
+	if entry.Label == "" || entry.Label != strings.TrimSpace(entry.Label) {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("label is required and must be trimmed")
+	}
+	if entry.HealthURL == "" {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("health_url is required")
+	}
+	u, err := url.ParseRequestURI(entry.HealthURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("invalid health_url")
+	}
+	if entry.HealthyStatusCode < 100 || entry.HealthyStatusCode > 599 {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("healthy_status_code must be a valid HTTP status code")
+	}
+	req := LiveRunnerHeartbeatRequest{
+		Label:     entry.Label,
+		RunnerURL: entry.RunnerURL,
+		Version:   entry.Version,
+		GPU:       entry.GPU,
+		App:       entry.App,
+		Capacity:  entry.Capacity,
+		PriceInfo: entry.PriceInfo,
+	}
+	return normalizeLiveRunnerRequest("static", req)
 }
 
 func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest) (LiveRunnerHeartbeatRequest, error) {
@@ -230,6 +447,9 @@ func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	runner := r.runners[runnerID]
 	if runner == nil {
 		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if runner.static {
+		return &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot unregister with heartbeat credentials"}
 	}
 	if !validSecret(auth, runner.heartbeatSecret) {
 		return &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
@@ -412,10 +632,68 @@ func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 
 func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
 	for runnerID, runner := range r.runners {
+		if runner.static {
+			continue
+		}
 		if now.Sub(runner.LastHeartbeat) > r.heartbeatTTL {
 			r.removeRunnerLocked(runnerID)
 		}
 	}
+}
+
+func (r *LiveRunnerRegistry) healthLoop() {
+	ticker := time.NewTicker(r.healthInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			r.checkStaticRunnerHealth()
+		case <-r.stopHealth:
+			return
+		}
+	}
+}
+
+func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
+	type check struct {
+		runnerID     string
+		healthURL    string
+		healthStatus int
+	}
+	r.mu.Lock()
+	checks := []check{}
+	for runnerID, runner := range r.runners {
+		if runner.static {
+			checks = append(checks, check{runnerID: runnerID, healthURL: runner.healthURL, healthStatus: runner.healthStatus})
+		}
+	}
+	r.mu.Unlock()
+
+	for _, c := range checks {
+		healthy := r.staticRunnerHealthy(c.healthURL, c.healthStatus)
+		r.mu.Lock()
+		runner := r.runners[c.runnerID]
+		if runner != nil && runner.static {
+			if healthy {
+				runner.Status = "ready"
+			} else {
+				runner.Status = "unavailable"
+				for sessionID := range runner.sessions {
+					runner.releaseSessionLocked(sessionID)
+				}
+			}
+		}
+		r.mu.Unlock()
+	}
+}
+
+func (r *LiveRunnerRegistry) staticRunnerHealthy(healthURL string, healthyStatus int) bool {
+	resp, err := r.healthClient.Get(healthURL)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == healthyStatus
 }
 
 func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
