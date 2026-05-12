@@ -33,8 +33,9 @@ const (
 )
 
 const (
-	LiveRunnerModePersistent = "persistent"
-	LiveRunnerModeSingleShot = "single_shot"
+	LiveRunnerModePersistent      = "persistent"
+	LiveRunnerModeSingleShot      = "single-shot"
+	liveRunnerModeSingleShotAlias = "single_shot"
 )
 
 var liveRunnerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
@@ -475,6 +476,9 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 	}
 	if req.Mode == "" {
 		req.Mode = LiveRunnerModePersistent
+	}
+	if req.Mode == liveRunnerModeSingleShotAlias {
+		req.Mode = LiveRunnerModeSingleShot
 	}
 	if req.Mode != LiveRunnerModePersistent && req.Mode != LiveRunnerModeSingleShot {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("mode must be %q or %q", LiveRunnerModePersistent, LiveRunnerModeSingleShot)

@@ -202,6 +202,21 @@ func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_HeartbeatSingleShotModeAlias(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-single-shot-alias")
+	req.Mode = "single_shot"
+	resp := liveRunnerTestRegister(t, registry, req)
+
+	mode, err := registry.RunnerMode(resp.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != LiveRunnerModeSingleShot {
+		t.Fatalf("expected mode %q, got %q", LiveRunnerModeSingleShot, mode)
+	}
+}
+
 func TestLiveRunnerRegistry_InvalidMode(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-invalid-mode")
