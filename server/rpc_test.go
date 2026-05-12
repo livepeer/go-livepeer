@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	gonet "net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 	"pgregory.net/rapid"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -94,6 +98,58 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	}
 	url, _ := url.Parse(r.serviceURI)
 	return url
+}
+
+func TestStartOrchestratorClientHTTP(t *testing.T) {
+	listener, err := gonet.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	orchRPC := grpc.NewServer()
+	orch := &stubOrchestrator{
+		offchain:   true,
+		serviceURI: "http://" + listener.Addr().String(),
+	}
+	lp := &lphttp{
+		orchestrator: orch,
+		orchRPC:      orchRPC,
+		transRPC:     http.NewServeMux(),
+	}
+	net.RegisterOrchestratorServer(orchRPC, lp)
+
+	srv := &http.Server{
+		Handler: h2c.NewHandler(lp, &http2.Server{}),
+	}
+	go func() {
+		_ = srv.Serve(listener)
+	}()
+	defer srv.Shutdown(context.Background())
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	client, conn, err := startOrchestratorClient(ctx, orch.ServiceURI())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = client.Ping(ctx, &net.PingPong{Value: []byte("ping")})
+	require.NoError(t, err)
+}
+
+func TestParseHTTPAddrScheme(t *testing.T) {
+	addr, listenerTLS, err := parseHTTPAddr("http://:8935")
+	require.NoError(t, err)
+	require.Equal(t, ":8935", addr)
+	require.False(t, listenerTLS)
+
+	addr, listenerTLS, err = parseHTTPAddr("https://127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:8935", addr)
+	require.True(t, listenerTLS)
+
+	addr, listenerTLS, err = parseHTTPAddr("127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:8935", addr)
+	require.True(t, listenerTLS)
 }
 
 func (r *stubOrchestrator) Nodes() []string {

@@ -2208,7 +2208,10 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 			// special value to signal this node is not to be used for work
 			return url.Parse("")
 		}
-		return url.ParseRequestURI("https://" + serviceAddr)
+		if !strings.HasPrefix(serviceAddr, "http://") && !strings.HasPrefix(serviceAddr, "https://") {
+			serviceAddr = "https://" + serviceAddr
+		}
+		return url.ParseRequestURI(serviceAddr)
 	}
 
 	// Infer address

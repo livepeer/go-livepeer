@@ -13,8 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/byoc"
@@ -255,21 +258,54 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	//API for dynamic capabilities
 	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
 
-	cert, key, err := getCert(orch.ServiceURI(), workDir)
+	stopTrickle := lp.trickleSrv.Start()
+	defer stopTrickle()
+
+	bind, listenerTLS, err := parseHTTPAddr(bind)
 	if err != nil {
 		return err
 	}
 
-	stopTrickle := lp.trickleSrv.Start()
-	defer stopTrickle()
-
-	glog.Info("Listening for RPC on ", bind)
+	scheme := "https"
+	handler := http.Handler(&lp)
+	if !listenerTLS {
+		scheme = "http"
+		handler = h2c.NewHandler(&lp, &http2.Server{})
+	}
+	glog.Infof("Listening for RPC on %s://%s", scheme, bind)
 	srv := http.Server{
 		Addr:        bind,
-		Handler:     &lp,
+		Handler:     handler,
 		IdleTimeout: HTTPIdleTimeout,
 	}
+	if !listenerTLS {
+		return srv.ListenAndServe()
+	}
+
+	cert, key, err := getCert(orch.ServiceURI(), workDir)
+	if err != nil {
+		return err
+	}
 	return srv.ListenAndServeTLS(cert, key)
+}
+
+func parseHTTPAddr(addr string) (string, bool, error) {
+	if !strings.Contains(addr, "://") {
+		return addr, true, nil
+	}
+
+	uri, err := url.Parse(addr)
+	if err != nil {
+		return "", false, err
+	}
+	if uri.Scheme != "http" && uri.Scheme != "https" {
+		return "", false, fmt.Errorf("unsupported -httpAddr scheme %q", uri.Scheme)
+	}
+	if uri.Path != "" && uri.Path != "/" {
+		return "", false, fmt.Errorf("-httpAddr must not include a path")
+	}
+
+	return uri.Host, uri.Scheme != "http", nil
 }
 
 // CheckOrchestratorAvailability - the broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator
@@ -349,8 +385,12 @@ func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
 
 func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
 	clog.V(common.DEBUG).Infof(ctx, "Connecting RPC to uri=%v", uri)
+	transportCredentials := credentials.NewTLS(tlsConfig)
+	if uri.Scheme == "http" {
+		transportCredentials = insecure.NewCredentials()
+	}
 	conn, err := grpc.Dial(uri.Host,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithTransportCredentials(transportCredentials),
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
