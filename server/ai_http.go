@@ -380,6 +380,7 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 		respondWithError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	sessionControlURL := h.orchestrator.ServiceURI().JoinPath("runner", runnerID, "session", sessionID).String()
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.Out.URL.Scheme = target.Scheme
@@ -391,6 +392,7 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 			req.Out.Header.Set("Livepeer-Runner-Route", runnerID)
 			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
 			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
+			req.Out.Header.Set("Livepeer-Session-Control", sessionControlURL)
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
 			respondWithError(w, err.Error(), http.StatusBadGateway)

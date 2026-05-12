@@ -497,13 +497,14 @@ func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 }
 
 func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
-	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken string
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken, gotSessionControl string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
 		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
 		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
+		gotSessionControl = r.Header.Get("Livepeer-Session-Control")
 		w.Header().Set("X-Upstream", "ok")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("proxied"))
@@ -526,6 +527,7 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	require.Equal(t, "runner-1", gotRunnerRoute)
 	require.Equal(t, sessionID, gotSessionID)
 	require.NotEmpty(t, gotSessionToken)
+	require.Equal(t, "http://localhost:1234/runner/runner-1/session/"+sessionID, gotSessionControl)
 }
 
 func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
@@ -554,13 +556,14 @@ func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
 }
 
 func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
-	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken, gotMethod, gotBody string
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken, gotSessionControl, gotMethod, gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
 		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
 		gotSessionID = r.Header.Get("Livepeer-Session-Id")
 		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
+		gotSessionControl = r.Header.Get("Livepeer-Session-Control")
 		gotMethod = r.Method
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -587,6 +590,7 @@ func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
 	require.Equal(t, "runner-1", gotRunnerRoute)
 	require.NotEmpty(t, gotSessionID)
 	require.NotEmpty(t, gotSessionToken)
+	require.Equal(t, "http://localhost:1234/runner/runner-1/session/"+gotSessionID, gotSessionControl)
 	require.Equal(t, http.MethodPost, gotMethod)
 	require.Equal(t, `{"prompt":"hi"}`, gotBody)
 
