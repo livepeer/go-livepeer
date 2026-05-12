@@ -232,6 +232,39 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	}
 }
 
+func TestLiveRunnerRegistry_RegisterStaticRunnersResolvesHealthPath(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "path-health",
+		RunnerURL: healthSrv.URL,
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		PriceInfo: LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"},
+		HealthURL: "/health",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(resp.Runners))
+	}
+	if want := healthSrv.URL + "/health"; resp.Runners[0].HealthURL != want {
+		t.Fatalf("expected health URL %q, got %q", want, resp.Runners[0].HealthURL)
+	}
+	if !resp.Runners[0].Healthy {
+		t.Fatal("expected health path to be checked against runner URL")
+	}
+}
+
 func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

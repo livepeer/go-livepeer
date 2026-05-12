@@ -277,8 +277,31 @@ func normalizeStaticLiveRunnerConfig(cfg StaticLiveRunnerConfig) (StaticLiveRunn
 		if cfg.Runners[i].HealthyStatusCode == 0 {
 			cfg.Runners[i].HealthyStatusCode = defaultLiveRunnerHealthStatusCode
 		}
+		healthURL, err := staticRunnerHealthURL(cfg.Runners[i].RunnerURL, cfg.Runners[i].HealthURL)
+		if err != nil {
+			return StaticLiveRunnerConfig{}, fmt.Errorf("runners[%d]: %v", i, err)
+		}
+		cfg.Runners[i].HealthURL = healthURL
 	}
 	return cfg, nil
+}
+
+func staticRunnerHealthURL(runnerURL, healthURL string) (string, error) {
+	u, err := url.Parse(healthURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid health_url")
+	}
+	if u.IsAbs() {
+		return healthURL, nil
+	}
+	if u.Path == "" || u.Path[0] != '/' || u.Host != "" {
+		return healthURL, nil
+	}
+	base, err := url.ParseRequestURI(runnerURL)
+	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
+		return "", fmt.Errorf("invalid runner_url")
+	}
+	return strings.TrimRight(runnerURL, "/") + healthURL, nil
 }
 
 func (g *LiveRunnerGPU) UnmarshalJSON(data []byte) error {
