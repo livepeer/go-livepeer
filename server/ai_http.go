@@ -84,15 +84,18 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/scope", lp.StartScope())
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
-	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
+	// Internal runner endpoints
 	lp.transRPC.HandleFunc("POST /runners/heartbeat", lp.LiveRunnerHeartbeat)
 	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
 	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/channels", lp.CreateLiveRunnerTrickleChannel)
 	lp.transRPC.HandleFunc("DELETE /runner/{runner_id}/session/{session_id}/channels", lp.DeleteLiveRunnerTrickleChannels)
+	// Public client endpoints
+	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/app/{app_path...}", lp.ProxyLiveRunnerSingleShot)
+
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -345,7 +348,7 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if mode != runner.LiveRunnerModeSingleShot {
-		respondWithError(w, "runner is not configured for single-shot mode", http.StatusBadRequest)
+		respondWithError(w, "runner is not single-shot", http.StatusBadRequest)
 		return
 	}
 
@@ -356,7 +359,7 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 	}
 	defer func() {
 		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
-			slog.Error("error releasing single-shot live runner session", "runner_id", runnerID, "session_id", sessionID, "err", err)
+			slog.Error("error releasing single-shot session", "runner_id", runnerID, "session_id", sessionID, "err", err)
 		}
 	}()
 
