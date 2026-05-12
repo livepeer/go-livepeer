@@ -176,6 +176,43 @@ func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_DefaultModeWhenUnset(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner_default_mode"))
+
+	mode, err := registry.RunnerMode(resp.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != LiveRunnerModePersistent {
+		t.Fatalf("expected default mode %q, got %q", LiveRunnerModePersistent, mode)
+	}
+}
+
+func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	req := liveRunnerTestHeartbeat("runner-single-shot")
+	req.Mode = LiveRunnerModeSingleShot
+	resp := liveRunnerTestRegister(t, registry, req)
+
+	mode, err := registry.RunnerMode(resp.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != LiveRunnerModeSingleShot {
+		t.Fatalf("expected mode %q, got %q", LiveRunnerModeSingleShot, mode)
+	}
+}
+
+func TestLiveRunnerRegistry_InvalidMode(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	req := liveRunnerTestHeartbeat("runner-invalid-mode")
+	req.Mode = "invalid"
+	if _, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret); !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "mode") {
+		t.Fatalf("expected invalid mode bad request, got %v", err)
+	}
+}
+
 func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing.T) {
 	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":"https://runner.example.com/health","gpu":-1}]}`))
 	if err != nil {
@@ -189,6 +226,45 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	}
 	if cfg.Runners[0].GPU == nil || cfg.Runners[0].GPU.ID != "-1" {
 		t.Fatalf("expected numeric gpu fallback, got %+v", cfg.Runners[0].GPU)
+	}
+	if cfg.Runners[0].Mode != "" {
+		t.Fatalf("expected raw static config mode to remain empty before registration, got %q", cfg.Runners[0].Mode)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-single-shot",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Mode:      LiveRunnerModeSingleShot,
+		Capacity:  1,
+		PriceInfo: LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "WEI",
+		},
+		HealthURL: healthSrv.URL,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp.Runners[0].RunnerID
+	if resp.Runners[0].Mode != LiveRunnerModeSingleShot {
+		t.Fatalf("expected registration mode %q, got %q", LiveRunnerModeSingleShot, resp.Runners[0].Mode)
+	}
+	mode, err := registry.RunnerMode(runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != LiveRunnerModeSingleShot {
+		t.Fatalf("expected runner mode %q, got %q", LiveRunnerModeSingleShot, mode)
 	}
 }
 

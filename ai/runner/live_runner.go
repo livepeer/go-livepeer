@@ -32,6 +32,11 @@ const (
 	liveRunnerSeedBytes                = 32
 )
 
+const (
+	LiveRunnerModePersistent = "persistent"
+	LiveRunnerModeSingleShot = "single_shot"
+)
+
 var liveRunnerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 type RunnerError struct {
@@ -64,6 +69,7 @@ type LiveRunnerHeartbeatRequest struct {
 	RunnerURL string              `json:"runner_url"`
 	Version   string              `json:"version,omitempty"`
 	Status    string              `json:"status,omitempty"`
+	Mode      string              `json:"mode,omitempty"`
 	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
 	App       string              `json:"app"`
 	Capacity  int                 `json:"capacity"`
@@ -78,6 +84,7 @@ type StaticLiveRunnerConfigEntry struct {
 	Label             string              `json:"label,omitempty"`
 	RunnerURL         string              `json:"runner_url"`
 	Version           string              `json:"version,omitempty"`
+	Mode              string              `json:"mode,omitempty"`
 	GPU               *LiveRunnerGPU      `json:"gpu,omitempty"`
 	App               string              `json:"app"`
 	Capacity          int                 `json:"capacity"`
@@ -91,6 +98,7 @@ type StaticLiveRunnerRegistration struct {
 	Label             string `json:"label,omitempty"`
 	App               string `json:"app"`
 	RunnerURL         string `json:"runner_url"`
+	Mode              string `json:"mode,omitempty"`
 	HealthURL         string `json:"health_url"`
 	HealthyStatusCode int    `json:"healthy_status_code"`
 	Healthy           bool   `json:"healthy"`
@@ -113,6 +121,7 @@ type LiveRunnerDiscoveryRunner struct {
 	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
 	App       string              `json:"app"`
 	Version   string              `json:"version,omitempty"`
+	Mode      string              `json:"mode,omitempty"`
 	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
 }
 
@@ -375,6 +384,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 			Label:             req.Label,
 			App:               req.App,
 			RunnerURL:         req.RunnerURL,
+			Mode:              req.Mode,
 			HealthURL:         entry.HealthURL,
 			HealthyStatusCode: entry.HealthyStatusCode,
 			Healthy:           health[i],
@@ -401,6 +411,7 @@ func staticRunnerRequest(entry StaticLiveRunnerConfigEntry) (LiveRunnerHeartbeat
 		Label:     entry.Label,
 		RunnerURL: entry.RunnerURL,
 		Version:   entry.Version,
+		Mode:      entry.Mode,
 		GPU:       entry.GPU,
 		App:       entry.App,
 		Capacity:  entry.Capacity,
@@ -427,6 +438,12 @@ func normalizeLiveRunnerRequest(runnerID string, req LiveRunnerHeartbeatRequest)
 	}
 	if req.Status != strings.ToLower(strings.TrimSpace(req.Status)) {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("status must be lowercase and trimmed")
+	}
+	if req.Mode == "" {
+		req.Mode = LiveRunnerModePersistent
+	}
+	if req.Mode != LiveRunnerModePersistent && req.Mode != LiveRunnerModeSingleShot {
+		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("mode must be %q or %q", LiveRunnerModePersistent, LiveRunnerModeSingleShot)
 	}
 	if req.Capacity < 0 {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("capacity must be >= 0")
@@ -495,6 +512,21 @@ func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
 	}
 	runner.releaseSessionLocked(sessionID)
 	return nil
+}
+
+func (r *LiveRunnerRegistry) RunnerMode(runnerID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if runner.Mode == "" {
+		return LiveRunnerModePersistent, nil
+	}
+	return runner.Mode, nil
 }
 
 func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string) (string, error) {
@@ -803,6 +835,7 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 		GPU:       cloneLiveRunnerGPU(runner.GPU),
 		App:       runner.App,
 		Version:   runner.Version,
+		Mode:      runner.Mode,
 		PriceInfo: priceInfo,
 	}
 }

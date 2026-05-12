@@ -92,6 +92,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
+	lp.transRPC.HandleFunc("/apps/{runner_id}/app/{app_path...}", lp.ProxyLiveRunnerSingleShot)
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -103,6 +104,7 @@ type liveRunnerManager interface {
 	Runners() []runner.LiveRunnerDiscoveryRunner
 	ReserveSession(runnerID string) (string, string, error)
 	ReleaseSession(runnerID, sessionID string) error
+	RunnerMode(runnerID string) (string, error)
 	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
 	SessionTokenForSession(runnerID, sessionID string) (string, error)
 	ValidSessionToken(runnerID, sessionID, token string) error
@@ -326,6 +328,47 @@ func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint)
+}
+
+func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	runnerID := r.PathValue("runner_id")
+	mode, err := manager.RunnerMode(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if mode != runner.LiveRunnerModeSingleShot {
+		respondWithError(w, "runner is not configured for single-shot mode", http.StatusBadRequest)
+		return
+	}
+
+	sessionID, endpoint, err := manager.ReserveSession(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	defer func() {
+		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
+			slog.Error("error releasing single-shot live runner session", "runner_id", runnerID, "session_id", sessionID, "err", err)
+		}
+	}()
+
+	sessionToken, err := manager.SessionTokenForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint)
+}
+
+func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerID, sessionID, sessionToken, endpoint string) {
 	target, err := url2.Parse(endpoint)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusBadGateway)

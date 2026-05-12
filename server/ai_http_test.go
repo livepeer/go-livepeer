@@ -155,7 +155,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
-		RunnerID:  "runner-1",
+		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
 		Status:    "ready",
@@ -217,7 +217,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
-		RunnerID:  "runner-1",
+		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
 		Status:    "ready",
@@ -249,7 +249,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 func TestLiveRunnerHeartbeat(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
-		RunnerID:  "runner-1",
+		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
@@ -269,7 +269,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp runner.LiveRunnerHeartbeatResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, "runner-1", resp.RunnerID)
+	require.Equal(t, t.Name(), resp.RunnerID)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
 	require.NotEmpty(t, resp.HeartbeatSecret)
 
@@ -287,7 +287,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var nextResp runner.LiveRunnerHeartbeatResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &nextResp))
-	require.Equal(t, "runner-1", nextResp.RunnerID)
+	require.Equal(t, t.Name(), nextResp.RunnerID)
 	require.Empty(t, nextResp.HeartbeatSecret)
 }
 
@@ -306,7 +306,7 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 	require.NoError(t, startAIServer(lp))
 
 	body, err := json.Marshal(runner.LiveRunnerHeartbeatRequest{
-		RunnerID:  "runner-1",
+		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
@@ -331,14 +331,14 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	body := []byte(`{
-		"runner_id":"runner-1",
+	body := []byte(fmt.Sprintf(`{
+		"runner_id":%q,
 		"runner_url":"https://runner.example.com",
 		"price_info":{"price_per_unit":1,"pixels_per_unit":1},
 		"app":"live-video-to-video/scope",
 		"capacity":1,
 		"pricing":{"usd_per_hour":10}
-	}`)
+	}`, t.Name()))
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
@@ -381,7 +381,7 @@ func TestLiveRunnerDiscoverySupportedWithoutManagerWhenServerlessWorkerPresent(t
 
 func TestLiveRunnerReserveSession(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
@@ -396,7 +396,7 @@ func TestLiveRunnerReserveSession(t *testing.T) {
 
 func TestLiveRunnerReserveSessionNoCapacity(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
@@ -411,7 +411,7 @@ func TestLiveRunnerReserveSessionNoCapacity(t *testing.T) {
 
 func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -440,7 +440,7 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	defer upstream.Close()
 
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", upstream.URL+"/base", 1)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base"})
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -469,7 +469,7 @@ func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
 	defer upstream.Close()
 
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", upstream.URL, 1)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL})
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -482,9 +482,100 @@ func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
 	require.Equal(t, `{"prompt":"hi"}`, gotBody)
 }
 
+func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
+	var gotPath, gotQuery, gotRunnerID, gotSessionID, gotSessionToken, gotMethod, gotBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotRunnerID = r.Header.Get("Livepeer-Runner-Id")
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
+		gotMethod = r.Method
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		gotBody = string(body)
+		w.Header().Set("X-Upstream", "ok")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("single-shot"))
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base", Mode: runner.LiveRunnerModeSingleShot})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/app/v1/foo/bar?x=1&y=two", strings.NewReader(`{"prompt":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "single-shot", w.Body.String())
+	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
+	require.Equal(t, "/base/v1/foo/bar", gotPath)
+	require.Equal(t, "x=1&y=two", gotQuery)
+	require.Equal(t, "runner-1", gotRunnerID)
+	require.NotEmpty(t, gotSessionID)
+	require.NotEmpty(t, gotSessionToken)
+	require.Equal(t, http.MethodPost, gotMethod)
+	require.Equal(t, `{"prompt":"hi"}`, gotBody)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/apps/runner-1/app/next", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+}
+
+func TestLiveRunnerSingleShotProxyNoCapacityWhileRequestInFlight(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL, Mode: runner.LiveRunnerModeSingleShot})
+
+	firstDone := make(chan int, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/app/hold", nil)
+		lp.ServeHTTP(w, req)
+		firstDone <- w.Code
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first single-shot request")
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/app/blocked", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	close(release)
+	require.Equal(t, http.StatusOK, <-firstDone)
+}
+
+func TestLiveRunnerSingleShotProxyRejectsPersistentRunner(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/app/v1/foo", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "single-shot")
+}
+
 func TestLiveRunnerProxyRejectsInvalidSession(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/session/missing/app/v1/foo", nil)
@@ -495,7 +586,7 @@ func TestLiveRunnerProxyRejectsInvalidSession(t *testing.T) {
 
 func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -532,7 +623,7 @@ func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.
 	node.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
 	require.NoError(t, startAIServer(lp))
 
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -548,7 +639,7 @@ func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.
 
 func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -570,7 +661,7 @@ func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
 
 func TestLiveRunnerCreateTrickleChannelRejectsInvalidSessionAndName(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
 	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/missing/channels", `{"channels":[{"name":"valid"}]}`)
@@ -586,7 +677,7 @@ func TestLiveRunnerCreateTrickleChannelRejectsInvalidSessionAndName(t *testing.T
 
 func TestLiveRunnerTrickleChannelRequiresAuth(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	// Check missing session token.
@@ -606,7 +697,7 @@ func TestLiveRunnerTrickleChannelRequiresAuth(t *testing.T) {
 
 func TestLiveRunnerTrickleChannelRejectsTokenForDifferentSession(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 2)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{Capacity: 2})
 	sessionID1 := reserveLiveRunnerSession(t, lp, "runner-1")
 	sessionID2 := reserveLiveRunnerSession(t, lp, "runner-1")
 	require.NotEqual(t, sessionID1, sessionID2)
@@ -626,7 +717,7 @@ func TestLiveRunnerTrickleChannelRejectsTokenForDifferentSession(t *testing.T) {
 
 func TestLiveRunnerTrickleChannelBatchLimit(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	createReq := liveRunnerTrickleChannelsRequest{Channels: make([]liveRunnerTrickleChannelRequest, maxLiveRunnerTrickleChannelsPerRequest+1)}
@@ -656,7 +747,7 @@ func TestLiveRunnerTrickleChannelBatchLimit(t *testing.T) {
 
 func TestLiveRunnerDeleteTrickleChannel(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -680,7 +771,7 @@ func TestLiveRunnerDeleteTrickleChannel(t *testing.T) {
 
 func TestLiveRunnerStopSessionClosesTrickleChannels(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	registerLiveRunnerForSession(t, lp, "runner-1", "https://runner.example.com", 1)
+	registerLiveRunnerForSession(t, lp, nil)
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
@@ -752,14 +843,52 @@ func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
 	return lp
 }
 
-func registerLiveRunnerForSession(t *testing.T, lp *lphttp, runnerID, runnerURL string, capacity int) {
+type liveRunnerRegistrationOptions struct {
+	RunnerID  string
+	RunnerURL string
+	Capacity  int
+	Mode      string
+}
+
+func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegistrationOptions) {
 	t.Helper()
+	if lp == nil {
+		require.FailNow(t, "live runner lphttp is required")
+	}
+	if opts == nil {
+		opts = &liveRunnerRegistrationOptions{}
+	}
+	runnerID := opts.RunnerID
+	if runnerID == "" {
+		runnerID = "runner-1"
+	}
+	if runnerID != strings.TrimSpace(runnerID) || strings.Contains(runnerID, "/") {
+		require.FailNow(t, "invalid live runner ID", "runnerID=%q", runnerID)
+	}
+	runnerURL := opts.RunnerURL
+	if runnerURL == "" {
+		runnerURL = "https://runner.example.com"
+	}
+	if strings.TrimSpace(runnerURL) == "" {
+		require.FailNow(t, "live runner URL is required")
+	}
+	capacity := opts.Capacity
+	if capacity == 0 {
+		capacity = 1
+	}
+	if capacity < 0 {
+		require.FailNow(t, "live runner capacity must be non-negative", "capacity=%d", capacity)
+	}
+	if opts.Mode != "" && opts.Mode != runner.LiveRunnerModePersistent && opts.Mode != runner.LiveRunnerModeSingleShot {
+		require.FailNow(t, "invalid live runner mode", "mode=%q", opts.Mode)
+	}
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  runnerID,
 		RunnerURL: runnerURL,
 		Status:    "ready",
+		Mode:      opts.Mode,
 		App:       "live-video-to-video/scope",
 		Capacity:  capacity,
 		PriceInfo: runner.LiveRunnerPriceInfo{
