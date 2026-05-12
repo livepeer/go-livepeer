@@ -260,7 +260,7 @@ func TestLiveRunnerRegistry_OnchainAcceptsWEIPrice(t *testing.T) {
 	if len(runners) != 1 {
 		t.Fatalf("expected one runner, got %d", len(runners))
 	}
-	if runners[0].PriceInfo != (LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "WEI"}) {
+	if runners[0].PriceInfo == nil || *runners[0].PriceInfo != (LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "WEI"}) {
 		t.Fatalf("unexpected runner price info: %+v", runners[0].PriceInfo)
 	}
 }
@@ -279,8 +279,8 @@ func TestLiveRunnerRegistry_OffchainIgnoresUSDPriceWatcher(t *testing.T) {
 	if len(runners) != 1 {
 		t.Fatalf("expected one runner, got %d", len(runners))
 	}
-	if runners[0].PriceInfo != req.PriceInfo {
-		t.Fatalf("expected offchain price to be preserved without conversion, got %+v", runners[0].PriceInfo)
+	if runners[0].PriceInfo != nil {
+		t.Fatalf("expected offchain discovery price to be suppressed, got %+v", runners[0].PriceInfo)
 	}
 }
 
@@ -538,8 +538,11 @@ func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
 		t.Fatalf("expected one runner, got %d", len(runners))
 	}
 	runner := runners[0]
-	if runner.Endpoint != "https://runner.example.com" {
-		t.Fatalf("unexpected endpoint: %s", runner.Endpoint)
+	if runner.RunnerID != "runner_discovery_1" {
+		t.Fatalf("unexpected runner id: %s", runner.RunnerID)
+	}
+	if runner.URL != "https://runner.example.com" {
+		t.Fatalf("unexpected url: %s", runner.URL)
 	}
 	if runner.GPU == nil || runner.GPU.Name != "NVIDIA L40S" {
 		t.Fatalf("unexpected gpu: %+v", runner.GPU)
@@ -547,7 +550,7 @@ func TestLiveRunnerRegistry_RunnersDiscoveryShape(t *testing.T) {
 	if runner.App != "new-ai-pipeline/model-a" {
 		t.Fatalf("unexpected app: %s", runner.App)
 	}
-	if runner.PriceInfo != (LiveRunnerPriceInfo{}) {
+	if runner.PriceInfo != nil {
 		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
 	}
 	if runner.Version != "1.2.3" {
@@ -569,6 +572,9 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 	if len(runners) != 1 {
 		t.Fatalf("expected one runner, got %d", len(runners))
 	}
+	if runners[0].PriceInfo == nil {
+		t.Fatal("expected runner price info")
+	}
 	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
 	expectedFixed, err := common.PriceToFixed(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
 	if err != nil {
@@ -583,8 +589,8 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 	}
 }
 
-func TestLiveRunnerRegistry_SharedEndpointAppKeepsPerRunnerPrices(t *testing.T) {
-	registry := newLiveRunnerTestRegistry()
+func TestLiveRunnerRegistry_SharedURLAppKeepsPerRunnerPrices(t *testing.T) {
+	registry := newOnchainLiveRunnerTestRegistry()
 
 	req1 := liveRunnerTestHeartbeat("runner-1")
 	req1.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"}
@@ -599,6 +605,9 @@ func TestLiveRunnerRegistry_SharedEndpointAppKeepsPerRunnerPrices(t *testing.T) 
 	runners := registry.Runners()
 	if len(runners) != 1 {
 		t.Fatalf("expected one remaining runner, got %d", len(runners))
+	}
+	if runners[0].PriceInfo == nil {
+		t.Fatal("expected runner price info")
 	}
 	if got := runners[0].PriceInfo.PricePerUnit; got != 20 {
 		t.Fatalf("expected remaining runner price to stay isolated, got %d", got)

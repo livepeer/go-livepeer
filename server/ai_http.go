@@ -431,7 +431,12 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 
 	var runners []runner.LiveRunnerDiscoveryRunner
 	if ok {
-		runners = append(runners, manager.Runners()...)
+		for _, discoveryRunner := range manager.Runners() {
+			if discoveryRunner.Mode == runner.LiveRunnerModeSingleShot && address != "" && discoveryRunner.RunnerID != "" {
+				discoveryRunner.URL = h.orchestrator.ServiceURI().JoinPath("apps", discoveryRunner.RunnerID, "app").String()
+			}
+			runners = append(runners, discoveryRunner)
+		}
 	}
 	if hasServerlessWorker {
 		pipeline := "live-video-to-video"
@@ -459,14 +464,14 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
-				var priceInfo runner.LiveRunnerPriceInfo
+				var priceInfo *runner.LiveRunnerPriceInfo
 				price := h.node.GetBasePriceForCap("default", capability, modelID)
 				if price != nil {
 					priceInt64, err := common.PriceToInt64(price)
 					if err != nil {
 						glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
 					} else {
-						priceInfo = runner.LiveRunnerPriceInfo{
+						priceInfo = &runner.LiveRunnerPriceInfo{
 							PricePerUnit:  priceInt64.Num().Int64(),
 							PixelsPerUnit: priceInt64.Denom().Int64(),
 							Unit:          "WEI",
@@ -475,7 +480,7 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 				}
 
 				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
-					Endpoint:  address,
+					URL:       address,
 					GPU:       &runner.LiveRunnerGPU{Name: "H100"},
 					App:       pipeline + "/" + modelID,
 					Version:   versionString,

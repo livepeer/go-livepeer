@@ -151,9 +151,6 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
-	prevWatcher := core.PriceFeedWatcher
-	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
-	defer func() { core.PriceFeedWatcher = prevWatcher }()
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
@@ -179,9 +176,77 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 1)
-	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].Endpoint)
+	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
 	require.Equal(t, "live-video-to-video/scope", resp[0].Runners[0].App)
+	require.NotContains(t, w.Body.String(), "endpoint")
+	require.NotContains(t, w.Body.String(), "price_info")
+}
+
+func TestLiveRunnerDiscoverySingleShotReturnsProxiedURL(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  t.Name(),
+		RunnerURL: "https://runner.example.com",
+		Status:    "ready",
+		Mode:      runner.LiveRunnerModeSingleShot,
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+	}, lp.orchestrator.RegistrationSecret())
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Len(t, resp[0].Runners, 1)
+	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/app", resp[0].Runners[0].URL)
+	require.Equal(t, runner.LiveRunnerModeSingleShot, resp[0].Runners[0].Mode)
+	require.NotContains(t, w.Body.String(), "endpoint")
+	require.NotContains(t, w.Body.String(), "price_info")
+}
+
+func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	t.Cleanup(manager.Stop)
+	lp.node.LiveRunnerManager = manager
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  t.Name(),
+		RunnerURL: "https://runner.example.com",
+		Version:   "1.2.3",
+		Status:    "ready",
+		App:       "live-video-to-video/scope",
+		Capacity:  2,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+			Unit:          "USD",
+		},
+	}, lp.orchestrator.RegistrationSecret())
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Len(t, resp[0].Runners, 1)
+	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
+	require.NotNil(t, resp[0].Runners[0].PriceInfo)
 	require.NotZero(t, resp[0].Runners[0].PriceInfo.PricePerUnit)
+	require.Contains(t, w.Body.String(), "price_info")
 }
 
 func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
@@ -200,11 +265,12 @@ func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
 	require.Len(t, resp[0].Runners, 1)
 
 	discoveryRunner := resp[0].Runners[0]
-	require.Equal(t, "http://localhost:1234", discoveryRunner.Endpoint)
+	require.Equal(t, "http://localhost:1234", discoveryRunner.URL)
 	require.NotNil(t, discoveryRunner.GPU)
 	require.Equal(t, "H100", discoveryRunner.GPU.Name)
 	require.Equal(t, "live-video-to-video/scope", discoveryRunner.App)
 	require.Equal(t, "serverless-1.0.0", discoveryRunner.Version)
+	require.NotNil(t, discoveryRunner.PriceInfo)
 	require.Equal(t, int64(7), discoveryRunner.PriceInfo.PricePerUnit)
 	require.Equal(t, int64(1), discoveryRunner.PriceInfo.PixelsPerUnit)
 }
@@ -241,8 +307,8 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 2)
-	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].Endpoint)
-	require.Equal(t, "http://localhost:1234", resp[0].Runners[1].Endpoint)
+	require.Equal(t, "https://runner.example.com", resp[0].Runners[0].URL)
+	require.Equal(t, "http://localhost:1234", resp[0].Runners[1].URL)
 	require.Equal(t, "H100", resp[0].Runners[1].GPU.Name)
 }
 

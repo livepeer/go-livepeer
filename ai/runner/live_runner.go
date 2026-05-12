@@ -118,12 +118,13 @@ type LiveRunnerHeartbeatResponse struct {
 }
 
 type LiveRunnerDiscoveryRunner struct {
-	Endpoint  string              `json:"endpoint"`
-	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
-	App       string              `json:"app"`
-	Version   string              `json:"version,omitempty"`
-	Mode      string              `json:"mode,omitempty"`
-	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
+	RunnerID  string               `json:"-"`
+	URL       string               `json:"url"`
+	GPU       *LiveRunnerGPU       `json:"gpu,omitempty"`
+	App       string               `json:"app"`
+	Version   string               `json:"version,omitempty"`
+	Mode      string               `json:"mode,omitempty"`
+	PriceInfo *LiveRunnerPriceInfo `json:"price_info,omitempty"`
 }
 
 type LiveRunnerTrickleChannel struct {
@@ -141,6 +142,7 @@ type liveRunner struct {
 	static          bool
 	healthURL       string
 	healthStatus    int
+	offchain        bool
 	sessions        map[string]*liveRunnerSession
 	priceSource     LiveRunnerPriceInfo
 	converter       *core.AutoConvertedPrice
@@ -253,6 +255,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		runner = &liveRunner{
 			seed:            seed,
 			heartbeatSecret: heartbeatSecret,
+			offchain:        r.offchain,
 			sessions:        make(map[string]*liveRunnerSession),
 		}
 		r.runners[req.RunnerID] = runner
@@ -264,7 +267,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	}
 	runner.LiveRunnerHeartbeatRequest = req
 	runner.LastHeartbeat = time.Now()
-	runner.updatePriceConverterLocked(r.offchain)
+	runner.updatePriceConverterLocked()
 
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
@@ -399,6 +402,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 			staticRunner = &liveRunner{
 				seed:     newRunnerSeed(),
 				static:   true,
+				offchain: r.offchain,
 				sessions: make(map[string]*liveRunnerSession),
 			}
 			staticRunner.RunnerID = runnerID
@@ -418,9 +422,10 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.LiveRunnerHeartbeatRequest = req
 		staticRunner.LastHeartbeat = time.Now()
 		staticRunner.static = true
+		staticRunner.offchain = r.offchain
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
-		staticRunner.updatePriceConverterLocked(r.offchain)
+		staticRunner.updatePriceConverterLocked()
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
@@ -880,18 +885,23 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 			priceInfo = converted
 		}
 	}
+	var discoveryPriceInfo *LiveRunnerPriceInfo
+	if !runner.offchain && priceInfo != (LiveRunnerPriceInfo{}) {
+		discoveryPriceInfo = &priceInfo
+	}
 	return LiveRunnerDiscoveryRunner{
-		Endpoint:  runner.RunnerURL,
+		RunnerID:  runner.RunnerID,
+		URL:       runner.RunnerURL,
 		GPU:       cloneLiveRunnerGPU(runner.GPU),
 		App:       runner.App,
 		Version:   runner.Version,
 		Mode:      runner.Mode,
-		PriceInfo: priceInfo,
+		PriceInfo: discoveryPriceInfo,
 	}
 }
 
-func (runner *liveRunner) updatePriceConverterLocked(offchain bool) {
-	if offchain {
+func (runner *liveRunner) updatePriceConverterLocked() {
+	if runner.offchain {
 		return
 	}
 	// Heartbeats call this each time, but converter rebuild work is only done when

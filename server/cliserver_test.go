@@ -269,7 +269,7 @@ func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
 	defer res.Body.Close()
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 	require.Len(t, manager.Runners(), 1)
-	require.Equal(t, "https://runner.example.com", manager.Runners()[0].Endpoint)
+	require.Equal(t, "https://runner.example.com", manager.Runners()[0].URL)
 }
 
 func TestGetEthChainID(t *testing.T) {
