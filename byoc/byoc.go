@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
