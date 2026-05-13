@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "livepeer-byoc": {
+      "command": "python3",
+      "args": [
+        "/Users/qiang.han/Documents/mycodespace/livepeer/go-livepeer/e2e-byoc-test/mcp-server/server-sdk.py"
+      ],
+      "env": {
+        "SDK_URL": "https://livepeer-sdk-service-90265565772.us-central1.run.app"
+      }
+    }
+  }
+}

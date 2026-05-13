@@ -224,6 +224,24 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "invalid job type",
 		},
 		{
+			name: "byoc missing capability constraint",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+					Capability:    uint32(core.Capability_BYOC),
+					Constraint:    "",
+				}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					Type:         RemoteType_BYOC,
+				}
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "missing BYOC capability in OrchestratorInfo price_info.constraint",
+		},
+		{
 			name: "missing pixels without type",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
@@ -319,6 +337,32 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
 		})
 	}
+}
+
+func TestResolvePriceInfo_BYOCUsesCapabilitiesPrices(t *testing.T) {
+	require := require.New(t)
+
+	byocPrice := &net.PriceInfo{
+		PricePerUnit:  9,
+		PixelsPerUnit: 1,
+		Capability:    uint32(core.Capability_BYOC),
+		Constraint:    "acme/model",
+	}
+
+	oInfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  3,
+			PixelsPerUnit: 1,
+		},
+		CapabilitiesPrices: []*net.PriceInfo{
+			byocPrice,
+		},
+	}
+
+	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, ""))
+	require.Same(byocPrice, resolvePriceInfo(oInfo, RemoteType_BYOC, "acme/model"))
+	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_BYOC, "other/model"))
+	require.Same(oInfo.PriceInfo, resolvePriceInfo(oInfo, RemoteType_LiveVideoToVideo, ""))
 }
 
 func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
