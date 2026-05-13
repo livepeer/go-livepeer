@@ -333,7 +333,7 @@ jobs:
 
       - name: Upload release archives to Google Cloud
         id: upload-archives
-        uses: google-github-actions/upload-cloud-storage@v2
+        uses: google-github-actions/upload-cloud-storage@v3
         with:
           path: "releases"
           destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}"
@@ -342,7 +342,7 @@ jobs:
 
       - name: Upload branch manifest file
         id: upload-manifest
-        uses: google-github-actions/upload-cloud-storage@v2
+        uses: google-github-actions/upload-cloud-storage@v3
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
