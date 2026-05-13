@@ -381,6 +381,7 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 
 type stubSenderMonitor struct {
 	maxFloat          *big.Int
+	funds             *big.Int
 	redeemable        chan *redemption
 	queued            []*SignedTicket
 	acceptable        bool
@@ -388,12 +389,14 @@ type stubSenderMonitor struct {
 	maxFloatErr       error
 	validateSenderErr error
 	shouldFail        error
+	deposit           *big.Int
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
 	return &stubSenderMonitor{
 		maxFloat:   big.NewInt(0),
 		redeemable: make(chan *redemption),
+		deposit:    big.NewInt(0),
 	}
 }
 
@@ -431,6 +434,13 @@ func (s *stubSenderMonitor) MaxFloat(_ ethcommon.Address) (*big.Int, error) {
 	}
 
 	return s.maxFloat, nil
+}
+
+func (s *stubSenderMonitor) SenderFunds(_ ethcommon.Address) (*big.Int, error) {
+	if s.funds != nil {
+		return new(big.Int).Set(s.funds), nil
+	}
+	return s.deposit, nil
 }
 
 func (s *stubSenderMonitor) ValidateSender(_ ethcommon.Address) error { return s.validateSenderErr }
