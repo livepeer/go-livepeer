@@ -1,0 +1,176 @@
+# E2E BYOC Test: Real go-livepeer orchestrator+gateway + NaaP containers + remote inference
+#
+# Architecture:
+#   test-client -> gateway(9935) -> orchestrator(8935) -> inference-adapter(9090) -> serverless-proxy(8080) -> fal.ai/mock
+#
+# Usage:
+#   # With mock backend (no API key needed):
+#   docker compose up --build
+#
+#   # With fal.ai:
+#   FAL_KEY=your-key PROVIDER=fal-ai MODEL_ID=fal-ai/flux/dev docker compose --profile fal up --build
+#
+#   # Then test:
+#   ./test-byoc.sh
+
+services:
+  # ============================================
+  # go-livepeer: Combined Orchestrator + Gateway
+  # Runs in OFFCHAIN mode - no LPT, no staking, no tickets
+  # ============================================
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_TAGS: mainnet
+    container_name: byoc_orchestrator
+    command: >
+      -orchestrator
+      -network offchain
+      -serviceAddr byoc_orchestrator:8935
+      -cliAddr 0.0.0.0:7935
+      -orchSecret test-secret-123
+      -v 6
+    ports:
+      - "8935:8935"
+      - "7935:7935"
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:8935"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_TAGS: mainnet
+    container_name: byoc_gateway
+    command: >
+      -gateway
+      -network offchain
+      -orchAddr byoc_orchestrator:8935
+      -httpAddr 0.0.0.0:9935
+      -httpIngest
+      -v 6
+    ports:
+      - "9935:9935"
+    depends_on:
+      orchestrator:
+        condition: service_started
+
+  # ============================================
+  # Mock inference backend (default, no API key needed)
+  # ============================================
+  mock-backend:
+    image: python:3.11-slim
+    container_name: byoc_mock_backend
+    command: >
+      python -c "
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+      import json, time
+
+      class Handler(BaseHTTPRequestHandler):
+          def do_GET(self):
+              if self.path == '/health':
+                  self.send_response(200)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(json.dumps({'status': 'healthy'}).encode())
+              else:
+                  self.send_response(404)
+                  self.end_headers()
+
+          def do_POST(self):
+              content_length = int(self.headers.get('Content-Length', 0))
+              body = self.rfile.read(content_length)
+              request = json.loads(body) if body else {}
+              prompt = request.get('prompt', request.get('input', {}).get('prompt', 'no prompt'))
+
+              self.send_response(200)
+              self.send_header('Content-Type', 'application/json')
+              self.end_headers()
+              self.wfile.write(json.dumps({
+                  'output': {
+                      'images': [{'url': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='}],
+                      'text': f'Mock inference result for: {prompt}'
+                  },
+                  'model': 'mock-model',
+                  'usage': {'prompt_tokens': 10, 'completion_tokens': 20}
+              }).encode())
+
+          def log_message(self, format, *args):
+              print(f'[mock-backend] {format % args}', flush=True)
+
+      print('Mock backend starting on :8080', flush=True)
+      HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
+      "
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+  # ============================================
+  # Serverless proxy: translates to provider API format
+  # Default: points to mock-backend
+  # With fal profile: points to fal.ai
+  # ============================================
+  serverless-proxy:
+    build:
+      context: ../../NaaP/containers/livepeer-serverless-proxy
+    container_name: byoc_serverless_proxy
+    environment:
+      PROVIDER: ${PROVIDER:-custom}
+      ENDPOINT_URL: ${ENDPOINT_URL:-http://mock-backend:8080}
+      API_KEY: ${FAL_KEY:-}
+      MODEL_ID: ${MODEL_ID:-}
+      PORT: "8080"
+    depends_on:
+      mock-backend:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ============================================
+  # Inference adapter: registers capability with orchestrator
+  # and proxies requests to serverless-proxy
+  # ============================================
+  inference-adapter:
+    build:
+      context: ../../NaaP/containers/livepeer-inference-adapter
+    container_name: byoc_inference_adapter
+    environment:
+      ORCH_URL: http://byoc_orchestrator:8935
+      ORCH_SECRET: test-secret-123
+      CAPABILITY_NAME: ${CAPABILITY_NAME:-test-inference}
+      BACKEND_URL: http://serverless-proxy:8080
+      ADAPTER_PORT: "9090"
+      CAPACITY: "4"
+      HEALTH_CHECK_INTERVAL: "5"
+      REGISTER_INTERVAL: "10"
+    ports:
+      - "9090:9090"
+    depends_on:
+      orchestrator:
+        condition: service_started
+      serverless-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+networks:
+  default:
+    name: byoc_e2e_network

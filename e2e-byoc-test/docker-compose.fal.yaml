@@ -1,0 +1,80 @@
+# E2E BYOC Test with fal.ai multi-model
+#
+# Tests 3 use cases:
+#   UC1: Switch between text-to-video (ltx-2.3) and image gen (nano-banana-2)
+#   UC2: Same prompt -> both models simultaneously
+#   UC3: nano-banana-2 image -> ltx-2.3 image-to-video pipeline
+#
+# Architecture: Client/SDK -> Orchestrator -> Adapter -> Proxy -> fal.ai
+#   (no gateway needed -- SDK talks directly to orchestrator)
+#
+# Usage:
+#   FAL_KEY=your-key docker compose -f docker-compose.fal.yaml up --build -d
+#   python3 test-fal-e2e.py
+#   docker compose -f docker-compose.fal.yaml down
+
+services:
+  orchestrator:
+    image: livepeer/go-livepeer:latest
+    platform: linux/amd64
+    container_name: byoc_orch
+    command: >
+      -orchestrator
+      -network offchain
+      -serviceAddr byoc_orch:8935
+      -cliAddr 0.0.0.0:7935
+      -orchSecret test-secret-123
+      -v 6
+    ports:
+      - "8935:8935"
+      - "7935:7935"
+
+  serverless-proxy:
+    build:
+      context: ../../../NaaP/containers/livepeer-serverless-proxy
+    container_name: byoc_proxy
+    environment:
+      PROVIDER: fal-ai
+      API_KEY: ${FAL_KEY}
+      PORT: "8080"
+      EXTRA_PROVIDERS: '{"gemini": {"api_key": "${GEMINI_KEY}"}}'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  inference-adapter:
+    build:
+      context: ../../../NaaP/containers/livepeer-inference-adapter
+    container_name: byoc_adapter
+    environment:
+      ORCH_URL: https://byoc_orch:8935
+      ORCH_SECRET: test-secret-123
+      BACKEND_URL: http://byoc_proxy:8080
+      BACKEND_INFERENCE_PATH: /inference
+      BACKEND_TIMEOUT: "300"
+      ADAPTER_PORT: "9090"
+      ADAPTER_CALLBACK_URL: http://byoc_adapter:9090
+      HEALTH_CHECK_INTERVAL: "5"
+      REGISTER_INTERVAL: "15"
+      CAPABILITIES: >
+        [
+          {"name":"nano-banana","model_id":"fal-ai/nano-banana-2","capacity":5},
+          {"name":"ltx-t2v","model_id":"fal-ai/ltx-2.3/text-to-video/fast","capacity":3},
+          {"name":"ltx-i2v","model_id":"fal-ai/ltx-2.3/image-to-video","capacity":3}
+        ]
+    ports:
+      - "9090:9090"
+    depends_on:
+      - orchestrator
+      - serverless-proxy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+networks:
+  default:
+    name: byoc_fal_network

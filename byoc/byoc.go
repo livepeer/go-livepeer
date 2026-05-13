@@ -176,10 +176,60 @@ func (bsg *BYOCGatewayServer) registerRoutes() {
 		bsg.httpMux.Handle("POST /process/stream/{streamId}/whip", bsg.StartStreamWhipIngest(bsg.whipServer))
 	}
 
-	//TODO: add WHEP support
+	// WHEP playback support
+	if bsg.whepServer != nil {
+		bsg.httpMux.Handle("POST /process/stream/{streamId}/whep", bsg.StreamWhep())
+		bsg.httpMux.Handle("OPTIONS /process/stream/{streamId}/whep", bsg.withCORS(http.StatusNoContent))
+	}
 
 	// Job submission routes for batch processing
 	bsg.httpMux.Handle("/process/request/", bsg.SubmitJob())
+
+	// Training routes (proxied to orchestrator)
+	bsg.httpMux.Handle("/process/train/", bsg.SubmitTrainingJob())
+	bsg.httpMux.Handle("GET /process/job/{jobId}", bsg.GetTrainingJobStatus())
+}
+
+// StreamWhep handles WHEP playback for BYOC streams.
+// Looks up the stream's OutWriter (RingBuffer) and creates a WebRTC connection.
+func (bsg *BYOCGatewayServer) StreamWhep() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		streamId := r.PathValue("streamId")
+		corsHeaders(w, r.Method)
+
+		stream, err := bsg.streamPipeline(streamId)
+		if err != nil {
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+
+		// Wait for OutWriter to be available (blocks until trickle subscribe is set up)
+		bsg.mu.RLock()
+		outWriter := stream.OutWriter
+		bsg.mu.RUnlock()
+
+		if outWriter == nil {
+			// Wait up to 10 seconds for OutWriter
+			for i := 0; i < 100; i++ {
+				stream.OutCond.L.Lock()
+				if stream.OutWriter != nil {
+					outWriter = stream.OutWriter
+					stream.OutCond.L.Unlock()
+					break
+				}
+				stream.OutCond.Wait()
+				stream.OutCond.L.Unlock()
+			}
+		}
+
+		if outWriter == nil {
+			http.Error(w, "Stream output not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		ctx := r.Context()
+		bsg.whepServer.CreateWHEP(ctx, w, r, outWriter.MakeReader(), streamId)
+	})
 }
 
 // withCORS adds CORS headers to responses
@@ -199,6 +249,9 @@ type BYOCOrchestratorServer struct {
 	httpMux *http.ServeMux
 
 	sharedBalMtx *sync.Mutex
+
+	// Training job store for async training jobs
+	trainingStore *TrainingJobStore
 }
 
 func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trickleSrv *trickle.Server, trickleBasePath string, mux *http.ServeMux) *BYOCOrchestratorServer {
@@ -209,6 +262,7 @@ func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trick
 		trickleBasePath: trickleBasePath,
 		httpMux:         mux,
 		sharedBalMtx:    &sync.Mutex{},
+		trainingStore:   NewTrainingJobStore(24 * time.Hour),
 	}
 
 	bso.registerRoutes()
@@ -228,6 +282,11 @@ func (bso *BYOCOrchestratorServer) registerRoutes() {
 	bso.httpMux.Handle("/process/token", bso.GetJobToken())
 	bso.httpMux.Handle("/capability/register", bso.RegisterCapability())
 	bso.httpMux.Handle("/capability/unregister", bso.UnregisterCapability())
+	// Training routes (async)
+	bso.httpMux.Handle("/process/train/", bso.SubmitTrainingJob())
+	bso.httpMux.Handle("GET /process/jobs", bso.ListTrainingJobs())
+	bso.httpMux.Handle("GET /process/job/{jobId}", bso.GetTrainingJobStatus())
+	bso.httpMux.Handle("POST /process/job/{jobId}/cancel", bso.CancelTrainingJob())
 	// Stream routes
 	bso.httpMux.Handle("/ai/stream/start", bso.StartStream())
 	bso.httpMux.Handle("/ai/stream/stop", bso.StopStream())
