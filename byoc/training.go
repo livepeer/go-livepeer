@@ -209,8 +209,14 @@ func (bso *BYOCOrchestratorServer) SubmitTrainingJob() http.Handler {
 		ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
 		clog.V(common.SHORT).Infof(ctx, "Training job submitted model_id=%v", trainReq.ModelID)
 
-		// Submit to adapter asynchronously
-		go bso.runTrainingJob(ctx, job, orchJob, body)
+		// Submit to adapter asynchronously. Detach the goroutine's context
+		// from the inbound HTTP request — that context is cancelled the
+		// moment the 202 response is written, which would immediately kill
+		// the outbound POST to /train (manifests as
+		// `Post "...": context canceled`). Preserve the clog values so
+		// `training_job_id` / `capability` still appear in async logs.
+		jobCtx := context.WithoutCancel(ctx)
+		go bso.runTrainingJob(jobCtx, job, orchJob, body)
 
 		// Return 202 Accepted immediately
 		w.Header().Set("Content-Type", "application/json")
