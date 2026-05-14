@@ -514,6 +514,7 @@ func TestTrickle_EmptySegment(t *testing.T) {
 
 	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
 	require.Nil(err)
+	sub.SetSeq(0)
 
 	resp, err := sub.Read()
 	defer resp.Body.Close()
