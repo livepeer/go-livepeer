@@ -162,8 +162,9 @@ func (s *TrainingJobStore) sweepOnStartup() error {
 	return nil
 }
 
-// writeCheckpoint atomically persists a job to disk. Caller must hold
-// no store-level locks — uses checkpointMu to serialize fs writes.
+// writeCheckpoint atomically persists a job to disk. Acquires
+// checkpointMu internally; used by sweepOnStartup (sweep holds no
+// other locks).
 // Returns nil if checkpointDir is unset (in-memory-only mode).
 func (s *TrainingJobStore) writeCheckpoint(job *TrainingJob) error {
 	if s.checkpointDir == "" {
@@ -171,6 +172,16 @@ func (s *TrainingJobStore) writeCheckpoint(job *TrainingJob) error {
 	}
 	s.checkpointMu.Lock()
 	defer s.checkpointMu.Unlock()
+	return s.writeCheckpointLocked(job)
+}
+
+// writeCheckpointLocked is the inner write — caller MUST already hold
+// checkpointMu. Used by Store/Update to keep write order matching
+// mutation order (review C1 fix).
+func (s *TrainingJobStore) writeCheckpointLocked(job *TrainingJob) error {
+	if s.checkpointDir == "" {
+		return nil
+	}
 	data, err := json.Marshal(job)
 	if err != nil {
 		return err
@@ -195,10 +206,18 @@ func (s *TrainingJobStore) removeCheckpoint(jobID string) {
 }
 
 func (s *TrainingJobStore) Store(job *TrainingJob) {
+	// Hold checkpointMu across the entire mutation + write window so
+	// concurrent Stores serialize write order with mutation order.
+	// (See review C1 on the Update path — same race applies here.)
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+
 	s.mu.Lock()
 	s.jobs[job.JobID] = job
+	snapshot := *job
 	s.mu.Unlock()
-	if err := s.writeCheckpoint(job); err != nil {
+
+	if err := s.writeCheckpointLocked(&snapshot); err != nil {
 		glog.Warningf("training-store: checkpoint write for %s failed: %v", job.JobID, err)
 	}
 }
@@ -211,6 +230,22 @@ func (s *TrainingJobStore) Get(jobID string) (*TrainingJob, bool) {
 }
 
 func (s *TrainingJobStore) Update(jobID string, status string, progress int, result map[string]interface{}, errMsg string) bool {
+	// Reviewer C1 fix (PR-6): hold checkpointMu across the WHOLE
+	// mutation+snapshot+write window. Earlier version released `mu`
+	// after snapshot, then re-acquired `checkpointMu` for the fs write.
+	// Under concurrent Update("job-X"), two snapshots could write to
+	// disk out-of-order:
+	//   T1: snapshot S1=running/25% → release mu
+	//   T2: snapshot S2=completed → release mu → write S2
+	//   T1: write S1 (overwrites the terminal state)
+	// On restart, sweep sees S1=running, marks it failed_orchestrator_restart,
+	// triggers a refund for a job that actually succeeded — inverting I8.
+	// Fix: serialize checkpoint writes via checkpointMu, taken BEFORE
+	// the mutation. fs I/O still happens outside the store mu, but the
+	// serialization across concurrent updaters is guaranteed.
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+
 	s.mu.Lock()
 	job, ok := s.jobs[jobID]
 	if !ok {
@@ -226,11 +261,10 @@ func (s *TrainingJobStore) Update(jobID string, status string, progress int, res
 		job.Error = errMsg
 	}
 	job.UpdatedAt = time.Now()
-	// Snapshot for checkpoint outside the store lock to avoid holding
-	// it during fs I/O
 	snapshot := *job
 	s.mu.Unlock()
-	if err := s.writeCheckpoint(&snapshot); err != nil {
+
+	if err := s.writeCheckpointLocked(&snapshot); err != nil {
 		glog.Warningf("training-store: checkpoint update for %s failed: %v", jobID, err)
 	}
 	return true

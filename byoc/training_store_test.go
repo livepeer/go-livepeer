@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -157,6 +158,72 @@ func TestTrainingStoreCorruptCheckpointSkipped(t *testing.T) {
 	}
 	if _, ok := s.Get("bad"); ok {
 		t.Fatal("bad job was loaded somehow")
+	}
+}
+
+// TestTrainingStoreConcurrentUpdatesPreserveOrder — the load-bearing
+// invariant from review C1: concurrent Update calls to the same job
+// must not write checkpoints out-of-order. The earlier impl released
+// `mu` after snapshot and re-acquired `checkpointMu` for fs write —
+// allowing a slow writer of an earlier snapshot to overwrite a faster
+// writer of a later snapshot. End state on disk would be stale.
+//
+// This test races 100 status transitions submitted→running→completed
+// against the same job, then asserts: final disk state == final memory
+// state. With the fix (checkpointMu held across mutation+write), the
+// last Update's snapshot is always the last write.
+func TestTrainingStoreConcurrentUpdatesPreserveOrder(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewTrainingJobStoreWithCheckpoint(1*time.Hour, dir)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	job := &TrainingJob{
+		JobID:     "race-1",
+		Status:    TrainingStatusSubmitted,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	s.Store(job)
+
+	var wg sync.WaitGroup
+	const N = 100
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(progress int) {
+			defer wg.Done()
+			status := TrainingStatusRunning
+			if progress == N-1 {
+				status = TrainingStatusCompleted
+			}
+			s.Update("race-1", status, progress, nil, "")
+		}(i)
+	}
+	wg.Wait()
+
+	// Final in-memory state
+	memJob, _ := s.Get("race-1")
+
+	// Final disk state
+	data, err := os.ReadFile(filepath.Join(dir, "race-1.json"))
+	if err != nil {
+		t.Fatalf("read disk: %v", err)
+	}
+	var diskJob TrainingJob
+	if err := json.Unmarshal(data, &diskJob); err != nil {
+		t.Fatalf("parse disk: %v", err)
+	}
+
+	// Invariant: disk state matches memory state. If write-reordering
+	// was happening, disk would show an arbitrary intermediate state
+	// while memory showed the last update.
+	if diskJob.Status != memJob.Status {
+		t.Errorf("status drift: disk=%q memory=%q (race in checkpoint write order)",
+			diskJob.Status, memJob.Status)
+	}
+	if diskJob.Progress != memJob.Progress {
+		t.Errorf("progress drift: disk=%d memory=%d",
+			diskJob.Progress, memJob.Progress)
 	}
 }
 
