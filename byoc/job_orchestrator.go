@@ -301,15 +301,16 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
 		}
 
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, nil)
 		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
 		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"failed",
-			computeChargeWei(orchJob.JobPrice, start),
+			computeChargeWei(orchJob.JobPrice, start, nil),
 			balanceAfter.FloatString(0),
 			err.Error(),
+			nil,
 		))
 		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
 		return
@@ -319,15 +320,16 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 	if resp.StatusCode == http.StatusUnauthorized {
 		clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
 		bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
 		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"failed",
-			computeChargeWei(orchJob.JobPrice, start),
+			computeChargeWei(orchJob.JobPrice, start, resp),
 			balanceAfter.FloatString(0),
 			"worker returned 401",
+			resp,
 		))
 		http.Error(w, "job not able to be processed, removing capability err=worker auth token failed", http.StatusInternalServerError)
 		return
@@ -348,15 +350,16 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		if err != nil {
 			clog.Errorf(ctx, "Unable to read response err=%v", err)
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 			balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
 			w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
 			emitBillingEvent(ctx, inferenceBillingEvent(
 				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 				"failed",
-				computeChargeWei(orchJob.JobPrice, start),
+				computeChargeWei(orchJob.JobPrice, start, resp),
 				balanceAfter.FloatString(0),
 				err.Error(),
+				resp,
 			))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -366,31 +369,33 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		if resp.StatusCode > 399 {
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 			balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
 			w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
 			emitBillingEvent(ctx, inferenceBillingEvent(
 				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 				"failed",
-				computeChargeWei(orchJob.JobPrice, start),
+				computeChargeWei(orchJob.JobPrice, start, resp),
 				balanceAfter.FloatString(0),
 				fmt.Sprintf("worker returned %d", resp.StatusCode),
+				resp,
 			))
 			//return error response from the worker
 			http.Error(w, string(data), resp.StatusCode)
 			return
 		}
 
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
 		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
 		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), balanceAfter.FloatString(0))
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"completed",
-			computeChargeWei(orchJob.JobPrice, start),
+			computeChargeWei(orchJob.JobPrice, start, resp),
 			balanceAfter.FloatString(0),
 			"",
+			resp,
 		))
 		w.Write(data)
 		//request completed and returned a response
@@ -411,7 +416,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		if !ok {
 			clog.Errorf(ctx, "streaming not supported")
 
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
@@ -574,32 +579,72 @@ func (bso *BYOCOrchestratorServer) processPayment(ctx context.Context, sender et
 	return bso.getPaymentBalance(sender, capability), nil
 }
 
-func (bso *BYOCOrchestratorServer) chargeForCompute(start time.Time, price *net.PriceInfo, sender ethcommon.Address, jobId string) {
-	// Debit the fee for the total time processed
-	took := time.Since(start)
-	bso.orch.DebitFees(sender, core.ManifestID(jobId), price, int64(math.Ceil(took.Seconds())))
+func (bso *BYOCOrchestratorServer) chargeForCompute(start time.Time, price *net.PriceInfo, sender ethcommon.Address, jobId string, resp *http.Response) {
+	// PR-A of pricing-metering-design: prefer the adapter's reported units
+	// (X-Livepeer-Units-Consumed header) over wall-clock seconds. When the
+	// header is absent we fall back to seconds — bit-for-bit identical to
+	// the pre-PR-A behavior.
+	units, _ := resolveUnits(start, resp)
+	bso.orch.DebitFees(sender, core.ManifestID(jobId), price, units)
+}
+
+// resolveUnits returns the units the orch should bill for, plus the
+// kind string (informational — surfaced in BillingEvent). Reads the
+// adapter's `X-Livepeer-Units-Consumed` header when present + parseable;
+// otherwise falls back to `ceil(time.Since(start).Seconds())`.
+//
+// PR-A wire-protocol contract:
+//   - header absent → seconds fallback (backward-compat, current behavior)
+//   - header present, valid non-negative float → ceil(value)
+//   - header present, malformed or negative → seconds fallback + warning
+//   - kind header (`X-Livepeer-Units-Kind`) is purely informational
+func resolveUnits(start time.Time, resp *http.Response) (int64, string) {
+	defaultSeconds := int64(math.Ceil(time.Since(start).Seconds()))
+	if defaultSeconds < 1 {
+		defaultSeconds = 1
+	}
+	if resp == nil {
+		return defaultSeconds, "second"
+	}
+	hdr := resp.Header.Get("X-Livepeer-Units-Consumed")
+	if hdr == "" {
+		return defaultSeconds, "second"
+	}
+	f, err := strconv.ParseFloat(hdr, 64)
+	if err != nil || f < 0 {
+		glog.Warningf("resolveUnits: malformed X-Livepeer-Units-Consumed=%q, falling back to seconds", hdr)
+		return defaultSeconds, "second"
+	}
+	units := int64(math.Ceil(f))
+	if units < 1 {
+		units = 1
+	}
+	kind := resp.Header.Get("X-Livepeer-Units-Kind")
+	if kind == "" {
+		kind = "unit"
+	}
+	return units, kind
 }
 
 // computeChargeWei returns the wei the orch debited for `start..now`,
 // matching chargeForCompute's math. PR-10b: BillingEvent.cost_paid_wei
 // uses this so the dashboard surfaces real billing instead of
 // balance-delta noise (the SDK credits a fresh ticket per call, which
-// makes balance-delta unreliable).
+// makes balance-delta unreliable). PR-A: accepts `resp` so the same
+// units source (header vs seconds-fallback) feeds both DebitFees + the
+// audit event.
 //
 // Returns "0" if price is nil or denominator is zero. Caller should
 // treat this as "unknown / unmetered" rather than "free".
-func computeChargeWei(price *net.PriceInfo, start time.Time) string {
+func computeChargeWei(price *net.PriceInfo, start time.Time, resp *http.Response) string {
 	if price == nil || price.PixelsPerUnit == 0 {
 		return "0"
 	}
-	seconds := int64(math.Ceil(time.Since(start).Seconds()))
-	if seconds <= 0 {
-		seconds = 1
-	}
-	// wei = (PricePerUnit / PixelsPerUnit) × seconds
+	units, _ := resolveUnits(start, resp)
+	// wei = (PricePerUnit / PixelsPerUnit) × units
 	costRat := new(big.Rat).Mul(
 		big.NewRat(price.PricePerUnit, price.PixelsPerUnit),
-		big.NewRat(seconds, 1),
+		big.NewRat(units, 1),
 	)
 	return costRat.FloatString(0)
 }

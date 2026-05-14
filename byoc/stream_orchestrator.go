@@ -171,7 +171,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 
 		statusCode, respBody := bso.processWorkerResp(ctx, orchJob.Req.Capability, resp)
 		if statusCode > 399 {
-			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			//return error response from the worker
 			w.WriteHeader(statusCode)

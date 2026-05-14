@@ -37,7 +37,7 @@ type BillingEvent struct {
 	SchemaVersion   int    `json:"schema_version"`              // bumped on breaking changes
 	Timestamp       string `json:"timestamp"`                   // RFC3339 UTC
 	JobID           string `json:"job_id"`
-	JobType         string `json:"job_type"`                    // "training" (PR-10 scope)
+	JobType         string `json:"job_type"`                    // "training" | "inference"
 	Capability      string `json:"capability"`
 	ModelID         string `json:"model_id,omitempty"`
 	UserHash        string `json:"user_hash"`                   // sha256(sender)[:16], not reversible
@@ -45,7 +45,13 @@ type BillingEvent struct {
 	Status          string `json:"status"`                      // completed | failed | cancelled | failed_orchestrator_restart | timed_out
 	CostPaidWei     string `json:"cost_paid_wei"`               // base-10 integer; matches TrainingJob.Cost
 	BalanceWei      string `json:"balance_wei"`                 // post-charge sender balance
-	BillableSeconds int64  `json:"billable_seconds"`            // seconds the orch charged for
+	BillableSeconds int64  `json:"billable_seconds"`            // seconds the orch elapsed; preserved for legacy consumers
+	// PR-A of pricing-metering-design: BillableUnits is what the orch
+	// actually charged on. For metered caps (adapter sets header) it's
+	// domain units (megapixels, video seconds, characters, etc.); for
+	// unmetered caps it equals BillableSeconds. UnitsKind explains which.
+	BillableUnits   int64  `json:"billable_units,omitempty"`    // units the orch debited (≥ 1)
+	UnitsKind       string `json:"units_kind,omitempty"`        // "megapixel" / "second" / "character" / "mesh" / "call" / ...
 	WallSeconds     int64  `json:"wall_seconds,omitempty"`      // wall-clock from submit to terminal
 	StartedAt       string `json:"started_at"`                  // RFC3339 — job submit
 	CompletedAt     string `json:"completed_at"`                // RFC3339 — terminal transition
@@ -186,6 +192,11 @@ func (bso *BYOCOrchestratorServer) BillingEventsHandler() http.Handler {
 // `costWei` is the delta between pre- and post-call balance (balanceBefore
 // minus balanceAfter). Caller computes this so we don't re-do the
 // chargeForCompute math.
+//
+// PR-A of pricing-metering-design: now accepts the worker `resp` so
+// the event records the same `billable_units` + `units_kind` that
+// fed `chargeForCompute`. When resp is nil (early-error paths)
+// billable_units falls back to seconds — consistent with billing.
 func inferenceBillingEvent(
 	jobID string,
 	capability string,
@@ -195,6 +206,7 @@ func inferenceBillingEvent(
 	costWei string,
 	balanceWei string,
 	errMsg string,
+	resp *http.Response,
 ) BillingEvent {
 	billableSeconds := int64(0)
 	if !start.IsZero() {
@@ -209,6 +221,7 @@ func inferenceBillingEvent(
 	if balanceWei == "" {
 		balanceWei = "0"
 	}
+	units, kind := resolveUnits(start, resp)
 	return BillingEvent{
 		JobID:           jobID,
 		JobType:         "inference",
@@ -219,6 +232,8 @@ func inferenceBillingEvent(
 		CostPaidWei:     costWei,
 		BalanceWei:      balanceWei,
 		BillableSeconds: billableSeconds,
+		BillableUnits:   units,
+		UnitsKind:       kind,
 		WallSeconds:     billableSeconds,
 		StartedAt:       start.UTC().Format(time.RFC3339),
 		ErrorMessage:    errMsg,

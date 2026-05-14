@@ -2,12 +2,94 @@ package byoc
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
+
+// PR-A of pricing-metering-design: tests for the resolveUnits helper +
+// inferenceBillingEvent's units fields. The "header absent → seconds"
+// path is the load-bearing backward-compat invariant.
+
+func TestResolveUnits_HeaderAbsent_SecondsFallback(t *testing.T) {
+	start := time.Now().Add(-3 * time.Second)
+	// nil resp = early-error path (connection failure, timeout pre-response)
+	units, kind := resolveUnits(start, nil)
+	if units < 3 || units > 4 {
+		t.Errorf("nil resp: units=%d, want 3 or 4 (ceil of 3s elapsed)", units)
+	}
+	if kind != "second" {
+		t.Errorf("nil resp: kind=%q, want second", kind)
+	}
+
+	// Empty headers
+	resp := &http.Response{Header: http.Header{}}
+	units, kind = resolveUnits(start, resp)
+	if units < 3 || units > 4 {
+		t.Errorf("empty hdr: units=%d, want 3 or 4", units)
+	}
+	if kind != "second" {
+		t.Errorf("empty hdr: kind=%q, want second", kind)
+	}
+}
+
+func TestResolveUnits_HeaderPresent_OverridesSeconds(t *testing.T) {
+	start := time.Now().Add(-3 * time.Second)
+	resp := &http.Response{Header: http.Header{
+		"X-Livepeer-Units-Consumed": []string{"1.5"},
+		"X-Livepeer-Units-Kind":     []string{"megapixel"},
+	}}
+	units, kind := resolveUnits(start, resp)
+	if units != 2 {
+		t.Errorf("hdr=1.5: units=%d, want 2 (ceil)", units)
+	}
+	if kind != "megapixel" {
+		t.Errorf("kind=%q, want megapixel", kind)
+	}
+}
+
+func TestResolveUnits_MalformedHeader_FallsBackToSeconds(t *testing.T) {
+	start := time.Now().Add(-2 * time.Second)
+	cases := []string{"not-a-number", "-1", "abc"}
+	for _, v := range cases {
+		resp := &http.Response{Header: http.Header{
+			"X-Livepeer-Units-Consumed": []string{v},
+		}}
+		units, kind := resolveUnits(start, resp)
+		if units < 2 || units > 3 {
+			t.Errorf("hdr=%q: units=%d, want fallback to ~2s", v, units)
+		}
+		if kind != "second" {
+			t.Errorf("hdr=%q: kind=%q, want second on fallback", v, kind)
+		}
+	}
+}
+
+func TestResolveUnits_ZeroValue_StillFloorsTo1(t *testing.T) {
+	start := time.Now()
+	resp := &http.Response{Header: http.Header{
+		"X-Livepeer-Units-Consumed": []string{"0"},
+	}}
+	units, _ := resolveUnits(start, resp)
+	if units != 1 {
+		t.Errorf("hdr=0: units=%d, want 1 (no zero-charge for completed call)", units)
+	}
+}
+
+func TestResolveUnits_KindHeaderMissing_FallsToUnit(t *testing.T) {
+	start := time.Now()
+	resp := &http.Response{Header: http.Header{
+		"X-Livepeer-Units-Consumed": []string{"5"},
+		// No Units-Kind header
+	}}
+	_, kind := resolveUnits(start, resp)
+	if kind != "unit" {
+		t.Errorf("kind=%q, want unit (default when Units-Kind absent)", kind)
+	}
+}
 
 func TestHashSender_Deterministic(t *testing.T) {
 	addr := ethcommon.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
