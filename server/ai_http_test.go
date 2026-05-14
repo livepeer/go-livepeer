@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpnet "github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -528,6 +529,71 @@ func TestLiveRunnerReserveSessionRejectsManifestAuthMismatch(t *testing.T) {
 	require.Contains(t, w.Body.String(), "mismatched manifest and auth token")
 }
 
+func TestScopePaymentChallenge(t *testing.T) {
+	lp := newScopeHTTP(t)
+
+	challenge, oInfo := requestScopePaymentChallenge(t, lp)
+
+	require.NotEmpty(t, challenge.PaymentParams)
+	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
+	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
+	require.NotNil(t, oInfo.GetTicketParams())
+	require.NotNil(t, oInfo.GetPriceInfo())
+	require.Equal(t, int64(4), oInfo.GetPriceInfo().GetPricePerUnit())
+	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
+}
+
+func TestScopePaidRetryUsesChallengeManifestID(t *testing.T) {
+	lp := newScopeHTTP(t)
+	challenge, oInfo := requestScopePaymentChallenge(t, lp)
+	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp worker.LiveVideoToVideoResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotNil(t, resp.ManifestId)
+	require.NotEmpty(t, *resp.ManifestId)
+	require.NotNil(t, resp.ControlUrl)
+	require.Contains(t, *resp.ControlUrl, *resp.ManifestId+"-control")
+	require.NotNil(t, resp.EventsUrl)
+	require.Contains(t, *resp.EventsUrl, *resp.ManifestId+"-events")
+}
+
+func TestScopePaidRetryAllowsSegmentManifestToDifferFromAuthToken(t *testing.T) {
+	lp := newScopeHTTP(t)
+	_, oInfo := requestScopePaymentChallenge(t, lp)
+	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), "different-manifest")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp worker.LiveVideoToVideoResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotNil(t, resp.ManifestId)
+	require.NotEmpty(t, *resp.ManifestId)
+}
+
+func TestScopePaymentChallengeRejectsInvalidPayer(t *testing.T) {
+	lp := newScopeHTTP(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	req.Header.Set(liveRunnerSenderHeader, "not-an-address")
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	require.Contains(t, w.Body.String(), "invalid live runner payment signer address")
+}
+
 func TestLiveRunnerReserveSessionNoCapacity(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	registerLiveRunnerForSession(t, lp, nil)
@@ -993,6 +1059,25 @@ func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *
 	return lp
 }
 
+func newScopeHTTP(t *testing.T) *lphttp {
+	t.Helper()
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	t.Cleanup(func() { drivers.NodeStorage = oldStorage })
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("live-video-to-video", "scope")
+	orch := newStubOrchestrator()
+	orch.ticketParams = defaultTicketParams()
+	lp := &lphttp{
+		orchestrator: orch,
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
+	require.NoError(t, startAIServer(lp))
+	return lp
+}
+
 func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
 	t.Helper()
 	orch := newStubOrchestrator()
@@ -1010,6 +1095,16 @@ func requestLiveRunnerPaymentChallenge(t *testing.T, lp *lphttp, runnerID string
 	t.Helper()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/session", nil)
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+}
+
+func requestScopePaymentChallenge(t *testing.T, lp *lphttp) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
 	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusPaymentRequired, w.Code)

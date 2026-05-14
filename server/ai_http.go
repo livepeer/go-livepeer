@@ -285,6 +285,39 @@ func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceIn
 	_, _ = w.Write(data)
 }
 
+func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (bool, error) {
+	sender, err := h.runnerSender(r)
+	if err != nil {
+		respondJsonError(r.Context(), w, err, http.StatusPaymentRequired)
+		return true, nil
+	}
+	constraints := core.NewCapabilities(nil, nil)
+	if h.node != nil && h.node.Capabilities != nil {
+		constraints = h.node.Capabilities
+	}
+	caps := newAICapabilities(core.Capability_LiveVideoToVideo, "scope", true, constraints)
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, sender, h.orchestrator.ServiceURI().String(), "", caps.ToNetCapabilities())
+	if err != nil {
+		return false, err
+	}
+	buf, err := proto.Marshal(oInfo)
+	if err != nil {
+		return false, err
+	}
+	data, err := json.Marshal(liveRunnerPaymentChallengeResponse{
+		PaymentParams: base64.StdEncoding.EncodeToString(buf),
+		Orchestrator:  h.orchestrator.ServiceURI().String(),
+		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+	})
+	if err != nil {
+		return false, err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusPaymentRequired)
+	_, _ = w.Write(data)
+	return true, nil
+}
+
 func (h *lphttp) runnerSender(r *http.Request) (ethcommon.Address, error) {
 	addr := r.Header.Get(liveRunnerSenderHeader)
 	if !ethcommon.IsHexAddress(addr) {
@@ -917,7 +950,15 @@ func (h *lphttp) StartScope() http.Handler {
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
 		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
 		payment, err := getPayment(r.Header.Get(paymentHeader))
-		if err != nil {
+		if err != nil || r.Header.Get(paymentHeader) == "" {
+			handled, challengeErr := h.scopePaymentChallenge(w, r)
+			if handled {
+				return
+			}
+			if challengeErr != nil {
+				respondWithError(w, challengeErr.Error(), http.StatusInternalServerError)
+				return
+			}
 			respondWithError(w, err.Error(), http.StatusPaymentRequired)
 			return
 		}
