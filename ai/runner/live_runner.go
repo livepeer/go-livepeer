@@ -584,6 +584,32 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, er
 	return sessionID, runner.RunnerURL, nil
 }
 
+func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked(time.Now())
+
+	runner := r.runners[runnerID]
+	if runner == nil || !isReadyStatus(runner.Status) {
+		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if runner.offchain {
+		return nil, nil
+	}
+	priceInfo := runner.PriceInfo
+	if runner.converter != nil {
+		converted, err := convertedPriceInfo(runner.converter)
+		if err != nil {
+			return nil, err
+		}
+		priceInfo = converted
+	}
+	if priceInfo == (LiveRunnerPriceInfo{}) || priceInfo.PricePerUnit <= 0 || priceInfo.PixelsPerUnit <= 0 {
+		return nil, nil
+	}
+	return &priceInfo, nil
+}
+
 func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,10 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -465,6 +468,66 @@ func TestLiveRunnerReserveSession(t *testing.T) {
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
 }
 
+func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.NotEmpty(t, challenge.PaymentParams)
+	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
+	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
+	require.NotNil(t, oInfo.GetTicketParams())
+	require.NotNil(t, oInfo.GetPriceInfo())
+	require.Equal(t, int64(10), oInfo.GetPriceInfo().GetPricePerUnit())
+	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
+	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
+	require.Nil(t, oInfo.GetCapabilities())
+}
+
+func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	orch := lp.orchestrator.(*stubOrchestrator)
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerSessionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.SessionID)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
+}
+
+func TestLiveRunnerReserveSessionRejectsManifestAuthMismatch(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	_, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	orch := lp.orchestrator.(*stubOrchestrator)
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), "different-manifest")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "mismatched manifest and auth token")
+}
+
 func TestLiveRunnerReserveSessionNoCapacity(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
 	registerLiveRunnerForSession(t, lp, nil)
@@ -887,6 +950,25 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 	return lp
 }
 
+func newLiveRunnerHTTPOnchain(t *testing.T) *lphttp {
+	t.Helper()
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
+	orch.ticketParams = defaultTicketParams()
+	lp := &lphttp{
+		orchestrator: orch,
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
+	require.NoError(t, startAIServer(lp))
+	return lp
+}
+
 func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
@@ -922,6 +1004,70 @@ func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
 	}
 	require.NoError(t, startAIServer(lp))
 	return lp
+}
+
+func requestLiveRunnerPaymentChallenge(t *testing.T, lp *lphttp, runnerID string) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/session", nil)
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+}
+
+func decodeLiveRunnerPaymentChallenge(t *testing.T, body []byte) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {
+	t.Helper()
+	var challenge liveRunnerPaymentChallengeResponse
+	require.NoError(t, json.Unmarshal(body, &challenge))
+	require.NotEmpty(t, challenge.PaymentParams)
+	raw, err := base64.StdEncoding.DecodeString(challenge.PaymentParams)
+	require.NoError(t, err)
+	var oInfo lpnet.OrchestratorInfo
+	require.NoError(t, proto.Unmarshal(raw, &oInfo))
+	return challenge, &oInfo
+}
+
+func liveRunnerSenderHeaders(orch *stubOrchestrator) http.Header {
+	headers := http.Header{}
+	headers.Set(liveRunnerSenderHeader, orch.Address().Hex())
+	return headers
+}
+
+func setRequestHeaders(req *http.Request, headers http.Header) {
+	for k, values := range headers {
+		for _, v := range values {
+			req.Header.Add(k, v)
+		}
+	}
+}
+
+func liveRunnerReservationPaymentHeaders(t *testing.T, orch *stubOrchestrator, authToken *lpnet.AuthToken, manifestID string) http.Header {
+	t.Helper()
+	md := &core.SegTranscodingMetadata{
+		ManifestID: core.ManifestID(manifestID),
+		Caps:       core.NewCapabilities(nil, nil),
+		AuthToken:  authToken,
+	}
+	sig, err := orch.Sign(md.Flatten())
+	require.NoError(t, err)
+	segData, err := core.NetSegData(md)
+	require.NoError(t, err)
+	segData.Sig = sig
+	segBytes, err := proto.Marshal(segData)
+	require.NoError(t, err)
+
+	payment := &lpnet.Payment{
+		Sender:        orch.Address().Bytes(),
+		ExpectedPrice: &lpnet.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1},
+	}
+	paymentBytes, err := proto.Marshal(payment)
+	require.NoError(t, err)
+
+	headers := http.Header{}
+	headers.Set(segmentHeader, base64.StdEncoding.EncodeToString(segBytes))
+	headers.Set(paymentHeader, base64.StdEncoding.EncodeToString(paymentBytes))
+	return headers
 }
 
 type liveRunnerRegistrationOptions struct {

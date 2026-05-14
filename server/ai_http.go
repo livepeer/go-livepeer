@@ -25,12 +25,14 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
+	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 )
@@ -40,6 +42,7 @@ var MaxAIRequestSize = 3000000000 // 3GB
 var TrickleHTTPPath = "/ai/trickle/"
 
 const maxLiveRunnerTrickleChannelsPerRequest = 25
+const liveRunnerSenderHeader = "Livepeer-Payer-Address"
 
 func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
@@ -105,6 +108,7 @@ type liveRunnerManager interface {
 	Heartbeat(req runner.LiveRunnerHeartbeatRequest, auth string) (*runner.LiveRunnerHeartbeatResponse, error)
 	Unregister(runnerID, auth string) error
 	Runners() []runner.LiveRunnerDiscoveryRunner
+	PaymentInfo(runnerID string) (*runner.LiveRunnerPriceInfo, error)
 	ReserveSession(runnerID string) (string, string, error)
 	ReleaseSession(runnerID, sessionID string) error
 	RunnerMode(runnerID string) (string, error)
@@ -167,6 +171,13 @@ type liveRunnerSessionResponse struct {
 	AppURL    string `json:"app_url"`
 }
 
+type liveRunnerPaymentChallengeResponse struct {
+	PaymentParams string `json:"payment_params"`
+	// Keep the URL in top-level JSON so clients do not need to parse the protobuf just to route payment.
+	Orchestrator string `json:"orchestrator"`
+	ManifestID   string `json:"manifest_id"`
+}
+
 type liveRunnerTrickleChannelRequest struct {
 	Name     string `json:"name"`
 	MimeType string `json:"mime_type"`
@@ -195,10 +206,45 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	runnerID := r.PathValue("runner_id")
+	priceInfo, err := manager.PaymentInfo(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	paymentRequired := priceInfo != nil
+	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
+		h.runnerChallenge(w, r, priceInfo)
+		return
+	}
+	var (
+		payment lpnet.Payment
+		segData *core.SegTranscodingMetadata
+		ctx     context.Context
+	)
+	if paymentRequired {
+		var err error
+		payment, segData, ctx, err = h.processPaymentAndSegmentHeaders(w, r)
+		if err != nil {
+			return
+		}
+		if err := checkRunnerPayment(segData); err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
 	sessionID, _, err := manager.ReserveSession(runnerID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
+	}
+	if paymentRequired {
+		if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+				slog.Error("error releasing live runner session after payment failure", "runner_id", runnerID, "session_id", sessionID, "err", releaseErr)
+			}
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
 	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL})
@@ -207,6 +253,78 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	respondJsonOk(w, data)
+}
+
+func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceInfo *runner.LiveRunnerPriceInfo) {
+	sender, err := h.runnerSender(r)
+	if err != nil {
+		respondJsonError(r.Context(), w, err, http.StatusPaymentRequired)
+		return
+	}
+	oInfo, err := h.runnerOrchInfo(sender, priceInfo)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	buf, err := proto.Marshal(oInfo)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data, err := json.Marshal(liveRunnerPaymentChallengeResponse{
+		PaymentParams: base64.StdEncoding.EncodeToString(buf),
+		Orchestrator:  h.orchestrator.ServiceURI().String(),
+		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+	})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusPaymentRequired)
+	_, _ = w.Write(data)
+}
+
+func (h *lphttp) runnerSender(r *http.Request) (ethcommon.Address, error) {
+	addr := r.Header.Get(liveRunnerSenderHeader)
+	if !ethcommon.IsHexAddress(addr) {
+		return ethcommon.Address{}, fmt.Errorf("invalid live runner payment signer address")
+	}
+	return ethcommon.HexToAddress(addr), nil
+}
+
+func (h *lphttp) runnerOrchInfo(sender ethcommon.Address, priceInfo *runner.LiveRunnerPriceInfo) (*lpnet.OrchestratorInfo, error) {
+	if priceInfo == nil {
+		return nil, fmt.Errorf("missing live runner price info")
+	}
+	netPriceInfo := &lpnet.PriceInfo{
+		PricePerUnit:  priceInfo.PricePerUnit,
+		PixelsPerUnit: priceInfo.PixelsPerUnit,
+	}
+	params, err := h.orchestrator.TicketParams(sender, netPriceInfo)
+	if err != nil {
+		return nil, err
+	}
+	manifestID := string(core.RandomManifestID())
+	expiration := time.Now().Add(authTokenValidPeriod).Unix()
+	authToken := h.orchestrator.AuthToken(manifestID, expiration)
+	return &lpnet.OrchestratorInfo{
+		Transcoder:   h.orchestrator.ServiceURI().String(),
+		TicketParams: params,
+		PriceInfo:    netPriceInfo,
+		Address:      h.orchestrator.Address().Bytes(),
+		AuthToken:    authToken,
+	}, nil
+}
+
+func checkRunnerPayment(segData *core.SegTranscodingMetadata) error {
+	if segData == nil || segData.AuthToken == nil {
+		return errors.New("missing segment credentials")
+	}
+	if string(segData.ManifestID) != segData.AuthToken.SessionId {
+		return fmt.Errorf("mismatched manifest and auth token")
+	}
+	return nil
 }
 
 func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
