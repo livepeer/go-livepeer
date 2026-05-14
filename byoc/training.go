@@ -489,7 +489,21 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 
 	adapterJobID, _ := adapterResp["job_id"].(string)
 	if adapterJobID == "" {
-		// Adapter returned result directly (synchronous)
+		// Adapter returned result directly (synchronous response — no
+		// async job created). For fal-direct training this path is dead
+		// code: fal-ai/flux-lora-fast-training is always async and
+		// returns a request_id. This branch exists for future sync
+		// training providers (e.g., a hypothetical local-trainer).
+		//
+		// NOTE on billing: this path does NOT call chargeTrainingTick.
+		// Rationale: a sync response means the adapter completed work
+		// inside the 30s HTTP timeout (sendReqWithTimeout above). Such
+		// short-duration training is below the 30s chargeInterval — any
+		// billing here would be on net-new compute charging semantics
+		// not covered by the §3.B accuracy model. When a sync training
+		// provider is added, that provider must include cost info in
+		// adapterResp and we'll wire it through chargeTrainingTick with
+		// the actual elapsed seconds.
 		bso.trainingStore.Update(job.JobID, TrainingStatusCompleted, 100, adapterResp, "")
 		clog.V(common.SHORT).Infof(ctx, "Training job %s: completed (synchronous)", job.JobID)
 		return
