@@ -280,11 +280,15 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		}
 	}
 
-	// PR-10b (byoc-payment-fleet-2026-05): capture pre-call balance so
-	// each terminal-state emit can compute cost_paid_wei as the delta.
-	// Cheaper than re-deriving the price × seconds math, and exactly
-	// matches what was actually debited via chargeForCompute below.
-	balanceBefore := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+	// PR-10b (byoc-payment-fleet-2026-05): we previously tried to compute
+	// cost_paid_wei from balanceBefore - balanceAfter, but the SDK sends a
+	// fresh payment ticket with each request which credits the orch's
+	// per-sender balance — so the post-call balance often equals or
+	// exceeds the pre-call balance and the delta is misleading. Instead
+	// match chargeForCompute's math directly: wei = price × seconds.
+	// Same numerator (PricePerUnit / PixelsPerUnit), same seconds
+	// (ceil of time.Since(start).Seconds()).
+	_ = bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability) // kept for legacy log line consistency
 
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
@@ -303,7 +307,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"failed",
-			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			computeChargeWei(orchJob.JobPrice, start),
 			balanceAfter.FloatString(0),
 			err.Error(),
 		))
@@ -321,7 +325,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"failed",
-			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			computeChargeWei(orchJob.JobPrice, start),
 			balanceAfter.FloatString(0),
 			"worker returned 401",
 		))
@@ -350,7 +354,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			emitBillingEvent(ctx, inferenceBillingEvent(
 				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 				"failed",
-				new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+				computeChargeWei(orchJob.JobPrice, start),
 				balanceAfter.FloatString(0),
 				err.Error(),
 			))
@@ -368,7 +372,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			emitBillingEvent(ctx, inferenceBillingEvent(
 				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 				"failed",
-				new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+				computeChargeWei(orchJob.JobPrice, start),
 				balanceAfter.FloatString(0),
 				fmt.Sprintf("worker returned %d", resp.StatusCode),
 			))
@@ -384,7 +388,7 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		emitBillingEvent(ctx, inferenceBillingEvent(
 			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
 			"completed",
-			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			computeChargeWei(orchJob.JobPrice, start),
 			balanceAfter.FloatString(0),
 			"",
 		))
@@ -574,6 +578,30 @@ func (bso *BYOCOrchestratorServer) chargeForCompute(start time.Time, price *net.
 	// Debit the fee for the total time processed
 	took := time.Since(start)
 	bso.orch.DebitFees(sender, core.ManifestID(jobId), price, int64(math.Ceil(took.Seconds())))
+}
+
+// computeChargeWei returns the wei the orch debited for `start..now`,
+// matching chargeForCompute's math. PR-10b: BillingEvent.cost_paid_wei
+// uses this so the dashboard surfaces real billing instead of
+// balance-delta noise (the SDK credits a fresh ticket per call, which
+// makes balance-delta unreliable).
+//
+// Returns "0" if price is nil or denominator is zero. Caller should
+// treat this as "unknown / unmetered" rather than "free".
+func computeChargeWei(price *net.PriceInfo, start time.Time) string {
+	if price == nil || price.PixelsPerUnit == 0 {
+		return "0"
+	}
+	seconds := int64(math.Ceil(time.Since(start).Seconds()))
+	if seconds <= 0 {
+		seconds = 1
+	}
+	// wei = (PricePerUnit / PixelsPerUnit) × seconds
+	costRat := new(big.Rat).Mul(
+		big.NewRat(price.PricePerUnit, price.PixelsPerUnit),
+		big.NewRat(seconds, 1),
+	)
+	return costRat.FloatString(0)
 }
 
 func (bso *BYOCOrchestratorServer) addPaymentBalanceHeader(w http.ResponseWriter, sender ethcommon.Address, jobId string) {
