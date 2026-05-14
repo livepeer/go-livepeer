@@ -387,11 +387,9 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
 	if manifestID != "" {
-		if balances, ok := orch.node.Balances.balances[sender]; ok {
-			fixedPrice := balances.FixedPrice(manifestID)
-			if fixedPrice != nil {
-				return fixedPrice, nil
-			}
+		fixedPrice := orch.node.Balances.FixedPrice(sender, manifestID)
+		if fixedPrice != nil {
+			return fixedPrice, nil
 		}
 	}
 
@@ -536,11 +534,9 @@ func (orch *orchestrator) setFixedPricePerSession(sender ethcommon.Address, mani
 		glog.Warning("Node balances are not initialized")
 		return
 	}
-	if balances, ok := orch.node.Balances.balances[sender]; ok {
-		if balances.FixedPrice(manifestID) == nil {
-			balances.SetFixedPrice(manifestID, priceInfoRat)
-			glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
-		}
+	if orch.node.Balances.FixedPrice(sender, manifestID) == nil {
+		orch.node.Balances.SetFixedPrice(sender, manifestID, priceInfoRat)
+		glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
 	}
 }
 

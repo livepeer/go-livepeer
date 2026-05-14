@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -1194,6 +1195,89 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	assert.Equal(stubAuthToken.SessionId, oInfo.Storage[0].S3Info.Key)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+}
+
+func TestRefreshPayment_ReturnsPinnedPaymentInfo(t *testing.T) {
+	sender := ethcommon.HexToAddress("0x1234567890123456789012345678901234567890")
+	manifestID := core.ManifestID("manifest-id")
+	fixedPrice := big.NewRat(7, 3)
+	ticketParams := defaultTicketParams()
+	authToken := &net.AuthToken{Token: []byte("token"), SessionId: "session-id", Expiration: time.Now().Add(time.Hour).Unix()}
+	orchAddr := ethcommon.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+
+	node := &core.LivepeerNode{Balances: core.NewAddressBalances(time.Hour)}
+	node.Balances.Credit(sender, manifestID, big.NewRat(0, 1))
+	node.Balances.SetFixedPrice(sender, manifestID, fixedPrice)
+
+	orch := &mockOrchestrator{}
+	orch.On("TicketParams", sender, mock.MatchedBy(func(price *net.PriceInfo) bool {
+		return price != nil && price.PricePerUnit == 7 && price.PixelsPerUnit == 3
+	})).Return(ticketParams, nil)
+	orch.On("ServiceURI").Return(mustParseUrl(t, "http://orch.example"))
+	orch.On("Address").Return(orchAddr)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(authToken)
+
+	lp := &lphttp{orchestrator: orch, node: node}
+	body := `{"sender":"` + sender.Hex() + `","manifest_id":"` + string(manifestID) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/refresh-payment", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	lp.RefreshPayment(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got net.OrchestratorInfo
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	require.Equal(t, "http://orch.example", got.Transcoder)
+	require.Equal(t, ticketParams, got.TicketParams)
+	require.Equal(t, int64(7), got.PriceInfo.PricePerUnit)
+	require.Equal(t, int64(3), got.PriceInfo.PixelsPerUnit)
+	require.Equal(t, orchAddr.Bytes(), got.Address)
+	require.Equal(t, authToken, got.AuthToken)
+	require.Nil(t, got.Capabilities)
+	require.Nil(t, got.Storage)
+	require.Nil(t, got.Hardware)
+	require.Nil(t, got.CapabilitiesPrices)
+	require.Nil(t, got.Nodes)
+	orch.AssertNotCalled(t, "VerifySig", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestRefreshPayment_NoFixedPrice_ReturnsConflict(t *testing.T) {
+	node := &core.LivepeerNode{Balances: core.NewAddressBalances(time.Hour)}
+	lp := &lphttp{node: node}
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/refresh-payment",
+		strings.NewReader(`{"sender":"0x1234567890123456789012345678901234567890","manifest_id":"manifest-id"}`),
+	)
+	rr := httptest.NewRecorder()
+
+	lp.RefreshPayment(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	require.Contains(t, rr.Body.String(), "fixed price not found for session")
+}
+
+func TestRefreshPayment_InvalidRequest(t *testing.T) {
+	lp := &lphttp{}
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "missing sender", body: `{"manifest_id":"manifest-id"}`},
+		{name: "invalid sender", body: `{"sender":"not-an-address","manifest_id":"manifest-id"}`},
+		{name: "missing manifest id", body: `{"sender":"0x1234567890123456789012345678901234567890"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/refresh-payment", strings.NewReader(tt.body))
+			rr := httptest.NewRecorder()
+
+			lp.RefreshPayment(rr, req)
+
+			require.Equal(t, http.StatusBadRequest, rr.Code)
+		})
+	}
 }
 
 func TestGetPriceInfo_NoWebhook_DefaultPriceError_ReturnsError(t *testing.T) {

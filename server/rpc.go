@@ -165,6 +165,11 @@ type GetOrchestratorInfoParams struct {
 	IgnoreCapacityCheck bool
 }
 
+type refreshPaymentParamsRequest struct {
+	Sender     string `json:"sender"`
+	ManifestID string `json:"manifest_id"`
+}
+
 func (bs *BroadcastSession) Transcoder() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
@@ -242,6 +247,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
 	lp.transRPC.HandleFunc("/payment", lp.Payment)
+	lp.transRPC.HandleFunc("POST /refresh-payment", lp.RefreshPayment)
 	if acceptRemoteTranscoders {
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
@@ -408,6 +414,73 @@ func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) 
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
 	return &net.EndTranscodingSessionRequest{AuthToken: sess.OrchestratorInfo.AuthToken}, nil
+}
+
+func (h *lphttp) RefreshPayment(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req refreshPaymentParamsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.Sender == "" || !ethcommon.IsHexAddress(req.Sender) {
+		respondJsonError(ctx, w, fmt.Errorf("invalid sender"), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.ManifestID) == "" {
+		respondJsonError(ctx, w, fmt.Errorf("missing manifest_id"), http.StatusBadRequest)
+		return
+	}
+
+	sender := ethcommon.HexToAddress(req.Sender)
+	priceInfo, ok, err := fixedPriceInfo(h.node, sender, core.ManifestID(req.ManifestID))
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		respondJsonError(ctx, w, fmt.Errorf("fixed price not found for session"), http.StatusConflict)
+		return
+	}
+
+	ticketParams, err := h.orchestrator.TicketParams(sender, priceInfo)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	sessionID := string(core.RandomManifestID())
+	expiration := time.Now().Add(authTokenValidPeriod).Unix()
+	oInfo := &net.OrchestratorInfo{
+		Transcoder:   h.orchestrator.ServiceURI().String(),
+		TicketParams: ticketParams,
+		PriceInfo:    priceInfo,
+		Address:      h.orchestrator.Address().Bytes(),
+		AuthToken:    h.orchestrator.AuthToken(sessionID, expiration),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(oInfo); err != nil {
+		clog.Errorf(ctx, "Error encoding refreshed payment params err=%v", err)
+	}
+}
+
+func fixedPriceInfo(node *core.LivepeerNode, sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, bool, error) {
+	if node == nil || node.Balances == nil {
+		return nil, false, nil
+	}
+	fixedPrice := node.Balances.FixedPrice(sender, manifestID)
+	if fixedPrice == nil {
+		return nil, false, nil
+	}
+	if !fixedPrice.Num().IsInt64() || !fixedPrice.Denom().IsInt64() {
+		return nil, true, fmt.Errorf("fixed price cannot be represented as int64 price info")
+	}
+	return &net.PriceInfo{
+		PricePerUnit:  fixedPrice.Num().Int64(),
+		PixelsPerUnit: fixedPrice.Denom().Int64(),
+	}, true, nil
 }
 
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
