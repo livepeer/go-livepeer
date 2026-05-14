@@ -280,6 +280,12 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		}
 	}
 
+	// PR-10b (byoc-payment-fleet-2026-05): capture pre-call balance so
+	// each terminal-state emit can compute cost_paid_wei as the delta.
+	// Cheaper than re-deriving the price × seconds math, and exactly
+	// matches what was actually debited via chargeForCompute below.
+	balanceBefore := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 	if err != nil {
@@ -292,7 +298,15 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		}
 
 		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
+		emitBillingEvent(ctx, inferenceBillingEvent(
+			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
+			"failed",
+			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			balanceAfter.FloatString(0),
+			err.Error(),
+		))
 		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
 		return
 	}
@@ -302,7 +316,15 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 		clog.Errorf(ctx, "received 401 Unauthorized from worker, removing capability %v", orchJob.Req.Capability)
 		bso.orch.RemoveExternalCapability(orchJob.Req.Capability)
 		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
+		emitBillingEvent(ctx, inferenceBillingEvent(
+			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
+			"failed",
+			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			balanceAfter.FloatString(0),
+			"worker returned 401",
+		))
 		http.Error(w, "job not able to be processed, removing capability err=worker auth token failed", http.StatusInternalServerError)
 		return
 	}
@@ -323,7 +345,15 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			clog.Errorf(ctx, "Unable to read response err=%v", err)
 
 			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+			balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+			w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
+			emitBillingEvent(ctx, inferenceBillingEvent(
+				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
+				"failed",
+				new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+				balanceAfter.FloatString(0),
+				err.Error(),
+			))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -333,15 +363,31 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 
 			bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-			w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+			balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+			w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
+			emitBillingEvent(ctx, inferenceBillingEvent(
+				orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
+				"failed",
+				new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+				balanceAfter.FloatString(0),
+				fmt.Sprintf("worker returned %d", resp.StatusCode),
+			))
 			//return error response from the worker
 			http.Error(w, string(data), resp.StatusCode)
 			return
 		}
 
 		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
-		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		balanceAfter := bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, balanceAfter.FloatString(0))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), balanceAfter.FloatString(0))
+		emitBillingEvent(ctx, inferenceBillingEvent(
+			orchJob.Req.ID, orchJob.Req.Capability, orchJob.Sender, start,
+			"completed",
+			new(big.Rat).Sub(balanceBefore, balanceAfter).FloatString(0),
+			balanceAfter.FloatString(0),
+			"",
+		))
 		w.Write(data)
 		//request completed and returned a response
 

@@ -179,6 +179,52 @@ func (bso *BYOCOrchestratorServer) BillingEventsHandler() http.Handler {
 	})
 }
 
+// inferenceBillingEvent builds a BillingEvent for an inference job
+// terminal state. PR-10b — inference path emits BillingEvent so the
+// /payments dashboard surfaces canary-flip traffic.
+//
+// `costWei` is the delta between pre- and post-call balance (balanceBefore
+// minus balanceAfter). Caller computes this so we don't re-do the
+// chargeForCompute math.
+func inferenceBillingEvent(
+	jobID string,
+	capability string,
+	sender ethcommon.Address,
+	start time.Time,
+	status string,
+	costWei string,
+	balanceWei string,
+	errMsg string,
+) BillingEvent {
+	billableSeconds := int64(0)
+	if !start.IsZero() {
+		billableSeconds = int64(time.Since(start).Seconds())
+		if billableSeconds < 0 {
+			billableSeconds = 0
+		}
+	}
+	if costWei == "" {
+		costWei = "0"
+	}
+	if balanceWei == "" {
+		balanceWei = "0"
+	}
+	return BillingEvent{
+		JobID:           jobID,
+		JobType:         "inference",
+		Capability:      capability,
+		UserHash:        hashSender(sender),
+		SenderAddress:   sender.Hex(),
+		Status:          status,
+		CostPaidWei:     costWei,
+		BalanceWei:      balanceWei,
+		BillableSeconds: billableSeconds,
+		WallSeconds:     billableSeconds,
+		StartedAt:       start.UTC().Format(time.RFC3339),
+		ErrorMessage:    errMsg,
+	}
+}
+
 // trainingBillingEvent builds a BillingEvent for a training job. Helper
 // because every terminal-state caller in training.go needs the same set
 // of fields populated from TrainingJob + a few locals.
