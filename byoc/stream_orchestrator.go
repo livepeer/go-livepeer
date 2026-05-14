@@ -180,7 +180,7 @@ func (bso *BYOCOrchestratorServer) StartStream() http.Handler {
 			return
 		}
 
-		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability)
+		bso.chargeForCompute(start, orchJob.JobPrice, orchJob.Sender, orchJob.Req.Capability, resp)
 		w.Header().Set(jobPaymentBalanceHdr, bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 
 		clog.V(common.SHORT).Infof(ctx, "stream start processed successfully took=%v balance=%v", time.Since(start), bso.getPaymentBalance(orchJob.Sender, orchJob.Req.Capability).FloatString(0))
