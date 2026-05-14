@@ -5,7 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -62,9 +65,10 @@ func hashSender(addr ethcommon.Address) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
-// emitBillingEvent writes a single JSONL line to the orchestrator log.
-// Tagged with the "BillingEvent" string prefix so log shippers can
-// regex-filter without parsing every line.
+// emitBillingEvent writes a single JSONL line to the orchestrator log
+// AND appends to an in-memory ring buffer that the
+// /admin/billing-events endpoint exposes for the storyboard /payments
+// page.
 //
 // Marshaling failures are logged but never bubble up — the caller is
 // emitting an audit record on an already-terminal job and shouldn't
@@ -80,6 +84,10 @@ func emitBillingEvent(ctx context.Context, ev BillingEvent) {
 	if ev.CompletedAt == "" {
 		ev.CompletedAt = ev.Timestamp
 	}
+	// Stash in the ring buffer BEFORE marshaling — the buffer holds the
+	// struct, not the JSON, so dashboard queries don't pay a re-parse
+	// cost per event.
+	billingEventRing.append(ev)
 	b, err := json.Marshal(ev)
 	if err != nil {
 		glog.Warningf("billing_event: marshal failed for job=%s: %v", ev.JobID, err)
@@ -92,6 +100,83 @@ func emitBillingEvent(ctx context.Context, ev BillingEvent) {
 	} else {
 		glog.Infof("BillingEvent %s", string(b))
 	}
+}
+
+// --------------------------------------------------------------------
+// In-memory ring buffer for the live dashboard
+// --------------------------------------------------------------------
+
+// billingEventRingSize caps in-process memory at ~500 events. At ~600B
+// per event that's ~300 KB resident — fine. Older events spill to
+// stdout (docker logs) only; nothing is lost from the audit trail.
+const billingEventRingSize = 500
+
+type billingEventRingBuffer struct {
+	mu     sync.RWMutex
+	events []BillingEvent // most-recent-first append, capped
+}
+
+var billingEventRing = &billingEventRingBuffer{
+	events: make([]BillingEvent, 0, billingEventRingSize),
+}
+
+func (r *billingEventRingBuffer) append(ev BillingEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.events) >= billingEventRingSize {
+		// Drop the oldest event. Keep the slice fixed-length so the
+		// allocator doesn't churn under steady traffic.
+		copy(r.events, r.events[1:])
+		r.events = r.events[:len(r.events)-1]
+	}
+	r.events = append(r.events, ev)
+}
+
+func (r *billingEventRingBuffer) snapshot(limit int) []BillingEvent {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := len(r.events)
+	if limit <= 0 || limit > n {
+		limit = n
+	}
+	// Return most-recent-first: take the last `limit` entries and
+	// reverse-copy them so the dashboard renders newest-at-top
+	// without re-sorting.
+	out := make([]BillingEvent, limit)
+	src := r.events[n-limit:]
+	for i, ev := range src {
+		out[limit-1-i] = ev
+	}
+	return out
+}
+
+// BillingEventsHandler returns a JSON snapshot of the most recent
+// BillingEvents. Path: `GET /admin/billing-events?limit=N`. Default
+// limit is the ring buffer size.
+//
+// This is intentionally an UNAUTHENTICATED endpoint on the orch's
+// internal HTTP mux — the storyboard /payments page proxies through
+// the storyboard's bearer-auth layer, so cap on exposure is at the
+// edge (Caddy) not in this handler. Don't expose the orch HTTP port
+// publicly without that proxy.
+func (bso *BYOCOrchestratorServer) BillingEventsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := 0
+		if q := r.URL.Query().Get("limit"); q != "" {
+			if n, err := strconv.Atoi(q); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		events := billingEventRing.snapshot(limit)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"events":     events,
+			"count":      len(events),
+			"ring_size":  billingEventRingSize,
+			"schema_ver": billingEventSchemaVersion,
+		})
+	})
 }
 
 // trainingBillingEvent builds a BillingEvent for a training job. Helper

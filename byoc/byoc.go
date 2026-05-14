@@ -313,6 +313,10 @@ func (bso *BYOCOrchestratorServer) registerRoutes() {
 	// crediting fresh tickets without re-running verifyJobCreds (the job
 	// is already authenticated by its submit handshake).
 	bso.httpMux.Handle("POST /process/job/{jobId}/refresh-payment", bso.RefreshTrainingPayment())
+	// PR-14 (byoc-payment-fleet-2026-05): payment-stats surface for the
+	// storyboard /payments page. Returns the in-memory ring buffer of
+	// recent BillingEvents as JSON.
+	bso.httpMux.Handle("GET /admin/billing-events", bso.BillingEventsHandler())
 	// Stream routes
 	bso.httpMux.Handle("/ai/stream/start", bso.StartStream())
 	bso.httpMux.Handle("/ai/stream/stop", bso.StopStream())
