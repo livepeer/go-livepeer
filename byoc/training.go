@@ -305,6 +305,105 @@ func (bso *BYOCOrchestratorServer) ListTrainingJobs() http.Handler {
 	})
 }
 
+// RefreshTrainingPayment accepts a fresh Livepeer-Payment header and
+// credits the user's deposit ledger for an in-flight training job
+// (PR-5 of byoc-payment-fleet-2026-05, design §3.A refresh-on-watermark).
+//
+// Unlike SubmitTrainingJob, this handler does NOT re-run verifyJobCreds —
+// the job is already authenticated by its initial submit handshake. The
+// orch trusts the (job_id, sender) binding established at submit time.
+// Idempotency on duplicate refresh is enforced by the underlying
+// ProcessPayment, which already deduplicates ticket nonces.
+//
+// Invariants enforced here:
+//   I5 (no double-charge on retry): ProcessPayment is nonce-keyed at the
+//     PM layer; identical headers credit once.
+//   I6 (sender attribution): the refresh's sender is read from the
+//     payment header and compared to job.sender — mismatch → 403.
+func (bso *BYOCOrchestratorServer) RefreshTrainingPayment() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Extract job_id from path: /process/job/{jobId}/refresh-payment
+		path := strings.TrimPrefix(r.URL.Path, "/process/job/")
+		jobID := strings.TrimSuffix(path, "/refresh-payment")
+
+		// Job must exist + not be in a terminal state
+		job, ok := bso.trainingStore.Get(jobID)
+		if !ok {
+			http.Error(w, "Job not found", http.StatusNotFound)
+			return
+		}
+		if job.Status == TrainingStatusCompleted ||
+			job.Status == TrainingStatusFailed ||
+			job.Status == TrainingStatusCancelled {
+			http.Error(w,
+				fmt.Sprintf("Job is %s, cannot refresh payment", job.Status),
+				http.StatusBadRequest)
+			return
+		}
+
+		// Read + validate the payment header
+		paymentHdr := r.Header.Get("Livepeer-Payment")
+		if paymentHdr == "" {
+			http.Error(w, "Livepeer-Payment header required", http.StatusBadRequest)
+			return
+		}
+
+		payment, err := getPayment(paymentHdr)
+		if err != nil {
+			clog.Errorf(ctx, "Refresh %s: invalid payment header: %v", jobID, err)
+			http.Error(w, "Invalid Livepeer-Payment header", http.StatusBadRequest)
+			return
+		}
+
+		// I6: enforce sender match with original submit
+		paymentSender := ethcommon.BytesToAddress(payment.Sender)
+		if paymentSender != job.sender {
+			clog.Errorf(ctx,
+				"Refresh %s: sender mismatch (job=%s payment=%s)",
+				jobID, job.sender.Hex(), paymentSender.Hex())
+			http.Error(w,
+				fmt.Sprintf("Refresh sender %s does not match submit sender %s",
+					paymentSender.Hex(), job.sender.Hex()),
+				http.StatusForbidden)
+			return
+		}
+
+		// Process the payment (credits the deposit ledger). Idempotency on
+		// duplicate nonces is enforced by the PM layer.
+		if err := bso.orch.ProcessPayment(ctx, payment, core.ManifestID(job.Capability)); err != nil {
+			clog.Errorf(ctx, "Refresh %s: ProcessPayment failed: %v", jobID, err)
+			http.Error(w, fmt.Sprintf("Payment processing failed: %v", err),
+				http.StatusBadRequest)
+			return
+		}
+
+		// Update job balance after credit
+		newBal := bso.getPaymentBalance(job.sender, job.Capability)
+		bso.trainingStore.mu.Lock()
+		if j, ok := bso.trainingStore.jobs[jobID]; ok {
+			j.Balance = newBal.FloatString(0)
+			j.UpdatedAt = time.Now()
+		}
+		bso.trainingStore.mu.Unlock()
+
+		clog.V(common.SHORT).Infof(ctx,
+			"Refresh %s: credited tickets, new balance=%s",
+			jobID, newBal.FloatString(0))
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"job_id":          jobID,
+			"new_balance_wei": newBal.FloatString(0),
+		})
+	})
+}
+
 // chargeTrainingTick charges for one tick of training compute and updates the job's cost/balance fields.
 // Returns false if the sender has insufficient balance (job should be cancelled).
 func (bso *BYOCOrchestratorServer) chargeTrainingTick(job *TrainingJob, seconds int64) bool {

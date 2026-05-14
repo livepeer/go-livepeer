@@ -288,6 +288,11 @@ func (bso *BYOCOrchestratorServer) registerRoutes() {
 	bso.httpMux.Handle("GET /process/jobs", bso.ListTrainingJobs())
 	bso.httpMux.Handle("GET /process/job/{jobId}", bso.GetTrainingJobStatus())
 	bso.httpMux.Handle("POST /process/job/{jobId}/cancel", bso.CancelTrainingJob())
+	// PR-5 (byoc-payment-fleet-2026-05): refresh-on-watermark endpoint.
+	// SDK calls this when the in-flight job's balance approaches zero,
+	// crediting fresh tickets without re-running verifyJobCreds (the job
+	// is already authenticated by its submit handshake).
+	bso.httpMux.Handle("POST /process/job/{jobId}/refresh-payment", bso.RefreshTrainingPayment())
 	// Stream routes
 	bso.httpMux.Handle("/ai/stream/start", bso.StartStream())
 	bso.httpMux.Handle("/ai/stream/stop", bso.StopStream())
