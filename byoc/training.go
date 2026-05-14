@@ -423,6 +423,27 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	elapsed := time.Duration(0)
 	lastChargeTime := start
 
+	// PR-4 (byoc-payment-fleet-2026-05) §3.B fixes:
+	//
+	// (1) First-tick grace: don't fire chargeTick until the adapter
+	//     reports IN_PROGRESS at least once. Prevents billing the user
+	//     for fal-side setup (zip download, GPU spin-up). Without this,
+	//     the orch bills 30s of "training" that was really 30s of
+	//     queuing on fal's worker pool.
+	//     `seenInProgress` flips true on first IN_PROGRESS observation
+	//     and stays true. While false, `lastChargeTime` is continuously
+	//     pushed forward so no charge accumulates.
+	//
+	// (2) Stalled-adapter pause: when status polls fail consecutively,
+	//     pause chargeTick. The orch shouldn't bill for time when it
+	//     can't verify the adapter is making progress.
+	//     `consecutivePollFails` counter resets to 0 on successful poll.
+	//     While >= 3, lastChargeTime is also pushed forward (matches the
+	//     grace-period behavior).
+	seenInProgress := false
+	consecutivePollFails := 0
+	const stallThreshold = 3
+
 	// Set initial balance
 	if job.jobPrice != nil {
 		bal := bso.getPaymentBalance(job.sender, job.Capability)
@@ -438,16 +459,27 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 		currentJob, ok := bso.trainingStore.Get(job.JobID)
 		if !ok || currentJob.Status == TrainingStatusCancelled {
 			clog.Infof(ctx, "Training job %s: cancelled, stopping poll", job.JobID)
-			// Charge for time used so far
-			finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
-			if finalSecs > 0 {
-				bso.chargeTrainingTick(job, finalSecs)
+			// Charge for time used so far (only if we ever started billing)
+			if seenInProgress {
+				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
+				if finalSecs > 0 {
+					bso.chargeTrainingTick(job, finalSecs)
+				}
 			}
 			return
 		}
 
-		// Charge every chargeInterval (like SSE streaming ticker)
-		if time.Since(lastChargeTime) >= chargeInterval {
+		// Charge every chargeInterval, but only AFTER first IN_PROGRESS
+		// AND when adapter isn't stalled. While in grace / stall, push
+		// lastChargeTime forward to drop the accrued time on the floor.
+		if !seenInProgress || consecutivePollFails >= stallThreshold {
+			lastChargeTime = time.Now()
+			// Log stall transitions once to aid debugging
+			if consecutivePollFails == stallThreshold {
+				clog.Infof(ctx, "Training job %s: adapter stalled (%d failed polls), pausing billing",
+					job.JobID, consecutivePollFails)
+			}
+		} else if time.Since(lastChargeTime) >= chargeInterval {
 			secs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 			if !bso.chargeTrainingTick(job, secs) {
 				clog.Infof(ctx, "Training job %s: insufficient balance, cancelling", job.JobID)
@@ -464,28 +496,54 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 
 		statusReq, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
 		if err != nil {
+			consecutivePollFails++
 			continue
 		}
 
 		statusResp, err := sendReqWithTimeout(statusReq, 15*time.Second)
 		if err != nil {
-			glog.Warningf("Training job %s: status poll failed: %v", job.JobID, err)
+			consecutivePollFails++
+			glog.Warningf("Training job %s: status poll failed: %v (consecutive=%d)",
+				job.JobID, err, consecutivePollFails)
 			continue
 		}
 
 		statusBody, err := io.ReadAll(statusResp.Body)
 		statusResp.Body.Close()
 		if err != nil {
+			consecutivePollFails++
 			continue
 		}
 
 		var statusData map[string]interface{}
 		if err := json.Unmarshal(statusBody, &statusData); err != nil {
+			consecutivePollFails++
 			continue
 		}
 
+		// Status read succeeded — reset stall counter. If we were
+		// previously stalled and just recovered, log it.
+		if consecutivePollFails >= stallThreshold {
+			clog.Infof(ctx, "Training job %s: adapter recovered after %d failed polls, resuming billing",
+				job.JobID, consecutivePollFails)
+		}
+		consecutivePollFails = 0
+
 		status, _ := statusData["status"].(string)
 		progress, _ := statusData["progress"].(float64)
+
+		// First-tick grace: flip seenInProgress on the first status that
+		// indicates the adapter is actually running the job. Statuses
+		// "submitted" / "" don't qualify; everything else does (running,
+		// completed, failed, cancelled all imply work happened).
+		if !seenInProgress && status != "" && status != "submitted" {
+			seenInProgress = true
+			// Reset lastChargeTime so the first billable interval starts
+			// from the moment we observed IN_PROGRESS, not job submit.
+			lastChargeTime = time.Now()
+			clog.V(common.SHORT).Infof(ctx, "Training job %s: in-progress observed, billing starts now",
+				job.JobID)
+		}
 
 		switch status {
 		case "completed":
@@ -493,10 +551,13 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 			if result == nil {
 				result = statusData
 			}
-			// Final charge for remaining seconds since last tick
-			finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
-			if finalSecs > 0 {
-				bso.chargeTrainingTick(job, finalSecs)
+			// Final charge for remaining seconds since last tick — only
+			// if we ever started billing
+			if seenInProgress {
+				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
+				if finalSecs > 0 {
+					bso.chargeTrainingTick(job, finalSecs)
+				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusCompleted, 100, result, "")
 			clog.V(common.SHORT).Infof(ctx, "Training job %s: completed (elapsed=%v cost=%s)",
@@ -504,18 +565,21 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 			return
 		case "failed":
 			errMsg, _ := statusData["error"].(string)
-			// Charge for time used
-			finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
-			if finalSecs > 0 {
-				bso.chargeTrainingTick(job, finalSecs)
+			if seenInProgress {
+				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
+				if finalSecs > 0 {
+					bso.chargeTrainingTick(job, finalSecs)
+				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusFailed, int(progress), nil, errMsg)
 			clog.Errorf(ctx, "Training job %s: failed: %s (cost=%s)", job.JobID, errMsg, job.Cost)
 			return
 		case "cancelled":
-			finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
-			if finalSecs > 0 {
-				bso.chargeTrainingTick(job, finalSecs)
+			if seenInProgress {
+				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
+				if finalSecs > 0 {
+					bso.chargeTrainingTick(job, finalSecs)
+				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusCancelled, int(progress), nil, "")
 			return
@@ -524,10 +588,12 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 		}
 	}
 
-	// Timed out -- charge for all elapsed time
-	finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
-	if finalSecs > 0 {
-		bso.chargeTrainingTick(job, finalSecs)
+	// Timed out -- charge for elapsed time (only if billing started)
+	if seenInProgress {
+		finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
+		if finalSecs > 0 {
+			bso.chargeTrainingTick(job, finalSecs)
+		}
 	}
 	bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, fmt.Sprintf("Timed out after %v", pollTimeout))
 	clog.Errorf(ctx, "Training job %s: timed out (cost=%s)", job.JobID, job.Cost)
