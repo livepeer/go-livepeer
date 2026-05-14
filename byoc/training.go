@@ -53,9 +53,23 @@ type TrainingJob struct {
 	AdapterJobID string `json:"adapter_job_id,omitempty"`
 	AdapterURL   string `json:"-"`
 
+	// SenderHex is the hex form of `sender` — duplicated as a serialized
+	// field so the checkpoint store carries the payer identity through
+	// orch restarts. The audit log needs a sender for every BillingEvent
+	// including the sweep-on-restart path (I8 + PR-10 reconciliation).
+	// Stays in sync with `sender` via setSender below.
+	SenderHex string `json:"sender_hex,omitempty"`
+
 	// Internal: payment fields (not serialized)
 	sender   ethcommon.Address `json:"-"`
 	jobPrice *net.PriceInfo    `json:"-"`
+}
+
+// setSender keeps SenderHex aligned with the unexported sender. Use this
+// at job construction; do NOT assign job.sender directly.
+func (j *TrainingJob) setSender(addr ethcommon.Address) {
+	j.sender = addr
+	j.SenderHex = addr.Hex()
 }
 
 // TrainingJobStore is an in-memory store for training jobs with TTL cleanup.
@@ -141,6 +155,14 @@ func (s *TrainingJobStore) sweepOnStartup() error {
 			glog.Warningf("training-store sweep: parse %s: %v (skipping)", path, err)
 			continue
 		}
+		// Rehydrate the unexported `sender` from the persisted SenderHex.
+		// Older checkpoints (pre-PR-10) won't have SenderHex set — those
+		// emit with the zero address in the BillingEvent below, which is
+		// the honest answer (audit pipeline will flag and operator
+		// reconciles manually from signer logs).
+		if job.SenderHex != "" {
+			job.sender = ethcommon.HexToAddress(job.SenderHex)
+		}
 		// Non-terminal → mark failed
 		if job.Status == TrainingStatusSubmitted || job.Status == TrainingStatusRunning {
 			job.Status = "failed_orchestrator_restart"
@@ -150,6 +172,13 @@ func (s *TrainingJobStore) sweepOnStartup() error {
 			if err := s.writeCheckpoint(&job); err != nil {
 				glog.Errorf("training-store sweep: rewrite %s: %v", path, err)
 			}
+			// Emit BillingEvent so the audit log has a terminal record for
+			// the lost job. Caller (orch startup) uses these to drive I8
+			// refunds. billable_seconds=0 because we have no record of how
+			// much of the in-flight work was actually charged before the
+			// restart — what *was* charged is in CostPaidWei from the
+			// checkpoint (preserved across restart).
+			emitBillingEvent(nil, trainingBillingEvent(&job, job.Status, 0, time.Time{}, job.Error))
 			failed++
 		}
 		s.jobs[job.JobID] = &job
@@ -373,9 +402,9 @@ func (bso *BYOCOrchestratorServer) SubmitTrainingJob() http.Handler {
 			UpdatedAt:  time.Now(),
 			Cost:       "0",
 			Balance:    "0",
-			sender:     orchJob.Sender,
 			jobPrice:   orchJob.JobPrice,
 		}
+		job.setSender(orchJob.Sender)
 		bso.trainingStore.Store(job)
 
 		ctx = clog.AddVal(ctx, "training_job_id", jobID)
@@ -627,6 +656,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	if err != nil {
 		clog.Errorf(ctx, "Training job %s: failed to create request: %v", job.JobID, err)
 		bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, err.Error())
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, 0, time.Time{}, err.Error()))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -635,6 +665,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	if err != nil {
 		clog.Errorf(ctx, "Training job %s: adapter submit failed: %v", job.JobID, err)
 		bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, err.Error())
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, 0, time.Time{}, err.Error()))
 		return
 	}
 	defer resp.Body.Close()
@@ -643,6 +674,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	if err != nil {
 		clog.Errorf(ctx, "Training job %s: failed to read adapter response: %v", job.JobID, err)
 		bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, err.Error())
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, 0, time.Time{}, err.Error()))
 		return
 	}
 
@@ -650,6 +682,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 		errMsg := fmt.Sprintf("adapter returned %d: %s", resp.StatusCode, string(respBody))
 		clog.Errorf(ctx, "Training job %s: %s", job.JobID, errMsg)
 		bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, errMsg)
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, 0, time.Time{}, errMsg))
 		return
 	}
 
@@ -657,6 +690,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	if err := json.Unmarshal(respBody, &adapterResp); err != nil {
 		clog.Errorf(ctx, "Training job %s: failed to parse adapter response: %v", job.JobID, err)
 		bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, err.Error())
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, 0, time.Time{}, err.Error()))
 		return
 	}
 
@@ -679,6 +713,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 		// the actual elapsed seconds.
 		bso.trainingStore.Update(job.JobID, TrainingStatusCompleted, 100, adapterResp, "")
 		clog.V(common.SHORT).Infof(ctx, "Training job %s: completed (synchronous)", job.JobID)
+		emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusCompleted, 0, time.Time{}, ""))
 		return
 	}
 
@@ -730,6 +765,13 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 	consecutivePollFails := 0
 	const stallThreshold = 3
 
+	// Track billing-event provenance: when billing actually started
+	// (seenInProgress flip) and the running total of seconds charged.
+	// These feed BillingEvent on every terminal-state emit so the audit
+	// log includes accurate billable_seconds + billing_started_at.
+	var billingStartedAt time.Time
+	var billableSecondsTotal int64
+
 	// Set initial balance
 	if job.jobPrice != nil {
 		bal := bso.getPaymentBalance(job.sender, job.Capability)
@@ -750,8 +792,10 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 				if finalSecs > 0 {
 					bso.chargeTrainingTick(job, finalSecs)
+					billableSecondsTotal += finalSecs
 				}
 			}
+			emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusCancelled, billableSecondsTotal, billingStartedAt, ""))
 			return
 		}
 
@@ -769,9 +813,12 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 			secs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 			if !bso.chargeTrainingTick(job, secs) {
 				clog.Infof(ctx, "Training job %s: insufficient balance, cancelling", job.JobID)
+				billableSecondsTotal += secs
 				bso.trainingStore.Update(job.JobID, TrainingStatusCancelled, currentJob.Progress, nil, "Insufficient balance")
+				emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusCancelled, billableSecondsTotal, billingStartedAt, "Insufficient balance"))
 				return
 			}
+			billableSecondsTotal += secs
 			lastChargeTime = time.Now()
 			clog.V(common.DEBUG).Infof(ctx, "Training job %s: charged %ds, cost=%s balance=%s",
 				job.JobID, secs, currentJob.Cost, currentJob.Balance)
@@ -827,6 +874,7 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 			// Reset lastChargeTime so the first billable interval starts
 			// from the moment we observed IN_PROGRESS, not job submit.
 			lastChargeTime = time.Now()
+			billingStartedAt = lastChargeTime
 			clog.V(common.SHORT).Infof(ctx, "Training job %s: in-progress observed, billing starts now",
 				job.JobID)
 		}
@@ -843,11 +891,13 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 				if finalSecs > 0 {
 					bso.chargeTrainingTick(job, finalSecs)
+					billableSecondsTotal += finalSecs
 				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusCompleted, 100, result, "")
 			clog.V(common.SHORT).Infof(ctx, "Training job %s: completed (elapsed=%v cost=%s)",
 				job.JobID, time.Since(start), job.Cost)
+			emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusCompleted, billableSecondsTotal, billingStartedAt, ""))
 			return
 		case "failed":
 			errMsg, _ := statusData["error"].(string)
@@ -855,19 +905,23 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 				if finalSecs > 0 {
 					bso.chargeTrainingTick(job, finalSecs)
+					billableSecondsTotal += finalSecs
 				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusFailed, int(progress), nil, errMsg)
 			clog.Errorf(ctx, "Training job %s: failed: %s (cost=%s)", job.JobID, errMsg, job.Cost)
+			emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusFailed, billableSecondsTotal, billingStartedAt, errMsg))
 			return
 		case "cancelled":
 			if seenInProgress {
 				finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 				if finalSecs > 0 {
 					bso.chargeTrainingTick(job, finalSecs)
+					billableSecondsTotal += finalSecs
 				}
 			}
 			bso.trainingStore.Update(job.JobID, TrainingStatusCancelled, int(progress), nil, "")
+			emitBillingEvent(ctx, trainingBillingEvent(job, TrainingStatusCancelled, billableSecondsTotal, billingStartedAt, ""))
 			return
 		default:
 			bso.trainingStore.Update(job.JobID, TrainingStatusRunning, int(progress), nil, "")
@@ -879,8 +933,11 @@ func (bso *BYOCOrchestratorServer) runTrainingJob(ctx context.Context, job *Trai
 		finalSecs := int64(math.Ceil(time.Since(lastChargeTime).Seconds()))
 		if finalSecs > 0 {
 			bso.chargeTrainingTick(job, finalSecs)
+			billableSecondsTotal += finalSecs
 		}
 	}
-	bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, fmt.Sprintf("Timed out after %v", pollTimeout))
+	timeoutMsg := fmt.Sprintf("Timed out after %v", pollTimeout)
+	bso.trainingStore.Update(job.JobID, TrainingStatusFailed, 0, nil, timeoutMsg)
 	clog.Errorf(ctx, "Training job %s: timed out (cost=%s)", job.JobID, job.Cost)
+	emitBillingEvent(ctx, trainingBillingEvent(job, "timed_out", billableSecondsTotal, billingStartedAt, timeoutMsg))
 }
