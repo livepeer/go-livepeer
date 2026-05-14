@@ -90,8 +90,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	defer BroadcastCfg.SetCapabilityMaxPrice(capability1, modelID1, nil) // Clean up
 
 	baseOrchInfo := &net.OrchestratorInfo{
-		Address:   ethcommon.HexToAddress("0x1").Bytes(),
-		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		Address:    ethcommon.HexToAddress("0x1").Bytes(),
+		Transcoder: "http://orch.example",
+		PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		TicketParams: &net.TicketParams{
 			Recipient: pm.RandAddress().Bytes(),
 		},
@@ -118,6 +119,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 		sender     *pm.MockSender
 		wantStatus int
 		wantMsg    string
+		wantHeader string
 	}{
 		{
 			name:       "invalid JSON",
@@ -203,6 +205,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			}(),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "ticket params expired triggers 480",
@@ -214,6 +217,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			sender:     newMockSender(mockSenderConfig{validateErr: pm.ErrTicketParamsExpired}),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "invalid job type",
@@ -319,6 +323,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
 			require.NotEmpty(apiErr.Error.Message)
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
+			if tt.wantHeader != "" {
+				require.Equal(tt.wantHeader, rr.Header().Get(RefreshSessionOrchestratorURLHeader))
+			}
 		})
 	}
 }
