@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -256,6 +257,25 @@ type BYOCOrchestratorServer struct {
 }
 
 func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trickleSrv *trickle.Server, trickleBasePath string, mux *http.ServeMux) *BYOCOrchestratorServer {
+	// PR-6: opt-in filesystem-backed training store via TRAINING_CHECKPOINT_DIR.
+	// When unset, falls back to in-memory (current behavior, no recovery on
+	// orch restart). When set, JSON checkpoints land in that directory and
+	// startup-sweep recovers any in-flight jobs as failed_orchestrator_restart.
+	checkpointDir := os.Getenv("TRAINING_CHECKPOINT_DIR")
+	var store *TrainingJobStore
+	if checkpointDir != "" {
+		var err error
+		store, err = NewTrainingJobStoreWithCheckpoint(24*time.Hour, checkpointDir)
+		if err != nil {
+			glog.Warningf("training-store: checkpoint init failed (%v), falling back to in-memory", err)
+			store = NewTrainingJobStore(24 * time.Hour)
+		} else {
+			glog.Infof("training-store: persisting checkpoints to %s", checkpointDir)
+		}
+	} else {
+		store = NewTrainingJobStore(24 * time.Hour)
+	}
+
 	bso := &BYOCOrchestratorServer{
 		node:            node,
 		orch:            orch,
@@ -263,7 +283,7 @@ func NewBYOCOrchestratorServer(node *core.LivepeerNode, orch Orchestrator, trick
 		trickleBasePath: trickleBasePath,
 		httpMux:         mux,
 		sharedBalMtx:    &sync.Mutex{},
-		trainingStore:   NewTrainingJobStore(24 * time.Hour),
+		trainingStore:   store,
 	}
 
 	bso.registerRoutes()

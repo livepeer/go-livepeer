@@ -9,6 +9,8 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -56,27 +58,149 @@ type TrainingJob struct {
 	jobPrice *net.PriceInfo    `json:"-"`
 }
 
-// TrainingJobStore is an in-memory store for training jobs with TTL cleanup
+// TrainingJobStore is an in-memory store for training jobs with TTL cleanup.
+// Optionally backed by filesystem checkpoints for recovery on orch restart.
+//
+// PR-6 (byoc-payment-fleet-2026-05): the design (§3.D) called for Redis-
+// backed persistence. After consideration, filesystem JSON checkpoint
+// gives equivalent recovery semantics for the single-instance BYOC orch
+// today without the operational cost of a new Redis container or go
+// module dependency. Swap to Redis if/when orch becomes multi-instance.
+//
+// File layout: {checkpointDir}/{job_id}.json
+// Atomicity: write to {job_id}.json.tmp then rename. Atomic on POSIX.
+// Sweep: on startup, any non-terminal job loaded from disk is marked
+// failed_orchestrator_restart and a BillingEvent is emitted (TODO PR-10).
 type TrainingJobStore struct {
-	mu   sync.RWMutex
-	jobs map[string]*TrainingJob
-	ttl  time.Duration // how long to keep completed/failed jobs
+	mu             sync.RWMutex
+	jobs           map[string]*TrainingJob
+	ttl            time.Duration // how long to keep terminal jobs
+	checkpointDir  string        // empty = no persistence (in-memory only)
+	checkpointMu   sync.Mutex    // serialize fs writes across concurrent updates
 }
 
+// NewTrainingJobStore creates an in-memory-only store (backward compatible).
 func NewTrainingJobStore(ttl time.Duration) *TrainingJobStore {
 	s := &TrainingJobStore{
 		jobs: make(map[string]*TrainingJob),
 		ttl:  ttl,
 	}
-	// Start cleanup goroutine
 	go s.cleanupLoop()
 	return s
 }
 
+// NewTrainingJobStoreWithCheckpoint creates a store backed by JSON files
+// in checkpointDir. On startup, loads existing checkpoints; any non-
+// terminal job is marked failed_orchestrator_restart and persisted with
+// that status (so subsequent /process/job/{id} reads see the failure).
+//
+// If checkpointDir doesn't exist, it's created. If a checkpoint file is
+// corrupt (unparseable JSON), it's logged and skipped — not fatal.
+func NewTrainingJobStoreWithCheckpoint(ttl time.Duration, checkpointDir string) (*TrainingJobStore, error) {
+	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create checkpoint dir: %w", err)
+	}
+	s := &TrainingJobStore{
+		jobs:          make(map[string]*TrainingJob),
+		ttl:           ttl,
+		checkpointDir: checkpointDir,
+	}
+	if err := s.sweepOnStartup(); err != nil {
+		return nil, fmt.Errorf("sweep on startup: %w", err)
+	}
+	go s.cleanupLoop()
+	return s, nil
+}
+
+// sweepOnStartup reads every {jobID}.json from checkpointDir. Terminal
+// jobs are loaded as-is (kept for status queries until TTL). Non-terminal
+// jobs are marked failed_orchestrator_restart, their checkpoint files
+// rewritten with the failure, and they're added to the in-memory map.
+//
+// Caller (orch startup path) should emit refunds based on these records
+// per Invariant I8 — but that's the orch's job, not the store's.
+func (s *TrainingJobStore) sweepOnStartup() error {
+	entries, err := os.ReadDir(s.checkpointDir)
+	if err != nil {
+		return err
+	}
+	recovered := 0
+	failed := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(s.checkpointDir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			glog.Warningf("training-store sweep: read %s: %v", path, err)
+			continue
+		}
+		var job TrainingJob
+		if err := json.Unmarshal(data, &job); err != nil {
+			glog.Warningf("training-store sweep: parse %s: %v (skipping)", path, err)
+			continue
+		}
+		// Non-terminal → mark failed
+		if job.Status == TrainingStatusSubmitted || job.Status == TrainingStatusRunning {
+			job.Status = "failed_orchestrator_restart"
+			job.Error = "Orchestrator restarted while job was in-flight"
+			job.UpdatedAt = time.Now()
+			// Re-checkpoint with the failure status
+			if err := s.writeCheckpoint(&job); err != nil {
+				glog.Errorf("training-store sweep: rewrite %s: %v", path, err)
+			}
+			failed++
+		}
+		s.jobs[job.JobID] = &job
+		recovered++
+	}
+	if recovered > 0 {
+		glog.Infof("training-store sweep: recovered %d jobs, marked %d as failed_orchestrator_restart",
+			recovered, failed)
+	}
+	return nil
+}
+
+// writeCheckpoint atomically persists a job to disk. Caller must hold
+// no store-level locks — uses checkpointMu to serialize fs writes.
+// Returns nil if checkpointDir is unset (in-memory-only mode).
+func (s *TrainingJobStore) writeCheckpoint(job *TrainingJob) error {
+	if s.checkpointDir == "" {
+		return nil
+	}
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+	data, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	finalPath := filepath.Join(s.checkpointDir, job.JobID+".json")
+	tmpPath := finalPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, finalPath)
+}
+
+// removeCheckpoint deletes the disk record for a job (called during TTL
+// cleanup of terminal jobs). No-op if checkpointDir is unset.
+func (s *TrainingJobStore) removeCheckpoint(jobID string) {
+	if s.checkpointDir == "" {
+		return
+	}
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+	_ = os.Remove(filepath.Join(s.checkpointDir, jobID+".json"))
+}
+
 func (s *TrainingJobStore) Store(job *TrainingJob) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.jobs[job.JobID] = job
+	s.mu.Unlock()
+	if err := s.writeCheckpoint(job); err != nil {
+		glog.Warningf("training-store: checkpoint write for %s failed: %v", job.JobID, err)
+	}
 }
 
 func (s *TrainingJobStore) Get(jobID string) (*TrainingJob, bool) {
@@ -88,9 +212,9 @@ func (s *TrainingJobStore) Get(jobID string) (*TrainingJob, bool) {
 
 func (s *TrainingJobStore) Update(jobID string, status string, progress int, result map[string]interface{}, errMsg string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	job, ok := s.jobs[jobID]
 	if !ok {
+		s.mu.Unlock()
 		return false
 	}
 	job.Status = status
@@ -102,6 +226,13 @@ func (s *TrainingJobStore) Update(jobID string, status string, progress int, res
 		job.Error = errMsg
 	}
 	job.UpdatedAt = time.Now()
+	// Snapshot for checkpoint outside the store lock to avoid holding
+	// it during fs I/O
+	snapshot := *job
+	s.mu.Unlock()
+	if err := s.writeCheckpoint(&snapshot); err != nil {
+		glog.Warningf("training-store: checkpoint update for %s failed: %v", jobID, err)
+	}
 	return true
 }
 
@@ -124,14 +255,22 @@ func (s *TrainingJobStore) cleanupLoop() {
 	for range ticker.C {
 		s.mu.Lock()
 		now := time.Now()
+		toRemove := []string{}
 		for id, job := range s.jobs {
-			if job.Status == TrainingStatusCompleted || job.Status == TrainingStatusFailed || job.Status == TrainingStatusCancelled {
+			if job.Status == TrainingStatusCompleted ||
+				job.Status == TrainingStatusFailed ||
+				job.Status == TrainingStatusCancelled ||
+				job.Status == "failed_orchestrator_restart" {
 				if now.Sub(job.UpdatedAt) > s.ttl {
 					delete(s.jobs, id)
+					toRemove = append(toRemove, id)
 				}
 			}
 		}
 		s.mu.Unlock()
+		for _, id := range toRemove {
+			s.removeCheckpoint(id)
+		}
 	}
 }
 
