@@ -369,11 +369,15 @@ func TestPrintConfigRedaction(t *testing.T) {
 	testApiKey := "api-key-abc123"
 	testOrchSecret := "orch-secret-456"
 	testServiceAddr := "127.0.0.1:8936"
+	testRemoteSignerHeaders := "Authorization:Bearer gateway-token"
+	testRemoteSignerWebhookHeaders := "Authorization:Bearer webhook-token,X-API-Key:secret"
 
 	cfg.EthPassword = &testPassword
 	cfg.LiveAIAuthApiKey = &testApiKey
 	cfg.OrchSecret = &testOrchSecret
 	cfg.ServiceAddr = &testServiceAddr
+	cfg.RemoteSignerHeaders = &testRemoteSignerHeaders
+	cfg.RemoteSignerWebhookHeaders = &testRemoteSignerWebhookHeaders
 
 	// Capture the output
 	var buf []byte
@@ -386,6 +390,8 @@ func TestPrintConfigRedaction(t *testing.T) {
 	assert.NotContains(output, testPassword, "EthPassword should be redacted")
 	assert.NotContains(output, testApiKey, "LiveAIAuthApiKey should be redacted")
 	assert.NotContains(output, testOrchSecret, "OrchSecret should be redacted")
+	assert.NotContains(output, testRemoteSignerHeaders, "RemoteSignerHeaders should be redacted")
+	assert.NotContains(output, testRemoteSignerWebhookHeaders, "RemoteSignerWebhookHeaders should be redacted")
 	assert.Contains(output, "***", "Should contain redacted placeholder")
 
 	// Verify non-sensitive values are still shown

@@ -470,12 +470,14 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 
 	// Define sensitive field names that should be redacted
 	sensitiveFields := map[string]bool{
-		"EthPassword":         true,
-		"OrchSecret":          true,
-		"KafkaPassword":       true,
-		"MediaMTXApiPassword": true,
-		"LiveAIAuthApiKey":    true,
-		"FVfailGsKey":         true,
+		"EthPassword":               true,
+		"OrchSecret":                true,
+		"KafkaPassword":             true,
+		"MediaMTXApiPassword":       true,
+		"LiveAIAuthApiKey":          true,
+		"FVfailGsKey":               true,
+		"RemoteSignerHeaders":       true,
+		"RemoteSignerWebhookHeaders": true,
 	}
 
 	for i := 0; i < cfgType.NumField(); i++ {
