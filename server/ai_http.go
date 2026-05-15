@@ -43,6 +43,7 @@ var TrickleHTTPPath = "/ai/trickle/"
 
 const maxLiveRunnerTrickleChannelsPerRequest = 25
 const liveRunnerSenderHeader = "Livepeer-Payer-Address"
+const maxScopeRequestBodySize = 1 << 20 // 1 MB
 
 func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
@@ -888,6 +889,7 @@ func (h *lphttp) StartScope() http.Handler {
 		manifestID := string(core.RandomManifestID())
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
+		r.Body = http.MaxBytesReader(w, r.Body, maxScopeRequestBodySize)
 		if err := jsonDecoder(&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return

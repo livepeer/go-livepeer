@@ -582,6 +582,19 @@ func TestScopePaidRetryAllowsSegmentManifestToDifferFromAuthToken(t *testing.T) 
 	require.NotEmpty(t, *resp.ManifestId)
 }
 
+func TestScopeRejectsOversizedPayload(t *testing.T) {
+	lp := newScopeHTTP(t)
+
+	oversizedBody := `{"model_id":"scope","gateway_request_id":"` + strings.Repeat("a", maxScopeRequestBodySize) + `"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(oversizedBody))
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "http: request body too large")
+}
+
 func TestScopePaymentChallengeRejectsInvalidPayer(t *testing.T) {
 	lp := newScopeHTTP(t)
 
