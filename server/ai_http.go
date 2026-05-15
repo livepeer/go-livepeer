@@ -109,7 +109,7 @@ type liveRunnerManager interface {
 	Unregister(runnerID, auth string) error
 	Runners() []runner.LiveRunnerDiscoveryRunner
 	PaymentInfo(runnerID string) (*runner.LiveRunnerPriceInfo, error)
-	ReserveSession(runnerID string) (string, string, error)
+	ReserveSession(runnerID string, sessionID ...string) (string, string, error)
 	ReleaseSession(runnerID, sessionID string) error
 	RunnerMode(runnerID string) (string, error)
 	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
@@ -217,9 +217,10 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var (
-		payment lpnet.Payment
-		segData *core.SegTranscodingMetadata
-		ctx     context.Context
+		payment   lpnet.Payment
+		segData   *core.SegTranscodingMetadata
+		ctx       context.Context
+		sessionID string
 	)
 	if paymentRequired {
 		var err error
@@ -231,8 +232,10 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			respondWithError(w, err.Error(), http.StatusForbidden)
 			return
 		}
+		// for easier correlation across orch, gw, signer
+		sessionID = string(segData.ManifestID)
 	}
-	sessionID, _, err := manager.ReserveSession(runnerID)
+	sessionID, _, err = manager.ReserveSession(runnerID, sessionID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return

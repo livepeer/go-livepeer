@@ -558,7 +558,7 @@ func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	return nil
 }
 
-func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, error) {
+func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...string) (string, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
@@ -570,18 +570,28 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string) (string, string, er
 	if len(runner.sessions) >= runner.Capacity {
 		return "", "", &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: "no capacity available for runner"}
 	}
-
-	sessionID := "session_" + randomStr(liveRunnerIDRandomBytes)
-	for {
-		if _, exists := runner.sessions[sessionID]; !exists {
-			break
-		}
-		sessionID = "session_" + randomStr(liveRunnerIDRandomBytes)
+	id := ""
+	if len(optSessionID) > 0 {
+		// use supplied id if given - usually ticket param's auth token id / manifest id
+		id = optSessionID[0]
 	}
-	runner.sessions[sessionID] = &liveRunnerSession{
+	if id != "" {
+		if _, exists := runner.sessions[id]; exists {
+			return "", "", &RunnerError{StatusCode: http.StatusConflict, Message: "session already exists"}
+		}
+	} else {
+		id = "session_" + randomStr(liveRunnerIDRandomBytes)
+		for {
+			if _, exists := runner.sessions[id]; !exists {
+				break
+			}
+			id = "session_" + randomStr(liveRunnerIDRandomBytes)
+		}
+	}
+	runner.sessions[id] = &liveRunnerSession{
 		channels: make(map[string]*liveRunnerTrickleChannel),
 	}
-	return sessionID, runner.RunnerURL, nil
+	return id, runner.RunnerURL, nil
 }
 
 func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo, error) {

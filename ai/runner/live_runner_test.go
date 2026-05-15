@@ -703,6 +703,22 @@ func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_ReserveSessionUsesProvidedID(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+
+	sessionID, endpoint, err := registry.ReserveSession("runner-1", "manifest-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionID != "manifest-id" {
+		t.Fatalf("expected provided session id, got %q", sessionID)
+	}
+	if endpoint != "https://runner.example.com" {
+		t.Fatalf("unexpected endpoint: %s", endpoint)
+	}
+}
+
 func TestLiveRunnerRegistry_ReleaseSessionFreesCapacity(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
