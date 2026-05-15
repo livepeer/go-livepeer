@@ -124,12 +124,15 @@ type LiveRunnerHeartbeatResponse struct {
 }
 
 type LiveRunnerDiscoveryRunner struct {
-	URL       string               `json:"url"`
-	GPU       *LiveRunnerGPU       `json:"gpu,omitempty"`
-	App       string               `json:"app"`
-	Version   string               `json:"version,omitempty"`
-	Mode      string               `json:"mode,omitempty"`
-	PriceInfo *LiveRunnerPriceInfo `json:"price_info,omitempty"`
+	URL               string               `json:"url"`
+	GPU               *LiveRunnerGPU       `json:"gpu,omitempty"`
+	App               string               `json:"app"`
+	Version           string               `json:"version,omitempty"`
+	Mode              string               `json:"mode,omitempty"`
+	Capacity          int                  `json:"capacity"`
+	CapacityUsed      int                  `json:"capacity_used"`
+	CapacityAvailable int                  `json:"capacity_available"`
+	PriceInfo         *LiveRunnerPriceInfo `json:"price_info,omitempty"`
 }
 
 type LiveRunnerTrickleChannel struct {
@@ -964,11 +967,14 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 		discoveryPriceInfo = &priceInfo
 	}
 	return LiveRunnerDiscoveryRunner{
-		GPU:       cloneLiveRunnerGPU(runner.GPU),
-		App:       runner.App,
-		Version:   runner.Version,
-		Mode:      runner.Mode,
-		PriceInfo: discoveryPriceInfo,
+		GPU:               cloneLiveRunnerGPU(runner.GPU),
+		App:               runner.App,
+		Version:           runner.Version,
+		Mode:              runner.Mode,
+		Capacity:          runner.Capacity,
+		CapacityUsed:      len(runner.sessions),
+		CapacityAvailable: runner.Capacity - len(runner.sessions),
+		PriceInfo:         discoveryPriceInfo,
 	}
 }
 

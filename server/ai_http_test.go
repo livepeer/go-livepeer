@@ -182,8 +182,43 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.Len(t, resp[0].Runners, 1)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
 	require.Equal(t, "live-video-to-video/scope", resp[0].Runners[0].App)
+	require.Equal(t, 2, resp[0].Runners[0].Capacity)
+	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
+	require.Equal(t, 2, resp[0].Runners[0].CapacityAvailable)
 	require.NotContains(t, w.Body.String(), "endpoint")
 	require.NotContains(t, w.Body.String(), "price_info")
+}
+
+func TestLiveRunnerDiscoveryReportsCapacityUsed(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  t.Name(),
+		RunnerURL: "https://runner.example.com",
+		Status:    "ready",
+		App:       "live-video-to-video/scope",
+		Capacity:  2,
+	}, lp.orchestrator.RegistrationSecret())
+	require.NoError(t, err)
+	_, _, err = manager.ReserveSession(t.Name())
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Len(t, resp[0].Runners, 1)
+	require.Equal(t, 2, resp[0].Runners[0].Capacity)
+	require.Equal(t, 1, resp[0].Runners[0].CapacityUsed)
+	require.Equal(t, 1, resp[0].Runners[0].CapacityAvailable)
+	require.Contains(t, w.Body.String(), `"capacity":2`)
+	require.Contains(t, w.Body.String(), `"capacity_used":1`)
+	require.Contains(t, w.Body.String(), `"capacity_available":1`)
 }
 
 func TestLiveRunnerDiscoverySingleShotReturnsProxiedURL(t *testing.T) {
@@ -211,6 +246,9 @@ func TestLiveRunnerDiscoverySingleShotReturnsProxiedURL(t *testing.T) {
 	require.Len(t, resp[0].Runners, 1)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/app", resp[0].Runners[0].URL)
 	require.Equal(t, runner.LiveRunnerModeSingleShot, resp[0].Runners[0].Mode)
+	require.Equal(t, 1, resp[0].Runners[0].Capacity)
+	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
+	require.Equal(t, 1, resp[0].Runners[0].CapacityAvailable)
 	require.NotContains(t, w.Body.String(), "endpoint")
 	require.NotContains(t, w.Body.String(), "price_info")
 }
@@ -248,6 +286,9 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 1)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
+	require.Equal(t, 2, resp[0].Runners[0].Capacity)
+	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
+	require.Equal(t, 2, resp[0].Runners[0].CapacityAvailable)
 	require.NotNil(t, resp[0].Runners[0].PriceInfo)
 	require.NotZero(t, resp[0].Runners[0].PriceInfo.PricePerUnit)
 	require.Contains(t, w.Body.String(), "price_info")
@@ -274,6 +315,9 @@ func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
 	require.Equal(t, "H100", discoveryRunner.GPU.Name)
 	require.Equal(t, "live-video-to-video/scope", discoveryRunner.App)
 	require.Equal(t, "serverless-1.0.0", discoveryRunner.Version)
+	require.Equal(t, 3, discoveryRunner.Capacity)
+	require.Equal(t, 0, discoveryRunner.CapacityUsed)
+	require.Equal(t, 3, discoveryRunner.CapacityAvailable)
 	require.NotNil(t, discoveryRunner.PriceInfo)
 	require.Equal(t, int64(7), discoveryRunner.PriceInfo.PricePerUnit)
 	require.Equal(t, int64(1), discoveryRunner.PriceInfo.PixelsPerUnit)
@@ -312,8 +356,14 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 2)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
+	require.Equal(t, 1, resp[0].Runners[0].Capacity)
+	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
+	require.Equal(t, 1, resp[0].Runners[0].CapacityAvailable)
 	require.Equal(t, "http://localhost:1234/scope", resp[0].Runners[1].URL)
 	require.Equal(t, "H100", resp[0].Runners[1].GPU.Name)
+	require.Equal(t, 2, resp[0].Runners[1].Capacity)
+	require.Equal(t, 0, resp[0].Runners[1].CapacityUsed)
+	require.Equal(t, 2, resp[0].Runners[1].CapacityAvailable)
 }
 
 func TestLiveRunnerHeartbeat(t *testing.T) {

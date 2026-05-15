@@ -657,12 +657,16 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
+				capacity := h.node.AIWorker.GetLiveAICapacity(pipeline, modelID)
 				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
-					URL:       suri.JoinPath("scope").String(),
-					GPU:       &runner.LiveRunnerGPU{Name: "H100"},
-					App:       pipeline + "/" + modelID,
-					Version:   versionString,
-					PriceInfo: priceInfo,
+					URL:               suri.JoinPath("scope").String(),
+					GPU:               &runner.LiveRunnerGPU{Name: "H100"},
+					App:               pipeline + "/" + modelID,
+					Version:           versionString,
+					Capacity:          capacity.ContainersIdle + capacity.ContainersInUse,
+					CapacityUsed:      capacity.ContainersInUse,
+					CapacityAvailable: capacity.ContainersIdle,
+					PriceInfo:         priceInfo,
 				})
 			}
 		}
