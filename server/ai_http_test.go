@@ -269,7 +269,7 @@ func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
 	require.Len(t, resp[0].Runners, 1)
 
 	discoveryRunner := resp[0].Runners[0]
-	require.Equal(t, "http://localhost:1234", discoveryRunner.URL)
+	require.Equal(t, "http://localhost:1234/scope", discoveryRunner.URL)
 	require.NotNil(t, discoveryRunner.GPU)
 	require.Equal(t, "H100", discoveryRunner.GPU.Name)
 	require.Equal(t, "live-video-to-video/scope", discoveryRunner.App)
@@ -312,7 +312,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 	require.Len(t, resp, 1)
 	require.Len(t, resp[0].Runners, 2)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
-	require.Equal(t, "http://localhost:1234", resp[0].Runners[1].URL)
+	require.Equal(t, "http://localhost:1234/scope", resp[0].Runners[1].URL)
 	require.Equal(t, "H100", resp[0].Runners[1].GPU.Name)
 }
 
@@ -580,6 +580,24 @@ func TestScopePaidRetryAllowsSegmentManifestToDifferFromAuthToken(t *testing.T) 
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.NotNil(t, resp.ManifestId)
 	require.NotEmpty(t, *resp.ManifestId)
+}
+
+func TestScopeServerlessOffchainDoesNotRequirePayment(t *testing.T) {
+	lp := newScopeOffchainHTTP(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp worker.LiveVideoToVideoResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotNil(t, resp.ManifestId)
+	require.NotEmpty(t, *resp.ManifestId)
+	require.NotNil(t, resp.ControlUrl)
+	require.Contains(t, *resp.ControlUrl, *resp.ManifestId+"-control")
+	require.NotNil(t, resp.EventsUrl)
+	require.Contains(t, *resp.EventsUrl, *resp.ManifestId+"-events")
 }
 
 func TestScopeRejectsOversizedPayload(t *testing.T) {
@@ -1079,6 +1097,7 @@ func newScopeHTTP(t *testing.T) *lphttp {
 	t.Cleanup(func() { drivers.NodeStorage = oldStorage })
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	node.Eth = &eth.StubClient{}
 	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("live-video-to-video", "scope")
 	orch := newStubOrchestrator()
 	orch.ticketParams = defaultTicketParams()
@@ -1088,6 +1107,13 @@ func newScopeHTTP(t *testing.T) *lphttp {
 		transRPC:     http.NewServeMux(),
 	}
 	require.NoError(t, startAIServer(lp))
+	return lp
+}
+
+func newScopeOffchainHTTP(t *testing.T) *lphttp {
+	t.Helper()
+	lp := newScopeHTTP(t)
+	lp.node.Eth = nil
 	return lp
 }
 

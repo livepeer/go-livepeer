@@ -322,6 +322,32 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	return true, nil
 }
 
+func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request, manifestID string) (ethcommon.Address, *lpnet.PriceInfo, bool, *runner.RunnerError) {
+	payment, err := getPayment(r.Header.Get(paymentHeader))
+	if err != nil || r.Header.Get(paymentHeader) == "" {
+		handled, challengeErr := h.scopePaymentChallenge(w, r)
+		if handled {
+			return ethcommon.Address{}, nil, true, nil
+		}
+		if challengeErr != nil {
+			return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: challengeErr.Error(), StatusCode: http.StatusInternalServerError}
+		}
+		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusPaymentRequired}
+	}
+	sender := getPaymentSender(payment)
+	_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+	if err != nil {
+		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusForbidden}
+	}
+	if err := h.orchestrator.ProcessPayment(ctx, payment, core.ManifestID(manifestID)); err != nil {
+		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusBadRequest}
+	}
+	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, core.ManifestID(manifestID)) {
+		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: "Insufficient balance", StatusCode: http.StatusBadRequest}
+	}
+	return sender, payment.GetExpectedPrice(), false, nil
+}
+
 func (h *lphttp) runnerSender(r *http.Request) (ethcommon.Address, error) {
 	addr := r.Header.Get(liveRunnerSenderHeader)
 	if !ethcommon.IsHexAddress(addr) {
@@ -584,10 +610,7 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	address := ""
-	if h.orchestrator != nil && h.orchestrator.ServiceURI() != nil {
-		address = h.orchestrator.ServiceURI().String()
-	}
+	suri := h.orchestrator.ServiceURI()
 
 	var runners []runner.LiveRunnerDiscoveryRunner
 	if ok {
@@ -635,7 +658,7 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 				}
 
 				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
-					URL:       address,
+					URL:       suri.JoinPath("scope").String(),
 					GPU:       &runner.LiveRunnerGPU{Name: "H100"},
 					App:       pipeline + "/" + modelID,
 					Version:   versionString,
@@ -646,7 +669,7 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := []liveRunnerDiscoveryEntry{{
-		Address: address,
+		Address: suri.String(),
 		Runners: runners,
 	}}
 	data, err := json.Marshal(resp)
@@ -895,21 +918,16 @@ func (h *lphttp) StartScope() http.Handler {
 			return
 		}
 
-		if req.ModelId == nil || *req.ModelId != "scope" {
-			respondWithError(w, "model_id must be \"scope\" for /scope", http.StatusBadRequest)
-			return
-		}
-
 		if req.GatewayRequestId != nil && *req.GatewayRequestId != "" {
 			gatewayRequestID = *req.GatewayRequestId
 		}
 		ctx = clog.AddVal(ctx, "request_id", gatewayRequestID)
 		ctx = clog.AddVal(ctx, "manifest_id", manifestID)
+		ctx = clog.AddVal(ctx, "app", "scope")
 		orch := h.orchestrator
 		pipeline := "live-video-to-video"
-		cap := core.Capability_LiveVideoToVideo
 		modelID := "scope"
-		clog.Info(ctx, "Received request", "cap", cap, "modelID", modelID)
+		clog.Info(ctx, "Received Scope request")
 
 		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
 		err := orch.CreateStorageForRequest(manifestID)
@@ -931,34 +949,21 @@ func (h *lphttp) StartScope() http.Handler {
 		controlURL := baseURL + "-control"
 		eventsURL := baseURL + "-events"
 
-		// Handle initial payment, the rest of the payments are done separately from the stream processing
-		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
-		payment, err := getPayment(r.Header.Get(paymentHeader))
-		if err != nil || r.Header.Get(paymentHeader) == "" {
-			handled, challengeErr := h.scopePaymentChallenge(w, r)
+		var (
+			sender    ethcommon.Address
+			priceInfo *lpnet.PriceInfo
+		)
+		if h.node != nil && h.node.Eth != nil {
+			payer, price, handled, httpErr := h.processScopePayment(ctx, w, r, manifestID)
 			if handled {
 				return
 			}
-			if challengeErr != nil {
-				respondWithError(w, challengeErr.Error(), http.StatusInternalServerError)
+			if httpErr != nil {
+				respondWithError(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
-			respondWithError(w, err.Error(), http.StatusPaymentRequired)
-			return
-		}
-		sender := getPaymentSender(payment)
-		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusForbidden)
-			return
-		}
-		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(manifestID)); err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(manifestID)) {
-			respondWithError(w, "Insufficient balance", http.StatusBadRequest)
-			return
+			sender = payer
+			priceInfo = price
 		}
 
 		// Scope only pre-creates control + events channels.
@@ -975,7 +980,6 @@ func (h *lphttp) StartScope() http.Handler {
 		}
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
-		priceInfo := payment.GetExpectedPrice()
 		var paymentProcessor *LivePaymentProcessor
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
@@ -1024,7 +1028,6 @@ func (h *lphttp) StartScope() http.Handler {
 		workerEventsURL := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsURL)
 
 		workerReq := worker.LiveVideoToVideoParams{
-			ModelId:          req.ModelId,
 			EventsUrl:        &workerEventsURL,
 			ControlUrl:       &workerControlURL,
 			Params:           req.Params,
@@ -1059,7 +1062,7 @@ func (h *lphttp) StartScope() http.Handler {
 		}
 
 		took := time.Since(startTime)
-		clog.Info(ctx, "Processed request", "cap", cap, "modelID", modelID, "took", took)
+		clog.Info(ctx, "Processed Scope request", "took", took)
 		respondJsonOk(w, jsonData)
 	})
 }
