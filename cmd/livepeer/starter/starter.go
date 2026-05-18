@@ -1961,6 +1961,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				DiscoveryTimeout:        *cfg.DiscoveryTimeout,
 				LiveAICapReportInterval: *cfg.LiveAICapReportInterval,
 				IgnoreCapacityCheck:     true,
+				UseDiscoveryEndpoint:    true,
 			}.New()
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
