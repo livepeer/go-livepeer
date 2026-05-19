@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,6 +154,58 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_InvalidHeartbeatAuthDoesNotLeakRegistryLock(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-lock-leak")
+	resp := liveRunnerTestRegister(t, registry, req)
+
+	const attempts = 200
+	done := make(chan error, attempts+1)
+	start := make(chan struct{})
+
+	for i := 0; i < attempts; i++ {
+		go func(i int) {
+			<-start
+			badReq := req
+			_, err := registry.Heartbeat(badReq, fmt.Sprintf("wrong-secret-%d", i))
+			if !isRunnerErrorStatus(err, http.StatusUnauthorized) {
+				done <- fmt.Errorf("wrong-secret heartbeat %d: expected unauthorized, got %v", i, err)
+				return
+			}
+			done <- nil
+		}(i)
+	}
+
+	go func() {
+		<-start
+		for i := 0; i < attempts; i++ {
+			if runners := registry.Runners(); len(runners) != 1 {
+				done <- fmt.Errorf("Runners during bad-auth storm: expected one runner, got %d", len(runners))
+				return
+			}
+			goodReq := req
+			if _, err := registry.Heartbeat(goodReq, resp.HeartbeatSecret); err != nil {
+				done <- fmt.Errorf("valid heartbeat during bad-auth storm: %w", err)
+				return
+			}
+		}
+		done <- nil
+	}()
+
+	close(start)
+	timeout := time.After(5 * time.Second)
+	for i := 0; i < attempts+1; i++ {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for concurrent heartbeat auth checks; registry lock may be leaked")
+		}
+	}
+}
+
 func TestLiveRunnerRegistry_HeartbeatDisabledWithoutRegistrationSecret(t *testing.T) {
 	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHostWithoutSecret{}})
 	_, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-1"), "")
@@ -281,6 +335,54 @@ func TestLiveRunnerRegistry_OffchainIgnoresUSDPriceWatcher(t *testing.T) {
 	}
 	if runners[0].PriceInfo != nil {
 		t.Fatalf("expected offchain discovery price to be suppressed, got %+v", runners[0].PriceInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_ClonesRunnerGPUMetadata(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-cloned-gpu")
+	req.GPU.Name = "original-dynamic"
+	liveRunnerTestRegister(t, registry, req)
+	req.GPU.Name = "mutated-dynamic"
+
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one dynamic runner, got %d", len(runners))
+	}
+	if runners[0].GPU == nil || runners[0].GPU.Name != "original-dynamic" {
+		t.Fatalf("expected dynamic runner GPU to be cloned, got %+v", runners[0].GPU)
+	}
+
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	staticGPU := &LiveRunnerGPU{Name: "original-static"}
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-cloned-gpu",
+		RunnerURL: "https://runner.example.com",
+		GPU:       staticGPU,
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	staticGPU.Name = "mutated-static"
+
+	runners = registry.Runners()
+	var foundStatic bool
+	for _, runner := range runners {
+		if runner.App != "live-video-to-video/scope" {
+			continue
+		}
+		foundStatic = true
+		if runner.GPU == nil || runner.GPU.Name != "original-static" {
+			t.Fatalf("expected static runner GPU to be cloned, got %+v", runner.GPU)
+		}
+	}
+	if !foundStatic {
+		t.Fatal("expected static runner in discovery")
 	}
 }
 
@@ -549,6 +651,38 @@ func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_StaticRunnerRouteChangesOnUpsert(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	entry := StaticLiveRunnerConfigEntry{
+		Label:     "stable-route",
+		Route:     LiveRunnerRoutingRunnerID,
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+	}
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp.Runners[0].RunnerID
+
+	entry.Route = LiveRunnerRoutingLabel
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ReserveSession("stable-route"); err != nil {
+		t.Fatalf("expected upsert to move static runner to label route: %v", err)
+	}
+	if _, _, err := registry.ReserveSession(runnerID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected original runner-id route to be removed, got %v", err)
+	}
+}
+
 func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t *testing.T) {
 	statusCode := http.StatusCreated
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -766,6 +900,145 @@ func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
 	// Check token is scoped to its session.
 	if err := registry.ValidSessionToken("runner-1", otherSessionID, token); !isRunnerErrorStatus(err, http.StatusUnauthorized) {
 		t.Fatalf("expected token to be scoped to one session, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	const requestsPerRunner = 500
+	for _, runnerID := range []string{"runner-a", "runner-b"} {
+		req := liveRunnerTestHeartbeat(runnerID)
+		req.RunnerURL = fmt.Sprintf("https://%s.example.com", runnerID)
+		req.Capacity = requestsPerRunner
+		liveRunnerTestRegister(t, registry, req)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, requestsPerRunner*2)
+	for _, runnerID := range []string{"runner-a", "runner-b"} {
+		otherRunnerID := "runner-a"
+		if runnerID == otherRunnerID {
+			otherRunnerID = "runner-b"
+		}
+		for i := 0; i < requestsPerRunner; i++ {
+			wg.Add(1)
+			go func(runnerID, otherRunnerID string, i int) {
+				defer wg.Done()
+				sessionID := fmt.Sprintf("%s-session-%d", runnerID, i)
+				gotSessionID, endpoint, err := registry.ReserveSession(runnerID, sessionID)
+				if err != nil {
+					errCh <- fmt.Errorf("%s reserve %s: %w", runnerID, sessionID, err)
+					return
+				}
+				if gotSessionID != sessionID {
+					errCh <- fmt.Errorf("%s reserve got session %q want %q", runnerID, gotSessionID, sessionID)
+					return
+				}
+				expectedEndpoint := fmt.Sprintf("https://%s.example.com", runnerID)
+				if endpoint != expectedEndpoint {
+					errCh <- fmt.Errorf("%s endpoint got %q want %q", runnerID, endpoint, expectedEndpoint)
+					return
+				}
+				token, err := registry.SessionTokenForSession(runnerID, sessionID)
+				if err != nil {
+					errCh <- fmt.Errorf("%s token for %s: %w", runnerID, sessionID, err)
+					return
+				}
+				if err := registry.ValidSessionToken(runnerID, sessionID, token); err != nil {
+					errCh <- fmt.Errorf("%s valid token for %s: %w", runnerID, sessionID, err)
+					return
+				}
+				if err := registry.ValidSessionToken(otherRunnerID, sessionID, token); !isRunnerErrorStatus(err, http.StatusNotFound) {
+					errCh <- fmt.Errorf("%s token/session accepted by %s: %v", runnerID, otherRunnerID, err)
+					return
+				}
+				if i%2 == 0 {
+					if err := registry.ReleaseSession(runnerID, sessionID); err != nil {
+						errCh <- fmt.Errorf("%s release %s: %w", runnerID, sessionID, err)
+					}
+				}
+			}(runnerID, otherRunnerID, i)
+		}
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runners := registry.Runners()
+	if len(runners) != 2 {
+		t.Fatalf("expected two runners, got %+v", runners)
+	}
+	usedByURL := make(map[string]int, 2)
+	availableByURL := make(map[string]int, 2)
+	for _, runner := range runners {
+		usedByURL[runner.URL] = runner.CapacityUsed
+		availableByURL[runner.URL] = runner.CapacityAvailable
+	}
+	for _, runnerID := range []string{"runner-a", "runner-b"} {
+		url := fmt.Sprintf("http://localhost:1234/apps/%s/session", runnerID)
+		if usedByURL[url] != requestsPerRunner/2 {
+			t.Fatalf("%s used capacity got %d want %d", runnerID, usedByURL[url], requestsPerRunner/2)
+		}
+		if availableByURL[url] != requestsPerRunner/2 {
+			t.Fatalf("%s available capacity got %d want %d", runnerID, availableByURL[url], requestsPerRunner/2)
+		}
+	}
+}
+
+func TestLiveRunnerRegistry_UnregisterRacesWithSessionActions(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-race")
+	req.Capacity = 100
+	resp := liveRunnerTestRegister(t, registry, req)
+	sessionID, _, err := registry.ReserveSession("runner-race")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 101)
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			switch i % 3 {
+			case 0:
+				_, err := registry.RunnerEndpointForSession("runner-race", sessionID)
+				if err != nil && !isRunnerErrorStatus(err, http.StatusNotFound) {
+					errCh <- fmt.Errorf("endpoint action: %w", err)
+				}
+			case 1:
+				err := registry.ValidSessionToken("runner-race", sessionID, "bad-token")
+				if err != nil && !isRunnerErrorStatus(err, http.StatusUnauthorized) && !isRunnerErrorStatus(err, http.StatusNotFound) {
+					errCh <- fmt.Errorf("token action: %w", err)
+				}
+			default:
+				if err := registry.ReleaseSession("runner-race", sessionID); err != nil && !isRunnerErrorStatus(err, http.StatusNotFound) {
+					errCh <- fmt.Errorf("release action: %w", err)
+				}
+			}
+		}(i)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := registry.Unregister("runner-race", resp.HeartbeatSecret); err != nil && !isRunnerErrorStatus(err, http.StatusNotFound) {
+			errCh <- fmt.Errorf("unregister: %w", err)
+		}
+	}()
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := registry.RunnerEndpointForSession("runner-race", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected runner to be gone after unregister, got %v", err)
 	}
 }
 

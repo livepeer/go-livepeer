@@ -143,42 +143,50 @@ type LiveRunnerTrickleChannel struct {
 }
 
 type liveRunner struct {
-	LiveRunnerHeartbeatRequest
-	LastHeartbeat   time.Time
 	seed            []byte
 	heartbeatSecret string
 	static          bool
-	healthURL       string
-	healthStatus    int
-	route           string
 	offchain        bool
-	sessions        map[string]*liveRunnerSession
-	priceSource     LiveRunnerPriceInfo
-	converter       *core.AutoConvertedPrice
+
+	// all fields below are mutable and need to be protected by mu
+	mu sync.Mutex
+	LiveRunnerHeartbeatRequest
+	LastHeartbeat time.Time
+	removed       bool
+	healthURL     string
+	healthStatus  int
+	route         string
+	sessions      map[string]*liveRunnerSession
+	priceSource   LiveRunnerPriceInfo
+	converter     *core.AutoConvertedPrice
 }
 
 type liveRunnerSession struct {
+	// Protected by the parent liveRunner.mu.
 	channels map[string]*liveRunnerTrickleChannel
 }
 
 type liveRunnerTrickleChannel struct {
-	info      LiveRunnerTrickleChannel
+	info LiveRunnerTrickleChannel
+	// Protected by the parent liveRunner.mu.
 	publisher *trickle.TrickleLocalPublisher
 }
 
 type LiveRunnerRegistry struct {
-	mu                sync.Mutex
-	runners           map[string]*liveRunner
 	host              RunnerHost
 	offchain          bool
 	heartbeatInterval time.Duration
 	heartbeatTTL      time.Duration
-	trickleSrv        *trickle.Server
-	trickleBaseURL    string
 	healthClient      *http.Client
 	healthInterval    time.Duration
 	stopHealth        chan struct{}
 	stopHealthOnce    sync.Once
+
+	// mu protects runner registration, route lookup, and trickle server routing.
+	mu             sync.Mutex
+	runners        map[string]*liveRunner
+	trickleSrv     *trickle.Server
+	trickleBaseURL string
 }
 
 type RunnerHost interface {
@@ -223,9 +231,15 @@ func (r *LiveRunnerRegistry) Stop() {
 		close(r.stopHealth)
 	})
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	runners := make([]*liveRunner, 0, len(r.runners))
 	for _, runner := range r.runners {
+		runners = append(runners, runner)
+	}
+	r.mu.Unlock()
+	for _, runner := range runners {
+		runner.mu.Lock()
 		runner.stopPriceConverterLocked()
+		runner.mu.Unlock()
 	}
 }
 
@@ -240,24 +254,26 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: err.Error()}
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[req.RunnerID]
 	// For now, only return the heartbeat secret on first registration.
 	// Return another one later on if the secret needs to be rotated.
 	var responseHeartbeatSecret string
+	var runner *liveRunner
+
+	r.mu.Lock()
+	r.expireLocked(time.Now())
+	runner = r.runners[req.RunnerID]
 	if runner == nil {
 		registrationSecret := ""
 		if r.host != nil {
 			registrationSecret = r.host.RegistrationSecret()
 		}
 		if registrationSecret == "" {
+			r.mu.Unlock()
 			return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "dynamic live runner registration is disabled"}
 		}
 		if !validSecret(auth, registrationSecret) {
-			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
+			r.mu.Unlock()
+			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid registration authorization"}
 		}
 		seed := newRunnerSeed()
 		heartbeatSecret := deriveSecret(seed, "heartbeat")
@@ -265,14 +281,26 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			seed:            seed,
 			heartbeatSecret: heartbeatSecret,
 			offchain:        r.offchain,
+			route:           req.RunnerID, // No label-based routing for now
 			sessions:        make(map[string]*liveRunnerSession),
 		}
 		r.runners[req.RunnerID] = runner
 		responseHeartbeatSecret = heartbeatSecret
-	} else if runner.static {
+	} else {
+		if !validSecret(auth, runner.heartbeatSecret) {
+			r.mu.Unlock()
+			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid heartbeat authorization"}
+		}
+	}
+	runner.mu.Lock()
+	heartbeatInterval := r.heartbeatInterval
+	heartbeatTTL := r.heartbeatTTL
+	orchestrator := r.host.ServiceURI().String()
+	r.mu.Unlock()
+
+	defer runner.mu.Unlock()
+	if runner.static {
 		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot heartbeat"}
-	} else if !validSecret(auth, runner.heartbeatSecret) {
-		return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 	}
 	runner.LiveRunnerHeartbeatRequest = req
 	runner.LastHeartbeat = time.Now()
@@ -281,9 +309,9 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
-		Orchestrator:      r.host.ServiceURI().String(),
-		HeartbeatInterval: r.heartbeatInterval.String(),
-		HeartbeatTTL:      r.heartbeatTTL.String(),
+		Orchestrator:      orchestrator,
+		HeartbeatInterval: heartbeatInterval.String(),
+		HeartbeatTTL:      heartbeatTTL.String(),
 		HeartbeatSecret:   responseHeartbeatSecret,
 	}, nil
 }
@@ -341,6 +369,13 @@ func staticRunnerHealthURL(runnerURL, healthURL string) (string, error) {
 		return "", fmt.Errorf("invalid runner_url")
 	}
 	return strings.TrimRight(runnerURL, "/") + healthURL, nil
+}
+
+func staticRunnerRoute(route, runnerID, label string) string {
+	if route == LiveRunnerRoutingLabel {
+		return label
+	}
+	return runnerID
 }
 
 func (g *LiveRunnerGPU) UnmarshalJSON(data []byte) error {
@@ -405,9 +440,11 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 	defer r.mu.Unlock()
 	existingStatic := make(map[string]*liveRunner)
 	for _, runner := range r.runners {
-		if runner.static && runner.Label != "" {
+		runner.mu.Lock()
+		if !runner.removed && runner.static && runner.Label != "" {
 			existingStatic[runner.Label] = runner
 		}
+		runner.mu.Unlock()
 	}
 
 	registrations := make([]StaticLiveRunnerRegistration, 0, len(cfg.Runners))
@@ -427,6 +464,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 			}
 			staticRunner.RunnerID = runnerID
 		}
+		staticRunner.mu.Lock()
 
 		req := requests[i]
 		req.RunnerID = staticRunner.RunnerID
@@ -438,17 +476,12 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 				staticRunner.releaseSessionLocked(sessionID)
 			}
 		}
+		staticRunner.removed = false
 		staticRunner.LiveRunnerHeartbeatRequest = req
 		staticRunner.LastHeartbeat = time.Now()
-		staticRunner.static = true
-		staticRunner.offchain = r.offchain
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
-		if entry.Route == LiveRunnerRoutingLabel {
-			staticRunner.route = req.Label
-		} else {
-			staticRunner.route = staticRunner.RunnerID
-		}
+		staticRunner.route = staticRunnerRoute(entry.Route, staticRunner.RunnerID, req.Label)
 		for route, runner := range r.runners {
 			if runner == staticRunner && route != staticRunner.route {
 				// route changed so remove old entry and re-add
@@ -467,6 +500,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 			HealthyStatusCode: entry.HealthyStatusCode,
 			Healthy:           health[i],
 		})
+		staticRunner.mu.Unlock()
 	}
 	return &StaticLiveRunnerRegistrationResponse{Runners: registrations}, nil
 }
@@ -526,6 +560,7 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 		req.Capacity = 1
 	}
 	req.RunnerID = runnerID
+	req.GPU = cloneLiveRunnerGPU(req.GPU)
 
 	if r.offchain {
 		return req, nil
@@ -545,29 +580,36 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 
 func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
 	runner := r.runners[runnerID]
 	if runner == nil {
+		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
+	runner.mu.Lock()
 	if runner.static {
+		runner.mu.Unlock()
+		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot unregister with heartbeat credentials"}
 	}
 	if !validSecret(auth, runner.heartbeatSecret) {
+		runner.mu.Unlock()
+		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 	}
-	r.removeRunnerLocked(runnerID)
+	r.removeRunnerWithRunnerLocked(runnerID, runner)
+	runner.mu.Unlock()
+	r.mu.Unlock()
 	return nil
 }
 
 func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...string) (string, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return "", "", err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return "", "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if len(runner.sessions) >= runner.Capacity {
@@ -598,12 +640,12 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 }
 
 func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if runner.offchain {
@@ -624,25 +666,22 @@ func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo,
 }
 
 func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil {
-		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	runner.releaseSessionLocked(sessionID)
 	return nil
 }
 
 func (r *LiveRunnerRegistry) RunnerMode(runnerID string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if runner.Mode == "" {
@@ -652,12 +691,12 @@ func (r *LiveRunnerRegistry) RunnerMode(runnerID string) (string, error) {
 }
 
 func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if _, exists := runner.sessions[sessionID]; !exists {
@@ -667,12 +706,12 @@ func (r *LiveRunnerRegistry) RunnerEndpointForSession(runnerID, sessionID string
 }
 
 func (r *LiveRunnerRegistry) SessionTokenForSession(runnerID, sessionID string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if _, exists := runner.sessions[sessionID]; !exists {
@@ -682,12 +721,12 @@ func (r *LiveRunnerRegistry) SessionTokenForSession(runnerID, sessionID string) 
 }
 
 func (r *LiveRunnerRegistry) ValidSessionToken(runnerID, sessionID, token string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if !isReadyStatus(runner.Status) {
 		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	if _, exists := runner.sessions[sessionID]; !exists {
@@ -709,18 +748,24 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
+	trickleSrv := r.trickleSrv
+	trickleBaseURL := r.trickleBaseURL
+	r.mu.Unlock()
 
-	if r.trickleSrv == nil {
+	if trickleSrv == nil {
 		return LiveRunnerTrickleChannel{}, fmt.Errorf("trickle server is required")
 	}
-	channelURL, err := url.JoinPath(r.trickleBaseURL, channelName)
+	channelURL, err := url.JoinPath(trickleBaseURL, channelName)
 	if err != nil {
 		return LiveRunnerTrickleChannel{}, err
 	}
 
-	session, err := r.liveRunnerSessionLocked(runnerID, sessionID)
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return LiveRunnerTrickleChannel{}, err
+	}
+	defer unlock()
+	session, err := runner.liveRunnerSessionLocked(sessionID)
 	if err != nil {
 		return LiveRunnerTrickleChannel{}, err
 	}
@@ -728,7 +773,7 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 		return channel.info, nil
 	}
 
-	publisher := trickle.NewLocalPublisher(r.trickleSrv, channelName, mimeType)
+	publisher := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 	publisher.CreateChannel()
 	channel := &liveRunnerTrickleChannel{
 		info: LiveRunnerTrickleChannel{
@@ -749,11 +794,12 @@ func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name stri
 		return err
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.expireLocked(time.Now())
-
-	session, err := r.liveRunnerSessionLocked(runnerID, sessionID)
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	session, err := runner.liveRunnerSessionLocked(sessionID)
 	if err != nil {
 		return err
 	}
@@ -770,16 +816,23 @@ func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name stri
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.expireLocked(time.Now())
-
-	runners := make([]LiveRunnerDiscoveryRunner, 0, len(r.runners))
+	snapshot := make([]*liveRunner, 0, len(r.runners))
 	for _, runner := range r.runners {
-		if !isReadyStatus(runner.Status) {
+		snapshot = append(snapshot, runner)
+	}
+	r.mu.Unlock()
+
+	runners := make([]LiveRunnerDiscoveryRunner, 0, len(snapshot))
+	for _, runner := range snapshot {
+		runner.mu.Lock()
+		if runner.removed || !isReadyStatus(runner.Status) {
+			runner.mu.Unlock()
 			continue
 		}
 		discoveryRunner := runner.discoveryRunner()
 		discoveryRunner.URL = r.discoveryRunnerURL(runner)
+		runner.mu.Unlock()
 		runners = append(runners, discoveryRunner)
 	}
 	return runners
@@ -788,6 +841,7 @@ func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
 	// Under no circumstances leak the runner URL through discovery.
 	// Discovery must only expose orchestrator proxy URLs; the runner URL is an internal endpoint.
+	// discoveryRunnerURL requires runner.mu.
 	if runner.Mode == LiveRunnerModeSingleShot {
 		return r.host.ServiceURI().JoinPath("apps", runner.route, "app").String()
 	}
@@ -795,14 +849,28 @@ func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
 }
 
 func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
+	// expireLocked requires r.mu
 	for runnerID, runner := range r.runners {
-		if runner.static {
-			continue
-		}
-		if now.Sub(runner.LastHeartbeat) > r.heartbeatTTL {
+		runner.mu.Lock()
+		expired := !runner.removed && !runner.static && now.Sub(runner.LastHeartbeat) > r.heartbeatTTL
+		runner.mu.Unlock()
+		if expired {
 			r.removeRunnerLocked(runnerID)
 		}
 	}
+}
+
+func (r *LiveRunnerRegistry) lockLiveRunner(runnerID string) (*liveRunner, func(), error) {
+	r.mu.Lock()
+	r.expireLocked(time.Now())
+	runner := r.runners[runnerID]
+	if runner == nil {
+		r.mu.Unlock()
+		return nil, nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	runner.mu.Lock()
+	r.mu.Unlock()
+	return runner, runner.mu.Unlock, nil
 }
 
 func (r *LiveRunnerRegistry) healthLoop() {
@@ -820,34 +888,35 @@ func (r *LiveRunnerRegistry) healthLoop() {
 
 func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 	type check struct {
-		runnerID     string
+		runner       *liveRunner
 		healthURL    string
 		healthStatus int
 	}
 	r.mu.Lock()
 	checks := []check{}
-	for runnerID, runner := range r.runners {
-		if runner.static {
-			checks = append(checks, check{runnerID: runnerID, healthURL: runner.healthURL, healthStatus: runner.healthStatus})
+	for _, runner := range r.runners {
+		runner.mu.Lock()
+		if !runner.removed && runner.static {
+			checks = append(checks, check{runner: runner, healthURL: runner.healthURL, healthStatus: runner.healthStatus})
 		}
+		runner.mu.Unlock()
 	}
 	r.mu.Unlock()
 
 	for _, c := range checks {
 		healthy := r.staticRunnerHealthy(c.healthURL, c.healthStatus)
-		r.mu.Lock()
-		runner := r.runners[c.runnerID]
-		if runner != nil && runner.static {
+		c.runner.mu.Lock()
+		if !c.runner.removed && c.runner.static {
 			if healthy {
-				runner.Status = "ready"
+				c.runner.Status = "ready"
 			} else {
-				runner.Status = "unavailable"
-				for sessionID := range runner.sessions {
-					runner.releaseSessionLocked(sessionID)
+				c.runner.Status = "unavailable"
+				for sessionID := range c.runner.sessions {
+					c.runner.releaseSessionLocked(sessionID)
 				}
 			}
 		}
-		r.mu.Unlock()
+		c.runner.mu.Unlock()
 	}
 }
 
@@ -861,25 +930,35 @@ func (r *LiveRunnerRegistry) staticRunnerHealthy(healthURL string, healthyStatus
 }
 
 func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
+	// removeRunnerLocked requires r.mu.
 	if runner := r.runners[runnerID]; runner != nil {
-		for sessionID := range runner.sessions {
-			runner.releaseSessionLocked(sessionID)
-		}
-		runner.stopPriceConverterLocked()
+		runner.mu.Lock()
+		r.removeRunnerWithRunnerLocked(runnerID, runner)
+		runner.mu.Unlock()
 	}
+}
+
+func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner) {
+	// removeRunnerWithRunnerLocked requires r.mu and runner.mu.
+	runner.removed = true
+	for sessionID := range runner.sessions {
+		runner.releaseSessionLocked(sessionID)
+	}
+	runner.stopPriceConverterLocked()
 	delete(r.runners, runnerID)
 }
 
 func (runner *liveRunner) releaseSessionLocked(sessionID string) {
+	// releaseSessionLocked requires runner.mu.
 	if session := runner.sessions[sessionID]; session != nil {
 		session.closeChannelsLocked()
 	}
 	delete(runner.sessions, sessionID)
 }
 
-func (r *LiveRunnerRegistry) liveRunnerSessionLocked(runnerID, sessionID string) (*liveRunnerSession, error) {
-	runner := r.runners[runnerID]
-	if runner == nil || !isReadyStatus(runner.Status) {
+func (runner *liveRunner) liveRunnerSessionLocked(sessionID string) (*liveRunnerSession, error) {
+	// liveRunnerSessionLocked requires runner.mu.
+	if runner.removed || !isReadyStatus(runner.Status) {
 		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
 	session := runner.sessions[sessionID]
@@ -953,6 +1032,7 @@ func validSecret(got, want string) bool {
 }
 
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
+	// discoveryRunner requires runner.mu.
 	priceInfo := runner.PriceInfo
 	if runner.converter != nil {
 		converted, err := convertedPriceInfo(runner.converter)
@@ -979,6 +1059,7 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 }
 
 func (runner *liveRunner) updatePriceConverterLocked() {
+	// updatePriceConverterLocked requires runner.mu.
 	if runner.offchain {
 		return
 	}
@@ -998,6 +1079,7 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 }
 
 func (runner *liveRunner) stopPriceConverterLocked() {
+	// stopPriceConverterLocked requires runner.mu.
 	if runner.converter == nil {
 		return
 	}
