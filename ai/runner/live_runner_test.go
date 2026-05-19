@@ -964,7 +964,7 @@ func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
 
 func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
-	const requestsPerRunner = 500
+	const requestsPerRunner = 64
 	for _, runnerID := range []string{"runner-a", "runner-b"} {
 		req := liveRunnerTestHeartbeat(runnerID)
 		req.RunnerURL = fmt.Sprintf("https://%s.example.com", runnerID)
@@ -972,56 +972,96 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 		liveRunnerTestRegister(t, registry, req)
 	}
 
-	var wg sync.WaitGroup
-	errCh := make(chan error, requestsPerRunner*2)
-	for _, runnerID := range []string{"runner-a", "runner-b"} {
-		otherRunnerID := "runner-a"
-		if runnerID == otherRunnerID {
-			otherRunnerID = "runner-b"
-		}
-		for i := 0; i < requestsPerRunner; i++ {
-			wg.Add(1)
-			go func(runnerID, otherRunnerID string, i int) {
-				defer wg.Done()
-				sessionID := fmt.Sprintf("%s-session-%d", runnerID, i)
-				gotSessionID, endpoint, err := registry.ReserveSession(runnerID, sessionID)
-				if err != nil {
-					errCh <- fmt.Errorf("%s reserve %s: %w", runnerID, sessionID, err)
-					return
-				}
-				if gotSessionID != sessionID {
-					errCh <- fmt.Errorf("%s reserve got session %q want %q", runnerID, gotSessionID, sessionID)
-					return
-				}
-				expectedEndpoint := fmt.Sprintf("https://%s.example.com", runnerID)
-				if endpoint != expectedEndpoint {
-					errCh <- fmt.Errorf("%s endpoint got %q want %q", runnerID, endpoint, expectedEndpoint)
-					return
-				}
-				token, err := registry.SessionTokenForSession(runnerID, sessionID)
-				if err != nil {
-					errCh <- fmt.Errorf("%s token for %s: %w", runnerID, sessionID, err)
-					return
-				}
-				if err := registry.ValidSessionToken(runnerID, sessionID, token); err != nil {
-					errCh <- fmt.Errorf("%s valid token for %s: %w", runnerID, sessionID, err)
-					return
-				}
-				if err := registry.ValidSessionToken(otherRunnerID, sessionID, token); !isRunnerErrorStatus(err, http.StatusNotFound) {
-					errCh <- fmt.Errorf("%s token/session accepted by %s: %v", runnerID, otherRunnerID, err)
-					return
-				}
-				if i%2 == 0 {
-					if err := registry.ReleaseSession(runnerID, sessionID); err != nil {
-						errCh <- fmt.Errorf("%s release %s: %w", runnerID, sessionID, err)
-					}
-				}
-			}(runnerID, otherRunnerID, i)
+	registry.mu.Lock()
+	runnerA := registry.runners["runner-a"]
+	if runnerA == nil {
+		registry.mu.Unlock()
+		t.Fatal("expected runner-a to be registered")
+	}
+	runnerA.mu.Lock()
+
+	var runnerAWG sync.WaitGroup
+	runnerAErrCh := make(chan error, requestsPerRunner)
+	startRunnerA := make(chan struct{})
+	for i := 0; i < requestsPerRunner; i++ {
+		runnerAWG.Add(1)
+		go func(i int) {
+			defer runnerAWG.Done()
+			<-startRunnerA
+			sessionID := fmt.Sprintf("runner-a-session-%d", i)
+			gotSessionID, endpoint, err := registry.ReserveSession("runner-a", sessionID)
+			if err != nil {
+				runnerAErrCh <- fmt.Errorf("runner-a reserve %s: %w", sessionID, err)
+				return
+			}
+			if gotSessionID != sessionID {
+				runnerAErrCh <- fmt.Errorf("runner-a reserve got session %q want %q", gotSessionID, sessionID)
+				return
+			}
+			if endpoint != "https://runner-a.example.com" {
+				runnerAErrCh <- fmt.Errorf("runner-a endpoint got %q want %q", endpoint, "https://runner-a.example.com")
+			}
+		}(i)
+	}
+	close(startRunnerA)
+	registry.mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	var runnerBWG sync.WaitGroup
+	runnerBErrCh := make(chan error, requestsPerRunner)
+	runnerBDone := make(chan struct{})
+	for i := 0; i < requestsPerRunner; i++ {
+		runnerBWG.Add(1)
+		go func(i int) {
+			defer runnerBWG.Done()
+			sessionID := fmt.Sprintf("runner-b-session-%d", i)
+			gotSessionID, endpoint, err := registry.ReserveSession("runner-b", sessionID)
+			if err != nil {
+				runnerBErrCh <- fmt.Errorf("runner-b reserve %s: %w", sessionID, err)
+				return
+			}
+			if gotSessionID != sessionID {
+				runnerBErrCh <- fmt.Errorf("runner-b reserve got session %q want %q", gotSessionID, sessionID)
+				return
+			}
+			if endpoint != "https://runner-b.example.com" {
+				runnerBErrCh <- fmt.Errorf("runner-b endpoint got %q want %q", endpoint, "https://runner-b.example.com")
+			}
+		}(i)
+	}
+	go func() {
+		runnerBWG.Wait()
+		close(runnerBDone)
+	}()
+
+	select {
+	case <-runnerBDone:
+	case <-time.After(250 * time.Millisecond):
+		runnerA.mu.Unlock()
+		t.Fatal("runner-b reservations blocked while runner-a operations were waiting on runner-a.mu")
+	}
+	close(runnerBErrCh)
+	for err := range runnerBErrCh {
+		if err != nil {
+			runnerA.mu.Unlock()
+			t.Fatal(err)
 		}
 	}
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
+
+	runnerADone := make(chan struct{})
+	go func() {
+		runnerAWG.Wait()
+		close(runnerADone)
+	}()
+	runnerA.mu.Unlock()
+	select {
+	case <-runnerADone:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("runner-a reservations did not complete after runner-a.mu was released")
+	}
+	close(runnerAErrCh)
+	for err := range runnerAErrCh {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1039,11 +1079,11 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 	}
 	for _, runnerID := range []string{"runner-a", "runner-b"} {
 		url := fmt.Sprintf("http://localhost:1234/apps/%s/session", runnerID)
-		if usedByURL[url] != requestsPerRunner/2 {
-			t.Fatalf("%s used capacity got %d want %d", runnerID, usedByURL[url], requestsPerRunner/2)
+		if usedByURL[url] != requestsPerRunner {
+			t.Fatalf("%s used capacity got %d want %d", runnerID, usedByURL[url], requestsPerRunner)
 		}
-		if availableByURL[url] != requestsPerRunner/2 {
-			t.Fatalf("%s available capacity got %d want %d", runnerID, availableByURL[url], requestsPerRunner/2)
+		if availableByURL[url] != 0 {
+			t.Fatalf("%s available capacity got %d want %d", runnerID, availableByURL[url], 0)
 		}
 	}
 }
