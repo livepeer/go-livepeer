@@ -615,6 +615,65 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 	}
 }
 
+func TestLiveRunnerRegistry_RegisterStaticRunnersConcurrentUpserts(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	defer registry.Stop()
+
+	entryA := StaticLiveRunnerConfigEntry{
+		Label:     "runner-a",
+		RunnerURL: "https://runner-a.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+	}
+	entryB := StaticLiveRunnerConfigEntry{
+		Label:     "runner-b",
+		RunnerURL: "https://runner-b.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+	}
+
+	const registrationWorkers = 100
+	var wg sync.WaitGroup
+	errCh := make(chan error, registrationWorkers)
+	for i := 0; i < registrationWorkers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			entries := []StaticLiveRunnerConfigEntry{entryA, entryB}
+			if i%2 == 1 {
+				entries = []StaticLiveRunnerConfigEntry{entryB, entryA}
+			}
+			if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: entries}); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent static registrations timed out")
+	}
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
+	}
+	if runners := registry.Runners(); len(runners) != 2 {
+		t.Fatalf("expected concurrent static upserts to settle on two runners, got %d", len(runners))
+	}
+}
+
 func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1158,8 +1217,12 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	registry.heartbeatTTL = time.Nanosecond
 	time.Sleep(time.Millisecond)
 	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
-		t.Fatalf("expected expired runner to be removed, got %v", err)
+		t.Fatalf("expected expired runner to be unusable, got %v", err)
 	}
+	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusOK {
+		t.Fatalf("expected expired runner cleanup to be asynchronous, got status=%d", status)
+	}
+	registry.removeExpiredRunners(time.Now())
 	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
 		t.Fatalf("expected expiry to close channel, got status=%d", status)
 	}
@@ -1175,8 +1238,12 @@ func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
 	registry.heartbeatTTL = time.Nanosecond
 	time.Sleep(time.Millisecond)
 	if _, err := registry.RunnerEndpointForSession("runner-1", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
-		t.Fatalf("expected expired runner to be removed, got %v", err)
+		t.Fatalf("expected expired runner to be unusable, got %v", err)
 	}
+	if runners := registry.Runners(); len(runners) != 0 {
+		t.Fatalf("expected expired runner to be hidden from discovery, got %d", len(runners))
+	}
+	registry.removeExpiredRunners(time.Now())
 
 	registry.heartbeatTTL = defaultLiveRunnerHeartbeatTTL
 	resp2 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-2"))
@@ -1188,6 +1255,63 @@ func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
 	}
 	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
 		t.Fatalf("expected unregistered runner to be removed, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_LockedRunnerDoesNotBlockUnrelatedRunnerLookup(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	defer registry.Stop()
+
+	req1 := liveRunnerTestHeartbeat("runner-blocked")
+	req1.Capacity = 100
+	liveRunnerTestRegister(t, registry, req1)
+	req2 := liveRunnerTestHeartbeat("runner-free")
+	req2.Capacity = 100
+	liveRunnerTestRegister(t, registry, req2)
+
+	registry.mu.Lock()
+	blockedRunner := registry.runners["runner-blocked"]
+	registry.mu.Unlock()
+
+	blockedRunner.mu.Lock()
+	const blockedLookups = 50
+	const freeLookups = 50
+	startBlocked := make(chan struct{})
+	blockedDone := make(chan error, blockedLookups)
+	for i := 0; i < blockedLookups; i++ {
+		go func() {
+			<-startBlocked
+			_, _, err := registry.ReserveSession("runner-blocked")
+			blockedDone <- err
+		}()
+	}
+	close(startBlocked)
+	time.Sleep(10 * time.Millisecond)
+
+	freeDone := make(chan error, freeLookups)
+	for i := 0; i < freeLookups; i++ {
+		go func(i int) {
+			_, _, err := registry.ReserveSession("runner-free", fmt.Sprintf("free-%d", i))
+			freeDone <- err
+		}(i)
+	}
+
+	for i := 0; i < freeLookups; i++ {
+		select {
+		case err := <-freeDone:
+			if err != nil {
+				t.Fatalf("expected unrelated runner lookup to complete: %v", err)
+			}
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("unrelated runner lookup blocked behind locked runner")
+		}
+	}
+
+	blockedRunner.mu.Unlock()
+	for i := 0; i < blockedLookups; i++ {
+		if err := <-blockedDone; err != nil && !isRunnerErrorStatus(err, http.StatusServiceUnavailable) {
+			t.Fatalf("expected blocked runner lookup to complete after unlock: %v", err)
+		}
 	}
 }
 

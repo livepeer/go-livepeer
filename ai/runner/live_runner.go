@@ -179,8 +179,10 @@ type LiveRunnerRegistry struct {
 	heartbeatTTL      time.Duration
 	healthClient      *http.Client
 	healthInterval    time.Duration
-	stopHealth        chan struct{}
-	stopHealthOnce    sync.Once
+	stopRegistry      chan struct{}
+	stopRegistryOnce  sync.Once
+
+	staticRegistrationMu sync.Mutex // serializes static runner config upserts
 
 	// mu protects runner registration, route lookup, and trickle server routing.
 	mu             sync.Mutex
@@ -210,9 +212,10 @@ func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry 
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
 		healthClient:      &http.Client{Timeout: defaultLiveRunnerHealthTimeout},
 		healthInterval:    defaultLiveRunnerHealthInterval,
-		stopHealth:        make(chan struct{}),
+		stopRegistry:      make(chan struct{}),
 	}
 	go r.healthLoop()
+	go r.expiryLoop()
 	return r
 }
 
@@ -227,8 +230,8 @@ func (r *LiveRunnerRegistry) Stop() {
 	if r == nil {
 		return
 	}
-	r.stopHealthOnce.Do(func() {
-		close(r.stopHealth)
+	r.stopRegistryOnce.Do(func() {
+		close(r.stopRegistry)
 	})
 	r.mu.Lock()
 	runners := make([]*liveRunner, 0, len(r.runners))
@@ -260,13 +263,13 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	var runner *liveRunner
 
 	r.mu.Lock()
-	r.expireLocked(time.Now())
 	runner = r.runners[req.RunnerID]
+	heartbeatInterval := r.heartbeatInterval
+	heartbeatTTL := r.heartbeatTTL
+	orchestrator := r.host.ServiceURI().String()
 	if runner == nil {
-		registrationSecret := ""
-		if r.host != nil {
-			registrationSecret = r.host.RegistrationSecret()
-		}
+		// registering a new runner
+		registrationSecret := r.host.RegistrationSecret()
 		if registrationSecret == "" {
 			r.mu.Unlock()
 			return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "dynamic live runner registration is disabled"}
@@ -286,19 +289,35 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		}
 		r.runners[req.RunnerID] = runner
 		responseHeartbeatSecret = heartbeatSecret
-	} else {
-		if !validSecret(auth, runner.heartbeatSecret) {
-			r.mu.Unlock()
-			return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid heartbeat authorization"}
-		}
-	}
-	runner.mu.Lock()
-	heartbeatInterval := r.heartbeatInterval
-	heartbeatTTL := r.heartbeatTTL
-	orchestrator := r.host.ServiceURI().String()
-	r.mu.Unlock()
+		runner.mu.Lock()
+		r.mu.Unlock()
 
+		defer runner.mu.Unlock()
+		runner.LiveRunnerHeartbeatRequest = req
+		runner.LastHeartbeat = time.Now()
+		runner.route = runner.RunnerID // not doing label based routing here for now
+		runner.updatePriceConverterLocked()
+
+		return &LiveRunnerHeartbeatResponse{
+			RunnerID:          runner.RunnerID,
+			Orchestrator:      orchestrator,
+			HeartbeatInterval: heartbeatInterval.String(),
+			HeartbeatTTL:      heartbeatTTL.String(),
+			HeartbeatSecret:   responseHeartbeatSecret,
+		}, nil
+	} else {
+		r.mu.Unlock()
+	}
+
+	runner.mu.Lock()
 	defer runner.mu.Unlock()
+	if runner.removed || liveRunnerExpiredLocked(runner, time.Now(), heartbeatTTL) {
+		return nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
+	if !validSecret(auth, runner.heartbeatSecret) {
+		return nil, &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid heartbeat authorization"}
+	}
+
 	if runner.static {
 		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot heartbeat"}
 	}
@@ -436,10 +455,18 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		health = append(health, r.staticRunnerHealthy(entry.HealthURL, entry.HealthyStatusCode))
 	}
 
+	r.staticRegistrationMu.Lock()
+	defer r.staticRegistrationMu.Unlock()
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	existingStatic := make(map[string]*liveRunner)
+	snapshot := make([]*liveRunner, 0, len(r.runners))
 	for _, runner := range r.runners {
+		snapshot = append(snapshot, runner)
+	}
+	r.mu.Unlock()
+
+	existingStatic := make(map[string]*liveRunner)
+	for _, runner := range snapshot {
 		runner.mu.Lock()
 		if !runner.removed && runner.static && runner.Label != "" {
 			existingStatic[runner.Label] = runner
@@ -447,25 +474,32 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		runner.mu.Unlock()
 	}
 
-	registrations := make([]StaticLiveRunnerRegistration, 0, len(cfg.Runners))
-	for i, entry := range cfg.Runners {
+	staticRunnersByLabel := make(map[string]*liveRunner, len(cfg.Runners))
+	for _, entry := range cfg.Runners {
 		staticRunner := existingStatic[entry.Label]
 		if staticRunner == nil {
-			runnerID := "runner_" + randomStr(liveRunnerIDRandomBytes)
-			for r.runners[runnerID] != nil {
-				// collision lol
-				runnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
-			}
 			staticRunner = &liveRunner{
 				seed:     newRunnerSeed(),
 				static:   true,
 				offchain: r.offchain,
 				sessions: make(map[string]*liveRunnerSession),
 			}
-			staticRunner.RunnerID = runnerID
+			staticRunner.RunnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
 		}
-		staticRunner.mu.Lock()
+		staticRunnersByLabel[entry.Label] = staticRunner
+	}
 
+	registrations := make([]StaticLiveRunnerRegistration, 0, len(cfg.Runners))
+	for i, entry := range cfg.Runners {
+		staticRunner := staticRunnersByLabel[entry.Label]
+		staticRunner.mu.Lock()
+		r.mu.Lock()
+		if r.runners[staticRunner.RunnerID] != nil && r.runners[staticRunner.RunnerID] != staticRunner {
+			for r.runners[staticRunner.RunnerID] != nil {
+				// collision lol
+				staticRunner.RunnerID = "runner_" + randomStr(liveRunnerIDRandomBytes)
+			}
+		}
 		req := requests[i]
 		req.RunnerID = staticRunner.RunnerID
 		if health[i] {
@@ -490,6 +524,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		}
 		r.runners[staticRunner.route] = staticRunner
 		staticRunner.updatePriceConverterLocked()
+		r.mu.Unlock()
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
@@ -580,25 +615,29 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 
 func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	r.mu.Lock()
-	r.expireLocked(time.Now())
 	runner := r.runners[runnerID]
+	heartbeatTTL := r.heartbeatTTL
 	if runner == nil {
 		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
+	r.mu.Unlock()
+
 	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.removed || liveRunnerExpiredLocked(runner, time.Now(), heartbeatTTL) {
+		return &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
 	if runner.static {
-		runner.mu.Unlock()
-		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusBadRequest, Message: "static runner cannot unregister with heartbeat credentials"}
 	}
 	if !validSecret(auth, runner.heartbeatSecret) {
-		runner.mu.Unlock()
-		r.mu.Unlock()
 		return &RunnerError{StatusCode: http.StatusUnauthorized, Message: "invalid authorization"}
 	}
-	r.removeRunnerWithRunnerLocked(runnerID, runner)
-	runner.mu.Unlock()
+	r.mu.Lock()
+	if r.runners[runnerID] == runner && !runner.removed {
+		r.removeRunnerWithRunnerLocked(runnerID, runner)
+	}
 	r.mu.Unlock()
 	return nil
 }
@@ -816,7 +855,7 @@ func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name stri
 
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 	r.mu.Lock()
-	r.expireLocked(time.Now())
+	heartbeatTTL := r.heartbeatTTL
 	snapshot := make([]*liveRunner, 0, len(r.runners))
 	for _, runner := range r.runners {
 		snapshot = append(snapshot, runner)
@@ -826,7 +865,7 @@ func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 	runners := make([]LiveRunnerDiscoveryRunner, 0, len(snapshot))
 	for _, runner := range snapshot {
 		runner.mu.Lock()
-		if runner.removed || !isReadyStatus(runner.Status) {
+		if runner.removed || liveRunnerExpiredLocked(runner, time.Now(), heartbeatTTL) || !isReadyStatus(runner.Status) {
 			runner.mu.Unlock()
 			continue
 		}
@@ -848,29 +887,70 @@ func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
 	return r.host.ServiceURI().JoinPath("apps", runner.route, "session").String()
 }
 
-func (r *LiveRunnerRegistry) expireLocked(now time.Time) {
-	// expireLocked requires r.mu
-	for runnerID, runner := range r.runners {
-		runner.mu.Lock()
-		expired := !runner.removed && !runner.static && now.Sub(runner.LastHeartbeat) > r.heartbeatTTL
-		runner.mu.Unlock()
-		if expired {
-			r.removeRunnerLocked(runnerID)
-		}
-	}
-}
-
 func (r *LiveRunnerRegistry) lockLiveRunner(runnerID string) (*liveRunner, func(), error) {
 	r.mu.Lock()
-	r.expireLocked(time.Now())
 	runner := r.runners[runnerID]
 	if runner == nil {
 		r.mu.Unlock()
 		return nil, nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
-	runner.mu.Lock()
+	heartbeatTTL := r.heartbeatTTL
 	r.mu.Unlock()
+
+	// Do not wait on runner.mu while holding r.mu. A copied runner pointer stays
+	// valid after map deletion; removal is observed through runner.removed once
+	// runner.mu is acquired.
+	runner.mu.Lock()
+	if runner.removed || liveRunnerExpiredLocked(runner, time.Now(), heartbeatTTL) {
+		runner.mu.Unlock()
+		return nil, nil, &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
+	}
 	return runner, runner.mu.Unlock, nil
+}
+
+func liveRunnerExpiredLocked(runner *liveRunner, now time.Time, heartbeatTTL time.Duration) bool {
+	// liveRunnerExpiredLocked requires runner.mu.
+	return !runner.static && now.Sub(runner.LastHeartbeat) > heartbeatTTL
+}
+
+func (r *LiveRunnerRegistry) expiryLoop() {
+	ticker := time.NewTicker(r.heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			r.removeExpiredRunners(time.Now())
+		case <-r.stopRegistry:
+			return
+		}
+	}
+}
+
+func (r *LiveRunnerRegistry) removeExpiredRunners(now time.Time) {
+	type candidate struct {
+		runnerID string
+		runner   *liveRunner
+	}
+	r.mu.Lock()
+	heartbeatTTL := r.heartbeatTTL
+	candidates := make([]candidate, 0, len(r.runners))
+	for runnerID, runner := range r.runners {
+		candidates = append(candidates, candidate{runnerID: runnerID, runner: runner})
+	}
+	r.mu.Unlock()
+
+	for _, c := range candidates {
+		c.runner.mu.Lock()
+		expired := !c.runner.removed && liveRunnerExpiredLocked(c.runner, now, heartbeatTTL)
+		if expired {
+			r.mu.Lock()
+			if r.runners[c.runnerID] == c.runner && !c.runner.removed && liveRunnerExpiredLocked(c.runner, now, heartbeatTTL) {
+				r.removeRunnerWithRunnerLocked(c.runnerID, c.runner)
+			}
+			r.mu.Unlock()
+		}
+		c.runner.mu.Unlock()
+	}
 }
 
 func (r *LiveRunnerRegistry) healthLoop() {
@@ -880,7 +960,7 @@ func (r *LiveRunnerRegistry) healthLoop() {
 		select {
 		case <-ticker.C:
 			r.checkStaticRunnerHealth()
-		case <-r.stopHealth:
+		case <-r.stopRegistry:
 			return
 		}
 	}
@@ -895,15 +975,26 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 	r.mu.Lock()
 	checks := []check{}
 	for _, runner := range r.runners {
-		runner.mu.Lock()
-		if !runner.removed && runner.static {
-			checks = append(checks, check{runner: runner, healthURL: runner.healthURL, healthStatus: runner.healthStatus})
-		}
-		runner.mu.Unlock()
+		checks = append(checks, check{runner: runner})
 	}
 	r.mu.Unlock()
 
+	for i, c := range checks {
+		runner := c.runner
+		runner.mu.Lock()
+		if !runner.removed && runner.static {
+			checks[i].healthURL = runner.healthURL
+			checks[i].healthStatus = runner.healthStatus
+		} else {
+			checks[i].runner = nil
+		}
+		runner.mu.Unlock()
+	}
+
 	for _, c := range checks {
+		if c.runner == nil {
+			continue
+		}
 		healthy := r.staticRunnerHealthy(c.healthURL, c.healthStatus)
 		c.runner.mu.Lock()
 		if !c.runner.removed && c.runner.static {
@@ -929,23 +1020,20 @@ func (r *LiveRunnerRegistry) staticRunnerHealthy(healthURL string, healthyStatus
 	return resp.StatusCode == healthyStatus
 }
 
-func (r *LiveRunnerRegistry) removeRunnerLocked(runnerID string) {
-	// removeRunnerLocked requires r.mu.
-	if runner := r.runners[runnerID]; runner != nil {
-		runner.mu.Lock()
-		r.removeRunnerWithRunnerLocked(runnerID, runner)
-		runner.mu.Unlock()
-	}
-}
-
 func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner) {
-	// removeRunnerWithRunnerLocked requires r.mu and runner.mu.
+	// removeRunnerWithRunnerLocked requires both r.mu and runner.mu. Callers
+	// should already hold runner.mu before taking r.mu so the registry lock is
+	// not held while waiting on a busy runner.
+	// Set removed before deleting the map entry so any goroutine that already
+	// copied the runner pointer can reject it after acquiring runner.mu.
 	runner.removed = true
 	for sessionID := range runner.sessions {
 		runner.releaseSessionLocked(sessionID)
 	}
 	runner.stopPriceConverterLocked()
-	delete(r.runners, runnerID)
+	if r.runners[runnerID] == runner {
+		delete(r.runners, runnerID)
+	}
 }
 
 func (runner *liveRunner) releaseSessionLocked(sessionID string) {
