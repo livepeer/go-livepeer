@@ -261,6 +261,7 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
 	t.Cleanup(manager.Stop)
 	lp.node.LiveRunnerManager = manager
+	manager.SetTrickleServer(lp.trickleSrv, lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String())
 	prevWatcher := core.PriceFeedWatcher
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
@@ -395,6 +396,22 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, t.Name(), resp.RunnerID)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
 	require.NotEmpty(t, resp.HeartbeatSecret)
+	require.NotNil(t, resp.R2O)
+	require.NotNil(t, resp.O2R)
+	require.Equal(t, runner.LiveRunnerTrickleRunnerToOrchestrator, resp.R2O.Name)
+	require.Equal(t, runner.LiveRunnerTrickleOrchestratorToRunner, resp.O2R.Name)
+	for _, channel := range []runner.LiveRunnerTrickleChannel{*resp.R2O, *resp.O2R} {
+		require.True(t, strings.HasPrefix(channel.ChannelName, resp.RunnerID+"-"))
+		require.True(t, strings.HasSuffix(channel.ChannelName, "-"+channel.Name))
+		require.NotEqual(t, resp.RunnerID+"-"+channel.Name, channel.ChannelName)
+		require.Equal(t, "application/octet-stream", channel.MimeType)
+		require.Equal(t, "http://localhost:1234/ai/trickle/"+channel.ChannelName, channel.URL)
+
+		w = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/ai/trickle/"+channel.ChannelName+"/next", nil)
+		lp.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+	}
 
 	// Check missing auth after bootstrap.
 	w = httptest.NewRecorder()
@@ -412,6 +429,8 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &nextResp))
 	require.Equal(t, t.Name(), nextResp.RunnerID)
 	require.Empty(t, nextResp.HeartbeatSecret)
+	require.Nil(t, nextResp.R2O)
+	require.Nil(t, nextResp.O2R)
 }
 
 func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {

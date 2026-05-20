@@ -43,6 +43,11 @@ const (
 	LiveRunnerRoutingLabel    = "label"
 )
 
+const (
+	LiveRunnerTrickleRunnerToOrchestrator = "r2o"
+	LiveRunnerTrickleOrchestratorToRunner = "o2r"
+)
+
 var liveRunnerEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 type RunnerError struct {
@@ -116,11 +121,13 @@ type StaticLiveRunnerRegistrationResponse struct {
 }
 
 type LiveRunnerHeartbeatResponse struct {
-	RunnerID          string `json:"runner_id"`
-	Orchestrator      string `json:"orchestrator,omitempty"`
-	HeartbeatInterval string `json:"heartbeat_interval"`
-	HeartbeatTTL      string `json:"heartbeat_ttl"`
-	HeartbeatSecret   string `json:"heartbeat_secret,omitempty"`
+	RunnerID          string                    `json:"runner_id"`
+	Orchestrator      string                    `json:"orchestrator,omitempty"`
+	HeartbeatInterval string                    `json:"heartbeat_interval"`
+	HeartbeatTTL      string                    `json:"heartbeat_ttl"`
+	HeartbeatSecret   string                    `json:"heartbeat_secret,omitempty"`
+	R2O               *LiveRunnerTrickleChannel `json:"r2o,omitempty"`
+	O2R               *LiveRunnerTrickleChannel `json:"o2r,omitempty"`
 }
 
 type LiveRunnerDiscoveryRunner struct {
@@ -147,6 +154,8 @@ type liveRunner struct {
 	heartbeatSecret string
 	static          bool
 	offchain        bool
+	r2o             *liveRunnerTrickleChannel
+	o2r             *liveRunnerTrickleChannel
 
 	// all fields below are mutable and need to be protected by mu
 	mu sync.Mutex
@@ -241,6 +250,7 @@ func (r *LiveRunnerRegistry) Stop() {
 	r.mu.Unlock()
 	for _, runner := range runners {
 		runner.mu.Lock()
+		runner.closeChannelsLocked()
 		runner.stopPriceConverterLocked()
 		runner.mu.Unlock()
 	}
@@ -268,6 +278,8 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	heartbeatTTL := r.heartbeatTTL
 	orchestrator := r.host.ServiceURI().String()
 	if runner == nil {
+		trickleSrv := r.trickleSrv
+		trickleBaseURL := r.trickleBaseURL
 		// registering a new runner
 		registrationSecret := r.host.RegistrationSecret()
 		if registrationSecret == "" {
@@ -287,6 +299,11 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			route:           req.RunnerID, // No label-based routing for now
 			sessions:        make(map[string]*liveRunnerSession),
 		}
+		if err := runner.setRunnerTrickleChannels(trickleSrv, trickleBaseURL, req.RunnerID); err != nil {
+			runner.closeChannelsLocked()
+			r.mu.Unlock()
+			return nil, err
+		}
 		r.runners[req.RunnerID] = runner
 		responseHeartbeatSecret = heartbeatSecret
 		runner.mu.Lock()
@@ -304,6 +321,8 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			HeartbeatInterval: heartbeatInterval.String(),
 			HeartbeatTTL:      heartbeatTTL.String(),
 			HeartbeatSecret:   responseHeartbeatSecret,
+			R2O:               &runner.r2o.info,
+			O2R:               &runner.o2r.info,
 		}, nil
 	} else {
 		r.mu.Unlock()
@@ -812,9 +831,39 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 		return channel.info, nil
 	}
 
+	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, mimeType)
+	session.channels[name] = channel
+	return channel.info, nil
+}
+
+func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, trickleBaseURL, runnerID string) error {
+	r2o, err := runner.createBootstrapTrickleChannel(trickleSrv, trickleBaseURL, runnerID, LiveRunnerTrickleRunnerToOrchestrator)
+	if err != nil {
+		return err
+	}
+	o2r, err := runner.createBootstrapTrickleChannel(trickleSrv, trickleBaseURL, runnerID, LiveRunnerTrickleOrchestratorToRunner)
+	if err != nil {
+		return err
+	}
+	runner.r2o = r2o
+	runner.o2r = o2r
+	return nil
+}
+
+func (runner *liveRunner) createBootstrapTrickleChannel(trickleSrv *trickle.Server, trickleBaseURL, runnerID, name string) (*liveRunnerTrickleChannel, error) {
+	channelName := runnerID + "-" + deriveSecret(runner.seed, "trickle:"+name)[:16] + "-" + name
+	channelURL, err := url.JoinPath(trickleBaseURL, channelName)
+	if err != nil {
+		return nil, err
+	}
+	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, "application/octet-stream")
+	return channel, nil
+}
+
+func newLiveRunnerTrickleChannel(trickleSrv *trickle.Server, name, channelName, channelURL, mimeType string) *liveRunnerTrickleChannel {
 	publisher := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 	publisher.CreateChannel()
-	channel := &liveRunnerTrickleChannel{
+	return &liveRunnerTrickleChannel{
 		info: LiveRunnerTrickleChannel{
 			Name:        name,
 			ChannelName: channelName,
@@ -823,8 +872,6 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 		},
 		publisher: publisher,
 	}
-	session.channels[name] = channel
-	return channel.info, nil
 }
 
 func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name string) error {
@@ -1027,6 +1074,7 @@ func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runne
 	// Set removed before deleting the map entry so any goroutine that already
 	// copied the runner pointer can reject it after acquiring runner.mu.
 	runner.removed = true
+	runner.closeChannelsLocked()
 	for sessionID := range runner.sessions {
 		runner.releaseSessionLocked(sessionID)
 	}
@@ -1042,6 +1090,17 @@ func (runner *liveRunner) releaseSessionLocked(sessionID string) {
 		session.closeChannelsLocked()
 	}
 	delete(runner.sessions, sessionID)
+}
+
+func (runner *liveRunner) closeChannelsLocked() {
+	for _, channel := range []*liveRunnerTrickleChannel{runner.r2o, runner.o2r} {
+		if channel == nil {
+			continue
+		}
+		if err := channel.close(); err != nil {
+			slog.Error("error closing live runner bootstrap trickle channel", "channel", channel.info.ChannelName, "err", err)
+		}
+	}
 }
 
 func (runner *liveRunner) liveRunnerSessionLocked(sessionID string) (*liveRunnerSession, error) {

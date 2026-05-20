@@ -92,6 +92,7 @@ func newOnchainLiveRunnerTestRegistry() *LiveRunnerRegistry {
 
 func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req LiveRunnerHeartbeatRequest) *LiveRunnerHeartbeatResponse {
 	t.Helper()
+	ensureLiveRunnerTestTrickleServer(t, registry)
 	resp, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -106,6 +107,31 @@ func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req Live
 		t.Fatalf("unexpected orchestrator URL: %s", resp.Orchestrator)
 	}
 	return resp
+}
+
+func ensureLiveRunnerTestTrickleServer(t *testing.T, registry *LiveRunnerRegistry) (string, func(string) int) {
+	t.Helper()
+	registry.mu.Lock()
+	hasTrickleServer := registry.trickleSrv != nil
+	channelBaseURL := registry.trickleBaseURL
+	registry.mu.Unlock()
+	if hasTrickleServer {
+		return channelBaseURL, nil
+	}
+	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	return channelBaseURL, channelStatus
+}
+
+func liveRunnerTestBootstrapChannels(resp *LiveRunnerHeartbeatResponse) []LiveRunnerTrickleChannel {
+	channels := []LiveRunnerTrickleChannel{}
+	if resp.R2O != nil {
+		channels = append(channels, *resp.R2O)
+	}
+	if resp.O2R != nil {
+		channels = append(channels, *resp.O2R)
+	}
+	return channels
 }
 
 func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
@@ -151,6 +177,65 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 	runner := registry.runners[resp.RunnerID]
 	if runner == nil || runner.Capacity != 1 {
 		t.Fatalf("unexpected state after create-by-unknown-id heartbeat: %+v", runner)
+	}
+}
+
+func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.T) {
+	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
+	registry := newLiveRunnerTestRegistry()
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	req := liveRunnerTestHeartbeat("runner-bootstrap")
+
+	resp := liveRunnerTestRegister(t, registry, req)
+	channels := liveRunnerTestBootstrapChannels(resp)
+	if len(channels) != 2 {
+		t.Fatalf("expected bootstrap trickle channels, got %+v", resp)
+	}
+	expectedNames := []string{
+		LiveRunnerTrickleRunnerToOrchestrator,
+		LiveRunnerTrickleOrchestratorToRunner,
+	}
+	for i, expectedName := range expectedNames {
+		channel := channels[i]
+		if channel.Name != expectedName {
+			t.Fatalf("unexpected bootstrap channel name at %d: %+v", i, channel)
+		}
+		if !strings.HasPrefix(channel.ChannelName, resp.RunnerID+"-") || !strings.HasSuffix(channel.ChannelName, "-"+expectedName) {
+			t.Fatalf("expected randomized backing channel for %q, got %q", expectedName, channel.ChannelName)
+		}
+		if channel.ChannelName == resp.RunnerID+"-"+expectedName {
+			t.Fatalf("expected non-guessable backing channel name, got %q", channel.ChannelName)
+		}
+		if channel.URL != channelBaseURL+channel.ChannelName {
+			t.Fatalf("unexpected bootstrap channel URL: %s", channel.URL)
+		}
+		if channel.MimeType != "application/octet-stream" {
+			t.Fatalf("unexpected bootstrap channel MIME type: %s", channel.MimeType)
+		}
+		if status := channelStatus(channel.ChannelName); status != http.StatusOK {
+			t.Fatalf("expected bootstrap channel to exist, got status=%d", status)
+		}
+	}
+}
+
+func TestLiveRunnerRegistry_HeartbeatDoesNotReturnBootstrapChannelsAgain(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-bootstrap-once"))
+
+	nextResp, err := registry.Heartbeat(liveRunnerTestHeartbeat(resp.RunnerID), resp.HeartbeatSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextResp.R2O != nil || nextResp.O2R != nil {
+		t.Fatalf("expected no bootstrap channels on follow-up heartbeat, got %+v", nextResp)
+	}
+	registry.mu.Lock()
+	runner := registry.runners[resp.RunnerID]
+	registry.mu.Unlock()
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.r2o == nil || runner.o2r == nil {
+		t.Fatalf("expected existing bootstrap channels to be preserved, got r2o=%+v o2r=%+v", runner.r2o, runner.o2r)
 	}
 }
 
@@ -1213,6 +1298,10 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	resp1 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+	resp1Channels := liveRunnerTestBootstrapChannels(resp1)
+	if len(resp1Channels) != 2 {
+		t.Fatalf("expected bootstrap trickle channels, got %+v", resp1)
+	}
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
 		t.Fatal(err)
@@ -1244,9 +1333,15 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
 		t.Fatalf("expected unregister to close channel, got status=%d", status)
 	}
+	for _, channel := range resp1Channels {
+		if status := channelStatus(channel.ChannelName); status != http.StatusNotFound {
+			t.Fatalf("expected unregister to close bootstrap channel %q, got status=%d", channel.ChannelName, status)
+		}
+	}
 
 	registry.heartbeatTTL = defaultLiveRunnerHeartbeatTTL
-	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-2"))
+	resp2 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-2"))
+	resp2Channels := liveRunnerTestBootstrapChannels(resp2)
 	sessionID, _, err = registry.ReserveSession("runner-2")
 	if err != nil {
 		t.Fatal(err)
@@ -1265,6 +1360,11 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	registry.removeExpiredRunners(time.Now())
 	if status := channelStatus(sessionID + "-cleanup"); status != http.StatusNotFound {
 		t.Fatalf("expected expiry to close channel, got status=%d", status)
+	}
+	for _, channel := range resp2Channels {
+		if status := channelStatus(channel.ChannelName); status != http.StatusNotFound {
+			t.Fatalf("expected expiry to close bootstrap channel %q, got status=%d", channel.ChannelName, status)
+		}
 	}
 }
 
