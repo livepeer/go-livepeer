@@ -396,11 +396,9 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, t.Name(), resp.RunnerID)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
 	require.NotEmpty(t, resp.HeartbeatSecret)
-	require.NotNil(t, resp.R2O)
 	require.NotNil(t, resp.O2R)
-	require.Equal(t, runner.LiveRunnerTrickleRunnerToOrchestrator, resp.R2O.Name)
 	require.Equal(t, runner.LiveRunnerTrickleOrchestratorToRunner, resp.O2R.Name)
-	for _, channel := range []runner.LiveRunnerTrickleChannel{*resp.R2O, *resp.O2R} {
+	for _, channel := range []runner.LiveRunnerTrickleChannel{*resp.O2R} {
 		require.True(t, strings.HasPrefix(channel.ChannelName, resp.RunnerID+"-"))
 		require.True(t, strings.HasSuffix(channel.ChannelName, "-"+channel.Name))
 		require.NotEqual(t, resp.RunnerID+"-"+channel.Name, channel.ChannelName)
@@ -429,7 +427,6 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &nextResp))
 	require.Equal(t, t.Name(), nextResp.RunnerID)
 	require.Empty(t, nextResp.HeartbeatSecret)
-	require.Nil(t, nextResp.R2O)
 	require.Nil(t, nextResp.O2R)
 }
 

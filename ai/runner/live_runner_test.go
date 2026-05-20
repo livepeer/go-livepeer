@@ -126,9 +126,6 @@ func ensureLiveRunnerTestTrickleServer(t *testing.T, registry *LiveRunnerRegistr
 
 func liveRunnerTestBootstrapChannels(resp *LiveRunnerHeartbeatResponse) []LiveRunnerTrickleChannel {
 	channels := []LiveRunnerTrickleChannel{}
-	if resp.R2O != nil {
-		channels = append(channels, *resp.R2O)
-	}
 	if resp.O2R != nil {
 		channels = append(channels, *resp.O2R)
 	}
@@ -189,11 +186,10 @@ func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.
 
 	resp := liveRunnerTestRegister(t, registry, req)
 	channels := liveRunnerTestBootstrapChannels(resp)
-	if len(channels) != 2 {
+	if len(channels) != 1 {
 		t.Fatalf("expected bootstrap trickle channels, got %+v", resp)
 	}
 	expectedNames := []string{
-		LiveRunnerTrickleRunnerToOrchestrator,
 		LiveRunnerTrickleOrchestratorToRunner,
 	}
 	for i, expectedName := range expectedNames {
@@ -295,7 +291,7 @@ func TestLiveRunnerRegistry_HeartbeatDoesNotReturnBootstrapChannelsAgain(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if nextResp.R2O != nil || nextResp.O2R != nil {
+	if nextResp.O2R != nil {
 		t.Fatalf("expected no bootstrap channels on follow-up heartbeat, got %+v", nextResp)
 	}
 	registry.mu.Lock()
@@ -303,8 +299,8 @@ func TestLiveRunnerRegistry_HeartbeatDoesNotReturnBootstrapChannelsAgain(t *test
 	registry.mu.Unlock()
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
-	if runner.r2o == nil || runner.o2r == nil {
-		t.Fatalf("expected existing bootstrap channels to be preserved, got r2o=%+v o2r=%+v", runner.r2o, runner.o2r)
+	if runner.o2r == nil {
+		t.Fatalf("expected existing bootstrap channel to be preserved, got o2r=%+v", runner.o2r)
 	}
 }
 
@@ -1368,7 +1364,7 @@ func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	registry.SetTrickleServer(trickleSrv, channelBaseURL)
 	resp1 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	resp1Channels := liveRunnerTestBootstrapChannels(resp1)
-	if len(resp1Channels) != 2 {
+	if len(resp1Channels) != 1 {
 		t.Fatalf("expected bootstrap trickle channels, got %+v", resp1)
 	}
 	sessionID, _, err := registry.ReserveSession("runner-1")

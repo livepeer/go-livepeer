@@ -48,7 +48,10 @@ const (
 )
 
 const (
-	LiveRunnerTrickleRunnerToOrchestrator = "r2o"
+	// o2r gives the orchestrator an inbound signaling path to the runner without
+	// requiring a new runner port or quietly extending the runner app API.
+	// Runner-originated calls still use normal HTTP endpoints for heartbeats,
+	// trickle channel creation, and related control-plane requests.
 	LiveRunnerTrickleOrchestratorToRunner = "o2r"
 )
 
@@ -130,7 +133,6 @@ type LiveRunnerHeartbeatResponse struct {
 	HeartbeatInterval string                    `json:"heartbeat_interval"`
 	HeartbeatTTL      string                    `json:"heartbeat_ttl"`
 	HeartbeatSecret   string                    `json:"heartbeat_secret,omitempty"`
-	R2O               *LiveRunnerTrickleChannel `json:"r2o,omitempty"`
 	O2R               *LiveRunnerTrickleChannel `json:"o2r,omitempty"`
 }
 
@@ -158,7 +160,6 @@ type liveRunner struct {
 	heartbeatSecret string
 	static          bool
 	offchain        bool
-	r2o             *liveRunnerTrickleChannel
 	o2r             *liveRunnerTrickleChannel
 
 	// all fields below are mutable and need to be protected by mu
@@ -327,7 +328,6 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			HeartbeatInterval: heartbeatInterval.String(),
 			HeartbeatTTL:      heartbeatTTL.String(),
 			HeartbeatSecret:   responseHeartbeatSecret,
-			R2O:               &runner.r2o.channel,
 			O2R:               &runner.o2r.channel,
 		}, nil
 	} else {
@@ -844,15 +844,10 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 }
 
 func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, trickleBaseURL, runnerID string) error {
-	r2o, err := runner.createBootstrapTrickleChannel(trickleSrv, trickleBaseURL, runnerID, LiveRunnerTrickleRunnerToOrchestrator)
-	if err != nil {
-		return err
-	}
 	o2r, err := runner.createBootstrapTrickleChannel(trickleSrv, trickleBaseURL, runnerID, LiveRunnerTrickleOrchestratorToRunner)
 	if err != nil {
 		return err
 	}
-	runner.r2o = r2o
 	runner.o2r = o2r
 	go writeO2RLoop(runner.o2r)
 	return nil
@@ -1122,7 +1117,7 @@ func (runner *liveRunner) sendSessionEvent(event, sessionID string) {
 }
 
 func (runner *liveRunner) closeChannelsLocked() {
-	for _, channel := range []*liveRunnerTrickleChannel{runner.r2o, runner.o2r} {
+	for _, channel := range []*liveRunnerTrickleChannel{runner.o2r} {
 		if channel == nil {
 			continue
 		}
