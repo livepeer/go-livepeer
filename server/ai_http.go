@@ -220,7 +220,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 	var (
 		payment   lpnet.Payment
 		segData   *core.SegTranscodingMetadata
-		ctx       context.Context
+		ctx       = r.Context()
 		sessionID string
 	)
 	if paymentRequired {
@@ -229,8 +229,8 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return
 		}
-		if err := checkRunnerPayment(segData); err != nil {
-			respondWithError(w, err.Error(), http.StatusForbidden)
+		if string(segData.ManifestID) != segData.AuthToken.SessionId {
+			respondWithError(w, "mismatched manifest and auth token", http.StatusForbidden)
 			return
 		}
 		// for easier correlation across orch, gw, signer
@@ -241,14 +241,54 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		respondWithLiveRunnerError(w, err)
 		return
 	}
+	ctx = clog.AddVal(ctx, "runner_id", runnerID)
+	ctx = clog.AddVal(ctx, "session_id", sessionID)
 	if paymentRequired {
 		if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
 			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
-				slog.Error("error releasing live runner session after payment failure", "runner_id", runnerID, "session_id", sessionID, "err", releaseErr)
+				clog.Errorf(ctx, "Error releasing live runner session after payment failure err=%v", releaseErr)
 			}
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		monitorCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+		accountPaymentFunc := func(inPixels int64) error {
+			err := paymentReceiver.AccountPayment(monitorCtx, &SegmentInfoReceiver{
+				sender:    getPaymentSender(payment),
+				inPixels:  inPixels,
+				priceInfo: payment.GetExpectedPrice(),
+				sessionID: string(segData.ManifestID),
+			})
+			if err != nil {
+				clog.Errorf(monitorCtx, "Error accounting live runner payment, releasing session err=%v", err)
+				if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+					clog.Errorf(monitorCtx, "Error releasing live runner session after payment failure err=%v", releaseErr)
+				}
+				// Stop both the ticker loop below and the LivePaymentProcessor goroutine.
+				cancel()
+			}
+			return err
+		}
+		paymentProcessor := NewLivePaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+		go func() {
+			ticker := time.NewTicker(h.node.LivePaymentInterval)
+			defer ticker.Stop()
+			defer cancel()
+			for {
+				select {
+				case <-ticker.C:
+					// Stop monitoring once the live runner session has been released
+					// by an explicit stop, runner cleanup, expiry, or payment failure.
+					if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+						return
+					}
+					paymentProcessor.process(monitorCtx)
+				case <-monitorCtx.Done():
+					return
+				}
+			}
+		}()
 	}
 	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
 	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL})
@@ -378,16 +418,6 @@ func (h *lphttp) runnerOrchInfo(sender ethcommon.Address, priceInfo *runner.Live
 		Address:      h.orchestrator.Address().Bytes(),
 		AuthToken:    authToken,
 	}, nil
-}
-
-func checkRunnerPayment(segData *core.SegTranscodingMetadata) error {
-	if segData == nil || segData.AuthToken == nil {
-		return errors.New("missing segment credentials")
-	}
-	if string(segData.ManifestID) != segData.AuthToken.SessionId {
-		return fmt.Errorf("mismatched manifest and auth token")
-	}
-	return nil
 }
 
 func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {

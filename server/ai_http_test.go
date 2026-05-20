@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -14,8 +15,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -562,6 +565,109 @@ func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
 }
 
+func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(3, 1)
+		priceInfo := liveRunnerTestPricePerSecond(1)
+
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", priceInfo)
+		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		balance = orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "2", balance.FloatString(0))
+
+		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
+		time.Sleep(time.Second)
+		synctest.Wait()
+	})
+}
+
+func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(0, 1)
+
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		_, err := manager.RunnerEndpointForSession("runner-1", sessionID)
+		var runnerErr *runner.RunnerError
+		require.True(t, errors.As(err, &runnerErr), "expected runner error, got %v", err)
+		require.Equal(t, http.StatusNotFound, runnerErr.StatusCode)
+	})
+}
+
+func TestLiveRunnerPaidSessionMonitorExitsAfterManualStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(3, 1)
+
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/stop", nil)
+		lp.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNoContent, w.Code)
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
+	})
+}
+
+func TestLiveRunnerOffchainSessionDoesNotStartPaymentMonitor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTP(t, true)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		if _, err := manager.RunnerEndpointForSession("runner-1", sessionID); err != nil {
+			t.Fatal(err)
+		}
+		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
+	})
+}
+
 func TestLiveRunnerReserveSessionRejectsManifestAuthMismatch(t *testing.T) {
 	lp := newLiveRunnerHTTPOnchain(t)
 	registerLiveRunnerForSession(t, lp, nil)
@@ -1101,6 +1207,7 @@ func newLiveRunnerHTTPOnchain(t *testing.T) *lphttp {
 	t.Helper()
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	node.LivePaymentInterval = 5 * time.Second
 	orch := newStubOrchestrator()
 	orch.secret = "live-runner-secret"
 	orch.ticketParams = defaultTicketParams()
@@ -1228,6 +1335,11 @@ func setRequestHeaders(req *http.Request, headers http.Header) {
 
 func liveRunnerReservationPaymentHeaders(t *testing.T, orch *stubOrchestrator, authToken *lpnet.AuthToken, manifestID string) http.Header {
 	t.Helper()
+	return liveRunnerReservationPaymentHeadersWithPrice(t, orch, authToken, manifestID, &lpnet.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1})
+}
+
+func liveRunnerReservationPaymentHeadersWithPrice(t *testing.T, orch *stubOrchestrator, authToken *lpnet.AuthToken, manifestID string, priceInfo *lpnet.PriceInfo) http.Header {
+	t.Helper()
 	md := &core.SegTranscodingMetadata{
 		ManifestID: core.ManifestID(manifestID),
 		Caps:       core.NewCapabilities(nil, nil),
@@ -1243,7 +1355,7 @@ func liveRunnerReservationPaymentHeaders(t *testing.T, orch *stubOrchestrator, a
 
 	payment := &lpnet.Payment{
 		Sender:        orch.Address().Bytes(),
-		ExpectedPrice: &lpnet.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1},
+		ExpectedPrice: priceInfo,
 	}
 	paymentBytes, err := proto.Marshal(payment)
 	require.NoError(t, err)
@@ -1252,6 +1364,13 @@ func liveRunnerReservationPaymentHeaders(t *testing.T, orch *stubOrchestrator, a
 	headers.Set(segmentHeader, base64.StdEncoding.EncodeToString(segBytes))
 	headers.Set(paymentHeader, base64.StdEncoding.EncodeToString(paymentBytes))
 	return headers
+}
+
+func liveRunnerTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
+	return &lpnet.PriceInfo{
+		PricePerUnit:  pricePerSecond,
+		PixelsPerUnit: int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS),
+	}
 }
 
 type liveRunnerRegistrationOptions struct {
@@ -1320,6 +1439,22 @@ func reserveLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string) string 
 	var resp liveRunnerSessionResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.SessionID)
+	return resp.SessionID
+}
+
+func reservePaidLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string, priceInfo *lpnet.PriceInfo) string {
+	t.Helper()
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, runnerID)
+	headers := liveRunnerReservationPaymentHeadersWithPrice(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID, priceInfo)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp liveRunnerSessionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, challenge.ManifestID, resp.SessionID)
 	return resp.SessionID
 }
 
