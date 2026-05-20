@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -28,9 +29,12 @@ const (
 	defaultLiveRunnerHealthInterval    = 5 * time.Second
 	defaultLiveRunnerHealthStatusCode  = http.StatusOK
 	defaultLiveRunnerHealthTimeout     = 3 * time.Second
+	liveRunnerO2RKeepaliveMessage      = `{"keep":"alive"}`
 	liveRunnerIDRandomBytes            = 5
 	liveRunnerSeedBytes                = 32
 )
+
+var liveRunnerO2RKeepaliveInterval = 10 * time.Second
 
 const (
 	LiveRunnerModePersistent      = "persistent"
@@ -176,9 +180,11 @@ type liveRunnerSession struct {
 }
 
 type liveRunnerTrickleChannel struct {
-	info LiveRunnerTrickleChannel
-	// Protected by the parent liveRunner.mu.
+	channel   LiveRunnerTrickleChannel
 	publisher *trickle.TrickleLocalPublisher
+	done      chan struct{}
+	messages  chan string
+	closeOnce sync.Once
 }
 
 type LiveRunnerRegistry struct {
@@ -321,8 +327,8 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			HeartbeatInterval: heartbeatInterval.String(),
 			HeartbeatTTL:      heartbeatTTL.String(),
 			HeartbeatSecret:   responseHeartbeatSecret,
-			R2O:               &runner.r2o.info,
-			O2R:               &runner.o2r.info,
+			R2O:               &runner.r2o.channel,
+			O2R:               &runner.o2r.channel,
 		}, nil
 	} else {
 		r.mu.Unlock()
@@ -694,6 +700,7 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	runner.sessions[id] = &liveRunnerSession{
 		channels: make(map[string]*liveRunnerTrickleChannel),
 	}
+	runner.sendSessionEvent("reserved", id)
 	return id, runner.RunnerURL, nil
 }
 
@@ -828,12 +835,12 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 		return LiveRunnerTrickleChannel{}, err
 	}
 	if channel := session.channels[name]; channel != nil {
-		return channel.info, nil
+		return channel.channel, nil
 	}
 
 	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, mimeType)
 	session.channels[name] = channel
-	return channel.info, nil
+	return channel.channel, nil
 }
 
 func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, trickleBaseURL, runnerID string) error {
@@ -847,6 +854,7 @@ func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, t
 	}
 	runner.r2o = r2o
 	runner.o2r = o2r
+	go writeO2RLoop(runner.o2r)
 	return nil
 }
 
@@ -864,13 +872,15 @@ func newLiveRunnerTrickleChannel(trickleSrv *trickle.Server, name, channelName, 
 	publisher := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 	publisher.CreateChannel()
 	return &liveRunnerTrickleChannel{
-		info: LiveRunnerTrickleChannel{
+		channel: LiveRunnerTrickleChannel{
 			Name:        name,
 			ChannelName: channelName,
 			URL:         channelURL,
 			MimeType:    mimeType,
 		},
 		publisher: publisher,
+		done:      make(chan struct{}),
+		messages:  make(chan string, 32),
 	}
 }
 
@@ -1087,9 +1097,28 @@ func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runne
 func (runner *liveRunner) releaseSessionLocked(sessionID string) {
 	// releaseSessionLocked requires runner.mu.
 	if session := runner.sessions[sessionID]; session != nil {
+		runner.sendSessionEvent("released", sessionID)
 		session.closeChannelsLocked()
 	}
 	delete(runner.sessions, sessionID)
+}
+
+func (runner *liveRunner) sendSessionEvent(event, sessionID string) {
+	o2r := runner.o2r
+	if o2r == nil {
+		return
+	}
+	if err := o2r.queueJSON(struct {
+		Event     string    `json:"event"`
+		Session   string    `json:"session"`
+		Timestamp time.Time `json:"timestamp"`
+	}{
+		Event:     event,
+		Session:   sessionID,
+		Timestamp: time.Now().UTC(),
+	}); err != nil {
+		slog.Warn("error queueing live runner session event", "runner_id", runner.RunnerID, "session_id", sessionID, "event", event, "err", err)
+	}
 }
 
 func (runner *liveRunner) closeChannelsLocked() {
@@ -1098,7 +1127,7 @@ func (runner *liveRunner) closeChannelsLocked() {
 			continue
 		}
 		if err := channel.close(); err != nil {
-			slog.Error("error closing live runner bootstrap trickle channel", "channel", channel.info.ChannelName, "err", err)
+			slog.Error("error closing live runner bootstrap trickle channel", "channel", channel.channel.ChannelName, "err", err)
 		}
 	}
 }
@@ -1129,19 +1158,71 @@ func normalizeTrickleChannelName(sessionID, name string) (string, string, error)
 func (session *liveRunnerSession) closeChannelsLocked() {
 	for name, channel := range session.channels {
 		if err := channel.close(); err != nil {
-			slog.Error("error closing live runner trickle channel", "channel", channel.info.ChannelName, "err", err)
+			slog.Error("error closing live runner trickle channel", "channel", channel.channel.ChannelName, "err", err)
 		}
 		delete(session.channels, name)
 	}
 }
 
+func writeO2RLoop(channel *liveRunnerTrickleChannel) {
+	ticker := time.NewTicker(liveRunnerO2RKeepaliveInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-channel.done:
+			return
+		case msg := <-channel.messages:
+			if !channel.writeJSON(msg) {
+				return
+			}
+		case <-ticker.C:
+			if !channel.writeJSON(liveRunnerO2RKeepaliveMessage) {
+				return
+			}
+		}
+	}
+}
+
+func (channel *liveRunnerTrickleChannel) queueJSON(v any) error {
+	if channel == nil {
+		return fmt.Errorf("live runner trickle channel is closed")
+	}
+	msg, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-channel.done:
+		return fmt.Errorf("live runner trickle channel %q is closed", channel.channel.ChannelName)
+	case channel.messages <- string(msg):
+		return nil
+	default:
+		return fmt.Errorf("live runner trickle channel %q write queue is full", channel.channel.ChannelName)
+	}
+}
+
+func (channel *liveRunnerTrickleChannel) writeJSON(msg string) bool {
+	if err := channel.publisher.Write(strings.NewReader(msg)); err != nil {
+		if errors.Is(err, trickle.StreamNotFoundErr) {
+			channel.closeOnce.Do(func() {
+				close(channel.done)
+			})
+			return false
+		}
+		slog.Warn("error writing live runner trickle message", "channel", channel.channel.ChannelName, "err", err)
+	}
+	return true
+}
+
 func (channel *liveRunnerTrickleChannel) close() error {
-	if channel == nil || channel.publisher == nil {
+	if channel == nil {
 		return nil
 	}
-	err := channel.publisher.Close()
-	channel.publisher = nil
-	return err
+	channel.closeOnce.Do(func() {
+		close(channel.done)
+	})
+	return channel.publisher.Close()
 }
 
 func newRunnerSeed() []byte {

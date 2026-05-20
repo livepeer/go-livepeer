@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -215,6 +216,74 @@ func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.
 		if status := channelStatus(channel.ChannelName); status != http.StatusOK {
 			t.Fatalf("expected bootstrap channel to exist, got status=%d", status)
 		}
+	}
+}
+
+func TestLiveRunnerRegistry_O2RKeepaliveWriteLoop(t *testing.T) {
+	restore := liveRunnerTestSetO2RKeepaliveInterval(t, 10*time.Millisecond)
+	defer restore()
+
+	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
+	registry := newLiveRunnerTestRegistry()
+	t.Cleanup(registry.Stop)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-o2r-keepalive"))
+
+	msg := liveRunnerTestReadTrickleMessage(t, trickleSrv, resp.O2R.ChannelName, func(msg string) bool {
+		return msg == liveRunnerO2RKeepaliveMessage
+	})
+	if msg != liveRunnerO2RKeepaliveMessage {
+		t.Fatalf("unexpected keepalive message: %q", msg)
+	}
+}
+
+func TestLiveRunnerRegistry_O2RSessionLifecycleMessages(t *testing.T) {
+	restore := liveRunnerTestSetO2RKeepaliveInterval(t, time.Hour)
+	defer restore()
+
+	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
+	registry := newLiveRunnerTestRegistry()
+	t.Cleanup(registry.Stop)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	req := liveRunnerTestHeartbeat("runner-o2r-session")
+	req.Capacity = 2
+	resp := liveRunnerTestRegister(t, registry, req)
+
+	sessionID, _, err := registry.ReserveSession("runner-o2r-session", "manifest-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveRunnerTestReadSessionEvent(t, trickleSrv, resp.O2R.ChannelName, "reserved", sessionID)
+
+	if err := registry.ReleaseSession("runner-o2r-session", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	liveRunnerTestReadSessionEvent(t, trickleSrv, resp.O2R.ChannelName, "released", sessionID)
+}
+
+func TestLiveRunnerRegistry_O2RWriteLoopClosesOnUnregister(t *testing.T) {
+	restore := liveRunnerTestSetO2RKeepaliveInterval(t, time.Hour)
+	defer restore()
+
+	registry := newLiveRunnerTestRegistry()
+	t.Cleanup(registry.Stop)
+	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-o2r-close"))
+
+	registry.mu.Lock()
+	runner := registry.runners["runner-o2r-close"]
+	registry.mu.Unlock()
+	if runner == nil || runner.o2r == nil {
+		t.Fatal("expected registered runner with o2r channel")
+	}
+	o2r := runner.o2r
+
+	if err := registry.Unregister("runner-o2r-close", resp.HeartbeatSecret); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-o2r.done:
+	case <-time.After(time.Second):
+		t.Fatal("expected o2r write loop to close on unregister")
 	}
 }
 
@@ -1491,4 +1560,65 @@ func newLiveRunnerTestTrickleServer(t *testing.T) (*trickle.Server, string, func
 		return resp.StatusCode
 	}
 	return trickleSrv, channelBaseURL, channelStatus
+}
+
+func liveRunnerTestSetO2RKeepaliveInterval(t *testing.T, interval time.Duration) func() {
+	t.Helper()
+	previous := liveRunnerO2RKeepaliveInterval
+	liveRunnerO2RKeepaliveInterval = interval
+	return func() {
+		liveRunnerO2RKeepaliveInterval = previous
+	}
+}
+
+func liveRunnerTestReadTrickleMessage(t *testing.T, trickleSrv *trickle.Server, channelName string, match func(string) bool) string {
+	t.Helper()
+	sub := trickle.NewLocalSubscriber(trickleSrv, channelName)
+	sub.SetSeq(0)
+	deadline := time.Now().Add(time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		td, err := sub.Read()
+		if err != nil {
+			lastErr = err
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		data, err := io.ReadAll(td.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg := string(data)
+		if match(msg) {
+			return msg
+		}
+	}
+	t.Fatalf("timed out reading matching trickle message from %q, lastErr=%v", channelName, lastErr)
+	return ""
+}
+
+func liveRunnerTestReadSessionEvent(t *testing.T, trickleSrv *trickle.Server, channelName, event, sessionID string) {
+	t.Helper()
+	msg := liveRunnerTestReadTrickleMessage(t, trickleSrv, channelName, func(msg string) bool {
+		var got struct {
+			Event     string    `json:"event"`
+			Session   string    `json:"session"`
+			Timestamp time.Time `json:"timestamp"`
+		}
+		if err := json.Unmarshal([]byte(msg), &got); err != nil {
+			return false
+		}
+		return got.Event == event && got.Session == sessionID && !got.Timestamp.IsZero()
+	})
+	var got struct {
+		Event     string    `json:"event"`
+		Session   string    `json:"session"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(msg), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Event != event || got.Session != sessionID || got.Timestamp.IsZero() {
+		t.Fatalf("unexpected session event: %+v", got)
+	}
 }
