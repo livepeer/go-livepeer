@@ -97,6 +97,124 @@ func TestTrickle_Close(t *testing.T) {
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
 
+func TestLocalPublisher_CreateContract(t *testing.T) {
+	t.Run("write without autocreate returns stream not found", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: false,
+		})
+		pub := NewLocalPublisher(server, "missing", "text/plain")
+
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.ErrorIs(err, StreamNotFoundErr)
+		_, exists := server.getStream("missing")
+		require.False(exists)
+	})
+
+	t.Run("create channel without autocreate then write succeeds", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: false,
+		})
+		pub := NewLocalPublisher(server, "created", "text/plain")
+
+		pub.CreateChannel()
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.NoError(err)
+		_, exists := server.getStream("created")
+		require.True(exists)
+	})
+
+	t.Run("write with autocreate creates missing channel", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: true,
+		})
+		pub := NewLocalPublisher(server, "autocreated", "text/plain")
+
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.NoError(err)
+		_, exists := server.getStream("autocreated")
+		require.True(exists)
+	})
+}
+
+func TestTrickle_HTTPCreateContract(t *testing.T) {
+	t.Run("create without autocreate returns not found", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: false,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/missing", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("publish without autocreate returns not found", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: false,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/missing/0", "text/plain", bytes.NewReader([]byte("hello")))
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("create with autocreate succeeds", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/created", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("publish with autocreate succeeds", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/published/0", "text/plain", bytes.NewReader([]byte("hello")))
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+}
+
 func TestTrickle_BeforeCreate(t *testing.T) {
 	t.Run("called before creation", func(t *testing.T) {
 		require := require.New(t)
@@ -347,7 +465,7 @@ func TestTrickle_Reset(t *testing.T) {
 	require.Nil(err)
 	wg := &sync.WaitGroup{}
 
-	// give preconnects time to latch on and autocreate the channel
+	// give preconnects time to latch on
 	time.Sleep(5 * time.Millisecond)
 
 	respCh := make(chan *http.Response)
@@ -431,6 +549,7 @@ func TestTrickle_PublisherReset(t *testing.T) {
 	require, channelURL, server := makeServerWithServer(t)
 
 	lp := NewLocalPublisher(server, "testest", "text/plain")
+	lp.CreateChannel()
 
 	// Partial write of segment 0 via pipe - do not close pipe yet.
 	r0, w0 := io.Pipe()
