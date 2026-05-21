@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -301,6 +302,55 @@ func TestLiveRunnerRegistry_HeartbeatDoesNotReturnBootstrapChannelsAgain(t *test
 	defer runner.mu.Unlock()
 	if runner.o2r == nil {
 		t.Fatalf("expected existing bootstrap channel to be preserved, got o2r=%+v", runner.o2r)
+	}
+}
+
+func TestLiveRunnerRegistry_HeartbeatSessionIDs(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-session-ids")
+	req.Capacity = 3
+	req.SessionIDs = []string{"runner-reported-session"}
+	resp := liveRunnerTestRegister(t, registry, req)
+	if len(resp.SessionIDs) != 0 {
+		t.Fatalf("expected no active session ids on initial heartbeat, got %+v", resp.SessionIDs)
+	}
+
+	registry.mu.Lock()
+	runner := registry.runners[resp.RunnerID]
+	registry.mu.Unlock()
+	runner.mu.Lock()
+	if !slices.Equal(runner.LiveRunnerHeartbeatRequest.SessionIDs, []string{"runner-reported-session"}) {
+		t.Fatalf("expected request session_ids to be retained, got %+v", runner.LiveRunnerHeartbeatRequest.SessionIDs)
+	}
+	runner.mu.Unlock()
+
+	if _, _, err := registry.ReserveSession(resp.RunnerID, "session-z-oldest"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond)
+	if _, _, err := registry.ReserveSession(resp.RunnerID, "session-a-newest"); err != nil {
+		t.Fatal(err)
+	}
+
+	followupReq := liveRunnerTestHeartbeat(resp.RunnerID)
+	followupReq.Capacity = 3
+	followupReq.SessionIDs = []string{"runner-reported-session"}
+	nextResp, err := registry.Heartbeat(followupReq, resp.HeartbeatSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"session-z-oldest", "session-a-newest"}
+	if !slices.Equal(nextResp.SessionIDs, want) {
+		t.Fatalf("unexpected session ids: got %+v want %+v", nextResp.SessionIDs, want)
+	}
+
+	registry.mu.Lock()
+	runner = registry.runners[resp.RunnerID]
+	registry.mu.Unlock()
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if !slices.Equal(runner.LiveRunnerHeartbeatRequest.SessionIDs, []string{"runner-reported-session"}) {
+		t.Fatalf("expected follow-up request session_ids to be retained, got %+v", runner.LiveRunnerHeartbeatRequest.SessionIDs)
 	}
 }
 

@@ -376,12 +376,13 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
-		Capacity:  1,
+		Capacity:  3,
 		PriceInfo: runner.LiveRunnerPriceInfo{
 			PricePerUnit:  10,
 			PixelsPerUnit: 1,
 			Unit:          "USD",
 		},
+		SessionIDs: []string{"runner-reported-session"},
 	})
 	require.NoError(t, err)
 
@@ -396,6 +397,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, t.Name(), resp.RunnerID)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), resp.Orchestrator)
 	require.NotEmpty(t, resp.HeartbeatSecret)
+	require.Empty(t, resp.SessionIDs)
 	require.NotNil(t, resp.O2R)
 	require.Equal(t, runner.LiveRunnerTrickleOrchestratorToRunner, resp.O2R.Name)
 	for _, channel := range []runner.LiveRunnerTrickleChannel{*resp.O2R} {
@@ -417,6 +419,14 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	_, _, err = manager.ReserveSession(t.Name(), "session-z-oldest")
+	require.NoError(t, err)
+	time.Sleep(time.Millisecond)
+	_, _, err = manager.ReserveSession(t.Name(), "session-a-newest")
+	require.NoError(t, err)
+
 	// Check follow-up heartbeat auth.
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
@@ -428,6 +438,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, t.Name(), nextResp.RunnerID)
 	require.Empty(t, nextResp.HeartbeatSecret)
 	require.Nil(t, nextResp.O2R)
+	require.Equal(t, []string{"session-z-oldest", "session-a-newest"}, nextResp.SessionIDs)
 }
 
 func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {

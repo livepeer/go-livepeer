@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -82,16 +83,17 @@ type LiveRunnerPriceInfo struct {
 }
 
 type LiveRunnerHeartbeatRequest struct {
-	RunnerID  string              `json:"runner_id,omitempty"`
-	Label     string              `json:"label,omitempty"`
-	RunnerURL string              `json:"runner_url"`
-	Version   string              `json:"version,omitempty"`
-	Status    string              `json:"status,omitempty"`
-	Mode      string              `json:"mode,omitempty"`
-	GPU       *LiveRunnerGPU      `json:"gpu,omitempty"`
-	App       string              `json:"app"`
-	Capacity  int                 `json:"capacity"`
-	PriceInfo LiveRunnerPriceInfo `json:"price_info"`
+	RunnerID   string              `json:"runner_id,omitempty"`
+	Label      string              `json:"label,omitempty"`
+	RunnerURL  string              `json:"runner_url"`
+	Version    string              `json:"version,omitempty"`
+	Status     string              `json:"status,omitempty"`
+	Mode       string              `json:"mode,omitempty"`
+	GPU        *LiveRunnerGPU      `json:"gpu,omitempty"`
+	App        string              `json:"app"`
+	Capacity   int                 `json:"capacity"`
+	PriceInfo  LiveRunnerPriceInfo `json:"price_info"`
+	SessionIDs []string            `json:"session_ids,omitempty"`
 }
 
 type StaticLiveRunnerConfig struct {
@@ -134,6 +136,7 @@ type LiveRunnerHeartbeatResponse struct {
 	HeartbeatTTL      string                    `json:"heartbeat_ttl"`
 	HeartbeatSecret   string                    `json:"heartbeat_secret,omitempty"`
 	O2R               *LiveRunnerTrickleChannel `json:"o2r,omitempty"`
+	SessionIDs        []string                  `json:"session_ids"`
 }
 
 type LiveRunnerDiscoveryRunner struct {
@@ -177,7 +180,8 @@ type liveRunner struct {
 
 type liveRunnerSession struct {
 	// Protected by the parent liveRunner.mu.
-	channels map[string]*liveRunnerTrickleChannel
+	createdAt time.Time
+	channels  map[string]*liveRunnerTrickleChannel
 }
 
 type liveRunnerTrickleChannel struct {
@@ -322,6 +326,8 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		runner.route = runner.RunnerID // not doing label based routing here for now
 		runner.updatePriceConverterLocked()
 
+		// SessionIDs in the response come from the orchestrator's authoritative
+		// active sessions and may differ from session_ids reported in the request.
 		return &LiveRunnerHeartbeatResponse{
 			RunnerID:          runner.RunnerID,
 			Orchestrator:      orchestrator,
@@ -329,6 +335,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			HeartbeatTTL:      heartbeatTTL.String(),
 			HeartbeatSecret:   responseHeartbeatSecret,
 			O2R:               &runner.o2r.channel,
+			SessionIDs:        runner.sessionIDsLocked(),
 		}, nil
 	} else {
 		r.mu.Unlock()
@@ -351,12 +358,15 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	runner.route = runner.RunnerID // not doing label based routing here for now
 	runner.updatePriceConverterLocked()
 
+	// SessionIDs in the response come from the orchestrator's authoritative
+	// active sessions and may differ from session_ids reported in the request.
 	return &LiveRunnerHeartbeatResponse{
 		RunnerID:          runner.RunnerID,
 		Orchestrator:      orchestrator,
 		HeartbeatInterval: heartbeatInterval.String(),
 		HeartbeatTTL:      heartbeatTTL.String(),
 		HeartbeatSecret:   responseHeartbeatSecret,
+		SessionIDs:        runner.sessionIDsLocked(),
 	}, nil
 }
 
@@ -698,7 +708,8 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 		}
 	}
 	runner.sessions[id] = &liveRunnerSession{
-		channels: make(map[string]*liveRunnerTrickleChannel),
+		createdAt: time.Now(),
+		channels:  make(map[string]*liveRunnerTrickleChannel),
 	}
 	runner.sendSessionEvent("reserved", id)
 	return id, runner.RunnerURL, nil
@@ -1238,6 +1249,29 @@ func secureRandomBytes(n int) []byte {
 
 func (runner *liveRunner) sessionToken(sessionID string) string {
 	return deriveSecret(runner.seed, "session:"+sessionID)
+}
+
+func (runner *liveRunner) sessionIDsLocked() []string {
+	// sessionIDsLocked requires runner.mu.
+	type sessionEntry struct {
+		id        string
+		createdAt time.Time
+	}
+	entries := make([]sessionEntry, 0, len(runner.sessions))
+	for id, session := range runner.sessions {
+		entries = append(entries, sessionEntry{id: id, createdAt: session.createdAt})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].createdAt.Equal(entries[j].createdAt) {
+			return entries[i].id < entries[j].id
+		}
+		return entries[i].createdAt.Before(entries[j].createdAt)
+	})
+	sessionIDs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		sessionIDs = append(sessionIDs, entry.id)
+	}
+	return sessionIDs
 }
 
 func deriveSecret(seed []byte, label string) string {
