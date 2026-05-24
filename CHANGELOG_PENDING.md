@@ -18,4 +18,6 @@
 
 #### General
 
+- Fix gateway nil-pointer panic on non-live AI requests when no orchestrators are available
+
 #### CLI
