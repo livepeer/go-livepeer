@@ -93,6 +93,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
 	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/channels", lp.CreateLiveRunnerTrickleChannel)
 	lp.transRPC.HandleFunc("DELETE /runner/{runner_id}/session/{session_id}/channels", lp.DeleteLiveRunnerTrickleChannels)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSessionInternal)
 	// Public client endpoints
 	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
@@ -427,6 +428,25 @@ func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := manager.ReleaseSession(r.PathValue("runner_id"), r.PathValue("session_id")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *lphttp) StopLiveRunnerSessionInternal(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
 	}

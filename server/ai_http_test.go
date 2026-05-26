@@ -839,6 +839,68 @@ func TestLiveRunnerStopSessionReleasesCapacity(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestLiveRunnerInternalStopSessionRequiresAuth(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, nil)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/stop", nil)
+	req.Header.Set("Livepeer-Session-Token", "wrong-secret")
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestLiveRunnerInternalStopSessionReleasesCapacity(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, nil)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/stop", "")
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLiveRunnerInternalStopSessionRejectsTokenForDifferentSession(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{Capacity: 2})
+	sessionID1 := reserveLiveRunnerSession(t, lp, "runner-1")
+	sessionID2 := reserveLiveRunnerSession(t, lp, "runner-1")
+	require.NotEqual(t, sessionID1, sessionID2)
+
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	token1, err := manager.SessionTokenForSession("runner-1", sessionID1)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID2+"/stop", nil)
+	req.Header.Set("Livepeer-Session-Token", token1)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
 func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken, gotSessionControl string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
