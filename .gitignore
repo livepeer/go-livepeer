@@ -54,5 +54,3 @@ orchestrator.log
 mediamtx.log
 
 box/supabase
-.env
-manifest.json
