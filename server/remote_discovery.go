@@ -129,8 +129,8 @@ func (p *remoteDiscoveryPool) refresh() {
 	var order []string
 	// A node is one discovery `address` value. A single orchestrator may expose
 	// multiple nodes/addresses through its /discovery response.
-	nodes := make(map[string]bool)
 	validNodes := make(map[string]bool)
+	rejectedCapabilityNodes := make(map[string]bool)
 	validApps := make(map[string]map[string]bool)
 	// Create or reuse the accumulator for a node. The same node address can be
 	// seen from normal polling and from multiple /discovery responses, so merge
@@ -162,10 +162,11 @@ func (p *remoteDiscoveryPool) refresh() {
 		}
 		// Treat root service URIs with and without a trailing slash as the same address.
 		key := strings.TrimRight(orchURL.String(), "/")
-		nodes[key] = true
 		eligibleCaps := make(map[string]bool)
+		advertisedCaps := 0
 		// Capabilities in discovery are price-eligible capabilities only.
 		forEachRemoteDiscoveryCapability(orchCaps, func(key string, capability core.Capability, modelID string) {
+			advertisedCaps++
 			price := capabilityPrice(orchCaps, capability, modelID)
 			if price == nil {
 				return
@@ -178,6 +179,9 @@ func (p *remoteDiscoveryPool) refresh() {
 		})
 		// Drop orchestrators if it doesn't have any eligible capabilities
 		if len(eligibleCaps) == 0 {
+			if advertisedCaps > 0 {
+				rejectedCapabilityNodes[key] = true
+			}
 			continue
 		}
 		validNodes[key] = true
@@ -205,7 +209,7 @@ func (p *remoteDiscoveryPool) refresh() {
 			}
 			// If normal polling saw this address but price/capability filtering rejected it,
 			// do not let runner discovery publish it anyway.
-			if nodes[key] {
+			if rejectedCapabilityNodes[key] {
 				continue
 			}
 			orchURL, err := url.ParseRequestURI(discovery.Address)
@@ -256,7 +260,7 @@ func mergeDiscoveryRunners(entry *remoteDiscoveryMergeEntry, discovery remoteDis
 		if r.URL == "" {
 			continue
 		}
-		if !remoteDiscoveryRunnerEligible(r, eligibleCaps) {
+		if !entry.remoteDiscoveryRunnerEligible(r, eligibleCaps) {
 			continue
 		}
 		if !slices.Contains(entry.orch.Capabilities, r.App) {
@@ -294,7 +298,7 @@ func remoteDiscoveryEntries(raw json.RawMessage) []remoteDiscoveryEntry {
 	return entries
 }
 
-func remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner, eligibleCaps map[string]bool) bool {
+func (entry *remoteDiscoveryMergeEntry) remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner, eligibleCaps map[string]bool) bool {
 	if eligibleCaps != nil && !eligibleCaps[runner.App] {
 		return false
 	}
@@ -305,6 +309,14 @@ func remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner, elig
 		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(runner.PriceInfo.Unit), "WEI") {
+		clog.Warningf(context.Background(), "Rejecting remote discovery runner with unsupported price unit orch=%s runner=%s app=%s price_per_unit=%d pixels_per_unit=%d unit=%s",
+			entry.orch.URL.String(),
+			runner.URL,
+			runner.App,
+			runner.PriceInfo.PricePerUnit,
+			runner.PriceInfo.PixelsPerUnit,
+			runner.PriceInfo.Unit,
+		)
 		return false
 	}
 
@@ -317,7 +329,20 @@ func remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner, elig
 		return true
 	}
 	price := new(big.Rat).SetFrac64(runner.PriceInfo.PricePerUnit, runner.PriceInfo.PixelsPerUnit)
-	return price.Cmp(maxPrice) <= 0
+	if price.Cmp(maxPrice) > 0 {
+		clog.Warningf(context.Background(), "Rejecting remote discovery runner above max price orch=%s runner=%s app=%s price_per_unit=%d pixels_per_unit=%d unit=%s price=%s max_price=%s",
+			entry.orch.URL.String(),
+			runner.URL,
+			runner.App,
+			runner.PriceInfo.PricePerUnit,
+			runner.PriceInfo.PixelsPerUnit,
+			runner.PriceInfo.Unit,
+			price.RatString(),
+			maxPrice.RatString(),
+		)
+		return false
+	}
+	return true
 }
 
 func capabilityModelFromApp(app string) (core.Capability, string, bool) {
