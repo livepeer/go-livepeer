@@ -69,7 +69,27 @@ func (liveRunnerTestHost) ServiceURI() *url.URL {
 	return u
 }
 
+func (h liveRunnerTestHost) LiveRunnerURI() *url.URL {
+	return h.ServiceURI()
+}
+
 func (liveRunnerTestHost) RegistrationSecret() string {
+	return liveRunnerTestBootstrapSecret
+}
+
+type liveRunnerSplitURIHost struct{}
+
+func (liveRunnerSplitURIHost) ServiceURI() *url.URL {
+	u, _ := url.Parse("https://public.example.com")
+	return u
+}
+
+func (liveRunnerSplitURIHost) LiveRunnerURI() *url.URL {
+	u, _ := url.Parse("http://go-livepeer:8935")
+	return u
+}
+
+func (liveRunnerSplitURIHost) RegistrationSecret() string {
 	return liveRunnerTestBootstrapSecret
 }
 
@@ -78,6 +98,10 @@ type liveRunnerTestHostWithoutSecret struct{}
 func (liveRunnerTestHostWithoutSecret) ServiceURI() *url.URL {
 	u, _ := url.Parse("http://localhost:1234")
 	return u
+}
+
+func (h liveRunnerTestHostWithoutSecret) LiveRunnerURI() *url.URL {
+	return h.ServiceURI()
 }
 
 func (liveRunnerTestHostWithoutSecret) RegistrationSecret() string {
@@ -115,13 +139,13 @@ func ensureLiveRunnerTestTrickleServer(t *testing.T, registry *LiveRunnerRegistr
 	t.Helper()
 	registry.mu.Lock()
 	hasTrickleServer := registry.trickleSrv != nil
-	channelBaseURL := registry.trickleBaseURL
+	channelBaseURL := registry.internalTrickleBaseURL
 	registry.mu.Unlock()
 	if hasTrickleServer {
 		return channelBaseURL, nil
 	}
 	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	return channelBaseURL, channelStatus
 }
 
@@ -165,6 +189,51 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_SplitsPublicAndRunnerURIs(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerSplitURIHost{}})
+	t.Cleanup(registry.Stop)
+	trickleSrv, _, _ := newLiveRunnerTestTrickleServer(t)
+	registry.SetTrickleServer(trickleSrv, "https://public.example.com/ai/trickle/", "http://go-livepeer:8935/ai/trickle/")
+
+	resp, err := registry.Heartbeat(liveRunnerTestHeartbeat("runner-split-uri"), liveRunnerTestBootstrapSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Orchestrator != "http://go-livepeer:8935" {
+		t.Fatalf("expected heartbeat orchestrator to use runner URI, got %q", resp.Orchestrator)
+	}
+	if resp.O2R == nil || !strings.HasPrefix(resp.O2R.URL, "http://go-livepeer:8935/ai/trickle/") {
+		t.Fatalf("expected O2R channel to use runner trickle URL, got %+v", resp.O2R)
+	}
+
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one discovery runner, got %d", len(runners))
+	}
+	if runners[0].URL != "https://public.example.com/apps/runner-split-uri/session" {
+		t.Fatalf("expected discovery URL to use public service URI, got %q", runners[0].URL)
+	}
+
+	sessionID, _, err := registry.ReserveSession("runner-split-uri")
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := registry.CreateTrickleChannel("runner-split-uri", sessionID, "events", "application/json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(channel.URL, "http://go-livepeer:8935/ai/trickle/") {
+		t.Fatalf("expected runner-created trickle channel to use runner trickle URL, got %q", channel.URL)
+	}
+	token, err := registry.SessionTokenForSession("runner-split-uri", sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.ValidSessionToken("runner-split-uri", sessionID, token); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner_custom_1")
@@ -182,7 +251,7 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.T) {
 	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	req := liveRunnerTestHeartbeat("runner-bootstrap")
 
 	resp := liveRunnerTestRegister(t, registry, req)
@@ -223,7 +292,7 @@ func TestLiveRunnerRegistry_O2RKeepaliveWriteLoop(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
 	t.Cleanup(registry.Stop)
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-o2r-keepalive"))
 
 	msg := liveRunnerTestReadTrickleMessage(t, trickleSrv, resp.O2R.ChannelName, func(msg string) bool {
@@ -241,7 +310,7 @@ func TestLiveRunnerRegistry_O2RSessionLifecycleMessages(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
 	t.Cleanup(registry.Stop)
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	req := liveRunnerTestHeartbeat("runner-o2r-session")
 	req.Capacity = 2
 	resp := liveRunnerTestRegister(t, registry, req)
@@ -1344,7 +1413,7 @@ func TestLiveRunnerRegistry_UnregisterRacesWithSessionActions(t *testing.T) {
 func TestLiveRunnerRegistry_CreateTrickleChannelForSession(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
@@ -1370,7 +1439,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelForSession(t *testing.T) {
 func TestLiveRunnerRegistry_CreateTrickleChannelReturnsExisting(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
@@ -1393,7 +1462,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelReturnsExisting(t *testing.T) {
 func TestLiveRunnerRegistry_CreateTrickleChannelRejectsInvalidName(t *testing.T) {
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	sessionID, _, err := registry.ReserveSession("runner-1")
 	if err != nil {
@@ -1411,7 +1480,7 @@ func TestLiveRunnerRegistry_CreateTrickleChannelRejectsInvalidName(t *testing.T)
 func TestLiveRunnerRegistry_TrickleChannelCleanup(t *testing.T) {
 	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
 	registry := newLiveRunnerTestRegistry()
-	registry.SetTrickleServer(trickleSrv, channelBaseURL)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	resp1 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 	resp1Channels := liveRunnerTestBootstrapChannels(resp1)
 	if len(resp1Channels) != 1 {

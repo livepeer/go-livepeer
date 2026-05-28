@@ -56,6 +56,10 @@ func (orch *orchestrator) ServiceURI() *url.URL {
 	return orch.node.GetServiceURI()
 }
 
+func (orch *orchestrator) LiveRunnerURI() *url.URL {
+	return orch.ServiceURI()
+}
+
 func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
 	if orch.node == nil || orch.node.Eth == nil {
 		return []byte{}, nil

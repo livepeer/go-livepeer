@@ -167,6 +167,7 @@ type LivepeerConfig struct {
 	AuthWebhookURL             *string
 	LiveAIAuthWebhookURL       *string
 	LiveAITrickleHostForRunner *string
+	LiveRunnerAddr             *string
 	OrchWebhookURL             *string
 	OrchBlacklist              *string
 	OrchMinLivepeerVersion     *string
@@ -251,6 +252,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLiveRunnerAddr := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
@@ -379,6 +381,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LiveRunnerAddr:           &defaultLiveRunnerAddr,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
@@ -470,13 +473,13 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 
 	// Define sensitive field names that should be redacted
 	sensitiveFields := map[string]bool{
-		"EthPassword":               true,
-		"OrchSecret":                true,
-		"KafkaPassword":             true,
-		"MediaMTXApiPassword":       true,
-		"LiveAIAuthApiKey":          true,
-		"FVfailGsKey":               true,
-		"RemoteSignerHeaders":       true,
+		"EthPassword":                true,
+		"OrchSecret":                 true,
+		"KafkaPassword":              true,
+		"MediaMTXApiPassword":        true,
+		"LiveAIAuthApiKey":           true,
+		"FVfailGsKey":                true,
+		"RemoteSignerHeaders":        true,
 		"RemoteSignerWebhookHeaders": true,
 	}
 
@@ -1880,6 +1883,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}
+	if cfg.LiveRunnerAddr != nil && *cfg.LiveRunnerAddr != "" {
+		n.LiveRunnerAddr, err = parseLiveRunnerAddr(*cfg.LiveRunnerAddr)
+		if err != nil {
+			glog.Exitf("invalid -liveRunnerAddr: %v", err)
+		}
+	}
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
 	}
@@ -2548,12 +2557,24 @@ type liveRunnerHost struct {
 	*core.LivepeerNode
 }
 
-func (h liveRunnerHost) ServiceURI() *url.URL {
-	u := h.RunnerHost.ServiceURI()
-	if h.LivepeerNode == nil || h.LiveAITrickleHostForRunner == "" || u == nil {
-		return u
+func (h liveRunnerHost) LiveRunnerURI() *url.URL {
+	if h.LivepeerNode != nil && h.LivepeerNode.LiveRunnerAddr != nil {
+		v := *h.LivepeerNode.LiveRunnerAddr
+		return &v
 	}
-	v := *u
-	v.Host = h.LiveAITrickleHostForRunner
-	return &v
+	return h.RunnerHost.ServiceURI()
+}
+
+func parseLiveRunnerAddr(addr string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return nil, err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return nil, fmt.Errorf("must be an absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https")
+	}
+	return parsed, nil
 }

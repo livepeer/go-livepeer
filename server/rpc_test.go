@@ -105,6 +105,10 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	return url
 }
 
+func (r *stubOrchestrator) LiveRunnerURI() *url.URL {
+	return r.ServiceURI()
+}
+
 func TestStartOrchestratorClientHTTP(t *testing.T) {
 	listener, err := gonet.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

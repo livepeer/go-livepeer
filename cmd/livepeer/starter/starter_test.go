@@ -112,6 +112,22 @@ func TestGetServiceURIServiceAddrScheme(t *testing.T) {
 	require.Equal(t, "", uri.String())
 }
 
+func TestParseLiveRunnerAddr(t *testing.T) {
+	uri, err := parseLiveRunnerAddr("http://go-livepeer:8935")
+	require.NoError(t, err)
+	require.Equal(t, "http://go-livepeer:8935", uri.String())
+
+	uri, err = parseLiveRunnerAddr("https://public.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "https://public.example.com", uri.String())
+
+	_, err = parseLiveRunnerAddr("go-livepeer:8935")
+	require.Error(t, err)
+
+	_, err = parseLiveRunnerAddr("ftp://go-livepeer:8935")
+	require.Error(t, err)
+}
+
 func TestParseGetGatewayPrices(t *testing.T) {
 	assert := assert.New(t)
 
@@ -439,6 +455,15 @@ func TestNewLivepeerConfig_LiveRunnerConfigFlag(t *testing.T) {
 	cfg := NewLivepeerConfig(fs)
 	require.NoError(fs.Parse([]string{"-liveRunnerConfig", "/tmp/runners.json"}))
 	require.Equal("/tmp/runners.json", *cfg.LiveRunnerConfig)
+}
+
+func TestNewLivepeerConfig_LiveRunnerAddrFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerAddr", "http://go-livepeer:8935"}))
+	require.Equal("http://go-livepeer:8935", *cfg.LiveRunnerAddr)
 }
 
 func TestNewLivepeerConfig_UseLiveWorkersFlagRemoved(t *testing.T) {

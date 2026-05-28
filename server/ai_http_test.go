@@ -34,6 +34,27 @@ type stubPriceFeedWatcher struct {
 	price eth.PriceData
 }
 
+type testLiveRunnerHost struct {
+	orchestrator  Orchestrator
+	liveRunnerURI *url.URL
+}
+
+func (h testLiveRunnerHost) ServiceURI() *url.URL {
+	return h.orchestrator.ServiceURI()
+}
+
+func (h testLiveRunnerHost) LiveRunnerURI() *url.URL {
+	if h.liveRunnerURI != nil {
+		v := *h.liveRunnerURI
+		return &v
+	}
+	return h.ServiceURI()
+}
+
+func (h testLiveRunnerHost) RegistrationSecret() string {
+	return h.orchestrator.RegistrationSecret()
+}
+
 func (s stubPriceFeedWatcher) Currencies() (string, string, error) {
 	return "ETH", "USD", nil
 }
@@ -156,9 +177,12 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 
 func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
+	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
+	require.NoError(t, err)
+	lp.node.LiveRunnerAddr = liveRunnerAddr
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
-	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+	_, err = manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
@@ -258,10 +282,11 @@ func TestLiveRunnerDiscoverySingleShotReturnsProxiedURL(t *testing.T) {
 
 func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
 	t.Cleanup(manager.Stop)
 	lp.node.LiveRunnerManager = manager
-	manager.SetTrickleServer(lp.trickleSrv, lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String())
+	trickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
+	manager.SetTrickleServer(lp.trickleSrv, trickleBaseURL, trickleBaseURL)
 	prevWatcher := core.PriceFeedWatcher
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
@@ -441,18 +466,22 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 	require.Equal(t, []string{"session-z-oldest", "session-a-newest"}, nextResp.SessionIDs)
 }
 
-func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
+func TestLiveRunnerHeartbeatUsesLiveRunnerAddr(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
+	node.LiveRunnerAddr, err = url.Parse("http://go-livepeer:8935")
+	require.NoError(t, err)
 	orch := newStubOrchestrator()
-	orch.serviceURI = "http://runner-trickle.example.com"
+	orch.serviceURI = "https://public.example.com"
 	orch.secret = "live-runner-secret"
 	lp := &lphttp{
 		orchestrator: orch,
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+		Host: testLiveRunnerHost{orchestrator: lp.orchestrator, liveRunnerURI: node.LiveRunnerAddr},
+	})
 	t.Cleanup(manager.Stop)
 	node.LiveRunnerManager = manager
 	require.NoError(t, startAIServer(lp))
@@ -478,12 +507,12 @@ func TestLiveRunnerHeartbeatUsesRunnerTrickleHostOverride(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp runner.LiveRunnerHeartbeatResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, "http://runner-trickle.example.com", resp.Orchestrator)
+	require.Equal(t, "http://go-livepeer:8935", resp.Orchestrator)
 }
 
 func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
 	t.Cleanup(manager.Stop)
 	lp.node.LiveRunnerManager = manager
 	body := []byte(fmt.Sprintf(`{
@@ -725,6 +754,58 @@ func TestScopePaymentChallenge(t *testing.T) {
 	require.NotNil(t, oInfo.GetPriceInfo())
 	require.Equal(t, int64(4), oInfo.GetPriceInfo().GetPricePerUnit())
 	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
+}
+
+func TestLiveRunnerReserveSessionOnchainUsesPublicServiceURIForPaymentChallenge(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
+	require.NoError(t, err)
+	lp.node.LiveRunnerAddr = liveRunnerAddr
+	lp.orchestrator.(*stubOrchestrator).serviceURI = "https://public.example.com"
+	registerLiveRunnerForSession(t, lp, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
+	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
+}
+
+func TestScopePaymentChallengeUsesPublicServiceURI(t *testing.T) {
+	lp := newScopeHTTP(t)
+	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
+	require.NoError(t, err)
+	lp.node.LiveRunnerAddr = liveRunnerAddr
+	lp.orchestrator.(*stubOrchestrator).serviceURI = "https://public.example.com"
+
+	challenge, oInfo := requestScopePaymentChallenge(t, lp)
+
+	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
+	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
+}
+
+func TestScopeUsesPublicURLsInResponseWhenLiveRunnerAddrIsConfigured(t *testing.T) {
+	lp := newScopeOffchainHTTP(t)
+	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
+	require.NoError(t, err)
+	lp.node.LiveRunnerAddr = liveRunnerAddr
+	lp.orchestrator.(*stubOrchestrator).serviceURI = "https://public.example.com"
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp worker.LiveVideoToVideoResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotNil(t, resp.ControlUrl)
+	require.True(t, strings.HasPrefix(*resp.ControlUrl, "https://public.example.com/"))
+	require.NotNil(t, resp.EventsUrl)
+	require.True(t, strings.HasPrefix(*resp.EventsUrl, "https://public.example.com/"))
 }
 
 func TestScopePaidRetryUsesChallengeManifestID(t *testing.T) {
@@ -1089,8 +1170,10 @@ func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.T) {
+func TestLiveRunnerCreateTrickleChannelUsesLiveRunnerAddr(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	node.LiveRunnerAddr, err = url.Parse("http://go-livepeer:8935")
 	require.NoError(t, err)
 	orch := newStubOrchestrator()
 	orch.secret = "live-runner-secret"
@@ -1099,8 +1182,7 @@ func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
-	node.LiveAITrickleHostForRunner = "runner-trickle.example.com"
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}})
 	t.Cleanup(manager.Stop)
 	node.LiveRunnerManager = manager
 	require.NoError(t, startAIServer(lp))
@@ -1116,7 +1198,7 @@ func TestLiveRunnerCreateTrickleChannelUsesRunnerTrickleHostOverride(t *testing.
 	var resp liveRunnerTrickleChannelsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp.Channels, 1)
-	require.Equal(t, "http://runner-trickle.example.com/ai/trickle/"+sessionID+"-override", resp.Channels[0].URL)
+	require.Equal(t, "http://go-livepeer:8935/ai/trickle/"+sessionID+"-override", resp.Channels[0].URL)
 }
 
 func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
@@ -1284,7 +1366,7 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 		transRPC:     http.NewServeMux(),
 	}
 	if withManager {
-		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}})
 		t.Cleanup(manager.Stop)
 		node.LiveRunnerManager = manager
 	}
@@ -1305,7 +1387,7 @@ func newLiveRunnerHTTPOnchain(t *testing.T) *lphttp {
 		node:         node,
 		transRPC:     http.NewServeMux(),
 	}
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator, Onchain: true})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
 	t.Cleanup(manager.Stop)
 	node.LiveRunnerManager = manager
 	require.NoError(t, startAIServer(lp))
@@ -1324,7 +1406,7 @@ func newServerlessLiveRunnerHTTP(t *testing.T, withManager bool, capacity int) *
 		transRPC:     http.NewServeMux(),
 	}
 	if withManager {
-		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: lp.orchestrator})
+		manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}})
 		t.Cleanup(manager.Stop)
 		node.LiveRunnerManager = manager
 	}

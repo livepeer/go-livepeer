@@ -73,8 +73,9 @@ func startAIServer(lp *lphttp) error {
 		sw.SetTrickleServer(lp.trickleSrv)
 	}
 	if manager, ok := lp.liveRunnerManager(); ok {
-		trickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
-		manager.SetTrickleServer(lp.trickleSrv, overwriteHost(lp.node.LiveAITrickleHostForRunner, trickleBaseURL))
+		publicTrickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
+		internalTrickleBaseURL := liveRunnerURI(lp.node, lp.orchestrator).JoinPath(TrickleHTTPPath).String()
+		manager.SetTrickleServer(lp.trickleSrv, publicTrickleBaseURL, internalTrickleBaseURL)
 	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
@@ -117,7 +118,7 @@ type liveRunnerManager interface {
 	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
 	SessionTokenForSession(runnerID, sessionID string) (string, error)
 	ValidSessionToken(runnerID, sessionID, token string) error
-	SetTrickleServer(srv *trickle.Server, baseURL string)
+	SetTrickleServer(srv *trickle.Server, publicBaseURL, internalBaseURL string)
 	CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (runner.LiveRunnerTrickleChannel, error)
 	DeleteTrickleChannel(runnerID, sessionID, name string) error
 }
@@ -1119,6 +1120,14 @@ func (h *lphttp) StartScope() http.Handler {
 		clog.Info(ctx, "Processed Scope request", "took", took)
 		respondJsonOk(w, jsonData)
 	})
+}
+
+func liveRunnerURI(node *core.LivepeerNode, orch Orchestrator) *url2.URL {
+	if node != nil && node.LiveRunnerAddr != nil {
+		v := *node.LiveRunnerAddr
+		return &v
+	}
+	return orch.ServiceURI()
 }
 
 // overwriteHost is used to overwrite the trickle host, because it may be different for runner

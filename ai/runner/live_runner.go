@@ -205,14 +205,16 @@ type LiveRunnerRegistry struct {
 	staticRegistrationMu sync.Mutex // serializes static runner config upserts
 
 	// mu protects runner registration, route lookup, and trickle server routing.
-	mu             sync.Mutex
-	runners        map[string]*liveRunner
-	trickleSrv     *trickle.Server
-	trickleBaseURL string
+	mu                     sync.Mutex
+	runners                map[string]*liveRunner
+	trickleSrv             *trickle.Server
+	publicTrickleBaseURL   string
+	internalTrickleBaseURL string
 }
 
 type RunnerHost interface {
 	ServiceURI() *url.URL
+	LiveRunnerURI() *url.URL
 	RegistrationSecret() string
 }
 
@@ -239,11 +241,12 @@ func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry 
 	return r
 }
 
-func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, baseURL string) {
+func (r *LiveRunnerRegistry) SetTrickleServer(srv *trickle.Server, publicBaseURL, internalBaseURL string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trickleSrv = srv
-	r.trickleBaseURL = baseURL
+	r.publicTrickleBaseURL = publicBaseURL
+	r.internalTrickleBaseURL = internalBaseURL
 }
 
 func (r *LiveRunnerRegistry) Stop() {
@@ -287,10 +290,10 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 	runner = r.runners[req.RunnerID]
 	heartbeatInterval := r.heartbeatInterval
 	heartbeatTTL := r.heartbeatTTL
-	orchestrator := r.host.ServiceURI().String()
+	orchestrator := r.host.LiveRunnerURI().String()
 	if runner == nil {
 		trickleSrv := r.trickleSrv
-		trickleBaseURL := r.trickleBaseURL
+		trickleBaseURL := r.internalTrickleBaseURL
 		// registering a new runner
 		registrationSecret := r.host.RegistrationSecret()
 		if registrationSecret == "" {
@@ -825,7 +828,7 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 
 	r.mu.Lock()
 	trickleSrv := r.trickleSrv
-	trickleBaseURL := r.trickleBaseURL
+	trickleBaseURL := r.internalTrickleBaseURL
 	r.mu.Unlock()
 
 	if trickleSrv == nil {

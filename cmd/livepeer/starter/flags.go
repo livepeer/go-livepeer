@@ -70,6 +70,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 
 	// Live AI:
 	cfg.MediaMTXApiPassword = fs.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
+	cfg.LiveRunnerAddr = fs.String("liveRunnerAddr", *cfg.LiveRunnerAddr, "Base URL used by live runners for heartbeat, trickle, and control-plane callbacks. Must be a full URL such as http://go-livepeer:8935")
 	cfg.LiveAITrickleHostForRunner = fs.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
 	cfg.LiveAIAuthApiKey = fs.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
 	cfg.LiveAIHeartbeatURL = fs.String("liveAIHeartbeatURL", "", "Base URL for Live AI heartbeat requests")

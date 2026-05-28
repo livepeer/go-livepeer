@@ -176,6 +176,7 @@ type LivepeerNode struct {
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
 
+	LiveRunnerAddr             *url.URL
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthWebhookURL       *url.URL
