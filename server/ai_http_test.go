@@ -1162,6 +1162,7 @@ func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 	require.Equal(t, sessionID+"-foo-bar", resp.Channels[0].ChannelName)
 	require.Equal(t, "video/MP2T", resp.Channels[0].MimeType)
 	require.Equal(t, "http://localhost:1234/ai/trickle/"+sessionID+"-foo-bar", resp.Channels[0].URL)
+	require.Equal(t, "http://localhost:1234/ai/trickle/"+sessionID+"-foo-bar", resp.Channels[0].InternalURL)
 	require.Equal(t, sessionID+"-events", resp.Channels[1].ChannelName)
 
 	w = httptest.NewRecorder()
@@ -1198,7 +1199,8 @@ func TestLiveRunnerCreateTrickleChannelUsesLiveRunnerAddr(t *testing.T) {
 	var resp liveRunnerTrickleChannelsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp.Channels, 1)
-	require.Equal(t, "http://go-livepeer:8935/ai/trickle/"+sessionID+"-override", resp.Channels[0].URL)
+	require.Equal(t, "http://localhost:1234/ai/trickle/"+sessionID+"-override", resp.Channels[0].URL)
+	require.Equal(t, "http://go-livepeer:8935/ai/trickle/"+sessionID+"-override", resp.Channels[0].InternalURL)
 }
 
 func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
@@ -1220,6 +1222,8 @@ func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
 	var second liveRunnerTrickleChannelsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &second))
 	require.Equal(t, first, second)
+	require.NotEmpty(t, second.Channels[0].URL)
+	require.NotEmpty(t, second.Channels[0].InternalURL)
 	require.Equal(t, "video/MP2T", second.Channels[0].MimeType)
 }
 

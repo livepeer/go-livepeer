@@ -205,6 +205,9 @@ func TestLiveRunnerRegistry_SplitsPublicAndRunnerURIs(t *testing.T) {
 	if resp.O2R == nil || !strings.HasPrefix(resp.O2R.URL, "http://go-livepeer:8935/ai/trickle/") {
 		t.Fatalf("expected O2R channel to use runner trickle URL, got %+v", resp.O2R)
 	}
+	if resp.O2R.InternalURL != "" {
+		t.Fatalf("expected O2R channel to omit internal URL, got %+v", resp.O2R)
+	}
 
 	runners := registry.Runners()
 	if len(runners) != 1 {
@@ -222,8 +225,11 @@ func TestLiveRunnerRegistry_SplitsPublicAndRunnerURIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(channel.URL, "http://go-livepeer:8935/ai/trickle/") {
-		t.Fatalf("expected runner-created trickle channel to use runner trickle URL, got %q", channel.URL)
+	if !strings.HasPrefix(channel.URL, "https://public.example.com/ai/trickle/") {
+		t.Fatalf("expected runner-created trickle channel to use public trickle URL, got %q", channel.URL)
+	}
+	if !strings.HasPrefix(channel.InternalURL, "http://go-livepeer:8935/ai/trickle/") {
+		t.Fatalf("expected runner-created trickle channel to include internal trickle URL, got %q", channel.InternalURL)
 	}
 	token, err := registry.SessionTokenForSession("runner-split-uri", sessionID)
 	if err != nil {

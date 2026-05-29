@@ -155,6 +155,7 @@ type LiveRunnerTrickleChannel struct {
 	Name        string `json:"name"`
 	ChannelName string `json:"channel_name"`
 	URL         string `json:"url"`
+	InternalURL string `json:"internal_url,omitempty"`
 	MimeType    string `json:"mime_type"`
 }
 
@@ -828,13 +829,18 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 
 	r.mu.Lock()
 	trickleSrv := r.trickleSrv
-	trickleBaseURL := r.internalTrickleBaseURL
+	publicTrickleBaseURL := r.publicTrickleBaseURL
+	internalTrickleBaseURL := r.internalTrickleBaseURL
 	r.mu.Unlock()
 
 	if trickleSrv == nil {
 		return LiveRunnerTrickleChannel{}, fmt.Errorf("trickle server is required")
 	}
-	channelURL, err := url.JoinPath(trickleBaseURL, channelName)
+	channelURL, err := url.JoinPath(publicTrickleBaseURL, channelName)
+	if err != nil {
+		return LiveRunnerTrickleChannel{}, err
+	}
+	internalChannelURL, err := url.JoinPath(internalTrickleBaseURL, channelName)
 	if err != nil {
 		return LiveRunnerTrickleChannel{}, err
 	}
@@ -852,7 +858,7 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 		return channel.channel, nil
 	}
 
-	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, mimeType)
+	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, internalChannelURL, mimeType)
 	session.channels[name] = channel
 	return channel.channel, nil
 }
@@ -873,11 +879,11 @@ func (runner *liveRunner) createBootstrapTrickleChannel(trickleSrv *trickle.Serv
 	if err != nil {
 		return nil, err
 	}
-	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, "application/octet-stream")
+	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, "", "application/octet-stream")
 	return channel, nil
 }
 
-func newLiveRunnerTrickleChannel(trickleSrv *trickle.Server, name, channelName, channelURL, mimeType string) *liveRunnerTrickleChannel {
+func newLiveRunnerTrickleChannel(trickleSrv *trickle.Server, name, channelName, channelURL, internalChannelURL, mimeType string) *liveRunnerTrickleChannel {
 	publisher := trickle.NewLocalPublisher(trickleSrv, channelName, mimeType)
 	publisher.CreateChannel()
 	return &liveRunnerTrickleChannel{
@@ -885,6 +891,7 @@ func newLiveRunnerTrickleChannel(trickleSrv *trickle.Server, name, channelName, 
 			Name:        name,
 			ChannelName: channelName,
 			URL:         channelURL,
+			InternalURL: internalChannelURL,
 			MimeType:    mimeType,
 		},
 		publisher: publisher,
