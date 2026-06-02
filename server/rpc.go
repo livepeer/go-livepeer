@@ -342,6 +342,38 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	return orch.VerifySig(orch.Address(), string(ping), pong.Value)
 }
 
+func CheckOrchestratorDiscoveryAvailability(orch Orchestrator) bool {
+	uri := orch.ServiceURI().JoinPath("discovery")
+	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri.String(), nil)
+	if err != nil {
+		glog.Error("Unable to create discovery availability request: ", err)
+		return false
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		glog.Error("Was not able to submit discovery availability request: ", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		glog.Errorf("Discovery availability check failed with status %d", resp.StatusCode)
+		return false
+	}
+
+	var discovery []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		glog.Error("Unable to decode discovery availability response: ", err)
+		return false
+	}
+
+	return true
+}
+
 func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.PingPong, error) {
 	glog.Info("Received Ping request")
 	value, err := orch.Sign(req.Value)

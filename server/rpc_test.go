@@ -865,6 +865,81 @@ func TestPing(t *testing.T) {
 	}
 }
 
+func TestCheckOrchestratorDiscoveryAvailability(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		want       bool
+	}{
+		{
+			name:       "empty discovery succeeds",
+			statusCode: http.StatusOK,
+			body:       `[]`,
+			want:       true,
+		},
+		{
+			name:       "nonempty discovery succeeds",
+			statusCode: http.StatusOK,
+			body:       `[{"address":"http://localhost:1234","runners":[]}]`,
+			want:       true,
+		},
+		{
+			name:       "not found fails",
+			statusCode: http.StatusNotFound,
+			body:       `live runners are not supported`,
+			want:       false,
+		},
+		{
+			name:       "invalid json fails",
+			statusCode: http.StatusOK,
+			body:       `not-json`,
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Equal(t, "/discovery", r.URL.Path)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			orch := newStubOrchestrator()
+			orch.serviceURI = srv.URL
+			require.Equal(t, tt.want, CheckOrchestratorDiscoveryAvailability(orch))
+		})
+	}
+}
+
+func TestCheckOrchestratorDiscoveryAvailabilityConnectionError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	uri := srv.URL
+	srv.Close()
+
+	orch := newStubOrchestrator()
+	orch.serviceURI = uri
+	require.False(t, CheckOrchestratorDiscoveryAvailability(orch))
+}
+
+func TestCheckOrchestratorDiscoveryAvailabilityTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/discovery", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	orch := newStubOrchestrator()
+	orch.serviceURI = srv.URL
+	require.True(t, CheckOrchestratorDiscoveryAvailability(orch))
+}
+
 func TestValidatePrice(t *testing.T) {
 	assert := assert.New(t)
 	mid := core.RandomManifestID()

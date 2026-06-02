@@ -2041,10 +2041,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// check whether or not the orchestrator is available
 		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
-			orchAvail := server.CheckOrchestratorAvailability(orch)
+			var (
+				checkName string
+				orchAvail bool
+			)
+			if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+				checkName = "discovery"
+				orchAvail = server.CheckOrchestratorDiscoveryAvailability(orch)
+			} else {
+				checkName = "grpc ping"
+				orchAvail = server.CheckOrchestratorAvailability(orch)
+			}
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
+				glog.Infof("Orchestrator not available at %v (%v) via %s check; shutting down", orch.ServiceURI(), *cfg.HttpAddr, checkName)
 				tc <- struct{}{}
 			}
 		}
