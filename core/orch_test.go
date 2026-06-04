@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -1750,6 +1751,57 @@ func TestBYOCExternalCapsSenderPricing(t *testing.T) {
 	assert.Equal(t, int64(100), getBYOCPrice(addr1), "sender-specific price")
 	assert.Equal(t, int64(200), getBYOCPrice(addr2), "sender-specific price")
 	assert.Equal(t, int64(10), getBYOCPrice(addr3), "falls back to default")
+}
+
+func TestBYOCExternalCapsDynamicPriceUpdates(t *testing.T) {
+	watcherMock := NewPriceFeedWatcherMock(t)
+	PriceFeedWatcher = watcherMock
+	t.Cleanup(func() { PriceFeedWatcher = nil })
+
+	watcherMock.On("Currencies").Return("ETH", "USD", nil)
+	watcherMock.On("Current").Return(eth.PriceData{Price: big.NewRat(100, 1)}, nil)
+
+	var sink chan<- eth.PriceData
+	watcherMock.On("Subscribe", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		sink = args.Get(1).(chan<- eth.PriceData)
+	}).Once()
+
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	cap, err := orch.RegisterExternalCapability(`{
+		"name": "dynamic-byoc-service",
+		"description": "Dynamic BYOC price test",
+		"url": "http://localhost:8000",
+		"capacity": 1,
+		"price_per_unit": 1,
+		"price_scaling": 1,
+		"currency": "USD"
+	}`)
+	require.NoError(t, err)
+	defer cap.price.Stop()
+
+	priceFor := func() int64 {
+		prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress("0x1000000000000000000000000000000000000000"))
+		require.NoError(t, err)
+		for _, p := range prices {
+			if p.Capability == uint32(Capability_BYOC) && p.Constraint == "dynamic-byoc-service" {
+				return p.PricePerUnit
+			}
+		}
+		t.Fatal("no BYOC price found for dynamic-byoc-service")
+		return 0
+	}
+
+	require.Equal(t, int64(10000000000000000), priceFor()) // 1 USD at 100 USD/ETH
+
+	sink <- eth.PriceData{Price: big.NewRat(200, 1)}
+
+	require.Eventually(t, func() bool {
+		return priceFor() == int64(5000000000000000) // 1 USD at 200 USD/ETH
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestBYOCExternalCapsPriceEdgeCases(t *testing.T) {
