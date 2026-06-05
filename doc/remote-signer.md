@@ -183,6 +183,7 @@ Example body:
 {
   "headers": {
     "Content-Type": ["application/json"],
+    "Signer-Auth-Id": ["auth-456"],
     "X-Request-Id": ["abc-123"]
   },
   "state": {
@@ -195,7 +196,8 @@ Example body:
     "Balance": "500/1",
     "InitialPricePerUnit": 1200,
     "InitialPixelsPerUnit": 1,
-    "SequenceNumber": 3
+    "SequenceNumber": 3,
+    "AuthID": "auth-456"
   }
 }
 ```
@@ -209,11 +211,12 @@ The webhook itself must return **HTTP 200** and include a JSON body with:
 | `status` | `int`   | Yes      | The status code the signer should use to decide whether to proceed |
 | `reason` | `string`| No       | Error message returned to the gateway caller when `status` is not `200` |
 | `expiry` | `int64` | No       | Unix timestamp in seconds until which the authorization can be reused |
+| `auth_id` | `string` | No     | Opaque authorization identifier (optional) |
 
 Example success response:
 
 ```json
-{"status": 200, "expiry": 1775574245}
+{"status": 200, "expiry": 1775574245, "auth_id": "auth-456"}
 ```
 
 Example rejection response:
@@ -226,6 +229,7 @@ Example rejection response:
 - **HTTP 200 with `status != 200`**: the signer aborts and returns that `status` to the gateway caller, wrapped in the standard API error JSON envelope. If `reason` is present it is used as the error message. This can be used by implementers to steer downstream caller behavior.
 - **Any non-200 webhook HTTP response**: the signer treats this as an internal webhook failure (eg, webhook service error or signer misconfiguration) and returns HTTP 500.
 - **Missing, zero, malformed, or otherwise invalid `status`**: the signer returns HTTP 500.
+- If `auth_id` is omitted, the signer falls back to the incoming request's `Signer-Auth-Id` header. If both are present, the webhook `auth_id` takes precedence.
 
 #### Timing
 
@@ -245,6 +249,6 @@ When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth w
 
 ## Operational + security guidance
 
-For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service.
+For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service. If a proxy sits in front of the signer, configure it to scrub all incoming `Signer-` headers from untrusted clients before applying trusted internal headers.
 
 Remote signers are stateless, so signer nodes can operate in a redundant configuration (eg, round-robin DNS, anycasting) with no special gateway-side configuration.
