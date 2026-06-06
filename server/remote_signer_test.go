@@ -879,13 +879,20 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
 		require.Equal("cached-auth-id", firstState.AuthID)
 
-		second := doPaymentWithStateAndAuthID("req-skip-second", "new-header-auth-id", firstResp.State)
+		second := doPaymentWithState("req-skip-second", firstResp.State)
 		require.Equal(http.StatusOK, second.Code)
 		var secondResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
 		var secondState RemotePaymentState
 		require.NoError(json.Unmarshal(secondResp.State.State, &secondState))
-		require.Equal("new-header-auth-id", secondState.AuthID)
+		require.Equal("cached-auth-id", secondState.AuthID)
+		require.Equal(1, callbackCalls)
+
+		third := doPaymentWithStateAndAuthID("req-skip-third", "new-header-auth-id", secondResp.State)
+		require.Equal(http.StatusInternalServerError, third.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(third.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
 		require.Equal(1, callbackCalls)
 	})
 
@@ -914,7 +921,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal(2, callbackCalls)
 	})
 
-	t.Run("callback auth id replaces cached state auth id", func(t *testing.T) {
+	t.Run("callback auth id change returns 500", func(t *testing.T) {
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"status":200,"auth_id":"updated-auth-id"}`))
@@ -939,9 +946,10 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.NoError(err)
 
 		rr := doPaymentWithState("req-auth-id-replaced", RemotePaymentStateSig{State: stateBytes, Sig: stateSig})
-		require.Equal(http.StatusOK, rr.Code)
-		state := parseResponseState(rr)
-		require.Equal("updated-auth-id", state.AuthID)
+		require.Equal(http.StatusInternalServerError, rr.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
 	})
 
 	t.Run("callback 200 missing status returns 500", func(t *testing.T) {

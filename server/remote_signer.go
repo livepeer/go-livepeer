@@ -578,9 +578,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if callbackResp != nil && callbackResp.AuthID != "" {
 		authID = callbackResp.AuthID
 	}
-	if state.AuthID != authID {
+	if authID != "" && state.AuthID != authID {
 		if state.AuthID != "" {
 			clog.Warningf(ctx, "Remote signer auth ID changed oldAuthID=%s newAuthID=%s", state.AuthID, authID)
+			respondJsonError(ctx, w, errors.New("remote signer auth ID changed"), http.StatusInternalServerError)
+			return
 		}
 		state.AuthID = authID
 	}

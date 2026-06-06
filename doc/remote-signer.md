@@ -230,6 +230,7 @@ Example rejection response:
 - **Any non-200 webhook HTTP response**: the signer treats this as an internal webhook failure (eg, webhook service error or signer misconfiguration) and returns HTTP 500.
 - **Missing, zero, malformed, or otherwise invalid `status`**: the signer returns HTTP 500.
 - If `auth_id` is omitted, the signer falls back to the incoming request's `Signer-Auth-Id` header. If both are present, the webhook `auth_id` takes precedence.
+- Once an auth ID is persisted in signed payment state, a different webhook `auth_id` or fallback `Signer-Auth-Id` on a later request is treated as an internal error and returns HTTP 500.
 
 #### Timing
 
