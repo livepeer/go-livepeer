@@ -2,6 +2,7 @@ package starter
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"math/big"
 	"os"
@@ -345,11 +346,15 @@ func TestPrintConfigRedaction(t *testing.T) {
 	testApiKey := "api-key-abc123"
 	testOrchSecret := "orch-secret-456"
 	testServiceAddr := "127.0.0.1:8936"
+	testRemoteSignerHeaders := "Authorization:Bearer gateway-token"
+	testRemoteSignerWebhookHeaders := "Authorization:Bearer webhook-token,X-API-Key:secret"
 
 	cfg.EthPassword = &testPassword
 	cfg.LiveAIAuthApiKey = &testApiKey
 	cfg.OrchSecret = &testOrchSecret
 	cfg.ServiceAddr = &testServiceAddr
+	cfg.RemoteSignerHeaders = &testRemoteSignerHeaders
+	cfg.RemoteSignerWebhookHeaders = &testRemoteSignerWebhookHeaders
 
 	// Capture the output
 	var buf []byte
@@ -362,10 +367,37 @@ func TestPrintConfigRedaction(t *testing.T) {
 	assert.NotContains(output, testPassword, "EthPassword should be redacted")
 	assert.NotContains(output, testApiKey, "LiveAIAuthApiKey should be redacted")
 	assert.NotContains(output, testOrchSecret, "OrchSecret should be redacted")
+	assert.NotContains(output, testRemoteSignerHeaders, "RemoteSignerHeaders should be redacted")
+	assert.NotContains(output, testRemoteSignerWebhookHeaders, "RemoteSignerWebhookHeaders should be redacted")
 	assert.Contains(output, "***", "Should contain redacted placeholder")
 
 	// Verify non-sensitive values are still shown
 	assert.Contains(output, testServiceAddr, "ServiceAddr should not be redacted")
+}
+
+func TestParseHeaderMap(t *testing.T) {
+	require := require.New(t)
+	headers := parseHeaderMap("Authorization:Bearer abc,X-API-Key:secret,invalid")
+	require.Equal("Bearer abc", headers["Authorization"])
+	require.Equal("secret", headers["X-API-Key"])
+	_, exists := headers["invalid"]
+	require.False(exists)
+}
+
+func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	err := fs.Parse([]string{
+		"-remoteSignerHeaders", "Authorization:Bearer gateway-token",
+		"-remoteSignerWebhookUrl", "https://example.com/webhook",
+		"-remoteSignerWebhookHeaders", "Authorization:Bearer abc,X-API-Key:secret",
+	})
+	require.NoError(err)
+	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
+	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
+	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }
 
 // Helper struct to capture output for testing

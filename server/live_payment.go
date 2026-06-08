@@ -251,6 +251,9 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	for k, v := range r.node.RemoteSignerHeaders {
+		httpReq.Header.Set(k, v)
+	}
 	resp, err := r.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call remote signer: %w", err)
