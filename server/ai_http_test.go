@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpnet "github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -806,12 +807,17 @@ func TestScopeUsesPublicURLsInResponseWhenLiveRunnerAddrIsConfigured(t *testing.
 	require.True(t, strings.HasPrefix(*resp.ControlUrl, "https://public.example.com/"))
 	require.NotNil(t, resp.EventsUrl)
 	require.True(t, strings.HasPrefix(*resp.EventsUrl, "https://public.example.com/"))
+	require.NotNil(t, resp.ManifestId)
+	closeScopeEvents(t, lp, *resp.ManifestId)
 }
 
 func TestScopePaidRetryUsesChallengeManifestID(t *testing.T) {
 	lp := newScopeHTTP(t)
+	orch := lp.orchestrator.(*stubOrchestrator)
+	orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+	orch.paymentCredit = big.NewRat(100, 1)
 	challenge, oInfo := requestScopePaymentChallenge(t, lp)
-	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID)
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
@@ -822,28 +828,100 @@ func TestScopePaidRetryUsesChallengeManifestID(t *testing.T) {
 	var resp worker.LiveVideoToVideoResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.NotNil(t, resp.ManifestId)
-	require.NotEmpty(t, *resp.ManifestId)
+	require.Equal(t, challenge.ManifestID, *resp.ManifestId)
 	require.NotNil(t, resp.ControlUrl)
 	require.Contains(t, *resp.ControlUrl, *resp.ManifestId+"-control")
 	require.NotNil(t, resp.EventsUrl)
 	require.Contains(t, *resp.EventsUrl, *resp.ManifestId+"-events")
+	closeScopeEvents(t, lp, *resp.ManifestId)
+
+	balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+	require.NotNil(t, balance)
+	require.Equal(t, "100", balance.FloatString(0))
+
+	orch.balanceMu.Lock()
+	balanceBuckets := make(map[core.ManifestID]*big.Rat, len(orch.balances[orch.Address()]))
+	for manifestID, balance := range orch.balances[orch.Address()] {
+		balanceBuckets[manifestID] = balance
+	}
+	orch.balanceMu.Unlock()
+	require.Len(t, balanceBuckets, 1)
+	require.Contains(t, balanceBuckets, core.ManifestID(challenge.ManifestID))
 }
 
-func TestScopePaidRetryAllowsSegmentManifestToDifferFromAuthToken(t *testing.T) {
+func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newScopeHTTP(t)
+		lp.node.LivePaymentInterval = time.Second
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(3, 1)
+
+		challenge, oInfo := requestScopePaymentChallenge(t, lp)
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, liveRunnerTestPricePerSecond(1))
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+		setRequestHeaders(req, headers)
+		lp.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp worker.LiveVideoToVideoResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.NotNil(t, resp.ManifestId)
+		require.Equal(t, challenge.ManifestID, *resp.ManifestId)
+
+		balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
+
+		time.Sleep(time.Second)
+		eventsCh := trickle.NewLocalPublisher(lp.trickleSrv, challenge.ManifestID+"-events", "application/json")
+		require.NoError(t, eventsCh.Write(strings.NewReader(`{"event":"tick"}`)))
+		synctest.Wait()
+
+		balance = orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+		require.NotNil(t, balance)
+		require.Equal(t, "2", balance.FloatString(0))
+
+		orch.balanceMu.Lock()
+		balanceBuckets := make(map[core.ManifestID]*big.Rat, len(orch.balances[orch.Address()]))
+		for manifestID, balance := range orch.balances[orch.Address()] {
+			balanceBuckets[manifestID] = balance
+		}
+		orch.balanceMu.Unlock()
+		require.Len(t, balanceBuckets, 1)
+		require.Contains(t, balanceBuckets, core.ManifestID(challenge.ManifestID))
+
+		require.NoError(t, eventsCh.Close())
+		synctest.Wait()
+	})
+}
+
+func TestScopePaidRetryRejectsSegmentManifestMismatch(t *testing.T) {
 	lp := newScopeHTTP(t)
+	orch := lp.orchestrator.(*stubOrchestrator)
 	_, oInfo := requestScopePaymentChallenge(t, lp)
-	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), "different-manifest")
+	orch.requestMu.Lock()
+	orch.storageReqs = nil
+	orch.lv2vReqs = nil
+	orch.requestMu.Unlock()
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), "different-manifest")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
 	setRequestHeaders(req, headers)
 	lp.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
-	var resp worker.LiveVideoToVideoResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.NotNil(t, resp.ManifestId)
-	require.NotEmpty(t, *resp.ManifestId)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "mismatched manifest and auth token")
+
+	orch.requestMu.Lock()
+	storageReqs := append([]string(nil), orch.storageReqs...)
+	lv2vReqs := append([]string(nil), orch.lv2vReqs...)
+	orch.requestMu.Unlock()
+	require.Empty(t, storageReqs)
+	require.Empty(t, lv2vReqs)
 }
 
 func TestScopeServerlessOffchainDoesNotRequirePayment(t *testing.T) {
@@ -862,6 +940,7 @@ func TestScopeServerlessOffchainDoesNotRequirePayment(t *testing.T) {
 	require.Contains(t, *resp.ControlUrl, *resp.ManifestId+"-control")
 	require.NotNil(t, resp.EventsUrl)
 	require.Contains(t, *resp.EventsUrl, *resp.ManifestId+"-events")
+	closeScopeEvents(t, lp, *resp.ManifestId)
 }
 
 func TestScopeRejectsOversizedPayload(t *testing.T) {
@@ -1480,6 +1559,12 @@ func requestScopePaymentChallenge(t *testing.T, lp *lphttp) (liveRunnerPaymentCh
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
 	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+}
+
+func closeScopeEvents(t *testing.T, lp *lphttp, manifestID string) {
+	t.Helper()
+	eventsCh := trickle.NewLocalPublisher(lp.trickleSrv, manifestID+"-events", "application/json")
+	require.NoError(t, eventsCh.Close())
 }
 
 func decodeLiveRunnerPaymentChallenge(t *testing.T, body []byte) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {

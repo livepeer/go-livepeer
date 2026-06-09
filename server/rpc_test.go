@@ -91,6 +91,9 @@ type stubOrchestrator struct {
 	balanceMu     sync.Mutex
 	balances      map[ethcommon.Address]map[core.ManifestID]*big.Rat
 	paymentCredit *big.Rat
+	requestMu     sync.Mutex
+	storageReqs   []string
+	lv2vReqs      []string
 }
 
 func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
@@ -348,6 +351,9 @@ func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 }
 
 func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.lv2vReqs = append(r.lv2vReqs, requestID)
 	return nil, nil
 }
 
@@ -357,6 +363,9 @@ func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
 func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.storageReqs = append(r.storageReqs, requestID)
 	return nil
 }
 func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {

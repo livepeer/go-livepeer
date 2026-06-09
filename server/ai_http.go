@@ -364,30 +364,34 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	return true, nil
 }
 
-func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request, manifestID string) (ethcommon.Address, *lpnet.PriceInfo, bool, *runner.RunnerError) {
+func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request) (ethcommon.Address, *lpnet.PriceInfo, string, bool, *runner.RunnerError) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil || r.Header.Get(paymentHeader) == "" {
 		handled, challengeErr := h.scopePaymentChallenge(w, r)
 		if handled {
-			return ethcommon.Address{}, nil, true, nil
+			return ethcommon.Address{}, nil, "", true, nil
 		}
 		if challengeErr != nil {
-			return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: challengeErr.Error(), StatusCode: http.StatusInternalServerError}
+			return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: challengeErr.Error(), StatusCode: http.StatusInternalServerError}
 		}
-		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusPaymentRequired}
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusPaymentRequired}
 	}
 	sender := getPaymentSender(payment)
-	_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+	segData, ctx, err := verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
 	if err != nil {
-		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusForbidden}
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusForbidden}
 	}
-	if err := h.orchestrator.ProcessPayment(ctx, payment, core.ManifestID(manifestID)); err != nil {
-		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusBadRequest}
+	if string(segData.ManifestID) != segData.AuthToken.SessionId {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: "mismatched manifest and auth token", StatusCode: http.StatusForbidden}
 	}
-	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, core.ManifestID(manifestID)) {
-		return ethcommon.Address{}, nil, false, &runner.RunnerError{Message: "Insufficient balance", StatusCode: http.StatusBadRequest}
+	manifestID := string(segData.ManifestID)
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusBadRequest}
 	}
-	return sender, payment.GetExpectedPrice(), false, nil
+	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, segData.ManifestID) {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: "Insufficient balance", StatusCode: http.StatusBadRequest}
+	}
+	return sender, payment.GetExpectedPrice(), manifestID, false, nil
 }
 
 func (h *lphttp) runnerSender(r *http.Request) (ethcommon.Address, error) {
@@ -964,7 +968,6 @@ func (h *lphttp) StartScope() http.Handler {
 		ctx := clog.AddVal(context.Background(), clog.ClientIP, remoteAddr)
 
 		gatewayRequestID := r.Header.Get("requestID")
-		manifestID := string(core.RandomManifestID())
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		r.Body = http.MaxBytesReader(w, r.Body, maxScopeRequestBodySize)
@@ -977,11 +980,33 @@ func (h *lphttp) StartScope() http.Handler {
 			gatewayRequestID = *req.GatewayRequestId
 		}
 		ctx = clog.AddVal(ctx, "request_id", gatewayRequestID)
-		ctx = clog.AddVal(ctx, "manifest_id", manifestID)
 		ctx = clog.AddVal(ctx, "app", "scope")
 		orch := h.orchestrator
 		pipeline := "live-video-to-video"
 		modelID := "scope"
+
+		var (
+			manifestID string
+			sender     ethcommon.Address
+			priceInfo  *lpnet.PriceInfo
+		)
+		if h.node != nil && h.node.Eth != nil {
+			payer, price, paidManifestID, handled, httpErr := h.processScopePayment(ctx, w, r)
+			if handled {
+				return
+			}
+			if httpErr != nil {
+				respondWithError(w, httpErr.Error(), httpErr.StatusCode)
+				return
+			}
+			manifestID = paidManifestID
+			sender = payer
+			priceInfo = price
+		} else {
+			manifestID = string(core.RandomManifestID())
+		}
+
+		ctx = clog.AddVal(ctx, "manifest_id", manifestID)
 		clog.Info(ctx, "Received Scope request")
 
 		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
@@ -1003,23 +1028,6 @@ func (h *lphttp) StartScope() http.Handler {
 		baseURL := orch.ServiceURI().JoinPath(TrickleHTTPPath, manifestID).String()
 		controlURL := baseURL + "-control"
 		eventsURL := baseURL + "-events"
-
-		var (
-			sender    ethcommon.Address
-			priceInfo *lpnet.PriceInfo
-		)
-		if h.node != nil && h.node.Eth != nil {
-			payer, price, handled, httpErr := h.processScopePayment(ctx, w, r, manifestID)
-			if handled {
-				return
-			}
-			if httpErr != nil {
-				respondWithError(w, httpErr.Error(), httpErr.StatusCode)
-				return
-			}
-			sender = payer
-			priceInfo = price
-		}
 
 		// Scope only pre-creates control + events channels.
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, manifestID+"-control", "application/json")
