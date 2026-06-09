@@ -416,10 +416,13 @@ func TestPrintConfigRedaction(t *testing.T) {
 
 func TestParseHeaderMap(t *testing.T) {
 	require := require.New(t)
-	headers := parseHeaderMap("Authorization:Bearer abc,X-API-Key:secret,invalid")
+	headers := parseHeaderMap("Authorization: Bearer abc, X-Webhook-Secret: webhook-secret, X-API-Key: secret,invalid, :missing-key")
 	require.Equal("Bearer abc", headers["Authorization"])
+	require.Equal("webhook-secret", headers["X-Webhook-Secret"])
 	require.Equal("secret", headers["X-API-Key"])
 	_, exists := headers["invalid"]
+	require.False(exists)
+	_, exists = headers[""]
 	require.False(exists)
 }
 

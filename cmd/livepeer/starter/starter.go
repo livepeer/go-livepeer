@@ -2197,7 +2197,11 @@ func parseHeaderMap(raw string) map[string]string {
 	for _, header := range strings.Split(raw, ",") {
 		parts := strings.SplitN(header, ":", 2)
 		if len(parts) == 2 {
-			headers[parts[0]] = parts[1]
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				headers[key] = value
+			}
 		}
 	}
 	return headers
