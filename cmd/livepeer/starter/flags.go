@@ -31,7 +31,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.SelectPriceExpFactor = fs.Float64("selectPriceExpFactor", *cfg.SelectPriceExpFactor, "Expresses how significant a small change of price is for the selection algorithm; default 100")
 	cfg.OrchPerfStatsURL = fs.String("orchPerfStatsUrl", *cfg.OrchPerfStatsURL, "URL of Orchestrator Performance Stream Tester")
 	cfg.Region = fs.String("region", *cfg.Region, "Region in which a gateway is deployed; used to select the region while using the orchestrator's performance stats")
-	cfg.MaxPricePerUnit = fs.String("maxPricePerUnit", *cfg.MaxPricePerUnit, "The maximum transcoding price per 'pixelsPerUnit' a gateway is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
+	cfg.MaxPricePerUnit = fs.String("maxPricePerUnit", *cfg.MaxPricePerUnit, "The maximum price per 'unitScale' a gateway is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
 	cfg.MaxPricePerCapability = fs.String("maxPricePerCapability", *cfg.MaxPricePerCapability, `json list of prices per capability/model or path to json config file. Use "model_id": "default" to price all models in a pipeline the same. Example: {"capabilities_prices": [{"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "upscale", "model_id": "default", price_per_unit": 1200, "pixels_per_unit": 1}]}`)
 	cfg.IgnoreMaxPriceIfNeeded = fs.Bool("ignoreMaxPriceIfNeeded", *cfg.IgnoreMaxPriceIfNeeded, "Set to true to allow exceeding max price condition if there is no O that meets this requirement")
 	cfg.MinPerfScore = fs.Float64("minPerfScore", *cfg.MinPerfScore, "The minimum orchestrator's performance score a gateway is willing to accept")
@@ -102,9 +102,10 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	cfg.DepositMultiplier = fs.Int("depositMultiplier", *cfg.DepositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 	// Orchestrator base pricing info
-	cfg.PricePerUnit = fs.String("pricePerUnit", "0", "The price per 'pixelsPerUnit' amount pixels. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
-	// Unit of pixels for both O's pricePerUnit and B's maxPricePerUnit
-	cfg.PixelsPerUnit = fs.String("pixelsPerUnit", *cfg.PixelsPerUnit, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
+	cfg.PricePerUnit = fs.String("pricePerUnit", "0", "The price per 'unitScale' amount of work units. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
+	// Shared by O's pricePerUnit and B's maxPricePerUnit.
+	fs.StringVar(cfg.PixelsPerUnit, "unitScale", *cfg.PixelsPerUnit, "Scale factor for pricing: price is quoted per this many work units. Set > 1 for finer price granularity than 1 wei per unit.")
+	fs.StringVar(cfg.PixelsPerUnit, "pixelsPerUnit", *cfg.PixelsPerUnit, "[Deprecated] Use -unitScale. Amount of pixels per unit; set > 1 for smaller price granularity than 1 wei / pixel.")
 	cfg.PriceFeedAddr = fs.String("priceFeedAddr", *cfg.PriceFeedAddr, "ETH address of the Chainlink price feed contract. Used for custom currencies conversion on -pricePerUnit or -maxPricePerUnit")
 	cfg.AutoAdjustPrice = fs.Bool("autoAdjustPrice", *cfg.AutoAdjustPrice, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
 	cfg.PricePerGateway = fs.String("pricePerGateway", *cfg.PricePerGateway, `json list of price per gateway or path to json config file. Example: {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1000000000000},{"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":1000000000000}]}`)
