@@ -1097,11 +1097,10 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 		t.Fatal("expected runner price info")
 	}
 	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
-	expectedFixed, err := common.PriceToFixed(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
+	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := big.NewRat(expectedFixed, 1)
 	if got.Cmp(expected) != 0 {
 		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected)
 	}

@@ -1373,13 +1373,13 @@ func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo
 	if converter == nil {
 		return LiveRunnerPriceInfo{}, nil
 	}
-	priceFixed, err := common.PriceToFixed(converter.Value())
+	price, err := common.PriceToInt64(converter.Value())
 	if err != nil {
 		return LiveRunnerPriceInfo{}, err
 	}
 	return LiveRunnerPriceInfo{
-		PricePerUnit:  priceFixed,
-		PixelsPerUnit: 1,
+		PricePerUnit:  price.Num().Int64(),
+		PixelsPerUnit: price.Denom().Int64(),
 		Unit:          "WEI",
 	}, nil
 }
