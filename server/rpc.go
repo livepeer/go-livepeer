@@ -466,7 +466,8 @@ func (h *lphttp) RefreshPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sender := ethcommon.HexToAddress(req.Sender)
-	priceInfo, ok, err := fixedPriceInfo(h.node, sender, core.ManifestID(req.ManifestID))
+	manifestID := core.ManifestID(strings.TrimSpace(req.ManifestID))
+	priceInfo, ok, err := fixedPriceInfo(h.node, sender, manifestID)
 	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
 		return
@@ -482,18 +483,22 @@ func (h *lphttp) RefreshPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := string(core.RandomManifestID())
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	oInfo := &net.OrchestratorInfo{
 		Transcoder:   h.orchestrator.ServiceURI().String(),
 		TicketParams: ticketParams,
 		PriceInfo:    priceInfo,
 		Address:      h.orchestrator.Address().Bytes(),
-		AuthToken:    h.orchestrator.AuthToken(sessionID, expiration),
+		AuthToken:    h.orchestrator.AuthToken(string(manifestID), expiration),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(oInfo); err != nil {
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(data); err != nil {
 		clog.Errorf(ctx, "Error encoding refreshed payment params err=%v", err)
 	}
 }

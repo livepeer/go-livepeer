@@ -1327,12 +1327,12 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 }
 
-func TestRefreshPayment_ReturnsPinnedPaymentInfo(t *testing.T) {
+func TestRefreshPayment_ReturnsPinnedPaymentChallenge(t *testing.T) {
 	sender := ethcommon.HexToAddress("0x1234567890123456789012345678901234567890")
 	manifestID := core.ManifestID("manifest-id")
 	fixedPrice := big.NewRat(7, 3)
 	ticketParams := defaultTicketParams()
-	authToken := &net.AuthToken{Token: []byte("token"), SessionId: "session-id", Expiration: time.Now().Add(time.Hour).Unix()}
+	authToken := &net.AuthToken{Token: []byte("token"), SessionId: string(manifestID), Expiration: time.Now().Add(time.Hour).Unix()}
 	orchAddr := ethcommon.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
 
 	node := &core.LivepeerNode{Balances: core.NewAddressBalances(time.Hour)}
@@ -1345,7 +1345,7 @@ func TestRefreshPayment_ReturnsPinnedPaymentInfo(t *testing.T) {
 	})).Return(ticketParams, nil)
 	orch.On("ServiceURI").Return(mustParseUrl(t, "http://orch.example"))
 	orch.On("Address").Return(orchAddr)
-	orch.On("AuthToken", mock.Anything, mock.Anything).Return(authToken)
+	orch.On("AuthToken", string(manifestID), mock.Anything).Return(authToken)
 
 	lp := &lphttp{orchestrator: orch, node: node}
 	body := `{"sender":"` + sender.Hex() + `","manifest_id":"` + string(manifestID) + `"}`
@@ -1355,14 +1355,15 @@ func TestRefreshPayment_ReturnsPinnedPaymentInfo(t *testing.T) {
 	lp.RefreshPayment(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	var got net.OrchestratorInfo
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	challenge, got := decodeLiveRunnerPaymentChallenge(t, rr.Body.Bytes())
+	require.Equal(t, "http://orch.example", challenge.Orchestrator)
+	require.Equal(t, string(manifestID), challenge.ManifestID)
 	require.Equal(t, "http://orch.example", got.Transcoder)
-	require.Equal(t, ticketParams, got.TicketParams)
+	require.True(t, proto.Equal(ticketParams, got.TicketParams))
 	require.Equal(t, int64(7), got.PriceInfo.PricePerUnit)
 	require.Equal(t, int64(3), got.PriceInfo.PixelsPerUnit)
 	require.Equal(t, orchAddr.Bytes(), got.Address)
-	require.Equal(t, authToken, got.AuthToken)
+	require.True(t, proto.Equal(authToken, got.AuthToken))
 	require.Nil(t, got.Capabilities)
 	require.Nil(t, got.Storage)
 	require.Nil(t, got.Hardware)

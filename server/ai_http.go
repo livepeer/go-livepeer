@@ -312,16 +312,7 @@ func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceIn
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	buf, err := proto.Marshal(oInfo)
-	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	data, err := json.Marshal(liveRunnerPaymentChallengeResponse{
-		PaymentParams: base64.StdEncoding.EncodeToString(buf),
-		Orchestrator:  h.orchestrator.ServiceURI().String(),
-		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
-	})
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -346,15 +337,7 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return false, err
 	}
-	buf, err := proto.Marshal(oInfo)
-	if err != nil {
-		return false, err
-	}
-	data, err := json.Marshal(liveRunnerPaymentChallengeResponse{
-		PaymentParams: base64.StdEncoding.EncodeToString(buf),
-		Orchestrator:  h.orchestrator.ServiceURI().String(),
-		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
-	})
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
 	if err != nil {
 		return false, err
 	}
@@ -362,6 +345,18 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	w.WriteHeader(http.StatusPaymentRequired)
 	_, _ = w.Write(data)
 	return true, nil
+}
+
+func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte, error) {
+	buf, err := proto.Marshal(oInfo)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(liveRunnerPaymentChallengeResponse{
+		PaymentParams: base64.StdEncoding.EncodeToString(buf),
+		Orchestrator:  oInfo.GetTranscoder(),
+		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+	})
 }
 
 func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request) (ethcommon.Address, *lpnet.PriceInfo, string, bool, *runner.RunnerError) {
