@@ -128,6 +128,8 @@ type LivepeerNode struct {
 	AIWorkerManager           *RemoteAIWorkerManager
 	AIProcesssingRetryTimeout time.Duration
 
+	LiveRunnerManager any // NB: kludge to avoid ai/runner circular dependency
+
 	// Transcoder public fields
 	SegmentChans         map[ManifestID]SegmentChan
 	Recipient            pm.Recipient
@@ -174,6 +176,7 @@ type LivepeerNode struct {
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
 
+	LiveRunnerAddr             *url.URL
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthWebhookURL       *url.URL

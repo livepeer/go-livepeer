@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -90,8 +91,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	defer BroadcastCfg.SetCapabilityMaxPrice(capability1, modelID1, nil) // Clean up
 
 	baseOrchInfo := &net.OrchestratorInfo{
-		Address:   ethcommon.HexToAddress("0x1").Bytes(),
-		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		Address:    ethcommon.HexToAddress("0x1").Bytes(),
+		Transcoder: "http://orch.example",
+		PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		TicketParams: &net.TicketParams{
 			Recipient: pm.RandAddress().Bytes(),
 		},
@@ -118,6 +120,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 		sender     *pm.MockSender
 		wantStatus int
 		wantMsg    string
+		wantHeader string
 	}{
 		{
 			name:       "invalid JSON",
@@ -203,6 +206,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			}(),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "ticket params expired triggers 480",
@@ -214,6 +218,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			sender:     newMockSender(mockSenderConfig{validateErr: pm.ErrTicketParamsExpired}),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "invalid job type",
@@ -319,6 +324,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
 			require.NotEmpty(apiErr.Error.Message)
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
+			if tt.wantHeader != "" {
+				require.Equal(tt.wantHeader, rr.Header().Get(RefreshSessionOrchestratorURLHeader))
+			}
 		})
 	}
 }
@@ -982,6 +990,39 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-a",
 				},
 			},
+			Discovery: discoveryRaw(t, `[
+				{
+					"address": "https://orch1.example.com:8935/",
+					"score": 99,
+					"capabilities": ["evil/app"],
+					"unknown_field": "must-not-leak",
+					"runners": [
+						{"url":"https://orch1.example.com:8935/scope-ok","app":"live-video-to-video/model-a","price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://orch1.example.com:8935/scope-missing-price","app":"live-video-to-video/model-a"},
+						{"url":"https://orch1.example.com:8935/scope-too-expensive","app":"live-video-to-video/model-a","price_info":{"price_per_unit":120,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://orch1.example.com:8935/scope-usd","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"USD"}},
+						{"url":"https://orch1.example.com:8935/scope-invalid-price","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":0,"unit":"WEI"}},
+						{"url":"https://orch1.example.com:8935/scope-missing-unit","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1}},
+						{"url":"https://orch1.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/scope","app":"live-video-to-video/model-a","capacity":3,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://discovered.example.com:8935/missing-price","app":"live-video-to-video/model-a"},
+						{"url":"https://discovered.example.com:8935/too-expensive","app":"live-video-to-video/model-a","price_info":{"price_per_unit":120,"pixels_per_unit":1,"unit":"WEI"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935/",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"capacity_used":1,"capacity_available":0,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":2,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}}
+					]
+				}
+			]`),
 		},
 		{
 			OrchURI:      "https://orch2.example.com:8935",
@@ -1004,6 +1045,21 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-b",
 				},
 			},
+			Discovery: discoveryRaw(t, `[
+				{
+					"address": "https://orch2.example.com:8935",
+					"runners": [
+						{"url":"https://orch2.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price_per_unit":999,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://orch2.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/from-orch2","app":"live-video-to-video/model-a","price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}}
+					]
+				}
+			]`),
 		},
 		{
 			OrchURI:      "https://orch3.example.com:8935",
@@ -1019,6 +1075,12 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-a",
 				},
 			},
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://orch3.example.com:8935",
+				"runners": [
+					{"url":"https://orch3.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+				]
+			}]`),
 		},
 		// Invalid URI should be dropped during refresh and never returned from discovery.
 		{
@@ -1043,15 +1105,25 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 	require.Equal("application/json", rr.Header().Get("Content-Type"))
 
+	body := rr.Body.Bytes()
 	var resp []discoveryResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	require.Len(resp, 2)
-	require.Equal("https://orch1.example.com:8935", resp[0].Address)
-	require.Greater(resp[0].Score, float32(0))
-	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
-	require.Equal("https://orch2.example.com:8935", resp[1].Address)
-	require.Greater(resp[1].Score, float32(0))
-	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
+	require.NoError(json.Unmarshal(body, &resp))
+	require.Len(resp, 3)
+	orch1Resp := discoveryResponseByAddress(t, resp, "https://orch1.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch1Resp.Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, orch1Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, orch1Resp))
+	requireNotContainsDiscoveryField(t, body, "unknown_field")
+	discoveredResp := discoveryResponseByAddress(t, resp, "https://discovered.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), discoveredResp.Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveredResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveredResp))
+	require.Equal(1, discoveredResp.Runners[1].Capacity)
+	require.Equal(0, discoveredResp.Runners[1].CapacityUsed)
+	orch2Resp := discoveryResponseByAddress(t, resp, "https://orch2.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch2Resp.Score)
+	require.Equal([]string{"text-to-image/model-b"}, orch2Resp.Capabilities)
+	require.Equal([]string{"text-to-image/model-b"}, discoveryRunnerApps(t, orch2Resp))
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
 	capsRR := httptest.NewRecorder()
@@ -1059,8 +1131,9 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, capsRR.Code)
 	var capsResp []discoveryResponse
 	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
-	require.Len(capsResp, 1)
-	require.Equal("https://orch1.example.com:8935", capsResp[0].Address)
+	require.Len(capsResp, 2)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://discovered.example.com:8935")))
 
 	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
 	repeatedRR := httptest.NewRecorder()
@@ -1068,9 +1141,10 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, repeatedRR.Code)
 	var repeatedResp []discoveryResponse
 	require.NoError(json.NewDecoder(repeatedRR.Body).Decode(&repeatedResp))
-	require.Len(repeatedResp, 2)
-	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
-	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
+	require.Len(repeatedResp, 3)
+	discoveryResponseByAddress(t, repeatedResp, "https://orch1.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://discovered.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://orch2.example.com:8935")
 
 	// If refresh only receives invalid or ineligible network capability entries,
 	// cache should remain empty and discovery should return service unavailable.
@@ -1125,6 +1199,280 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	ls.GetOrchestrators(ineligibleRDP, ineligibleRR, ineligibleReq)
 	require.Equal(http.StatusServiceUnavailable, ineligibleRR.Code)
 	require.Equal("application/json", ineligibleRR.Header().Get("Content-Type"))
+}
+
+func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://runner-derived.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://runner-derived.example.com:8935",
+				"runners": [
+					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://runner-derived.example.com:8935", resp[0].Address)
+	require.Equal([]string{"live-video-to-video/scope"}, resp[0].Capabilities)
+	require.Equal([]string{"live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
+}
+
+func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsEligibleRunnersWhenRPCCapabilitiesMissing(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://mixed-runner-derived.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://mixed-runner-derived.example.com:8935",
+				"runners": [
+					{"url":"https://mixed-runner-derived.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price_per_unit":201,"pixels_per_unit":995328000000,"unit":"WEI"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/missing-price","app":"live-video-to-video/scope"},
+					{"url":"https://mixed-runner-derived.example.com:8935/invalid-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://mixed-runner-derived.example.com:8935", resp[0].Address)
+	require.Equal([]string{"live-video-to-video/scope"}, resp[0].Capabilities)
+	require.Len(resp[0].Runners, 1)
+	require.Equal("https://mixed-runner-derived.example.com:8935/apps/runner/session", resp[0].Runners[0].URL)
+	require.Equal([]string{"live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
+}
+
+func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://filtered.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://filtered.example.com:8935",
+				"runners": [
+					{"url":"https://filtered.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price_per_unit":201,"pixels_per_unit":995328000000,"unit":"WEI"}},
+					{"url":"https://filtered.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
+					{"url":"https://filtered.example.com:8935/missing-price","app":"live-video-to-video/scope"},
+					{"url":"https://filtered.example.com:8935/non-positive-price","app":"live-video-to-video/scope","price_info":{"price_per_unit":0,"pixels_per_unit":995328000000,"unit":"WEI"}},
+					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusServiceUnavailable, rr.Code)
+	require.Equal("application/json", rr.Header().Get("Content-Type"))
+}
+
+func discoveryRaw(t *testing.T, data string) json.RawMessage {
+	t.Helper()
+	require.True(t, json.Valid([]byte(data)))
+	return json.RawMessage(data)
+}
+
+func discoveryRunnerApps(t *testing.T, resp discoveryResponse) []string {
+	t.Helper()
+	apps := make([]string, 0, len(resp.Runners))
+	for _, runner := range resp.Runners {
+		apps = append(apps, runner.App)
+	}
+	return apps
+}
+
+func discoveryResponseByAddress(t *testing.T, resp []discoveryResponse, address string) discoveryResponse {
+	t.Helper()
+	for _, entry := range resp {
+		if entry.Address == address {
+			return entry
+		}
+	}
+	require.Failf(t, "missing discovery response", "address=%s", address)
+	return discoveryResponse{}
+}
+
+func requireNotContainsDiscoveryField(t *testing.T, body []byte, field string) {
+	t.Helper()
+	var raw []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &raw))
+	for _, entry := range raw {
+		require.NotContains(t, entry, field)
+	}
+}
+
+func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
+	base := runner.LiveRunnerDiscoveryRunner{
+		URL:               "https://runner.example.com/scope",
+		App:               "live-video-to-video/model-a",
+		Capacity:          2,
+		CapacityUsed:      1,
+		CapacityAvailable: 1,
+		PriceInfo: &runner.LiveRunnerPriceInfo{
+			PricePerUnit:  7,
+			PixelsPerUnit: 1,
+			Unit:          "WEI",
+		},
+	}
+
+	usageChanged := base
+	usageChanged.CapacityUsed = 0
+	usageChanged.CapacityAvailable = 2
+	require.True(t, sameRemoteDiscoveryRunner(base, usageChanged))
+
+	capacityChanged := base
+	capacityChanged.Capacity = 3
+	require.False(t, sameRemoteDiscoveryRunner(base, capacityChanged))
+}
+
+func TestRemoteSigner_Discovery_RequiresAdvertisedPriceWithoutMaxPrice(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelPriced := "model-priced"
+	modelUnpriced := "model-unpriced"
+	BroadcastCfg.SetMaxPrice(nil)
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelPriced, nil)
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelUnpriced, nil)
+
+	caps := core.NewCapabilities([]core.Capability{capability}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		capability: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				modelPriced:   {},
+				modelUnpriced: {},
+			},
+		},
+	})
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://priced.example.com:8935",
+			Capabilities: caps.ToNetCapabilities(),
+			CapabilitiesPrices: []*net.PriceInfo{
+				{
+					PricePerUnit:  7,
+					PixelsPerUnit: 1,
+					Capability:    uint32(capability),
+					Constraint:    modelPriced,
+				},
+			},
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://priced.example.com:8935",
+				"runners": [
+					{"url":"https://priced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}},
+					{"url":"https://priced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}}
+				]
+			}]`),
+		},
+		{
+			OrchURI:      "https://unpriced.example.com:8935",
+			Capabilities: caps.ToNetCapabilities(),
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://unpriced.example.com:8935",
+				"runners": [
+					{"url":"https://unpriced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}},
+					{"url":"https://unpriced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://priced.example.com:8935", resp[0].Address)
+	require.Equal([]string{"live-video-to-video/model-priced"}, resp[0].Capabilities)
+	require.Equal([]string{"live-video-to-video/model-priced"}, discoveryRunnerApps(t, resp[0]))
+
+	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-priced", nil)
+	capsRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, capsRR, capsReq)
+	require.Equal(http.StatusOK, capsRR.Code)
+	var capsResp []discoveryResponse
+	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
+	require.Len(capsResp, 1)
+	require.Equal("https://priced.example.com:8935", capsResp[0].Address)
+
+	unpricedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-unpriced", nil)
+	unpricedRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, unpricedRR, unpricedReq)
+	require.Equal(http.StatusOK, unpricedRR.Code)
+	var unpricedResp []discoveryResponse
+	require.NoError(json.NewDecoder(unpricedRR.Body).Decode(&unpricedResp))
+	require.Empty(unpricedResp)
 }
 
 func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {

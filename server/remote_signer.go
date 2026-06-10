@@ -17,8 +17,10 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -29,6 +31,7 @@ import (
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
+const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_LiveVideoToVideo = "lv2v"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 
@@ -504,6 +507,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	if should, err := shouldRefreshSession(ctx, sess); err == nil && should {
 		err := errors.New("refresh session for remote signer")
+		w.Header().Set(RefreshSessionOrchestratorURLHeader, oInfo.Transcoder)
 		respondJsonError(ctx, w, err, HTTPStatusRefreshSession)
 		return
 	} else if err != nil {
@@ -738,10 +742,14 @@ func GetOrchInfoSig(remoteSignerHost *url.URL, headers map[string]string) (*Orch
 	return &signerResp, nil
 }
 
+// discoveryResponse is intentionally typed. Do NOT add raw json.RawMessage blobs
+// here or pass through arbitrary orchestrator /discovery fields; every exposed
+// response field must be reviewed and modeled explicitly.
 type discoveryResponse struct {
-	Address      string   `json:"address,omitempty"`
-	Score        float32  `json:"score,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	Address      string                             `json:"address,omitempty"`
+	Score        float32                            `json:"score,omitempty"`
+	Capabilities []string                           `json:"capabilities,omitempty"`
+	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
@@ -771,11 +779,11 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 	infos := pool.Orchestrators(filteredCaps)
 	resp := make([]discoveryResponse, 0, len(infos))
 	for _, cached := range infos {
-		od := cached.OD
 		resp = append(resp, discoveryResponse{
-			Address:      od.LocalInfo.URL.String(),
-			Score:        od.LocalInfo.Score,
+			Address:      cached.URL.String(),
+			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
+			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
 		})
 	}
 
