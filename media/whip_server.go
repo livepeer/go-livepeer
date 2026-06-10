@@ -576,6 +576,16 @@ func disableTSCorrection() bool {
 	return v
 }
 
+// LiveAIDisableRTMPOutput skips ffmpeg RTMP egress. WHEP reads processed video from
+// the in-memory ring buffer and does not require RTMP outputs.
+func LiveAIDisableRTMPOutput() bool {
+	v, err := strconv.ParseBool(os.Getenv("LIVE_AI_DISABLE_RTMP_OUTPUT"))
+	if err != nil {
+		return false
+	}
+	return v
+}
+
 func getUDPListenerAddr(addrStr string) (*net.UDPAddr, error) {
 	if addrStr == "" {
 		// Default to all interfaces, port 7290
