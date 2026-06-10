@@ -898,30 +898,35 @@ func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) 
 	})
 }
 
-func TestScopePaidRetryRejectsSegmentManifestMismatch(t *testing.T) {
+func TestScopePaidRetryAllowsSegmentManifestToDifferFromAuthToken(t *testing.T) {
 	lp := newScopeHTTP(t)
 	orch := lp.orchestrator.(*stubOrchestrator)
+	orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+	orch.paymentCredit = big.NewRat(100, 1)
 	_, oInfo := requestScopePaymentChallenge(t, lp)
-	orch.requestMu.Lock()
-	orch.storageReqs = nil
-	orch.lv2vReqs = nil
-	orch.requestMu.Unlock()
-	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), "different-manifest")
+	legacyManifestID := "different-manifest"
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), legacyManifestID)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
 	setRequestHeaders(req, headers)
 	lp.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, w.Body.String(), "mismatched manifest and auth token")
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp worker.LiveVideoToVideoResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotNil(t, resp.ManifestId)
+	require.Equal(t, legacyManifestID, *resp.ManifestId)
+	require.NotNil(t, resp.ControlUrl)
+	require.Contains(t, *resp.ControlUrl, legacyManifestID+"-control")
+	require.NotNil(t, resp.EventsUrl)
+	require.Contains(t, *resp.EventsUrl, legacyManifestID+"-events")
+	closeScopeEvents(t, lp, legacyManifestID)
 
-	orch.requestMu.Lock()
-	storageReqs := append([]string(nil), orch.storageReqs...)
-	lv2vReqs := append([]string(nil), orch.lv2vReqs...)
-	orch.requestMu.Unlock()
-	require.Empty(t, storageReqs)
-	require.Empty(t, lv2vReqs)
+	balance := orch.Balance(orch.Address(), core.ManifestID(legacyManifestID))
+	require.NotNil(t, balance)
+	require.Equal(t, "100", balance.FloatString(0))
+	require.Nil(t, orch.Balance(orch.Address(), core.ManifestID(oInfo.GetAuthToken().GetSessionId())))
 }
 
 func TestScopeServerlessOffchainDoesNotRequirePayment(t *testing.T) {

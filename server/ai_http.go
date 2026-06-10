@@ -377,7 +377,7 @@ func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter,
 		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusForbidden}
 	}
 	if string(segData.ManifestID) != segData.AuthToken.SessionId {
-		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: "mismatched manifest and auth token", StatusCode: http.StatusForbidden}
+		clog.Info(ctx, "Legacy Scope payment manifest mismatch", "manifest_id", segData.ManifestID, "auth_session_id", segData.AuthToken.SessionId)
 	}
 	manifestID := string(segData.ManifestID)
 	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
