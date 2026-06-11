@@ -138,6 +138,7 @@ type LivepeerConfig struct {
 	MaxTicketEV                *string
 	MaxTotalEV                 *string
 	DepositMultiplier          *int
+	TicketPrune                *bool
 	PricePerUnit               *string
 	PixelsPerUnit              *string
 	PriceFeedAddr              *string
@@ -268,6 +269,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTicketEV := "3000000000000"
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
+	defaultTicketPrune := true
 	defaultMaxPricePerUnit := "0"
 	defaultMaxPricePerCapability := ""
 	defaultIgnoreMaxPriceIfNeeded := false
@@ -393,6 +395,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTicketEV:             &defaultMaxTicketEV,
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
+		TicketPrune:             &defaultTicketPrune,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
 		MaxPricePerCapability:   &defaultMaxPricePerCapability,
 		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
@@ -987,6 +990,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			RedeemGas:       redeemGas,
 			SuggestGasPrice: client.Backend().SuggestGasPrice,
 			RPCTimeout:      ethRPCTimeout,
+			TicketPrune:     *cfg.TicketPrune,
 		}
 
 		if *cfg.Orchestrator {

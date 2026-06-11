@@ -73,6 +73,16 @@ type LocalSenderMonitorConfig struct {
 	RedeemGas       int
 	SuggestGasPrice func(context.Context) (*big.Int, error)
 	RPCTimeout      time.Duration
+
+	// TicketPrune enables automatic pruning of dead winning tickets
+	// (expired unredeemed or permanently failed) from the ticket store
+	TicketPrune bool
+}
+
+// ticketStoreCleaner describes a TicketStore implementation that is also
+// capable of clearing dead winning tickets from persistent storage
+type ticketStoreCleaner interface {
+	ClearDeadWinningTickets(minCreationRound int64) (int64, error)
 }
 
 type LocalSenderMonitor struct {
@@ -328,9 +338,35 @@ func (sm *LocalSenderMonitor) startCleanupLoop() {
 		select {
 		case <-ticker.C:
 			sm.cleanup()
+			if sm.cfg.TicketPrune {
+				sm.pruneDeadTickets()
+			}
 		case <-sm.quit:
 			return
 		}
+	}
+}
+
+// pruneDeadTickets removes dead winning tickets from the ticket store.
+// A ticket is dead if it is unredeemed and outside of the redemption validity
+// window (the redemption loop can never select it again) or if its redemption
+// permanently failed. The cutoff is never lower than ticketValidityPeriod + 1
+// rounds behind the last initialized round so that redeemable tickets are
+// never pruned.
+func (sm *LocalSenderMonitor) pruneDeadTickets() {
+	cleaner, ok := sm.ticketStore.(ticketStoreCleaner)
+	if !ok {
+		return
+	}
+
+	minCreationRound := new(big.Int).Sub(sm.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod+1)).Int64()
+	count, err := cleaner.ClearDeadWinningTickets(minCreationRound)
+	if err != nil {
+		glog.Errorf("Unable to prune dead winning tickets err=%q", err)
+		return
+	}
+	if count > 0 {
+		glog.Infof("Pruned dead winning tickets count=%d", count)
 	}
 }
 

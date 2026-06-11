@@ -101,6 +101,8 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.MaxTotalEV = fs.String("maxTotalEV", *cfg.MaxTotalEV, "The maximum acceptable expected value for one PM payment")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	cfg.DepositMultiplier = fs.Int("depositMultiplier", *cfg.DepositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
+	// Orchestrator automatic pruning of dead winning tickets
+	cfg.TicketPrune = fs.Bool("ticketPrune", *cfg.TicketPrune, "Enable automatic pruning of expired and permanently failed winning tickets from the ticket queue database")
 	// Orchestrator base pricing info
 	cfg.PricePerUnit = fs.String("pricePerUnit", "0", "The price per 'pixelsPerUnit' amount pixels. Can be specified in wei or a custom currency in the format <price><currency> (e.g. 0.50USD). When using a custom currency, a corresponding price feed must be configured with -priceFeedAddr")
 	// Unit of pixels for both O's pricePerUnit and B's maxPricePerUnit
