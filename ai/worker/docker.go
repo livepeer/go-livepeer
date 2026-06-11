@@ -122,6 +122,7 @@ type DockerManager struct {
 	overrides          ImageOverrides
 	verboseLogs        bool
 	containerCreatorID string
+	runtime            string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -135,7 +136,7 @@ type DockerManager struct {
 	stop       context.CancelFunc
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string, containerRuntime string) (*DockerManager, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -159,6 +160,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		verboseLogs:        verboseLogs,
 		dockerClient:       client,
 		containerCreatorID: containerCreatorID,
+		runtime:            containerRuntime,
 		gpuContainers:      make(map[string]*RunnerContainer),
 		containers:         make(map[string]*RunnerContainer),
 		mu:                 &sync.Mutex{},
@@ -435,6 +437,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	hostConfig := &container.HostConfig{
+		Runtime: m.runtime,
 		Resources: container.Resources{
 			DeviceRequests: gpuOpts.Value(),
 		},
