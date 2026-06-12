@@ -838,20 +838,31 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 	n.StorageConfigs[md.AuthToken.SessionId] = &storageConfig
 	n.storageMutex.Unlock()
 	go func() {
+		segmentsReceived := 0
+		var lastSegReceivedAt time.Time
 		for {
 			// XXX make context timeout configurable
 			ctx, cancel := context.WithTimeout(context.Background(), transcodeLoopTimeout)
 			select {
 			case <-ctx.Done():
-				clog.V(common.DEBUG).Infof(logCtx, "Segment loop timed out; closing ")
+				idleDuration := time.Since(lastSegReceivedAt)
+				if segmentsReceived == 0 {
+					clog.Infof(logCtx, "Segment loop timed out with no segments received; broadcaster may not have started sending for sessionID=%s", md.AuthToken.SessionId)
+				} else {
+					clog.Infof(logCtx, "Segment loop timed out after %v idle; no new segments received from broadcaster for sessionID=%s (segments received: %d, last segment: %v ago)",
+						transcodeLoopTimeout, md.AuthToken.SessionId, segmentsReceived, idleDuration.Truncate(time.Millisecond))
+				}
 				n.endTranscodingSession(md.AuthToken.SessionId, logCtx)
 				return
 			case chanData, ok := <-segChan:
 				// Check if channel was closed due to endTranscodingSession being called by B
 				if !ok {
+					clog.V(common.DEBUG).Infof(logCtx, "Segment channel closed by broadcaster; ending session for sessionID=%s (segments received: %d)", md.AuthToken.SessionId, segmentsReceived)
 					cancel()
 					return
 				}
+				segmentsReceived++
+				lastSegReceivedAt = time.Now()
 				chanData.res <- n.transcodeSeg(chanData.ctx, storageConfig, chanData.seg, chanData.md)
 			}
 			cancel()
