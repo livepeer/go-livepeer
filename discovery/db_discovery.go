@@ -342,6 +342,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		level    int
 		orchInfo *net.OrchestratorInfo
 		dbOrch   *common.DBOrch
+		latency  time.Duration
 	}
 
 	nodesPerOrch := dbo.bcast.ExtraNodes()
@@ -367,6 +368,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
+		start := time.Now()
 		info, err := getOrchInfoRPC(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
 			IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
 		})
@@ -411,6 +413,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			level:    level,
 			orchInfo: info,
 			dbOrch:   dbOrch,
+			latency:  time.Since(start),
 		}
 	}
 
@@ -438,7 +441,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		select {
 		case res := <-resc:
 			//add response to network capabilities
-			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo))
+			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo, res.latency))
 
 			// discover newly advertised nodes. only recurse the first level.
 			if res.level == 0 && len(res.orchInfo.GetNodes()) > 0 {
@@ -578,7 +581,7 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 	}
 }
 
-func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchNetworkCapabilities {
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, latency time.Duration) *common.OrchNetworkCapabilities {
 	var orch common.OrchNetworkCapabilities
 
 	// add orch operating information if available
@@ -593,6 +596,7 @@ func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchN
 			orch.Address = string(ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex())
 		}
 	}
+	orch.DiscoveryTime = &latency
 
 	return &orch
 }
