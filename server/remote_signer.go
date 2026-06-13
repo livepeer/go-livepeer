@@ -663,14 +663,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			sessionStatus = "new"
 		}
 		pipeline := ""
+		modelID := ""
 		if req.Type == RemoteType_LiveVideoToVideo {
 			pipeline = PipelineLiveVideoToVideo
+			modelID = streamParams.Capabilities.ModelIDForCapability(core.Capability_LiveVideoToVideo)
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
 			"pipeline":           pipeline,
+			"model_id":           modelID,
 			"request_id":         requestID,
 			"orch_address":       orchAddr.Hex(),
 			"orch_url":           oInfo.Transcoder,
