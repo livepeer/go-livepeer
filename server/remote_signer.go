@@ -632,8 +632,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			sessionStatus = "new"
 		}
 		pipeline := ""
+		modelID := ""
 		if req.Type == RemoteType_LiveVideoToVideo {
 			pipeline = PipelineLiveVideoToVideo
+			modelID = streamParams.Capabilities.ModelIDForCapability(core.Capability_LiveVideoToVideo)
 		} else if req.Type == RemoteType_Live {
 			pipeline = RemoteType_Live
 		}
@@ -642,6 +644,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
 			"pipeline":           pipeline,
+			"model_id":           modelID,
 			"request_id":         requestID,
 			"orch_address":       orchAddr.Hex(),
 			"orch_url":           oInfo.Transcoder,

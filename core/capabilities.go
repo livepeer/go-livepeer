@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
@@ -789,6 +790,30 @@ func (bcast *Capabilities) PerCapability() PerCapabilityConstraints {
 		return bcast.constraints.perCapability
 	}
 	return nil
+}
+
+// ModelIDForCapability returns the constrained model ID for the given capability.
+// When multiple models are constrained it returns the lexicographically first one
+// so the result is deterministic. Returns "" when no model is constrained.
+func (bcast *Capabilities) ModelIDForCapability(cap Capability) string {
+	if bcast == nil {
+		return ""
+	}
+	capConstraints, ok := bcast.constraints.perCapability[cap]
+	if !ok || capConstraints == nil {
+		return ""
+	}
+	modelIDs := make([]string, 0, len(capConstraints.Models))
+	for modelID := range capConstraints.Models {
+		if modelID != "" {
+			modelIDs = append(modelIDs, modelID)
+		}
+	}
+	if len(modelIDs) == 0 {
+		return ""
+	}
+	sort.Strings(modelIDs)
+	return modelIDs[0]
 }
 
 func (bcast *Capabilities) SetMinVersionConstraint(minVersionConstraint string) {
