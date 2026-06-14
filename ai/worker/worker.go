@@ -396,7 +396,7 @@ func (w *Worker) AudioToText(ctx context.Context, req GenAudioToTextMultipartReq
 	return resp.JSON200, nil
 }
 
-func (w *Worker) LLM(ctx context.Context, req GenLLMJSONRequestBody) (interface{}, error) {
+func (w *Worker) LLM(ctx context.Context, req GenLLMJSONRequestBody) (any, error) {
 	isStreaming := req.Stream != nil && *req.Stream
 	ctx, cancel := context.WithCancel(ctx)
 	c, err := w.borrowContainer(ctx, "llm", *req.Model)
