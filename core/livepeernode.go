@@ -197,6 +197,7 @@ type LivePipeline struct {
 	Pipeline     string
 	ControlPub   *trickle.TricklePublisher
 	StopControl  func()
+	StopStream   func(error)
 	ReportUpdate func([]byte)
 	OutCond      *sync.Cond
 	OutWriter    *media.RingBuffer
