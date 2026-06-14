@@ -87,12 +87,16 @@ func (w *wizard) setBroadcastConfig() {
 		"transcodingOptions": {fmt.Sprintf("%v", transOpts)},
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
-	if !ok {
-		fmt.Printf("Error applying configuration: %s\n", result)
-	} else {
-		fmt.Printf("Configuration applied successfully\n")
-	}
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
+			if !ok {
+				fmt.Printf("Error applying configuration: %s\n", result)
+			} else {
+				fmt.Printf("Configuration applied successfully\n")
+			}
+		}
 }
 
 func (w *wizard) setBroadcastMaxPricePerCapability() {
@@ -119,12 +123,16 @@ func (w *wizard) setBroadcastMaxPricePerCapability() {
 		"modelID":         {fmt.Sprintf("%v", modelID)},
 	}
 
-	resp, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxPriceForCapability", w.host, w.httpPort), val)
-	if !ok {
-		fmt.Printf("Error setting max price for capability: %v\n", resp)
-	} else {
-		fmt.Printf("Max price per capability set successfully\n")
-	}
+		w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			resp, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxPriceForCapability", w.host, w.httpPort), val)
+			if !ok {
+				fmt.Printf("Error setting max price for capability: %v\n", resp)
+			} else {
+				fmt.Printf("Max price per capability set successfully\n")
+			}
+		}
 }
 
 func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (string, error) {
