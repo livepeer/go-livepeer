@@ -24,6 +24,60 @@ The node still builds every transaction itself (nonce, gas) and broadcasts via i
 
 Signatures are byte-compatible with the local keystore path: messages are signed over the EIP-191 personal-message hash (`accounts.TextHash`), transactions with the latest signer for the chain, and the recovery id is normalized to `{27, 28}`.
 
+## Terminology
+
+Three distinct pieces, often conflated:
+
+- **Adapter** — the in-process `eth.AccountManager` in go-livepeer, selected with `-ethExternalSigner`. It speaks the `eth_*` protocol. (This is the part this repo ships.)
+- **External signer service** — a standalone process that presents the `eth_*` API and forwards to a custody provider. "Sidecar" describes *one way to deploy it* (co-located with the node); it can equally run as a standalone networked service. Either [Web3Signer](https://docs.web3signer.consensys.io/) or a provider bridge such as [livepeer/external-signer](https://github.com/livepeer/external-signer).
+- **Backend** — the custody provider that actually holds the key (Turnkey, or a KMS/Vault/HSM behind Web3Signer).
+
+## Where it sits in the stack
+
+The external signer is the **key-custody layer beneath the signer**. It is independent of — but composes with — the payment control plane *above* the signer (a payment [clearinghouse](https://forum.livepeer.org/t/livepeer-payment-clearinghouse/3264)). End to end:
+
+```
+  App / client
+        │  OIDC / API key
+  ┌─────▼──────────────── control plane, ABOVE the signer ───────────────┐
+  │ Payment clearinghouse                                                │
+  │   • auth & identity (OIDC / JWT)                                      │
+  │   • usage metering (OpenMeter)                                        │
+  │   • fiat billing & clearing                                          ─┼──┐
+  │   • per-app wallet lifecycle                                          │  │ management
+  └─────┬────────────────────────────────────────────────────────────────┘  │ path
+        │  /generate-live-payment                                            │
+  ┌─────▼──────────────┐                                                     │
+  │ Gateway (offchain) │──── media ────▶ Orchestrators                       │
+  └─────┬──────────────┘                                                     │
+  ┌─────▼─────────────────────┐                                             │
+  │ Remote signer             │  builds PM tickets, needs a signature        │
+  │ (-remoteSigner)           │                                             │
+  └─────┬─────────────────────┘                                             │
+        │  eth.AccountManager (Eth.Sign)                                     │
+  ┌─────▼──────────── THIS DOCUMENT, the custody layer BELOW the signer ──┐ │
+  │ External signer adapter (-ethExternalSigner)        [in go-livepeer]  │ │
+  └─────┬──────────────────────────────────────────────────────────────────┘ │
+        │  eth_* JSON-RPC                                                    │
+  ┌─────▼─────────────────────┐                                             │
+  │ External signer service   │  presents eth_*, forwards to the backend     │
+  │ (sidecar or standalone)   │  [Web3Signer, or livepeer/external-signer]    │
+  └─────┬─────────────────────┘                                             │
+        │  provider API                                                      │ provider API
+  ┌─────▼─────────────────────────────────────────────────────────────▼────┐
+  │ Backend custody                                                         │
+  │   Turnkey enclave   ·   or   Web3Signer → KMS / Vault / HSM             │
+  │   signing key (never exported)   +   per-app wallets (clearinghouse)    │
+  └─────────────────────────────────────────────────────────────────────────┘
+```
+
+Two independent paths touch the backend:
+
+- **Signing hot path** (per ticket): `remote signer → adapter → external signer service → backend`. This is what this document covers. The clearinghouse is *not* in this path.
+- **Control plane** (the clearinghouse): wraps the remote signer with auth, usage metering, and fiat billing *above* it, and — if it uses an enclave provider — manages per-app wallets directly against the backend's own API (e.g. Turnkey sub-orgs) on a separate **management path**. Key custody and the signing protocol are unchanged whether or not a clearinghouse sits on top.
+
+So the layers compose cleanly: the **clearinghouse** owns identity, metering, and billing; **go-livepeer** owns the signing protocol; the **external signer service + backend** own key custody. Each can change without the others.
+
 ## Usage
 
 Point the node at a Web3Signer-compatible endpoint and tell it which address that endpoint signs for:
@@ -63,9 +117,9 @@ The node speaks one protocol — Web3Signer's `eth_*` namespace (`eth_sign`, `et
 
 The choice of backend is a Web3Signer configuration detail; go-livepeer is unaware of it and never changes when you switch.
 
-### 2. Turnkey / MPC / enclave custody — via a sidecar
+### 2. Turnkey / MPC / enclave custody — via an external signer service
 
-Providers like [Turnkey](https://www.turnkey.com/) and Fireblocks use proprietary, policy-aware APIs that speak neither standard protocol. Run a thin sidecar that presents the `eth_*` API and forwards to the provider, holding the provider credentials. The provider-specific code and secrets live in the sidecar, outside go-livepeer. See [livepeer/external-signer](https://github.com/livepeer/external-signer).
+Providers like [Turnkey](https://www.turnkey.com/) and Fireblocks use proprietary, policy-aware APIs that speak neither standard protocol. Run a thin external signer service (deploy it as a sidecar or standalone) that presents the `eth_*` API and forwards to the provider, holding the provider credentials. The provider-specific code and secrets live in that service, outside go-livepeer. See [livepeer/external-signer](https://github.com/livepeer/external-signer).
 
 ## Custody security ladder
 
@@ -75,7 +129,7 @@ Backends differ in how much they protect the key. From weakest to strongest:
 |---|---|---|---|
 | Local keystore (default) | Yes — permanent loss | Full | No |
 | KMS / Vault / HSM (via Web3Signer) | No (never exported) | Possible while host creds valid; revocable + audited | No |
-| Turnkey / enclave (via sidecar) | No | Bounded by policy | Yes (limits, allowlists, quorum) |
+| Turnkey / enclave (via external signer service) | No | Bounded by policy | Yes (limits, allowlists, quorum) |
 
 KMS/Vault/HSM remove key exfiltration but still sign whatever digest they are asked to. Enclave/MPC custody additionally enforces signing policy, so even a fully compromised signer host cannot drain beyond the configured limits.
 
