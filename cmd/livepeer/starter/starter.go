@@ -124,6 +124,7 @@ type LivepeerConfig struct {
 	EthAcctAddr                *string
 	EthPassword                *string
 	EthKeystorePath            *string
+	EthExternalSigner          *string
 	EthOrchAddr                *string
 	EthUrl                     *string
 	TxTimeout                  *time.Duration
@@ -254,6 +255,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultEthAcctAddr := ""
 	defaultEthPassword := ""
 	defaultEthKeystorePath := ""
+	defaultEthExternalSigner := ""
 	defaultEthOrchAddr := ""
 	defaultEthUrl := ""
 	defaultTxTimeout := 5 * time.Minute
@@ -379,6 +381,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		EthAcctAddr:             &defaultEthAcctAddr,
 		EthPassword:             &defaultEthPassword,
 		EthKeystorePath:         &defaultEthKeystorePath,
+		EthExternalSigner:       &defaultEthExternalSigner,
 		EthOrchAddr:             &defaultEthOrchAddr,
 		EthUrl:                  &defaultEthUrl,
 		TxTimeout:               &defaultTxTimeout,
@@ -846,7 +849,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		defer gpm.Stop()
 
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
+		var am eth.AccountManager
+		if *cfg.EthExternalSigner != "" {
+			am, err = eth.NewWeb3SignerAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), *cfg.EthExternalSigner, chainID)
+		} else {
+			am, err = eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
+		}
 		if err != nil {
 			glog.Errorf("Error creating Ethereum account manager: %v", err)
 			return
