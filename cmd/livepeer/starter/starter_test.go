@@ -400,7 +400,7 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }
 
-func TestNewLivepeerConfig_UnitScaleFlag(t *testing.T) {
+func TestNewLivepeerConfig_UnitSizeFlag(t *testing.T) {
 	require := require.New(t)
 
 	// Default when neither flag is set.
@@ -409,10 +409,10 @@ func TestNewLivepeerConfig_UnitScaleFlag(t *testing.T) {
 	require.NoError(fs.Parse([]string{}))
 	require.Equal("1", *cfg.PixelsPerUnit)
 
-	// -unitScale sets PixelsPerUnit.
+	// -pricingUnitSize sets PixelsPerUnit.
 	fs = flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
 	cfg = NewLivepeerConfig(fs)
-	require.NoError(fs.Parse([]string{"-unitScale", "1000000000000"}))
+	require.NoError(fs.Parse([]string{"-pricingUnitSize", "1000000000000"}))
 	require.Equal("1000000000000", *cfg.PixelsPerUnit)
 
 	// -pixelsPerUnit is a deprecated alias for the same value.
