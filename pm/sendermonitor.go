@@ -350,16 +350,19 @@ func (sm *LocalSenderMonitor) startCleanupLoop() {
 // pruneDeadTickets removes dead winning tickets from the ticket store.
 // A ticket is dead if it is unredeemed and outside of the redemption validity
 // window (the redemption loop can never select it again) or if its redemption
-// permanently failed. The cutoff is never lower than ticketValidityPeriod + 1
-// rounds behind the last initialized round so that redeemable tickets are
-// never pruned.
+// permanently failed. The cutoff matches the redemption window exactly
+// (ticketValidityPeriod rounds behind the last initialized round): a ticket is
+// pruned as soon as it falls out of the window, on the next cleanup tick,
+// rather than a round later. The prune condition is the exact complement of the
+// selection condition (creationRound >= LastInit-ticketValidityPeriod), so a
+// still-redeemable ticket is never pruned.
 func (sm *LocalSenderMonitor) pruneDeadTickets() {
 	cleaner, ok := sm.ticketStore.(ticketStoreCleaner)
 	if !ok {
 		return
 	}
 
-	minCreationRound := new(big.Int).Sub(sm.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod+1)).Int64()
+	minCreationRound := new(big.Int).Sub(sm.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64()
 	count, err := cleaner.ClearDeadWinningTickets(minCreationRound)
 	if err != nil {
 		glog.Errorf("Unable to prune dead winning tickets err=%q", err)
