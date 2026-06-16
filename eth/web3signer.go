@@ -1,8 +1,10 @@
 package eth
 
 import (
+	"context"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -24,17 +26,26 @@ import (
 //
 // Output is byte-identical to the keystore accountManager: EIP-191 message
 // signing, latest-signer transactions, and recovery id in {27,28}.
+// defaultWeb3SignerTimeout bounds each signing round-trip so a hung or slow
+// remote signer cannot block the PM ticket hot path indefinitely.
+const defaultWeb3SignerTimeout = 5 * time.Second
+
 type web3signerAccountManager struct {
 	rpc     *rpc.Client
 	account accounts.Account
 	chainID *big.Int
+	timeout time.Duration
 }
 
 // NewWeb3SignerAccountManager connects to a Web3Signer-compatible endpoint and
 // signs on behalf of accountAddr (required, since there is no local keystore).
-func NewWeb3SignerAccountManager(accountAddr ethcommon.Address, endpoint string, chainID *big.Int) (AccountManager, error) {
+// timeout bounds each signing call; values <= 0 fall back to a sane default.
+func NewWeb3SignerAccountManager(accountAddr ethcommon.Address, endpoint string, chainID *big.Int, timeout time.Duration) (AccountManager, error) {
 	if (accountAddr == ethcommon.Address{}) {
 		return nil, fmt.Errorf("web3signer requires an explicit -ethAcctAddr")
+	}
+	if timeout <= 0 {
+		timeout = defaultWeb3SignerTimeout
 	}
 
 	rpcClient, err := rpc.Dial(endpoint)
@@ -44,21 +55,29 @@ func NewWeb3SignerAccountManager(accountAddr ethcommon.Address, endpoint string,
 
 	// eth_accounts doubles as a reachability check and lets us warn if the
 	// remote signer does not hold the configured address.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	var addrs []ethcommon.Address
-	if err := rpcClient.Call(&addrs, "eth_accounts"); err != nil {
+	if err := rpcClient.CallContext(ctx, &addrs, "eth_accounts"); err != nil {
 		return nil, fmt.Errorf("failed to reach web3signer at %s: %w", endpoint, err)
 	}
 	if !containsAddress(addrs, accountAddr) {
 		glog.Warningf("Web3Signer at %s did not list account %v; signing requests may be rejected", endpoint, accountAddr.Hex())
 	}
 
-	glog.Infof("Using web3signer at %s for Ethereum account: %v", endpoint, accountAddr.Hex())
+	glog.Infof("Using web3signer at %s for Ethereum account: %v (timeout %s)", endpoint, accountAddr.Hex(), timeout)
 
 	return &web3signerAccountManager{
 		rpc:     rpcClient,
 		account: accounts.Account{Address: accountAddr},
 		chainID: chainID,
+		timeout: timeout,
 	}, nil
+}
+
+// callContext returns a context bounded by the configured signing timeout.
+func (m *web3signerAccountManager) callContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), m.timeout)
 }
 
 func containsAddress(addrs []ethcommon.Address, want ethcommon.Address) bool {
@@ -92,16 +111,20 @@ func (m *web3signerAccountManager) CreateTransactOpts(gasLimit uint64) (*bind.Tr
 // Sign signs msg with the EIP-191 personal-message prefix. Web3Signer's eth_sign
 // applies that prefix, matching the keystore accountManager.
 func (m *web3signerAccountManager) Sign(msg []byte) ([]byte, error) {
+	ctx, cancel := m.callContext()
+	defer cancel()
 	var res hexutil.Bytes
-	if err := m.rpc.Call(&res, "eth_sign", m.account.Address, hexutil.Encode(msg)); err != nil {
+	if err := m.rpc.CallContext(ctx, &res, "eth_sign", m.account.Address, hexutil.Encode(msg)); err != nil {
 		return nil, err
 	}
 	return toEthV(res), nil
 }
 
 func (m *web3signerAccountManager) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
+	ctx, cancel := m.callContext()
+	defer cancel()
 	var res hexutil.Bytes
-	if err := m.rpc.Call(&res, "eth_signTypedData", m.account.Address, typedData); err != nil {
+	if err := m.rpc.CallContext(ctx, &res, "eth_signTypedData", m.account.Address, typedData); err != nil {
 		return nil, err
 	}
 	return toEthV(res), nil
@@ -110,8 +133,10 @@ func (m *web3signerAccountManager) SignTypedData(typedData apitypes.TypedData) (
 // SignTx asks the remote signer to sign tx and returns the decoded signed
 // transaction. go-livepeer still owns nonce/gas and broadcasts the result.
 func (m *web3signerAccountManager) SignTx(tx *types.Transaction) (*types.Transaction, error) {
+	ctx, cancel := m.callContext()
+	defer cancel()
 	var raw hexutil.Bytes
-	if err := m.rpc.Call(&raw, "eth_signTransaction", m.toSendTxArgs(tx)); err != nil {
+	if err := m.rpc.CallContext(ctx, &raw, "eth_signTransaction", m.toSendTxArgs(tx)); err != nil {
 		return nil, err
 	}
 	signed := new(types.Transaction)

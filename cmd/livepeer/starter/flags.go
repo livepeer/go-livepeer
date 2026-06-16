@@ -84,6 +84,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.EthPassword = fs.String("ethPassword", *cfg.EthPassword, "Password for existing Eth account address or path to file")
 	cfg.EthKeystorePath = fs.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to ETH keystore directory or keyfile. If keyfile, overrides -ethAcctAddr and uses parent directory")
 	cfg.EthExternalSigner = fs.String("ethExternalSigner", *cfg.EthExternalSigner, "JSON-RPC endpoint of a Web3Signer-compatible external signer (eth_* namespace; e.g. Web3Signer fronting KMS/Vault/HSM, or a Turnkey/MPC custody sidecar). When set, signing is delegated to it instead of a local keystore and -ethAcctAddr must be the address it signs for")
+	cfg.EthExternalSignerTimeout = fs.Duration("ethExternalSignerTimeout", *cfg.EthExternalSignerTimeout, "Per-call timeout for -ethExternalSigner signing requests, bounding the PM ticket hot path if the signer is slow or unreachable")
 	cfg.EthOrchAddr = fs.String("ethOrchAddr", *cfg.EthOrchAddr, "ETH address of an on-chain registered orchestrator")
 	cfg.EthUrl = fs.String("ethUrl", *cfg.EthUrl, "Ethereum node JSON-RPC URL")
 	cfg.TxTimeout = fs.Duration("transactionTimeout", *cfg.TxTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")

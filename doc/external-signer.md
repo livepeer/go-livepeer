@@ -84,6 +84,7 @@ Point the node at a Web3Signer-compatible endpoint and tell it which address tha
 
 - `-ethExternalSigner <endpoint>`: JSON-RPC endpoint of the external signer. When set, signing is delegated to it instead of a local keystore.
 - `-ethAcctAddr <0x...>`: the Ethereum address the external signer holds. Required in this mode, since there is no local keystore to default from.
+- `-ethExternalSignerTimeout <duration>`: per-call timeout for signing requests (default `5s`). Bounds the PM ticket hot path so a slow or hung signer fails fast instead of blocking minting.
 
 When `-ethExternalSigner` is set, the usual keystore flags (`-ethKeystorePath`, `-ethPassword`) are not used for signing. The node fails fast at startup if the endpoint is unreachable or does not respond to the `eth_*` signing API.
 
@@ -136,5 +137,5 @@ KMS/Vault/HSM remove key exfiltration but still sign whatever digest they are as
 ## Caveats
 
 - **Raw-hash signing.** PM tickets are signed as a hash. `eth_sign` / `eth_signTypedData` reconstruct the digest from the message/structured input, so backends that refuse raw precomputed-hash signing still work. Verify this against your backend before production.
-- **Hot-path latency and cost.** PM mints tickets frequently. Each signature is now an API round-trip rather than a local operation, which adds latency and (for hosted backends) cost. Measure against your minting rate.
+- **Hot-path latency and cost.** PM mints tickets frequently. Each signature is now an API round-trip rather than a local operation, which adds latency and (for hosted backends) cost. Measure against your minting rate, and tune `-ethExternalSignerTimeout` so a stalled signer fails fast rather than blocking minting.
 - **Treat the endpoint like an internal wallet service.** Run the external signer on a private network or behind an authenticated proxy, the same as the [remote signer guidance](./remote-signer.md#operational--security-guidance).

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -68,7 +69,7 @@ func TestWeb3Signer_SignMatchesKeystoreConvention(t *testing.T) {
 	srv := web3signerStub(t, key)
 	defer srv.Close()
 
-	am, err := NewWeb3SignerAccountManager(addr, srv.URL, big.NewInt(1))
+	am, err := NewWeb3SignerAccountManager(addr, srv.URL, big.NewInt(1), 2*time.Second)
 	require.NoError(err)
 	assert.Equal(addr, am.Account().Address)
 
@@ -82,7 +83,7 @@ func TestWeb3Signer_SignMatchesKeystoreConvention(t *testing.T) {
 }
 
 func TestWeb3Signer_RequiresExplicitAddress(t *testing.T) {
-	_, err := NewWeb3SignerAccountManager(ethcommon.Address{}, "http://127.0.0.1:0", big.NewInt(1))
+	_, err := NewWeb3SignerAccountManager(ethcommon.Address{}, "http://127.0.0.1:0", big.NewInt(1), 2*time.Second)
 	assert.Error(t, err)
 }
 
@@ -90,6 +91,45 @@ func TestWeb3Signer_UnreachableEndpoint(t *testing.T) {
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	addr := crypto.PubkeyToAddress(key.PublicKey)
-	_, err = NewWeb3SignerAccountManager(addr, "http://127.0.0.1:1", big.NewInt(1))
+	_, err = NewWeb3SignerAccountManager(addr, "http://127.0.0.1:1", big.NewInt(1), 2*time.Second)
 	assert.Error(t, err)
+}
+
+// A slow signer must not block the hot path: Sign returns an error promptly
+// once the per-call timeout elapses, rather than waiting for the signer.
+func TestWeb3Signer_SignTimesOut(t *testing.T) {
+	require := require.New(t)
+
+	key, err := crypto.GenerateKey()
+	require.NoError(err)
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Method == "eth_accounts" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0", "id": json.RawMessage(req.ID), "result": []ethcommon.Address{addr},
+			})
+			return
+		}
+		// eth_sign: stall well past the timeout, but unblock when the client
+		// cancels so the test server shuts down promptly.
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+
+	am, err := NewWeb3SignerAccountManager(addr, srv.URL, big.NewInt(1), 50*time.Millisecond)
+	require.NoError(err)
+
+	start := time.Now()
+	_, err = am.Sign([]byte("ticket hash"))
+	require.Error(err, "Sign must fail when the signer exceeds the timeout")
+	require.Less(time.Since(start), time.Second, "Sign must return on timeout, not block on the slow signer")
 }
