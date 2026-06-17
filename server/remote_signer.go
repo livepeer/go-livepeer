@@ -529,7 +529,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			billableSecs = (60 * time.Second).Seconds()
 		}
 		// Charge per wall-clock nanosecond, matching the orchestrator's per-second metering.
-		pixels = int64(billableSecs * 1_000_000_000)
+		pixels = int64(1_000_000_000 * billableSecs)
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
