@@ -1097,15 +1097,43 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 		t.Fatal("expected runner price info")
 	}
 	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Per-second default: 10 USD/s at 2000 USD/ETH = 5e15 wei/s, published as wei per
+	// nanosecond (PixelsPerUnit = 1e9).
+	expected := big.NewRat(5_000_000_000_000_000, 1_000_000_000)
 	if got.Cmp(expected) != 0 {
 		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected)
 	}
 	if runners[0].PriceInfo.Unit != "WEI" {
 		t.Fatalf("unexpected converted unit: %s", runners[0].PriceInfo.Unit)
+	}
+}
+
+func TestLiveRunnerRegistry_LegacyPixelPricing(t *testing.T) {
+	t.Setenv("LIVE_AI_LEGACY_PIXEL_PRICING", "true")
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-1")
+	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "USD"}
+	liveRunnerTestRegister(t, registry, req)
+
+	runners := registry.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected one runner, got %d", len(runners))
+	}
+	if runners[0].PriceInfo == nil {
+		t.Fatal("expected runner price info")
+	}
+	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
+	// Legacy: 10 USD/hour scaled through 720p@30fps pixels/hour.
+	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Cmp(expected) != 0 {
+		t.Fatalf("unexpected legacy converted price: got=%s want=%s", got, expected)
 	}
 }
 

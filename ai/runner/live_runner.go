@@ -1359,8 +1359,17 @@ func newConverterForRunner(priceInfo LiveRunnerPriceInfo) (*core.AutoConvertedPr
 		return nil, nil
 	}
 
-	usdPerPixel := usdPerPixelFromUSDPerHour(priceInfo)
-	return core.NewAutoConvertedPrice("USD", usdPerPixel, nil)
+	// Price basis: USD per second by default, or USD per hour scaled through a fixed
+	// 720p pixel rate when legacy pricing is enabled (LIVE_AI_LEGACY_PIXEL_PRICING).
+	priceBasis := usdPerSecond(priceInfo)
+	if common.LiveAILegacyPixelPricing() {
+		priceBasis = usdPerPixelFromUSDPerHour(priceInfo)
+	}
+	return core.NewAutoConvertedPrice("USD", priceBasis, nil)
+}
+
+func usdPerSecond(priceInfo LiveRunnerPriceInfo) *big.Rat {
+	return new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 }
 
 func usdPerPixelFromUSDPerHour(priceInfo LiveRunnerPriceInfo) *big.Rat {
@@ -1377,9 +1386,16 @@ func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo
 	if err != nil {
 		return LiveRunnerPriceInfo{}, err
 	}
+	// PixelsPerUnit is the denominator the fee is metered against: nanoseconds for the
+	// default per-second price, or the price's own denominator for legacy per-pixel pricing.
+	pixelsPerUnit := int64(1_000_000_000) // nanoseconds per second
+	if common.LiveAILegacyPixelPricing() {
+		pixelsPerUnit = price.Denom().Int64()
+	}
+
 	return LiveRunnerPriceInfo{
 		PricePerUnit:  price.Num().Int64(),
-		PixelsPerUnit: price.Denom().Int64(),
+		PixelsPerUnit: pixelsPerUnit,
 		Unit:          "WEI",
 	}, nil
 }

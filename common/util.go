@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"mime"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -272,6 +273,14 @@ func PriceToFixed(price *big.Rat) (int64, error) {
 // FixedToPrice converts a fixed point number with 3 decimal places represented as in int64 into a big.Rat
 func FixedToPrice(price int64) *big.Rat {
 	return big.NewRat(price, priceScalingFactor)
+}
+
+// LiveAILegacyPixelPricing reports whether legacy fixed-720p USD/hour pricing is
+// enabled for live runners (env LIVE_AI_LEGACY_PIXEL_PRICING); default is USD/second.
+// TODO: remove once daydream runners declare per-second prices.
+func LiveAILegacyPixelPricing() bool {
+	v, _ := strconv.ParseBool(os.Getenv("LIVE_AI_LEGACY_PIXEL_PRICING"))
+	return v
 }
 
 // PriceToInt64 converts a *big.Rat to an *int64 if possible, otherwise returns an error.

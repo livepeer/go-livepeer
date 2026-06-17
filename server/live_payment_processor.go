@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -61,14 +62,21 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 		return
 	}
 
-	info := defaultSegInfo
-
-	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
-	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "pixelsSinceLastProcessed", pixelsSinceLastProcessed)
 
-	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
+	// Default: meter wall-clock nanoseconds (paired with the per-second price).
+	// Legacy (LIVE_AI_LEGACY_PIXEL_PRICING): meter fixed-720p pixels.
+	quantity := 1_000_000_000 * secSinceLastProcessed // nanoseconds per second
+	unit := "nanoseconds"
+	if common.LiveAILegacyPixelPricing() {
+		info := defaultSegInfo
+		quantity = float64(info.Height) * float64(info.Width) * float64(info.FPS) * secSinceLastProcessed
+		unit = "pixels"
+	}
+
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "billedQuantity", int64(quantity), "unit", unit)
+
+	err := p.processSegmentFunc(int64(quantity))
 	if err != nil {
 		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
