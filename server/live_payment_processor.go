@@ -57,7 +57,7 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
 	// Meter wall-clock nanoseconds, paired with the per-second price.
 	nanos := int64(1_000_000_000 * secSinceLastProcessed)
-	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "billedNanos", nanos)
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed)
 
 	err := p.processSegmentFunc(nanos)
 	if err != nil {
