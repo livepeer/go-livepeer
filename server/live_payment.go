@@ -35,6 +35,7 @@ type SegmentInfoSender struct {
 
 type SegmentInfoReceiver struct {
 	sender    ethcommon.Address
+	runnerID  string
 	sessionID string
 	inPixels  int64
 	priceInfo *net.PriceInfo
@@ -163,6 +164,9 @@ func (r *livePaymentReceiver) AccountPayment(
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	if balance == nil || balance.Cmp(fee) < 0 {
+		if monitor.Enabled {
+			monitor.LiveRunnerPaymentError(segmentInfo.runnerID)
+		}
 		balanceStr := "nil"
 		if balance != nil {
 			balanceStr = balance.FloatString(0)
@@ -170,6 +174,9 @@ func (r *livePaymentReceiver) AccountPayment(
 		return fmt.Errorf("insufficient balance, mid=%s, fee=%s, balance=%s", segmentInfo.sessionID, fee.FloatString(0), balanceStr)
 	}
 	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
+	if monitor.Enabled {
+		monitor.LiveRunnerPaymentRecv(segmentInfo.runnerID, fee)
+	}
 	balance = r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	clog.V(common.DEBUG).Infof(ctx, "Accounted payment for sessionID=%s, fee=%s balance=%s", segmentInfo.sessionID, fee.FloatString(0), balance.FloatString(0))
 	return nil

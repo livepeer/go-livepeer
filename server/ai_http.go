@@ -248,6 +248,9 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		respondWithLiveRunnerError(w, err)
 		return
 	}
+	if monitor.Enabled {
+		monitor.LiveRunnerRequest(runnerID)
+	}
 	ctx = clog.AddVal(ctx, "runner_id", runnerID)
 	ctx = clog.AddVal(ctx, "session_id", sessionID)
 	if paymentRequired {
@@ -643,6 +646,9 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 	}
 	reservedID = sessionID
 	ctx = clog.AddVal(ctx, "session_id", sessionID)
+	if monitor.Enabled {
+		monitor.LiveRunnerRequest(runnerID)
+	}
 	defer func() {
 		if reservedID == "" {
 			return
@@ -718,6 +724,7 @@ func (h *lphttp) startLiveRunnerSessionPaymentMonitor(ctx context.Context, manag
 	accountPaymentFunc := func(inPixels int64) error {
 		err := paymentReceiver.AccountPayment(monitorCtx, &SegmentInfoReceiver{
 			sender:    getPaymentSender(payment),
+			runnerID:  runnerID,
 			inPixels:  inPixels,
 			priceInfo: payment.GetExpectedPrice(),
 			sessionID: manifestID,
@@ -987,6 +994,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
+					runnerID:  "",
 					inPixels:  inPixels,
 					priceInfo: priceInfo,
 					sessionID: mid,
@@ -1162,6 +1170,7 @@ func (h *lphttp) StartScope() http.Handler {
 			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
+					runnerID:  "",
 					inPixels:  inPixels,
 					priceInfo: priceInfo,
 					sessionID: manifestID,

@@ -130,6 +130,7 @@ type (
 		kEventType                    tag.Key
 		kPipeline                     tag.Key
 		kModelName                    tag.Key
+		kRunnerID                     tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -233,6 +234,9 @@ type (
 
 		mAIWhipTransportBytesReceived *stats.Int64Measure
 		mAIWhipTransportBytesSent     *stats.Int64Measure
+		mLiveRunnerRequests           *stats.Int64Measure
+		mLiveRunnerPaymentsRecv       *stats.Float64Measure
+		mLiveRunnerPaymentErrors      *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -307,6 +311,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.kModelName = tag.MustNewKey("model_name")
 	census.kPipeline = tag.MustNewKey("pipeline")
+	census.kRunnerID = tag.MustNewKey("runner_id")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Exit("Error creating context", err)
@@ -419,6 +424,9 @@ func InitCensus(nodeType NodeType, version string) {
 
 	census.mAIWhipTransportBytesReceived = stats.Int64("ai_whip_transport_bytes_received", "Number of bytes received on a WHIP connection", "byte")
 	census.mAIWhipTransportBytesSent = stats.Int64("ai_whip_transport_bytes_sent", "Number of bytes sent on a WHIP connection", "byte")
+	census.mLiveRunnerRequests = stats.Int64("live_runner_requests_total", "Number of live runner session requests", "tot")
+	census.mLiveRunnerPaymentsRecv = stats.Float64("live_runner_payment_received", "Amount accounted for live runner usage", "gwei")
+	census.mLiveRunnerPaymentErrors = stats.Int64("live_runner_payment_account_errors", "Errors while accounting live runner payments", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -1109,6 +1117,27 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "AI Live number of available orchestrators",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "live_runner_requests_total",
+			Measure:     census.mLiveRunnerRequests,
+			Description: "Number of live runner session requests",
+			TagKeys:     append([]tag.Key{census.kRunnerID}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "live_runner_payment_received",
+			Measure:     census.mLiveRunnerPaymentsRecv,
+			Description: "Amount accounted for live runner usage",
+			TagKeys:     append([]tag.Key{census.kRunnerID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		{
+			Name:        "live_runner_payment_account_errors",
+			Measure:     census.mLiveRunnerPaymentErrors,
+			Description: "Errors while accounting live runner payments",
+			TagKeys:     append([]tag.Key{census.kRunnerID}, baseTags...),
+			Aggregation: view.Sum(),
 		},
 	}
 
@@ -2273,6 +2302,48 @@ func AINumOrchestrators(count int, modelName string) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kModelName, modelName)},
 		census.mAINumOrchs.M(int64(count))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func LiveRunnerRequest(runnerID string) {
+	if !Enabled {
+		return
+	}
+	if runnerID == "" {
+		runnerID = "unknown"
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kRunnerID, runnerID)},
+		census.mLiveRunnerRequests.M(1)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func LiveRunnerPaymentRecv(runnerID string, value *big.Rat) {
+	if !Enabled || value == nil || value.Cmp(big.NewRat(0, 1)) <= 0 {
+		return
+	}
+	if runnerID == "" {
+		runnerID = "unknown"
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kRunnerID, runnerID)},
+		census.mLiveRunnerPaymentsRecv.M(fracwei2gwei(value))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func LiveRunnerPaymentError(runnerID string) {
+	if !Enabled {
+		return
+	}
+	if runnerID == "" {
+		runnerID = "unknown"
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kRunnerID, runnerID)},
+		census.mLiveRunnerPaymentErrors.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }

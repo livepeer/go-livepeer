@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
 	lpnet "github.com/livepeer/go-livepeer/net"
+	"go.opencensus.io/stats"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/tag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAveragerCanBeRemoved(t *testing.T) {
@@ -174,4 +179,125 @@ func TestFracWei2Gwei(t *testing.T) {
 
 	wei = big.NewRat(gweiConversionFactor*2, 7)
 	assert.InDelta(.285714286, fracwei2gwei(wei), delta)
+}
+
+func TestLiveRunnerMetrics(t *testing.T) {
+	t.Run("requests", func(t *testing.T) {
+		cleanup := setupLiveRunnerMetricsTest(t)
+		defer cleanup()
+
+		LiveRunnerRequest("runner-a")
+		LiveRunnerRequest("runner-a")
+		LiveRunnerRequest("")
+
+		rows, err := view.RetrieveData(census.mLiveRunnerRequests.Name())
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), countValueForTag(t, rows, census.kRunnerID.Name(), "runner-a"))
+		assert.Equal(t, int64(1), countValueForTag(t, rows, census.kRunnerID.Name(), "unknown"))
+	})
+
+	t.Run("payment_received", func(t *testing.T) {
+		cleanup := setupLiveRunnerMetricsTest(t)
+		defer cleanup()
+
+		LiveRunnerPaymentRecv("runner-a", big.NewRat(gweiConversionFactor*3, 2))
+		LiveRunnerPaymentRecv("runner-a", big.NewRat(0, 1))
+		LiveRunnerPaymentRecv("runner-a", nil)
+		LiveRunnerPaymentRecv("", big.NewRat(gweiConversionFactor, 1))
+
+		rows, err := view.RetrieveData(census.mLiveRunnerPaymentsRecv.Name())
+		require.NoError(t, err)
+		assert.InDelta(t, 1.5, sumValueForTag(t, rows, census.kRunnerID.Name(), "runner-a"), 0.000000001)
+		assert.InDelta(t, 1.0, sumValueForTag(t, rows, census.kRunnerID.Name(), "unknown"), 0.000000001)
+	})
+
+	t.Run("payment_errors", func(t *testing.T) {
+		cleanup := setupLiveRunnerMetricsTest(t)
+		defer cleanup()
+
+		LiveRunnerPaymentError("runner-b")
+		LiveRunnerPaymentError("runner-b")
+		LiveRunnerPaymentError("")
+
+		rows, err := view.RetrieveData(census.mLiveRunnerPaymentErrors.Name())
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), countValueForTag(t, rows, census.kRunnerID.Name(), "runner-b"))
+		assert.Equal(t, int64(1), countValueForTag(t, rows, census.kRunnerID.Name(), "unknown"))
+	})
+}
+
+func setupLiveRunnerMetricsTest(t *testing.T) func() {
+	t.Helper()
+
+	origEnabled := Enabled
+	Enabled = true
+
+	testName := strings.ReplaceAll(strings.ToLower(t.Name()), "/", "_")
+	testName = strings.ReplaceAll(testName, " ", "_")
+	suffix := fmt.Sprintf("%s_%d", testName, time.Now().UnixNano())
+
+	census.kRunnerID = tag.MustNewKey("runner_id")
+	ctx, err := tag.New(context.Background())
+	require.NoError(t, err)
+	census.ctx = ctx
+
+	census.mLiveRunnerRequests = stats.Int64("test_live_runner_requests_total_"+suffix, "test", "tot")
+	census.mLiveRunnerPaymentsRecv = stats.Float64("test_live_runner_payment_received_"+suffix, "test", "gwei")
+	census.mLiveRunnerPaymentErrors = stats.Int64("test_live_runner_payment_account_errors_"+suffix, "test", "tot")
+
+	requestView := &view.View{
+		Name:        census.mLiveRunnerRequests.Name(),
+		Measure:     census.mLiveRunnerRequests,
+		TagKeys:     []tag.Key{census.kRunnerID},
+		Aggregation: view.Count(),
+	}
+	paymentView := &view.View{
+		Name:        census.mLiveRunnerPaymentsRecv.Name(),
+		Measure:     census.mLiveRunnerPaymentsRecv,
+		TagKeys:     []tag.Key{census.kRunnerID},
+		Aggregation: view.Sum(),
+	}
+	errorView := &view.View{
+		Name:        census.mLiveRunnerPaymentErrors.Name(),
+		Measure:     census.mLiveRunnerPaymentErrors,
+		TagKeys:     []tag.Key{census.kRunnerID},
+		Aggregation: view.Count(),
+	}
+
+	require.NoError(t, view.Register(requestView, paymentView, errorView))
+
+	return func() {
+		view.Unregister(requestView, paymentView, errorView)
+		Enabled = origEnabled
+	}
+}
+
+func countValueForTag(t *testing.T, rows []*view.Row, key, value string) int64 {
+	t.Helper()
+
+	for _, row := range rows {
+		for _, tag := range row.Tags {
+			if tag.Key.Name() == key && tag.Value == value {
+				countData, ok := row.Data.(*view.CountData)
+				require.True(t, ok)
+				return countData.Value
+			}
+		}
+	}
+	return 0
+}
+
+func sumValueForTag(t *testing.T, rows []*view.Row, key, value string) float64 {
+	t.Helper()
+
+	for _, row := range rows {
+		for _, tag := range row.Tags {
+			if tag.Key.Name() == key && tag.Value == value {
+				sumData, ok := row.Data.(*view.SumData)
+				require.True(t, ok)
+				return sumData.Value
+			}
+		}
+	}
+	return 0
 }
