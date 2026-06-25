@@ -172,6 +172,7 @@ type LivepeerConfig struct {
 	RemoteSignerHeaders        *string
 	RemoteSignerWebhookURL     *string
 	RemoteSignerWebhookHeaders *string
+	RemoteSignerAllowNoAuth    *bool
 	RemoteDiscovery            *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
@@ -313,6 +314,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRemoteSignerHeaders := ""
 	defaultRemoteSignerWebhookURL := ""
 	defaultRemoteSignerWebhookHeaders := ""
+	defaultRemoteSignerAllowNoAuth := false
 	defaultRemoteDiscovery := false
 
 	// Gateway logs
@@ -440,6 +442,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		RemoteSignerHeaders:        &defaultRemoteSignerHeaders,
 		RemoteSignerWebhookURL:     &defaultRemoteSignerWebhookURL,
 		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
+		RemoteSignerAllowNoAuth:    &defaultRemoteSignerAllowNoAuth,
 		RemoteDiscovery:            &defaultRemoteDiscovery,
 
 		// Gateway logs
@@ -1947,9 +1950,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// Start remote signer server
 		go func() {
 			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
+
+			// Refuse to start a public signer with no webhook auth. It would sign payments
+			// from this node's deposit for any caller (override with -remoteSignerAllowNoAuth).
+			if n.RemoteSignerWebhookURL == nil {
+				isLocalHTTP, err := isLocalURL("https://" + *cfg.HttpAddr)
+				if err != nil {
+					exit("Error checking for local -httpAddr: %v", err)
+				}
+				if !isLocalHTTP && !*cfg.RemoteSignerAllowNoAuth {
+					exit("Refusing to start: remote signer on public -httpAddr %s with no "+
+						"-remoteSignerWebhookUrl signs payments from this node's deposit for any caller. "+
+						"Set the webhook, or pass -remoteSignerAllowNoAuth to override.", *cfg.HttpAddr)
+				}
+				glog.Warning("WARNING: remote signer has no webhook auth. /generate-live-payment is " +
+					"UNAUTHENTICATED and signs payments from this node's deposit. Set -remoteSignerWebhookUrl.")
+			}
+
 			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
-			err := server.StartRemoteSignerServer(s, *cfg.HttpAddr)
-			if err != nil {
+			if err := server.StartRemoteSignerServer(s, *cfg.HttpAddr); err != nil {
 				exit("Error starting remote signer server: err=%q", err)
 			}
 		}()
