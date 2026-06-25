@@ -622,6 +622,119 @@ func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
 }
 
+func TestLiveRunnerSessionPaymentAcceptsPayment(t *testing.T) {
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	t.Cleanup(func() { drivers.NodeStorage = oldStorage })
+
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	orch := lp.orchestrator.(*stubOrchestrator)
+	orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+	orch.paymentCredit = big.NewRat(100, 1)
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/payment", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var paymentResult lpnet.PaymentResult
+	require.NoError(t, proto.Unmarshal(w.Body.Bytes(), &paymentResult))
+	require.NotNil(t, paymentResult.GetInfo())
+	require.Equal(t, challenge.ManifestID, paymentResult.GetInfo().GetAuthToken().GetSessionId())
+
+	balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+	require.NotNil(t, balance)
+	require.Equal(t, "200", balance.FloatString(0))
+}
+
+func TestLiveRunnerSessionPaymentRejectsMissingSession(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/missing/payment", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "runner session not found")
+}
+
+func TestLiveRunnerSessionPaymentRejectsReleasedSession(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/payment", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "runner session not found")
+}
+
+func TestLiveRunnerSessionPaymentRejectsManifestMismatch(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{Capacity: 2})
+
+	sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", &lpnet.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1})
+
+	_, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), "different-manifest")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/payment", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "mismatched session and payment manifest")
+}
+
+func TestLiveRunnerSessionPaymentRejectsBadPaymentHeader(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
+
+	sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", &lpnet.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/payment", nil)
+	req.Header.Set(paymentHeader, "not-base64")
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	require.Contains(t, w.Body.String(), "base64 decode error")
+}
+
 func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		lp := newLiveRunnerHTTPOnchain(t)

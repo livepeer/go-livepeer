@@ -99,6 +99,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/payment", lp.PaymentForLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/app/{app_path...}", lp.ProxyLiveRunnerSingleShot)
 
@@ -432,6 +433,59 @@ func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PaymentForLiveRunnerSession receives payment for a live runner session and
+// rejects payment once the session is no longer live.
+func (h *lphttp) PaymentForLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+
+	if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	if err != nil {
+		return
+	}
+	if string(segData.ManifestID) != sessionID {
+		respondWithError(w, "mismatched session and payment manifest", http.StatusForbidden)
+		return
+	}
+
+	var netCaps *lpnet.Capabilities
+	if segData.Caps != nil {
+		netCaps = segData.Caps.ToNetCapabilities()
+	}
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), netCaps)
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	oInfo.AuthToken = segData.AuthToken
+
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	buf, err := proto.Marshal(&lpnet.PaymentResult{Info: oInfo})
+	if err != nil {
+		clog.Errorf(ctx, "Unable to marshal payment result err=%q", err)
+		return
+	}
+	clog.V(common.DEBUG).Infof(ctx, "Live runner session payment processed, current balance=%s", currentBalanceLog(h, payment, segData))
+
+	w.Write(buf)
 }
 
 func (h *lphttp) StopLiveRunnerSessionInternal(w http.ResponseWriter, r *http.Request) {
