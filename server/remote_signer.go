@@ -383,6 +383,30 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	ctx = clog.AddVal(ctx, "manifest_id", manifestID)
 
+	// Authorize the caller before generating or signing any payment, so an
+	// unauthorized request never causes ticket signing or sender-nonce consumption.
+	callbackStatus, callbackResp, callbackErr := ls.authLivePayment(r, state)
+	if callbackStatus != http.StatusOK {
+		respondJsonError(ctx, w, callbackErr, callbackStatus)
+		return
+	}
+	if callbackResp != nil {
+		state.AuthExpiry = callbackResp.Expiry
+	}
+	authID := r.Header.Get(remoteSignerAuthIDHeader)
+	if callbackResp != nil && callbackResp.AuthID != "" {
+		authID = callbackResp.AuthID
+	}
+	if authID != "" && state.AuthID != authID {
+		if state.AuthID != "" {
+			clog.Warningf(ctx, "Remote signer auth ID changed oldAuthID=%s newAuthID=%s", state.AuthID, authID)
+			respondJsonError(ctx, w, errors.New("remote signer auth ID changed"), http.StatusInternalServerError)
+			return
+		}
+		state.AuthID = authID
+	}
+	ctx = clog.AddVal(ctx, "auth_id", state.AuthID)
+
 	streamParams := &core.StreamParameters{
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
@@ -565,28 +589,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
 		return
 	}
-
-	callbackStatus, callbackResp, callbackErr := ls.authLivePayment(r, state)
-	if callbackStatus != http.StatusOK {
-		respondJsonError(ctx, w, callbackErr, callbackStatus)
-		return
-	}
-	if callbackResp != nil {
-		state.AuthExpiry = callbackResp.Expiry
-	}
-	authID := r.Header.Get(remoteSignerAuthIDHeader)
-	if callbackResp != nil && callbackResp.AuthID != "" {
-		authID = callbackResp.AuthID
-	}
-	if authID != "" && state.AuthID != authID {
-		if state.AuthID != "" {
-			clog.Warningf(ctx, "Remote signer auth ID changed oldAuthID=%s newAuthID=%s", state.AuthID, authID)
-			respondJsonError(ctx, w, errors.New("remote signer auth ID changed"), http.StatusInternalServerError)
-			return
-		}
-		state.AuthID = authID
-	}
-	ctx = clog.AddVal(ctx, "auth_id", state.AuthID)
 
 	// Encode and sign updated state
 	stateBytes, err := json.Marshal(state)
