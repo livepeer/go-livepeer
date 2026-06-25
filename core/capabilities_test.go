@@ -792,7 +792,7 @@ func TestModelIDForCapability(t *testing.T) {
 	})
 	assert.Equal("streamdiffusion", c.ModelIDForCapability(Capability_LiveVideoToVideo))
 
-	// multiple models are ambiguous, so no model is returned
+	// multiple models resolve to the lexicographically first ID
 	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
 		Capability_LiveVideoToVideo: &CapabilityConstraints{
 			Models: ModelConstraints{
@@ -802,7 +802,7 @@ func TestModelIDForCapability(t *testing.T) {
 			},
 		},
 	})
-	assert.Equal("", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+	assert.Equal("comfyui", c.ModelIDForCapability(Capability_LiveVideoToVideo))
 }
 
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
