@@ -75,6 +75,7 @@ const (
 	OrchestratorCliPort = "7935"
 	TranscoderCliPort   = "6935"
 	AIWorkerCliPort     = "4935"
+	RemoteSignerCliPort = "3935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
@@ -1778,6 +1779,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	} else if n.NodeType == core.AIWorkerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
+	} else if n.NodeType == core.RemoteSignerNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
 	}
 
 	// Apply default capabilities if not running as a transcoder.
