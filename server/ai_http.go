@@ -171,8 +171,9 @@ func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
 }
 
 type liveRunnerSessionResponse struct {
-	SessionID string `json:"session_id"`
-	AppURL    string `json:"app_url"`
+	SessionID  string `json:"session_id"`
+	AppURL     string `json:"app_url"`
+	ControlURL string `json:"control_url"`
 }
 
 type liveRunnerPaymentChallengeResponse struct {
@@ -293,8 +294,9 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			}
 		}()
 	}
+	controlURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID).String()
 	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
-	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL})
+	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL, ControlURL: controlURL})
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return

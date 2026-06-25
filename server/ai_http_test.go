@@ -577,6 +577,7 @@ func TestLiveRunnerReserveSession(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.SessionID)
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID, resp.ControlURL)
 }
 
 func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
@@ -620,6 +621,7 @@ func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Equal(t, challenge.ManifestID, resp.SessionID)
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID, resp.ControlURL)
 }
 
 func TestLiveRunnerSessionPaymentAcceptsPayment(t *testing.T) {
