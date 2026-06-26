@@ -701,7 +701,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
 
-	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+	doPaymentWithStateAndAuthID := func(requestHeader string, authID string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
 		reqBody, err := json.Marshal(RemotePaymentRequest{
 			Orchestrator: orchBlob,
 			ManifestID:   "manifest",
@@ -712,9 +712,18 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
 		req.Header.Set("X-Request-ID", requestHeader)
+		if authID != "" {
+			req.Header.Set(remoteSignerAuthIDHeader, authID)
+		}
 		rr := httptest.NewRecorder()
 		ls.GenerateLivePayment(rr, req)
 		return rr
+	}
+	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+		return doPaymentWithStateAndAuthID(requestHeader, "", state)
+	}
+	doPaymentWithAuthID := func(requestHeader string, authID string) *httptest.ResponseRecorder {
+		return doPaymentWithStateAndAuthID(requestHeader, authID, RemotePaymentStateSig{})
 	}
 	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
 		return doPaymentWithState(requestHeader, RemotePaymentStateSig{})
@@ -800,13 +809,67 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal(expiry, state.AuthExpiry)
 	})
 
+	t.Run("callback auth id sets state", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("webhook-auth-id", state.AuthID)
+	})
+
+	t.Run("request auth id header is fallback when callback omits auth id", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPaymentWithAuthID("req-auth-id-fallback", "header-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("header-auth-id", state.AuthID)
+	})
+
+	t.Run("callback auth id wins over request header", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPaymentWithAuthID("req-auth-id-priority", "header-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("webhook-auth-id", state.AuthID)
+	})
+
 	t.Run("sequential requests skip callback while auth expiry still valid", func(t *testing.T) {
 		callbackCalls := 0
 		expiry := time.Now().Add(5 * time.Minute).Unix()
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			callbackCalls++
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id"}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -820,8 +883,24 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		var firstResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		var firstState RemotePaymentState
+		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
+		require.Equal("cached-auth-id", firstState.AuthID)
+
 		second := doPaymentWithState("req-skip-second", firstResp.State)
 		require.Equal(http.StatusOK, second.Code)
+		var secondResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
+		var secondState RemotePaymentState
+		require.NoError(json.Unmarshal(secondResp.State.State, &secondState))
+		require.Equal("cached-auth-id", secondState.AuthID)
+		require.Equal(1, callbackCalls)
+
+		third := doPaymentWithStateAndAuthID("req-skip-third", "new-header-auth-id", secondResp.State)
+		require.Equal(http.StatusInternalServerError, third.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(third.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
 		require.Equal(1, callbackCalls)
 	})
 
@@ -848,6 +927,37 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		second := doPaymentWithState("req-expired-second", firstResp.State)
 		require.Equal(http.StatusOK, second.Code)
 		require.Equal(2, callbackCalls)
+	})
+
+	t.Run("callback auth id change returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"updated-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		initialState := RemotePaymentState{
+			StateID:              string(core.RandomManifestID()),
+			OrchestratorAddress:  ethcommon.BytesToAddress(oInfo.Address),
+			InitialPricePerUnit:  oInfo.PriceInfo.PricePerUnit,
+			InitialPixelsPerUnit: oInfo.PriceInfo.PixelsPerUnit,
+			AuthID:               "cached-auth-id",
+		}
+		stateBytes, err := json.Marshal(initialState)
+		require.NoError(err)
+		stateSig, err := signState(ls, stateBytes)
+		require.NoError(err)
+
+		rr := doPaymentWithState("req-auth-id-replaced", RemotePaymentStateSig{State: stateBytes, Sig: stateSig})
+		require.Equal(http.StatusInternalServerError, rr.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
 	})
 
 	t.Run("callback 200 missing status returns 500", func(t *testing.T) {
