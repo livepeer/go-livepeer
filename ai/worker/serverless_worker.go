@@ -405,7 +405,8 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 				clog.Info(ctx, "Subscribing to events stream", "url", eventsUrl)
 
 				subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-					URL: eventsUrl,
+					URL:                eventsUrl,
+					InsecureSkipVerify: true,
 				})
 				if err != nil {
 					clog.Error(ctx, "Failed to create events subscriber", "error", err)
