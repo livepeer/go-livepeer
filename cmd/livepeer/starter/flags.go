@@ -143,6 +143,8 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.RemoteSignerHeaders = fs.String("remoteSignerHeaders", *cfg.RemoteSignerHeaders, "Map of headers to use for gateway remote signer requests. e.g. 'header:val,header2:val2'")
 	cfg.RemoteSignerWebhookURL = fs.String("remoteSignerWebhookUrl", *cfg.RemoteSignerWebhookURL, "Authentication webhook URL called by remote signer during GenerateLivePayment")
 	cfg.RemoteSignerWebhookHeaders = fs.String("remoteSignerWebhookHeaders", *cfg.RemoteSignerWebhookHeaders, "Map of headers to use for remote signer webhook requests. e.g. 'header:val,header2:val2'")
+	cfg.UsageIngestUrl = fs.String("usageIngestUrl", *cfg.UsageIngestUrl, "Durable usage-ingest endpoint URL. When set, the remote signer also delivers each create_signed_ticket usage event via a synchronous bounded-retry POST (in addition to the legacy Kafka path). Unset disables the durable path (default).")
+	cfg.UsageIngestSecret = fs.String("usageIngestSecret", *cfg.UsageIngestSecret, "Bearer secret sent as 'Authorization: Bearer <secret>' to the usage-ingest endpoint (INGEST_SHARED_SECRET).")
 	cfg.RemoteDiscovery = fs.Bool("remoteDiscovery", *cfg.RemoteDiscovery, "Enable orchestrator discovery on remote signers")
 
 	// Gateway metrics

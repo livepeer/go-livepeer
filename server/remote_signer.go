@@ -648,6 +648,32 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+
+	// Durable, flag-gated usage delivery. This is strictly additive to the legacy
+	// fire-and-forget Kafka path above and is a no-op unless an ingest URL is
+	// configured. We flush the payment response first so the gateway's decode is
+	// not blocked while we synchronously deliver the usage event (the ingest is
+	// idempotent on (clientId, requestId), so the safe double-write converges).
+	if ls.usageIngest != nil {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		ls.usageIngest.SendSignedTicket(state.AuthID, monitor.SignedTicketUsageEvent{
+			RequestID:      requestID,
+			ComputedFeeWei: fee.FloatString(0),
+			Pixels:         pixels,
+			Pipeline:       livePaymentPipeline(req.Type),
+		})
+	}
+}
+
+// livePaymentPipeline maps the remote payment request type to the pipeline label
+// used in usage events.
+func livePaymentPipeline(reqType string) string {
+	if reqType == RemoteType_LiveVideoToVideo {
+		return PipelineLiveVideoToVideo
+	}
+	return ""
 }
 
 // Gateway helper that calls the remote signer service for the GetOrchestratorInfo signature

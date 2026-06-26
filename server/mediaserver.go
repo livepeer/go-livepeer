@@ -132,6 +132,11 @@ type LivepeerServer struct {
 	livePaymentInterval  time.Duration
 	outSegmentTimeout    time.Duration
 
+	// usageIngest delivers per-served-job usage events to the durable pymthouse
+	// ingest endpoint. It is nil (and the durable path inert) unless an ingest
+	// URL is configured, in which case behavior is byte-identical to legacy.
+	usageIngest *monitor.UsageIngestPoster
+
 	byocSrv *byoc.BYOCGatewayServer
 }
 
@@ -191,6 +196,11 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 			BroadcastJobVideoProfiles = profiles
 		}
 	}
+	var usageIngestURL string
+	if lpNode.RemoteSignerUsageIngestURL != nil {
+		usageIngestURL = lpNode.RemoteSignerUsageIngestURL.String()
+	}
+
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
 		serverLock:              &sync.RWMutex{},
@@ -203,6 +213,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
 		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,
+		usageIngest:             monitor.NewUsageIngestPoster(usageIngestURL, lpNode.RemoteSignerUsageIngestSecret),
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)

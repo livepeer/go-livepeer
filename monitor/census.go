@@ -161,6 +161,7 @@ type (
 		mHTTPClientTimeout1           *stats.Int64Measure
 		mHTTPClientTimeout2           *stats.Int64Measure
 		mKafkaEventSendError          *stats.Int64Measure
+		mUsageIngestSendError         *stats.Int64Measure
 		mRealtimeRatio                *stats.Float64Measure
 		mRealtime3x                   *stats.Int64Measure
 		mRealtime2x                   *stats.Int64Measure
@@ -314,6 +315,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mHTTPClientTimeout1 = stats.Int64("http_client_timeout_1", "Number of times HTTP connection was dropped before transcoding complete", "tot")
 	census.mHTTPClientTimeout2 = stats.Int64("http_client_timeout_2", "Number of times HTTP connection was dropped before transcoded segments was sent back to client", "tot")
 	census.mKafkaEventSendError = stats.Int64("kafka_event_send_errors", "Dropped Kafka events due to a full queue", "tot")
+	census.mUsageIngestSendError = stats.Int64("usage_ingest_send_errors", "Failed durable usage-ingest deliveries (after bounded retries) by event type", "tot")
 	census.mRealtimeRatio = stats.Float64("http_client_segment_transcoded_realtime_ratio", "Ratio of source segment duration / transcode time as measured on HTTP client", "rat")
 	census.mRealtime3x = stats.Int64("http_client_segment_transcoded_realtime_3x", "Number of segment transcoded 3x faster than realtime", "tot")
 	census.mRealtime2x = stats.Int64("http_client_segment_transcoded_realtime_2x", "Number of segment transcoded 2x faster than realtime", "tot")
@@ -511,6 +513,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "kafka_event_send_errors",
 			Measure:     census.mKafkaEventSendError,
 			Description: "Dropped Kafka events due to a full queue",
+			TagKeys:     append([]tag.Key{census.kEventType}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "usage_ingest_send_errors",
+			Measure:     census.mUsageIngestSendError,
+			Description: "Failed durable usage-ingest deliveries (after bounded retries) by event type",
 			TagKeys:     append([]tag.Key{census.kEventType}, baseTags...),
 			Aggregation: view.Count(),
 		},
@@ -1816,6 +1825,19 @@ func KafkaEventSendError(eventType string) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kEventType, eventType)},
 		census.mKafkaEventSendError.M(1)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+// UsageIngestSendError records a failed durable usage-ingest delivery (after the
+// bounded retries were exhausted) by event type.
+func UsageIngestSendError(eventType string) {
+	if !Enabled || census.mUsageIngestSendError == nil {
+		return
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kEventType, eventType)},
+		census.mUsageIngestSendError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }

@@ -173,6 +173,8 @@ type LivepeerConfig struct {
 	RemoteSignerHeaders        *string
 	RemoteSignerWebhookURL     *string
 	RemoteSignerWebhookHeaders *string
+	UsageIngestUrl             *string
+	UsageIngestSecret          *string
 	RemoteDiscovery            *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
@@ -314,6 +316,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRemoteSignerHeaders := ""
 	defaultRemoteSignerWebhookURL := ""
 	defaultRemoteSignerWebhookHeaders := ""
+	defaultUsageIngestUrl := ""
+	defaultUsageIngestSecret := ""
 	defaultRemoteDiscovery := false
 
 	// Gateway logs
@@ -441,6 +445,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		RemoteSignerHeaders:        &defaultRemoteSignerHeaders,
 		RemoteSignerWebhookURL:     &defaultRemoteSignerWebhookURL,
 		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
+		UsageIngestUrl:             &defaultUsageIngestUrl,
+		UsageIngestSecret:          &defaultUsageIngestSecret,
 		RemoteDiscovery:            &defaultRemoteDiscovery,
 
 		// Gateway logs
@@ -469,6 +475,7 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 		"FVfailGsKey":                true,
 		"RemoteSignerHeaders":        true,
 		"RemoteSignerWebhookHeaders": true,
+		"UsageIngestSecret":          true,
 	}
 
 	for i := 0; i < cfgType.NumField(); i++ {
@@ -1591,6 +1598,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.RemoteSignerWebhookURL = parsedURL
 		if cfg.RemoteSignerWebhookHeaders != nil {
 			n.RemoteSignerWebhookHeaders = parseHeaderMap(*cfg.RemoteSignerWebhookHeaders)
+		}
+	}
+	if cfg.UsageIngestUrl != nil && *cfg.UsageIngestUrl != "" {
+		parsedURL, err := validateURL(*cfg.UsageIngestUrl)
+		if err != nil {
+			glog.Exit("Error setting usage ingest URL ", err)
+		}
+		glog.Info("Using durable usage ingest URL ", parsedURL.Redacted())
+		n.RemoteSignerUsageIngestURL = parsedURL
+		if cfg.UsageIngestSecret != nil {
+			n.RemoteSignerUsageIngestSecret = *cfg.UsageIngestSecret
 		}
 	}
 
