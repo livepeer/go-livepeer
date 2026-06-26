@@ -539,12 +539,12 @@ func TestValidateTicketParams_ExpiredParams_ReturnsError(t *testing.T) {
 	assert.EqualError(t, err, "ticketParams expiration block is 0")
 }
 
-func TestValidateTicketParams_ZeroExpirationBlock_GuaranteedWin_ReturnsError(t *testing.T) {
+func TestValidateTicketParams_ZeroExpirationBlock_HighWinProb_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 
-	// Regression test: guaranteed-win params (WinProb = maxWinProb) advertised
-	// with ExpirationBlock = 0 must be rejected — they previously skipped all
-	// economic caps and were signed unconditionally
+	// Regression test: params with WinProb = maxWinProb advertised together with
+	// ExpirationBlock = 0 must be rejected — they previously returned early and
+	// skipped all economic caps
 	ticketParams := &TicketParams{
 		FaceValue:       big.NewInt(1000),
 		WinProb:         maxWinProb,
