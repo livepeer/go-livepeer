@@ -8,6 +8,8 @@
 
 #### General
 
+- [#3944](https://github.com/livepeer/go-livepeer/pull/3944) Bridge slog level to the glog `-v` flag so `-v` controls newer subsystem logging (@rickstaa)
+
 #### Broadcaster
 
 #### Orchestrator
@@ -17,6 +19,8 @@
 ### Bug Fixes 🐞
 
 #### General
+
+* [#3962](https://github.com/livepeer/go-livepeer/pull/3962) remote-signer: Default `-cliAddr` to a loopback address in remote signer mode so the node no longer fails to start by binding the CLI server to `:80` (@rickstaa)
 
 #### Broadcaster
 

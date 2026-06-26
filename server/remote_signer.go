@@ -269,7 +269,7 @@ type authResponse struct {
 	// Unix timestamp (seconds) until which auth is considered valid.
 	// Allows for skipping webhook callbacks until this time is exceeded.
 	Expiry int64 `json:"expiry,omitempty"`
-	// Optional opaque identifier for metering attribution.
+	// Optional opaque identifier.
 	AuthID string `json:"auth_id,omitempty"`
 }
 
@@ -315,7 +315,7 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Errorf("failed to encode signer auth payload: %v", err)
 	}
-	webhookReq, err := http.NewRequest(http.MethodPost, callbackURL.String(), bytes.NewReader(body))
+	webhookReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, callbackURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Errorf("failed to build signer auth request: %v", err)
 	}
@@ -324,7 +324,8 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 		webhookReq.Header.Set(key, value)
 	}
 
-	resp, err := http.DefaultClient.Do(webhookReq)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(webhookReq)
 	if err != nil {
 		return http.StatusInternalServerError, nil, fmt.Errorf("failed to call remote signer webhook: %v", err)
 	}

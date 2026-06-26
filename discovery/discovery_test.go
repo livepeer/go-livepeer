@@ -1478,9 +1478,8 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	orchCb := func() error { return nil }
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	defer wg.Wait()
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{
@@ -1489,6 +1488,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	}
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool.getOrchInfo = getOrchInfo
 
 	// suspend https://127.0.0.1:8938
 	sus := newStubSuspender()
