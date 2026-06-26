@@ -269,7 +269,7 @@ type authResponse struct {
 	// Unix timestamp (seconds) until which auth is considered valid.
 	// Allows for skipping webhook callbacks until this time is exceeded.
 	Expiry int64 `json:"expiry,omitempty"`
-	// Optional opaque identifier.
+	// Optional opaque identifier for metering attribution.
 	AuthID string `json:"auth_id,omitempty"`
 }
 
