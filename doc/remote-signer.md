@@ -53,7 +53,7 @@ The remote signer is intended to be its own standalone node type. The `-remoteSi
 
 The remote signer must have typical Ethereum flags configured (examples: `-network`, `-ethUrl`, `-ethController`, keystore/password flags). See the go-livepeer [devtool](https://github.com/livepeer/go-livepeer/blob/92bdb59f169056e3d1beba9b511554ea5d9eda72/cmd/devtool/devtool.go#L200-L212) for an example of what flags might be required.
 
-The remote signer listens to the standard go-livepeer HTTP port (8935) by default. To change the listening port or interface, use the `-httpAddr` flag.
+The remote signer listens to the standard go-livepeer HTTP port (8935) by default. Change the port or interface with the `-httpAddr` flag. The CLI webserver defaults to `127.0.0.1:3935` (loopback only). Override it with `-cliAddr`.
 
 Example (fill in the placeholders for your environment):
 
