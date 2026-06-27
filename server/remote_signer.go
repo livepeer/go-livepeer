@@ -251,6 +251,20 @@ type RemotePaymentRequest struct {
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Capability is the real BYOC capability name (e.g. "nano-banana"). When
+	// set, it overrides the metered `pipeline` label for the emitted
+	// create_signed_ticket usage event, decoupling usage attribution from
+	// `Type` (which stays "lv2v" for fee/pixel routing). Optional; empty
+	// preserves the previous behavior (pipeline falls back to the lv2v
+	// constant when Type=="lv2v").
+	Capability string `json:"capability,omitempty"`
+
+	// ModelID is the specific provider model from the request
+	// payload/parameters. When set, it overrides the metered `model_id`
+	// label. Optional; empty preserves the previous behavior (the
+	// capabilities-derived model id, which defaults to "unknown" downstream).
+	ModelID string `json:"model_id,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -357,6 +371,40 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	}
 
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
+}
+
+// resolveUsageLabels derives the metering `pipeline` and `model_id` labels for
+// the emitted create_signed_ticket usage event.
+//
+// The real BYOC capability/model supplied by the gateway (req.Capability /
+// req.ModelID) take precedence so BYOC jobs are attributed to their true
+// pipeline + model. When those additive fields are empty, the labels fall back
+// to ConstrainedPipelineModelID and then the type-based defaults (lv2v / live /
+// fixed), matching pre-feature base behavior. This keeps usage attribution
+// decoupled from `Type`, which still drives fee/pixel routing.
+func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pipeline, modelID string) {
+	if caps != nil {
+		pipeline, modelID = caps.ConstrainedPipelineModelID()
+	}
+	if pipeline == "" {
+		if req.Type == RemoteType_LiveVideoToVideo {
+			pipeline = PipelineLiveVideoToVideo
+			if caps != nil {
+				modelID = caps.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+			}
+		} else if req.Type == RemoteType_Live {
+			pipeline = RemoteType_Live
+		} else if req.Type == RemoteType_Fixed {
+			pipeline = RemoteType_Fixed
+		}
+	}
+	if req.Capability != "" {
+		pipeline = req.Capability
+	}
+	if req.ModelID != "" {
+		modelID = req.ModelID
+	}
+	return pipeline, modelID
 }
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
@@ -700,20 +748,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		if state.SequenceNumber == 0 {
 			sessionStatus = "new"
 		}
-		pipeline := ""
-		modelID := ""
-		if streamParams.Capabilities != nil {
-			pipeline, modelID = streamParams.Capabilities.ConstrainedPipelineModelID()
-		}
-		if pipeline == "" {
-			if req.Type == RemoteType_LiveVideoToVideo {
-				pipeline = PipelineLiveVideoToVideo
-			} else if req.Type == RemoteType_Live {
-				pipeline = RemoteType_Live
-			} else if req.Type == RemoteType_Fixed {
-				pipeline = RemoteType_Fixed
-			}
-		}
+		pipeline, modelID := resolveUsageLabels(&req, streamParams.Capabilities)
 		// NB: This could drop events if the Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
