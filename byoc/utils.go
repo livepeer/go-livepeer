@@ -33,7 +33,16 @@ var sendJobReqWithTimeout = sendReqWithTimeout
 func (g *gatewayJob) sign() error {
 	//sign the request
 	gateway := g.node.OrchestratorPool.Broadcaster()
-	sig, err := gateway.Sign([]byte(g.Job.Req.Request + g.Job.Req.Parameters))
+
+	sigPayload := FlattenBYOCJob(&BYOCJobSigningInput{
+		ID:             g.Job.Req.ID,
+		Capability:     g.Job.Req.Capability,
+		Request:        g.Job.Req.Request,
+		Parameters:     g.Job.Req.Parameters,
+		TimeoutSeconds: g.Job.Req.Timeout,
+	})
+
+	sig, err := gateway.Sign(sigPayload)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
 	}
