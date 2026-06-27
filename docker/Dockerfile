@@ -61,6 +61,9 @@ COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 ARG	BUILD_TAGS
 ENV	BUILD_TAGS=${BUILD_TAGS}
 
+ARG	GIT_REVISION=unknown
+RUN	echo "Building livepeer at ${GIT_REVISION}"
+
 COPY	go.mod	go.sum	./
 RUN	go mod download
 
