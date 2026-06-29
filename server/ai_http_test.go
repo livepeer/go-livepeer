@@ -1215,6 +1215,40 @@ func TestLiveRunnerProxyForwardsGetPathQueryAndSessionHeaders(t *testing.T) {
 	require.Equal(t, "http://localhost:1234/runner/runner-1/session/"+sessionID, gotSessionControl)
 }
 
+func TestLiveRunnerProxySessionControlBaseURL(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		liveRunnerAddr string
+		wantBase       string
+	}{
+		{"falls back to serviceURI", "", "http://localhost:1234"},
+		{"uses liveRunnerAddr", "http://go-livepeer:8935", "http://go-livepeer:8935"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotSessionControl string
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotSessionControl = r.Header.Get("Livepeer-Session-Control")
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer upstream.Close()
+
+			lp := newLiveRunnerHTTP(t, true)
+			if tc.liveRunnerAddr != "" {
+				addr, err := url.Parse(tc.liveRunnerAddr)
+				require.NoError(t, err)
+				lp.node.LiveRunnerAddr = addr
+			}
+			registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL})
+			sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+			req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/session/"+sessionID+"/app/x", nil)
+			lp.ServeHTTP(httptest.NewRecorder(), req)
+
+			require.Equal(t, tc.wantBase+"/runner/runner-1/session/"+sessionID, gotSessionControl)
+		})
+	}
+}
+
 func TestLiveRunnerProxyForwardsPostBody(t *testing.T) {
 	var gotMethod, gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
