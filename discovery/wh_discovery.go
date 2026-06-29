@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/server"
 )
 
 type webhookResponse struct {
@@ -30,6 +32,7 @@ type webhookPool struct {
 	bcast               common.Broadcaster
 	discoveryTimeout    time.Duration
 	ignoreCapacityCheck bool
+	getOrchInfo         func(context.Context, common.Broadcaster, *url.URL, server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
 }
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration) *webhookPool {
@@ -56,6 +59,7 @@ func (cfg WebhookPoolConfig) New() *webhookPool {
 		bcast:               cfg.Broadcaster,
 		discoveryTimeout:    cfg.DiscoveryTimeout,
 		ignoreCapacityCheck: cfg.IgnoreCapacityCheck,
+		getOrchInfo:         serverGetOrchInfo,
 	}
 	go p.getInfos()
 	return p
@@ -99,7 +103,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 		discoveryTimeout:    w.discoveryTimeout,
 		extraNodes:          w.bcast.ExtraNodes(),
 		ignoreCapacityCheck: w.ignoreCapacityCheck,
-		getOrchInfo:         serverGetOrchInfo,
+		getOrchInfo:         w.getOrchInfo,
 	}
 
 	w.mu.Lock()
