@@ -1778,3 +1778,247 @@ func TestResolveUsageLabels(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveByocPrice covers the pure per-capability BYOC price resolver:
+// it matches a Capability_BYOC entry whose Constraint equals req.Capability,
+// ignores model_id and non-BYOC entries, and returns nil (→ caller falls back
+// to base) for no-match / empty-capability / non-positive rate.
+//
+// Hermetic: exercises the pure resolver without the CGO ffmpeg toolchain, the
+// remote-signer HTTP handler, or Kafka.
+func TestResolveByocPrice(t *testing.T) {
+	require := require.New(t)
+
+	byocCap := uint32(core.Capability_BYOC)
+	oInfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{PricePerUnit: 100, PixelsPerUnit: 1}, // base (unused by resolver)
+		CapabilitiesPrices: []*net.PriceInfo{
+			{Capability: byocCap, Constraint: "nano-banana", PricePerUnit: 10, PixelsPerUnit: 1},
+			{Capability: byocCap, Constraint: "recraft-v4", PricePerUnit: 20, PixelsPerUnit: 1},
+			// decoy: a non-BYOC capability sharing the constraint name must NOT match
+			{Capability: uint32(core.Capability_LiveVideoToVideo), Constraint: "nano-banana", PricePerUnit: 999, PixelsPerUnit: 1},
+			// decoy: zero/invalid BYOC rate must be treated as no-match (fallback)
+			{Capability: byocCap, Constraint: "free-cap", PricePerUnit: 0, PixelsPerUnit: 1},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		capability string
+		oInfo      *net.OrchestratorInfo
+		want       *net.PriceInfo
+	}{
+		{
+			name:       "resolves per capability",
+			capability: "recraft-v4",
+			oInfo:      oInfo,
+			want:       &net.PriceInfo{PricePerUnit: 20, PixelsPerUnit: 1},
+		},
+		{
+			name:       "resolves the other capability",
+			capability: "nano-banana",
+			oInfo:      oInfo,
+			want:       &net.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1},
+		},
+		{
+			name:       "unknown capability falls back (nil)",
+			capability: "does-not-exist",
+			oInfo:      oInfo,
+			want:       nil,
+		},
+		{
+			name:       "empty capability falls back (nil)",
+			capability: "",
+			oInfo:      oInfo,
+			want:       nil,
+		},
+		{
+			name:       "zero/invalid matched rate falls back (nil)",
+			capability: "free-cap",
+			oInfo:      oInfo,
+			want:       nil,
+		},
+		{
+			name:       "no capabilities prices falls back (nil)",
+			capability: "nano-banana",
+			oInfo:      &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 100, PixelsPerUnit: 1}},
+			want:       nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &RemotePaymentRequest{Capability: tc.capability}
+			got := resolveByocPrice(req, tc.oInfo)
+			if tc.want == nil {
+				require.Nil(got)
+				return
+			}
+			require.NotNil(got)
+			require.Equal(tc.want.PricePerUnit, got.PricePerUnit, "PricePerUnit")
+			require.Equal(tc.want.PixelsPerUnit, got.PixelsPerUnit, "PixelsPerUnit")
+		})
+	}
+}
+
+// TestGenerateLivePayment_ByocPerCapPricing drives the full GenerateLivePayment
+// handler (no CGO needed) and proves, via the resulting signed balance/state:
+//   - flag OFF: a matching cap is ignored; the fee is the byte-identical lv2v
+//     synthetic-pixel base fee (zero-regression);
+//   - flag ON: the fee is the resolved per-capability rate * compute-seconds;
+//   - flag ON: two caps in a 2:1 tariff produce a 2:1 fee ratio;
+//   - flag ON, unknown cap: falls back to the base lv2v fee;
+//   - flag ON with base >> 2x cap returns 200 (no false "price more than
+//     doubled"), proving the oInfo.PriceInfo = capPrice correction.
+func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+
+	// Large per-ticket EV keeps the lv2v fee within the handler's 100-ticket cap
+	// (lv2v fee = base * 1280*720*30*60 is large), while the small per-second
+	// BYOC fees resolve to a single ticket.
+	ev := big.NewRat(10_000_000_000, 1)
+	var totalTickets uint32
+	sender := newMockSender(mockSenderConfig{
+		ev: ev,
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			size := args.Int(1)
+			*batch = *defaultTicketBatch()
+			var baseSig []byte
+			if len(batch.SenderParams) > 0 && batch.SenderParams[0] != nil {
+				baseSig = batch.SenderParams[0].Sig
+			}
+			batch.SenderParams = make([]*pm.TicketSenderParams, size)
+			for i := 0; i < size; i++ {
+				totalTickets++
+				batch.SenderParams[i] = &pm.TicketSenderParams{SenderNonce: totalTickets, Sig: baseSig}
+			}
+		},
+	})
+	node.Sender = sender
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	// Generous global max price so neither base nor cap prices trip the ceiling.
+	autoPrice, err := core.NewAutoConvertedPrice("", big.NewRat(1_000, 1), nil)
+	require.NoError(err)
+	BroadcastCfg.SetMaxPrice(autoPrice)
+	defer BroadcastCfg.SetMaxPrice(nil)
+
+	// base is intentionally >> 2x the cap rates so a regression that left
+	// oInfo.PriceInfo at base (while locking the cap price into state) would trip
+	// the >2x doubling guard. With the correction it must NOT trip.
+	const basePPU, capNanoPPU, capRecraftPPU = 100, 10, 20
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: basePPU, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+		CapabilitiesPrices: []*net.PriceInfo{
+			{Capability: uint32(core.Capability_BYOC), Constraint: "nano-banana", PricePerUnit: capNanoPPU, PixelsPerUnit: 1},
+			{Capability: uint32(core.Capability_BYOC), Constraint: "recraft-v4", PricePerUnit: capRecraftPPU, PixelsPerUnit: 1},
+		},
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	// Fresh-session preload bills 60 seconds (lv2v) of data.
+	const preloadSecs = 60
+	lv2vPixels := int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS) * preloadSecs
+
+	doPayment := func(capability string) RemotePaymentState {
+		reqBody, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			Type:         RemoteType_LiveVideoToVideo,
+			Capability:   capability,
+		})
+		require.NoError(err)
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		require.Equal(http.StatusOK, rr.Code, "body=%s", rr.Body.String())
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		var state RemotePaymentState
+		require.NoError(json.Unmarshal(resp.State.State, &state))
+		return state
+	}
+
+	// fee = numTickets*ev - balance for a fresh session; recover it from the
+	// signed state's balance and the locked initial price (also returned).
+	feeFromState := func(state RemotePaymentState) *big.Rat {
+		bal := new(big.Rat)
+		_, ok := bal.SetString(state.Balance)
+		require.True(ok, "parse balance %q", state.Balance)
+		// numTickets*ev = balance + fee, and numTickets*ev is the smallest
+		// multiple of ev that is >= max(fee, ev); recover fee = k*ev - balance
+		// where k = round((balance)/ev upward to the enclosing ticket). Simpler:
+		// derive fee from initialPrice * pixels directly using the locked state.
+		price := big.NewRat(state.InitialPricePerUnit, state.InitialPixelsPerUnit)
+		var pixels int64
+		if state.InitialPricePerUnit == basePPU && state.InitialPixelsPerUnit == 1 {
+			pixels = lv2vPixels // base path: lv2v synthetic pixels
+		} else {
+			pixels = preloadSecs // byoc path: compute-seconds
+		}
+		return new(big.Rat).Mul(price, big.NewRat(pixels, 1))
+	}
+
+	assertBalanceConsistent := func(state RemotePaymentState, fee *big.Rat) {
+		// Independent check: balance must equal numTickets*ev - fee with
+		// numTickets = ceil(max(fee,ev)/ev), validating the fee end-to-end.
+		smc := fee
+		if ev.Cmp(smc) > 0 {
+			smc = ev
+		}
+		q := new(big.Rat).Quo(smc, ev)
+		nt := new(big.Int).Quo(q.Num(), q.Denom())
+		if new(big.Int).Rem(q.Num(), q.Denom()).Sign() != 0 {
+			nt.Add(nt, big.NewInt(1))
+		}
+		wantBal := new(big.Rat).Sub(new(big.Rat).Mul(new(big.Rat).SetInt(nt), ev), fee)
+		gotBal := new(big.Rat)
+		_, ok := gotBal.SetString(state.Balance)
+		require.True(ok)
+		require.Zero(gotBal.Cmp(wantBal), "balance got=%s want=%s fee=%s", gotBal.RatString(), wantBal.RatString(), fee.RatString())
+	}
+
+	// --- flag OFF: cap present but ignored → base lv2v synthetic-pixel fee ---
+	ls.LivepeerNode.ByocPerCapPricing = false
+	offState := doPayment("nano-banana")
+	require.EqualValues(basePPU, offState.InitialPricePerUnit, "flag OFF must lock the base price")
+	require.EqualValues(1, offState.InitialPixelsPerUnit)
+	offFee := new(big.Rat).Mul(big.NewRat(basePPU, 1), big.NewRat(lv2vPixels, 1))
+	require.Zero(feeFromState(offState).Cmp(offFee))
+	assertBalanceConsistent(offState, offFee)
+
+	// --- flag ON ---
+	ls.LivepeerNode.ByocPerCapPricing = true
+
+	// nano-banana: fee = capNanoPPU * 60 (seconds basis); base>>2x cap must NOT
+	// trip the doubling guard (proves oInfo.PriceInfo = capPrice).
+	nanoState := doPayment("nano-banana")
+	require.EqualValues(capNanoPPU, nanoState.InitialPricePerUnit, "flag ON must lock the resolved cap price")
+	require.EqualValues(1, nanoState.InitialPixelsPerUnit)
+	nanoFee := big.NewRat(capNanoPPU*preloadSecs, 1)
+	require.Zero(feeFromState(nanoState).Cmp(nanoFee), "nano fee")
+	assertBalanceConsistent(nanoState, nanoFee)
+
+	// recraft-v4 priced 2x nano → fee ratio is exactly 2:1.
+	recraftState := doPayment("recraft-v4")
+	require.EqualValues(capRecraftPPU, recraftState.InitialPricePerUnit)
+	recraftFee := big.NewRat(capRecraftPPU*preloadSecs, 1)
+	require.Zero(feeFromState(recraftState).Cmp(recraftFee), "recraft fee")
+	assertBalanceConsistent(recraftState, recraftFee)
+	require.Zero(recraftFee.Cmp(new(big.Rat).Mul(nanoFee, big.NewRat(2, 1))), "recraft fee must be 2x nano fee")
+
+	// unknown cap with flag ON → fall back to base lv2v fee (zero-regression).
+	unknownState := doPayment("totally-unknown-cap")
+	require.EqualValues(basePPU, unknownState.InitialPricePerUnit, "unknown cap must fall back to base")
+	require.Zero(feeFromState(unknownState).Cmp(offFee))
+	assertBalanceConsistent(unknownState, offFee)
+}

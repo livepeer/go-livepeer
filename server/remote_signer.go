@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -395,6 +396,43 @@ func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pip
 	return pipeline, modelID
 }
 
+// resolveByocPrice resolves the per-capability BYOC price advertised in the
+// orchestrator's OrchestratorInfo.CapabilitiesPrices, keyed on the request
+// capability name (req.Capability). The orchestrator appends external BYOC
+// capability prices to CapabilitiesPrices as
+// {Capability: Capability_BYOC, Constraint: <capability name>} (see
+// core/orchestrator.go GetCapabilitiesPrices), so a match is a BYOC entry whose
+// Constraint equals req.Capability.
+//
+// Granularity is per-capability only: req.ModelID is intentionally NOT used for
+// price selection (model_id still flows through for metering attribution).
+//
+// Returns nil when there is no usable per-capability price (no capability set,
+// no matching entry, or a non-positive rate). Callers fall back to the base
+// oInfo.PriceInfo in that case, preserving today's behavior for unconfigured or
+// misconfigured capabilities. This is a pure function (no flag, no IO) so it is
+// hermetically testable without the CGO/ffmpeg toolchain.
+func resolveByocPrice(req *RemotePaymentRequest, oInfo *net.OrchestratorInfo) *net.PriceInfo {
+	if req == nil || oInfo == nil || req.Capability == "" {
+		return nil
+	}
+	for _, p := range oInfo.CapabilitiesPrices {
+		if p == nil {
+			continue
+		}
+		if p.Capability != uint32(core.Capability_BYOC) || p.Constraint != req.Capability {
+			continue
+		}
+		// Only honor a valid positive rate; otherwise fall back to base so a
+		// zero/invalid advertised cap price never zeros out or breaks the fee.
+		if p.PricePerUnit <= 0 || p.PixelsPerUnit <= 0 {
+			return nil
+		}
+		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
+	}
+	return nil
+}
+
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -429,7 +467,25 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
+	// BYOC per-capability pricing (flag-gated, default OFF). When enabled and the
+	// gateway supplied a real capability, resolve the per-capability price from
+	// the orchestrator's advertised CapabilitiesPrices and use it instead of the
+	// flat base price. The resolved price is written back to oInfo.PriceInfo so it
+	// is the single source for: state init, initialPrice, the max-price ceiling,
+	// the payment's ExpectedPrice (which the orchestrator uses to set its fixed
+	// per-session price), and the price-doubling guard in validatePrice (which
+	// reads sess.OrchestratorInfo.PriceInfo) — keeping all of them cap-vs-cap
+	// consistent. When the flag is OFF or no usable cap price matches, behavior is
+	// byte-identical to the base-price path.
 	priceInfo := oInfo.PriceInfo
+	useByocPricing := false
+	if ls.LivepeerNode.ByocPerCapPricing && req.Capability != "" {
+		if capPrice := resolveByocPrice(&req, &oInfo); capPrice != nil {
+			priceInfo = capPrice
+			oInfo.PriceInfo = capPrice
+			useByocPricing = true
+		}
+	}
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -568,7 +624,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
+	if useByocPricing {
+		// BYOC per-capability tariff is denominated per compute-second (wei/sec),
+		// so charge on seconds directly rather than synthesizing lv2v pixels. With
+		// pixels = ceil(billableSecs) and the resolved per-cap price kept as its
+		// reduced wei/sec rational, calculateFee yields capPriceWeiPerSec * seconds.
+		if billableSecs <= 0 {
+			// preload with 60 seconds, mirroring the lv2v first-call behavior
+			billableSecs = (60 * time.Second).Seconds()
+		}
+		pixels = int64(math.Ceil(billableSecs))
+	} else if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
