@@ -4,6 +4,8 @@
 
 ### Breaking Changes 🚨🚨
 
+* [#3959](https://github.com/livepeer/go-livepeer/pull/3959) remote-signer: Refuse to start when `/generate-live-payment` would be unauthenticated (`-remoteSignerWebhookUrl` unset) on a publicly-accessible `-httpAddr`; pass `-remoteSignerAllowNoAuth` to override (@rickstaa)
+
 ### Features ⚒
 
 #### General
