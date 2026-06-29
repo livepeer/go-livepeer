@@ -231,6 +231,16 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "invalid job type",
 		},
 		{
+			name: "mixed job pricing types",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = "lv2v,byoc"
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "mixed job pricing types are not supported",
+		},
+		{
 			name: "missing pixels without type",
 			req: func() RemotePaymentRequest {
 				r := baseReq()
@@ -679,6 +689,125 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+func TestGenerateLivePayment_BYOC_SucceedsAndUsesTimePricing(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	var totalTickets uint32
+	sender := newMockSender(mockSenderConfig{
+		ev: big.NewRat(35, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			size := args.Int(1)
+			*batch = *defaultTicketBatch()
+			baseSig := []byte(nil)
+			if len(batch.SenderParams) > 0 && batch.SenderParams[0] != nil {
+				baseSig = batch.SenderParams[0].Sig
+			}
+			batch.SenderParams = make([]*pm.TicketSenderParams, size)
+			for i := 0; i < size; i++ {
+				totalTickets++
+				batch.SenderParams[i] = &pm.TicketSenderParams{
+					SenderNonce: totalTickets,
+					Sig:         baseSig,
+				}
+			}
+		},
+	})
+	node.Sender = sender
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, net.Payment) {
+		reqBody, err := json.Marshal(reqPayload)
+		require.NoError(err)
+
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		require.Equal(http.StatusOK, rr.Code)
+
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+
+		paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+		require.NoError(err)
+		var payment net.Payment
+		require.NoError(proto.Unmarshal(paymentBytes, &payment))
+		return resp, payment
+	}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 5, PixelsPerUnit: 2},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	caps := newAICapabilities(core.Capability_BYOC, "custom-capability", true, core.NewCapabilities(nil, nil)).ToNetCapabilities()
+	capsBlob, err := proto.Marshal(caps)
+	require.NoError(err)
+
+	// First request should use preload seconds for BYOC.
+	resp1, payment1 := doPayment(RemotePaymentRequest{
+		Orchestrator:    orchBlob,
+		// BYOC pricing should be inferred from capabilities even when Type is omitted.
+		Type:            "",
+		PreloadSeconds:  120,
+		Capabilities:    capsBlob,
+		InPixels:        0,
+		ManifestID:      "caller-manifest-ignored",
+		State:           RemotePaymentStateSig{},
+	})
+
+	var state1 RemotePaymentState
+	require.NoError(json.Unmarshal(resp1.State.State, &state1))
+	balance1 := new(big.Rat)
+	_, ok := balance1.SetString(state1.Balance)
+	require.True(ok)
+
+	// First fee = ceil(120s) * pixelsPerUnit(2) * (5/2) = 600.
+	fee1 := big.NewRat(600, 1)
+	expectedBal1 := new(big.Rat).Sub(new(big.Rat).Mul(big.NewRat(int64(len(payment1.TicketSenderParams)), 1), big.NewRat(35, 1)), fee1)
+	require.Zero(balance1.Cmp(expectedBal1), "unexpected first balance got=%s want=%s", balance1.RatString(), expectedBal1.RatString())
+	require.EqualValues(0, state1.SequenceNumber)
+
+	// Second request with near-zero elapsed time should still fund at least 1 second.
+	state1.LastUpdate = time.Now()
+	stateBytes, err := json.Marshal(state1)
+	require.NoError(err)
+	stateSig, err := signState(ls, stateBytes)
+	require.NoError(err)
+
+	resp2, payment2 := doPayment(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		Type:         "",
+		Capabilities: capsBlob,
+		// No manifestID here; BYOC should use state ID internally.
+		State: RemotePaymentStateSig{
+			State: stateBytes,
+			Sig:   stateSig,
+		},
+	})
+
+	var state2 RemotePaymentState
+	require.NoError(json.Unmarshal(resp2.State.State, &state2))
+	balance2 := new(big.Rat)
+	_, ok = balance2.SetString(state2.Balance)
+	require.True(ok)
+
+	// Second fee = ceil(>=1s) * pixelsPerUnit(2) * (5/2) = 5.
+	fee2 := big.NewRat(5, 1)
+	expectedBal2 := new(big.Rat).Add(balance1, new(big.Rat).Mul(big.NewRat(int64(len(payment2.TicketSenderParams)), 1), big.NewRat(35, 1)))
+	expectedBal2.Sub(expectedBal2, fee2)
+	require.Zero(balance2.Cmp(expectedBal2), "unexpected second balance got=%s want=%s", balance2.RatString(), expectedBal2.RatString())
+	require.EqualValues(1, state2.SequenceNumber)
 }
 
 func TestGenerateLivePayment_WebhookCallback(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
@@ -790,6 +791,61 @@ func (bcast *Capabilities) PerCapability() PerCapabilityConstraints {
 		return bcast.constraints.perCapability
 	}
 	return nil
+}
+
+// PipelineLabelsFromCapabilities returns pipeline slugs and model IDs derived from
+// CapabilityNameLookup for constrained AI pipeline capabilities (TextToImage and above).
+// When types is non-empty, only matching pipeline types are included.
+func (bcast *Capabilities) PipelineLabelsFromCapabilities(types []string) (pipelines, modelIDs []string) {
+	if bcast == nil {
+		return nil, nil
+	}
+
+	hints := map[Capability]bool{}
+	for _, t := range types {
+		if cap, err := PipelineToCapability(t); err == nil {
+			hints[cap] = true
+		}
+	}
+
+	type entry struct {
+		pipeline string
+		modelID  string
+	}
+	var entries []entry
+
+	for cap, constraints := range bcast.PerCapability() {
+		if cap < Capability_TextToImage || constraints == nil {
+			continue
+		}
+		name, ok := CapabilityNameLookup[cap]
+		if !ok || name == "" {
+			continue
+		}
+		if len(hints) > 0 && !hints[cap] {
+			continue
+		}
+		modelID := bcast.ModelIDForCapability(cap)
+		if modelID == "" {
+			continue
+		}
+		entries = append(entries, entry{
+			pipeline: strings.ToLower(strings.ReplaceAll(name, " ", "-")),
+			modelID:  modelID,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].pipeline < entries[j].pipeline
+	})
+
+	pipelines = make([]string, len(entries))
+	modelIDs = make([]string, len(entries))
+	for i, e := range entries {
+		pipelines[i] = e.pipeline
+		modelIDs[i] = e.modelID
+	}
+	return pipelines, modelIDs
 }
 
 // ModelIDForCapability returns the constrained model ID for the given capability.

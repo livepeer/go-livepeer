@@ -36,6 +36,14 @@ func TestPipelineToCapability(t *testing.T) {
 	cap, err = PipelineToCapability(noSpaces)
 	assert.Nil(t, err)
 	assert.Equal(t, cap, Capability_LLM)
+
+	cap, err = PipelineToCapability("byoc")
+	assert.Nil(t, err)
+	assert.Equal(t, cap, Capability_BYOC)
+
+	cap, err = PipelineToCapability("lv2v")
+	assert.Nil(t, err)
+	assert.Equal(t, cap, Capability_LiveVideoToVideo)
 }
 
 func TestServeAIWorker(t *testing.T) {

@@ -58,11 +58,14 @@ func PipelineToCapability(pipeline string) (Capability, error) {
 	if pipeline == "" {
 		return Capability_Unused, errPipelineNotAvailable
 	}
+	if pipeline == "lv2v" {
+		pipeline = "live-video-to-video"
+	}
 
 	pipelineName := strings.ToUpper(pipeline[:1]) + strings.ReplaceAll(pipeline[1:], "-", " ")
 
 	for cap, desc := range CapabilityNameLookup {
-		if pipelineName == desc {
+		if strings.EqualFold(pipelineName, desc) {
 			return cap, nil
 		}
 	}

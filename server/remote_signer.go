@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -33,8 +34,132 @@ const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
 const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_LiveVideoToVideo = "lv2v"
-const PipelineLiveVideoToVideo = "live-video-to-video"
+const RemoteType_BYOC = "byoc"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
+const minPreloadSecs = 60
+
+type paymentPricingType int
+
+const (
+	paymentPricingManualPixels paymentPricingType = iota
+	paymentPricingPixelsPerSecond
+	paymentPricingUnitsPerSecond
+)
+
+func parsePaymentTypes(typeField string) []string {
+	if typeField == "" {
+		return nil
+	}
+	parts := strings.Split(typeField, ",")
+	types := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if t := strings.TrimSpace(part); t != "" {
+			types = append(types, t)
+		}
+	}
+	return types
+}
+
+func requestedCapabilitiesFromTypes(types []string) ([]core.Capability, error) {
+	if len(types) == 0 {
+		return nil, nil
+	}
+	capSet := make(map[core.Capability]bool)
+	caps := make([]core.Capability, 0, len(types))
+	for _, t := range types {
+		cap, err := core.PipelineToCapability(t)
+		if err != nil {
+			return nil, errors.New("invalid job type")
+		}
+		if !capSet[cap] {
+			capSet[cap] = true
+			caps = append(caps, cap)
+		}
+	}
+	return caps, nil
+}
+
+func hasCapabilityConstraint(caps *net.Capabilities, capability core.Capability) bool {
+	if caps == nil || caps.GetConstraints() == nil {
+		return false
+	}
+	_, ok := caps.GetConstraints().GetPerCapability()[uint32(capability)]
+	return ok
+}
+
+func requestedCapabilitiesForPricing(types []string, caps *net.Capabilities) ([]core.Capability, error) {
+	reqCaps, err := requestedCapabilitiesFromTypes(types)
+	if err != nil {
+		return nil, err
+	}
+
+	// Allow BYOC pricing to be selected from capabilities constraints alone.
+	if len(reqCaps) == 0 && hasCapabilityConstraint(caps, core.Capability_BYOC) {
+		reqCaps = append(reqCaps, core.Capability_BYOC)
+	}
+
+	return reqCaps, nil
+}
+
+func pricingTypeForCapability(capability core.Capability) paymentPricingType {
+	switch capability {
+	case core.Capability_LiveVideoToVideo:
+		return paymentPricingPixelsPerSecond
+	case core.Capability_BYOC:
+		return paymentPricingUnitsPerSecond
+	default:
+		return paymentPricingManualPixels
+	}
+}
+
+func resolvePaymentPricingType(caps []core.Capability) (paymentPricingType, error) {
+	pricingType := paymentPricingManualPixels
+	for _, capability := range caps {
+		capPricingType := pricingTypeForCapability(capability)
+		if capPricingType == paymentPricingManualPixels {
+			continue
+		}
+		if pricingType == paymentPricingManualPixels {
+			pricingType = capPricingType
+			continue
+		}
+		if pricingType != capPricingType {
+			return paymentPricingManualPixels, errors.New("mixed job pricing types are not supported")
+		}
+	}
+	return pricingType, nil
+}
+
+func calculateBillablePixels(req *RemotePaymentRequest, pricingType paymentPricingType, priceInfo *net.PriceInfo, now time.Time, lastUpdate time.Time) (int64, float64, time.Time, error) {
+	effectiveLastUpdate := lastUpdate
+	if effectiveLastUpdate.IsZero() {
+		effectiveLastUpdate = now
+	}
+	billableSecs := now.Sub(effectiveLastUpdate).Seconds()
+
+	switch pricingType {
+	case paymentPricingPixelsPerSecond:
+		info := defaultSegInfo
+		if billableSecs <= 0 {
+			// preload with 60 seconds of data for LV2V
+			billableSecs = (60 * time.Second).Seconds()
+		}
+		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
+		return int64(pixelsPerSec * billableSecs), billableSecs, effectiveLastUpdate, nil
+	case paymentPricingUnitsPerSecond:
+		preloadSecs := float64(max(req.PreloadSeconds, minPreloadSecs))
+		if billableSecs <= 0 {
+			// Preload for expected job duration with a safety floor.
+			billableSecs = preloadSecs
+		} else {
+			// At least 1s for sub-second wall-clock deltas.
+			billableSecs = max(1, billableSecs)
+		}
+		return int64(math.Ceil(billableSecs)) * priceInfo.PixelsPerUnit, billableSecs, effectiveLastUpdate, nil
+	default:
+		return req.InPixels, billableSecs, effectiveLastUpdate, nil
+	}
+}
 
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
@@ -242,11 +367,15 @@ type RemotePaymentRequest struct {
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
+	// Job types for automatic payment calculation. Comma-separated pipeline slugs
+	// (e.g. "live-video-to-video", "byoc") or aliases (e.g. "lv2v"). Optional.
 	Type string `json:"type"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Expected initial job duration for time-based pricing types. Optional.
+	PreloadSeconds int `json:"preloadSeconds,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -383,6 +512,16 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	var caps *net.Capabilities
+	if len(req.Capabilities) > 0 {
+		caps = &net.Capabilities{}
+		if err := proto.Unmarshal(req.Capabilities, caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+	}
+
 	var oInfo net.OrchestratorInfo
 	if err := proto.Unmarshal(req.Orchestrator, &oInfo); err != nil {
 		clog.Errorf(ctx, "Failed to unmarshal orch info err=%q", err)
@@ -440,8 +579,22 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	ctx = clog.AddVal(ctx, "state_id", state.StateID)
 	ctx = clog.AddVal(ctx, "seqNo", fmt.Sprintf("%d", state.SequenceNumber))
 
+	paymentTypes := parsePaymentTypes(req.Type)
+	reqCaps, err := requestedCapabilitiesForPricing(paymentTypes, caps)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	pricingType, err := resolvePaymentPricingType(reqCaps)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
 	manifestID := req.ManifestID
-	if manifestID == "" {
+	if core.HasCapability(reqCaps, core.Capability_BYOC) {
+		manifestID = state.StateID
+	} else if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.
 			err := errors.New("missing manifestID")
@@ -456,14 +609,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
 	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+	if caps != nil {
+		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(caps)
 	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
@@ -521,26 +668,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	pixels := req.InPixels
 	now := time.Now()
-	lastUpdate := state.LastUpdate
-	if lastUpdate.IsZero() {
-		lastUpdate = now
-	}
-	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
-		info := defaultSegInfo
-		if billableSecs <= 0 {
-			// preload with 60 seconds of data for LV2V
-			billableSecs = (60 * time.Second).Seconds()
-		}
-		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	} else if req.Type != "" {
-		err = errors.New("invalid job type")
-		respondJsonError(ctx, w, err, http.StatusBadRequest)
-		return
-	}
+	pixels, billableSecs, lastUpdate, err := calculateBillablePixels(&req, pricingType, priceInfo, now, state.LastUpdate)
 	if pixels <= 0 {
 		err = errors.New("missing pixels or job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -682,9 +811,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pipeline := ""
 		modelID := ""
-		if req.Type == RemoteType_LiveVideoToVideo {
-			pipeline = PipelineLiveVideoToVideo
-			modelID = streamParams.Capabilities.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+		if streamParams.Capabilities != nil {
+			pipelines, modelIDs := streamParams.Capabilities.PipelineLabelsFromCapabilities(paymentTypes)
+			pipeline = strings.Join(pipelines, ",")
+			modelID = strings.Join(modelIDs, ",")
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
