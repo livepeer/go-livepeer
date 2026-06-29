@@ -670,7 +670,7 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 		respondWithError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	sessionControlURL := h.orchestrator.ServiceURI().JoinPath("runner", runnerID, "session", sessionID).String()
+	sessionControlURL := liveRunnerURI(h.node, h.orchestrator).JoinPath("runner", runnerID, "session", sessionID).String()
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.Out.URL.Scheme = target.Scheme
