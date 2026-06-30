@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1716,8 +1717,6 @@ func lv2vCapsWithModel(t *testing.T, modelID string) *core.Capabilities {
 // This is hermetic: it exercises the pure label-resolution helper without the
 // CGO ffmpeg toolchain, the remote-signer HTTP handler, or Kafka.
 func TestResolveUsageLabels(t *testing.T) {
-	require := require.New(t)
-
 	tests := []struct {
 		name         string
 		req          RemotePaymentRequest
@@ -1767,10 +1766,33 @@ func TestResolveUsageLabels(t *testing.T) {
 			wantPipeline: "",
 			wantModelID:  "",
 		},
+		{
+			name: "byoc: whitespace-only override is ignored, lv2v defaults kept",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: "   ",
+				ModelID:    "\t\n",
+			},
+			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
+			wantPipeline: PipelineLiveVideoToVideo,
+			wantModelID:  "streamdiffusion",
+		},
+		{
+			name: "byoc: oversized override labels are length-capped",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: strings.Repeat("c", maxUsageLabelLen+50),
+				ModelID:    strings.Repeat("m", maxUsageLabelLen+50),
+			},
+			caps:         nil,
+			wantPipeline: strings.Repeat("c", maxUsageLabelLen),
+			wantModelID:  strings.Repeat("m", maxUsageLabelLen),
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
 			req := tc.req
 			pipeline, modelID := resolveUsageLabels(&req, tc.caps)
 			require.Equal(tc.wantPipeline, pipeline, "pipeline")
