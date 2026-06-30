@@ -125,6 +125,8 @@ type LivepeerConfig struct {
 	EthAcctAddr                *string
 	EthPassword                *string
 	EthKeystorePath            *string
+	EthExternalSigner          *string
+	EthExternalSignerTimeout   *time.Duration
 	EthOrchAddr                *string
 	EthUrl                     *string
 	TxTimeout                  *time.Duration
@@ -256,6 +258,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultEthAcctAddr := ""
 	defaultEthPassword := ""
 	defaultEthKeystorePath := ""
+	defaultEthExternalSigner := ""
+	defaultEthExternalSignerTimeout := 5 * time.Second
 	defaultEthOrchAddr := ""
 	defaultEthUrl := ""
 	defaultTxTimeout := 5 * time.Minute
@@ -379,40 +383,42 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LiveAICapReportInterval:  &defaultLiveAICapReportInterval,
 
 		// Onchain:
-		EthAcctAddr:             &defaultEthAcctAddr,
-		EthPassword:             &defaultEthPassword,
-		EthKeystorePath:         &defaultEthKeystorePath,
-		EthOrchAddr:             &defaultEthOrchAddr,
-		EthUrl:                  &defaultEthUrl,
-		TxTimeout:               &defaultTxTimeout,
-		MaxTxReplacements:       &defaultMaxTxReplacements,
-		GasLimit:                &defaultGasLimit,
-		MaxGasPrice:             &defaultMaxGasPrice,
-		EthController:           &defaultEthController,
-		InitializeRound:         &defaultInitializeRound,
-		InitializeRoundMaxDelay: &defaultInitializeRoundMaxDelay,
-		TicketEV:                &defaultTicketEV,
-		MaxFaceValue:            &defaultMaxFaceValue,
-		MaxTicketEV:             &defaultMaxTicketEV,
-		MaxTotalEV:              &defaultMaxTotalEV,
-		DepositMultiplier:       &defaultDepositMultiplier,
-		MaxPricePerUnit:         &defaultMaxPricePerUnit,
-		MaxPricePerCapability:   &defaultMaxPricePerCapability,
-		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
-		PixelsPerUnit:           &defaultPixelsPerUnit,
-		PriceFeedAddr:           &defaultPriceFeedAddr,
-		AutoAdjustPrice:         &defaultAutoAdjustPrice,
-		PricePerGateway:         &defaultPricePerGateway,
-		PricePerBroadcaster:     &defaultPricePerBroadcaster,
-		BlockPollingInterval:    &defaultBlockPollingInterval,
-		Redeemer:                &defaultRedeemer,
-		RedeemerAddr:            &defaultRedeemerAddr,
-		Monitor:                 &defaultMonitor,
-		MetricsPerStream:        &defaultMetricsPerStream,
-		MetricsExposeClientIP:   &defaultMetricsExposeClientIP,
-		MetadataQueueUri:        &defaultMetadataQueueUri,
-		MetadataAmqpExchange:    &defaultMetadataAmqpExchange,
-		MetadataPublishTimeout:  &defaultMetadataPublishTimeout,
+		EthAcctAddr:              &defaultEthAcctAddr,
+		EthPassword:              &defaultEthPassword,
+		EthKeystorePath:          &defaultEthKeystorePath,
+		EthExternalSigner:        &defaultEthExternalSigner,
+		EthExternalSignerTimeout: &defaultEthExternalSignerTimeout,
+		EthOrchAddr:              &defaultEthOrchAddr,
+		EthUrl:                   &defaultEthUrl,
+		TxTimeout:                &defaultTxTimeout,
+		MaxTxReplacements:        &defaultMaxTxReplacements,
+		GasLimit:                 &defaultGasLimit,
+		MaxGasPrice:              &defaultMaxGasPrice,
+		EthController:            &defaultEthController,
+		InitializeRound:          &defaultInitializeRound,
+		InitializeRoundMaxDelay:  &defaultInitializeRoundMaxDelay,
+		TicketEV:                 &defaultTicketEV,
+		MaxFaceValue:             &defaultMaxFaceValue,
+		MaxTicketEV:              &defaultMaxTicketEV,
+		MaxTotalEV:               &defaultMaxTotalEV,
+		DepositMultiplier:        &defaultDepositMultiplier,
+		MaxPricePerUnit:          &defaultMaxPricePerUnit,
+		MaxPricePerCapability:    &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:   &defaultIgnoreMaxPriceIfNeeded,
+		PixelsPerUnit:            &defaultPixelsPerUnit,
+		PriceFeedAddr:            &defaultPriceFeedAddr,
+		AutoAdjustPrice:          &defaultAutoAdjustPrice,
+		PricePerGateway:          &defaultPricePerGateway,
+		PricePerBroadcaster:      &defaultPricePerBroadcaster,
+		BlockPollingInterval:     &defaultBlockPollingInterval,
+		Redeemer:                 &defaultRedeemer,
+		RedeemerAddr:             &defaultRedeemerAddr,
+		Monitor:                  &defaultMonitor,
+		MetricsPerStream:         &defaultMetricsPerStream,
+		MetricsExposeClientIP:    &defaultMetricsExposeClientIP,
+		MetadataQueueUri:         &defaultMetadataQueueUri,
+		MetadataAmqpExchange:     &defaultMetadataAmqpExchange,
+		MetadataPublishTimeout:   &defaultMetadataPublishTimeout,
 
 		// Ingest:
 		HttpIngest: &defaultHttpIngest,
@@ -850,7 +856,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		defer gpm.Stop()
 
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
+		var am eth.AccountManager
+		if *cfg.EthExternalSigner != "" {
+			am, err = eth.NewWeb3SignerAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), *cfg.EthExternalSigner, chainID, *cfg.EthExternalSignerTimeout)
+		} else {
+			am, err = eth.NewAccountManager(ethcommon.HexToAddress(*cfg.EthAcctAddr), keystoreDir, chainID, *cfg.EthPassword)
+		}
 		if err != nil {
 			glog.Errorf("Error creating Ethereum account manager: %v", err)
 			return
