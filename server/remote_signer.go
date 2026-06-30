@@ -408,10 +408,13 @@ func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pip
 // price selection (model_id still flows through for metering attribution).
 //
 // Returns nil when there is no usable per-capability price (no capability set,
-// no matching entry, or a non-positive rate). Callers fall back to the base
-// oInfo.PriceInfo in that case, preserving today's behavior for unconfigured or
-// misconfigured capabilities. This is a pure function (no flag, no IO) so it is
-// hermetically testable without the CGO/ffmpeg toolchain.
+// or no matching entry with a positive rate). A matching entry with a
+// non-positive rate is skipped rather than aborting the scan, so a later valid
+// duplicate entry for the same constraint (e.g. due to misconfiguration) is
+// still honored. Callers fall back to the base oInfo.PriceInfo when nil is
+// returned, preserving today's behavior for unconfigured or misconfigured
+// capabilities. This is a pure function (no flag, no IO) so it is hermetically
+// testable without the CGO/ffmpeg toolchain.
 func resolveByocPrice(req *RemotePaymentRequest, oInfo *net.OrchestratorInfo) *net.PriceInfo {
 	if req == nil || oInfo == nil || req.Capability == "" {
 		return nil
@@ -423,10 +426,11 @@ func resolveByocPrice(req *RemotePaymentRequest, oInfo *net.OrchestratorInfo) *n
 		if p.Capability != uint32(core.Capability_BYOC) || p.Constraint != req.Capability {
 			continue
 		}
-		// Only honor a valid positive rate; otherwise fall back to base so a
-		// zero/invalid advertised cap price never zeros out or breaks the fee.
+		// Only honor a valid positive rate. Skip invalid/zero entries and keep
+		// scanning so a later valid duplicate for the same constraint isn't
+		// shadowed; if none is found we fall back to base (never zeroing the fee).
 		if p.PricePerUnit <= 0 || p.PixelsPerUnit <= 0 {
-			return nil
+			continue
 		}
 		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
 	}
@@ -479,7 +483,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	// byte-identical to the base-price path.
 	priceInfo := oInfo.PriceInfo
 	useByocPricing := false
-	if ls.LivepeerNode.ByocPerCapPricing && req.Capability != "" {
+	// Additionally gate on Type=="lv2v": enabling BYOC pricing changes the
+	// billing basis (it overrides req.InPixels and bypasses lv2v pixel
+	// synthesis), so it must only apply to the live (lv2v) job type that BYOC
+	// jobs always use — never to a non-lv2v request that happens to carry a
+	// capability.
+	if ls.LivepeerNode.ByocPerCapPricing && req.Capability != "" && req.Type == RemoteType_LiveVideoToVideo {
 		if capPrice := resolveByocPrice(&req, &oInfo); capPrice != nil {
 			priceInfo = capPrice
 			oInfo.PriceInfo = capPrice

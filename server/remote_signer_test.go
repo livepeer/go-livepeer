@@ -1799,6 +1799,10 @@ func TestResolveByocPrice(t *testing.T) {
 			{Capability: uint32(core.Capability_LiveVideoToVideo), Constraint: "nano-banana", PricePerUnit: 999, PixelsPerUnit: 1},
 			// decoy: zero/invalid BYOC rate must be treated as no-match (fallback)
 			{Capability: byocCap, Constraint: "free-cap", PricePerUnit: 0, PixelsPerUnit: 1},
+			// misconfig: an early invalid duplicate must NOT shadow a later valid
+			// entry for the same constraint (scan continues past invalid rates).
+			{Capability: byocCap, Constraint: "dup-cap", PricePerUnit: 0, PixelsPerUnit: 1},
+			{Capability: byocCap, Constraint: "dup-cap", PricePerUnit: 30, PixelsPerUnit: 1},
 		},
 	}
 
@@ -1837,6 +1841,12 @@ func TestResolveByocPrice(t *testing.T) {
 			capability: "free-cap",
 			oInfo:      oInfo,
 			want:       nil,
+		},
+		{
+			name:       "skips invalid duplicate, honors later valid entry",
+			capability: "dup-cap",
+			oInfo:      oInfo,
+			want:       &net.PriceInfo{PricePerUnit: 30, PixelsPerUnit: 1},
 		},
 		{
 			name:       "no capabilities prices falls back (nil)",
