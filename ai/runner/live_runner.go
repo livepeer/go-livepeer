@@ -879,7 +879,7 @@ func (runner *liveRunner) createBootstrapTrickleChannel(trickleSrv *trickle.Serv
 	if err != nil {
 		return nil, err
 	}
-	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, "", "application/octet-stream")
+	channel := newLiveRunnerTrickleChannel(trickleSrv, name, channelName, channelURL, "", "application/json")
 	return channel, nil
 }
 
