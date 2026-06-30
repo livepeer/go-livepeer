@@ -751,6 +751,60 @@ func TestMinRunnerVersion(t *testing.T) {
 	assert.Equal("", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "other"))
 }
 
+func TestModelIDForCapability(t *testing.T) {
+	assert := assert.New(t)
+
+	// nil receiver is safe
+	var nilCaps *Capabilities
+	assert.Equal("", nilCaps.ModelIDForCapability(Capability_LiveVideoToVideo))
+
+	// no constraints for the capability
+	c := NewCapabilities([]Capability{Capability_LiveVideoToVideo}, nil)
+	assert.Equal("", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+
+	// single constrained model
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_LiveVideoToVideo: &CapabilityConstraints{
+			Models: ModelConstraints{"streamdiffusion": &ModelConstraint{Warm: true}},
+		},
+	})
+	assert.Equal("streamdiffusion", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+
+	// different capability has no constraint
+	assert.Equal("", c.ModelIDForCapability(Capability_TextToImage))
+
+	// empty model IDs are ignored
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_LiveVideoToVideo: &CapabilityConstraints{
+			Models: ModelConstraints{"": &ModelConstraint{}},
+		},
+	})
+	assert.Equal("", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+
+	// one real model plus empty key resolves to the real model
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_LiveVideoToVideo: &CapabilityConstraints{
+			Models: ModelConstraints{
+				"":                &ModelConstraint{},
+				"streamdiffusion": &ModelConstraint{Warm: true},
+			},
+		},
+	})
+	assert.Equal("streamdiffusion", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+
+	// multiple models resolve to the lexicographically first ID
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_LiveVideoToVideo: &CapabilityConstraints{
+			Models: ModelConstraints{
+				"comfyui":         &ModelConstraint{},
+				"streamdiffusion": &ModelConstraint{},
+				"noop":            &ModelConstraint{},
+			},
+		},
+	})
+	assert.Equal("comfyui", c.ModelIDForCapability(Capability_LiveVideoToVideo))
+}
+
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
 	// the capability should be added by AddCapacity
 	for modelID, modelConstraint := range constraint.Models {
