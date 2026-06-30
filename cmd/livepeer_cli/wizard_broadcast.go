@@ -87,7 +87,17 @@ func (w *wizard) setBroadcastConfig() {
 		"transcodingOptions": {fmt.Sprintf("%v", transOpts)},
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
+	gas := w.estimateGas("/setBroadcastConfig", val)
+		if gas == nil {
+			return
+		}
+
+		w.printGasInfo(gas)
+		if !w.confirm("Set broadcast config?") {
+			return
+		}
+
+		result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
 	if !ok {
 		fmt.Printf("Error applying configuration: %s\n", result)
 	} else {
