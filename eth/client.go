@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -58,6 +59,7 @@ type LivepeerEthClient interface {
 
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
+	EstimateTransferGas(toAddr ethcommon.Address, amount *big.Int) (*big.Int, *big.Int, error)
 	Request() (*types.Transaction, error)
 	NextValidRequest(addr ethcommon.Address) (*big.Int, error)
 	BalanceOf(ethcommon.Address) (*big.Int, error)
@@ -521,6 +523,40 @@ func (c *client) CurrentMintableTokens() (*big.Int, error) {
 // Token
 func (c *client) Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
 	return c.livepeerToken.Transfer(c.transactOpts(), toAddr, amount)
+}
+
+func (c *client) EstimateTransferGas(toAddr ethcommon.Address, amount *big.Int) (*big.Int, *big.Int, error) {
+	// Create transact opts to get the from address and gas price
+	opts := c.transactOpts()
+	fromAddr := c.Account().Address
+
+	// Pack the transfer function call data
+	data, err := c.livepeerToken.TransferTx(toAddr, amount)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to pack transfer data")
+	}
+
+	// Create call message for gas estimation
+	msg := ethereum.CallMsg{
+		From:    fromAddr,
+		To:      &c.tokenAddr,
+		Data:    data,
+		GasPrice: opts.GasPrice,
+	}
+
+	// Estimate gas for the transaction
+	gasLimit, err := c.backend.EstimateGas(context.Background(), msg)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to estimate gas")
+	}
+
+	// Get gas price
+	gasPrice, err := c.backend.SuggestGasPrice(context.Background())
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to get gas price")
+	}
+
+	return gasLimit, gasPrice, nil
 }
 
 func (c *client) Allowance(owner ethcommon.Address, spender ethcommon.Address) (*big.Int, error) {

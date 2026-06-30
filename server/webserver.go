@@ -97,6 +97,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(client), "minGasPrice"))
 	mux.Handle("/maxGasPrice", maxGasPriceHandler(client))
 	mux.Handle("/minGasPrice", minGasPriceHandler(client))
+	mux.Handle("/estimateTxCost", estimateTxCostHandler(client))
 
 	// Tickets
 	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(client), "depositAmount", "reserveAmount"))
