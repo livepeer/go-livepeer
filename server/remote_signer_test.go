@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1691,4 +1692,111 @@ func TestGetOrchInfoSig_SendsConfiguredHeaders(t *testing.T) {
 	require.NoError(err)
 	require.Equal([]byte{0x12, 0x34}, []byte(resp.Address))
 	require.Equal([]byte{0xab, 0xcd}, []byte(resp.Signature))
+}
+
+// lv2vCapsWithModel builds a core.Capabilities advertising a single warm model
+// for the live-video-to-video capability (used to exercise the existing
+// capabilities-derived model_id fallback).
+func lv2vCapsWithModel(t *testing.T, modelID string) *core.Capabilities {
+	t.Helper()
+	c := core.NewCapabilities([]core.Capability{core.Capability_LiveVideoToVideo}, nil)
+	c.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		core.Capability_LiveVideoToVideo: &core.CapabilityConstraints{
+			Models: core.ModelConstraints{modelID: &core.ModelConstraint{Warm: true}},
+		},
+	})
+	return c
+}
+
+// TestResolveUsageLabels asserts the additive usage-attribution contract:
+//   - when the gateway supplies the real BYOC capability/model, the metered
+//     pipeline + model_id reflect them (the root-cause fix);
+//   - when those fields are empty, behavior is unchanged (lv2v constant +
+//     capabilities-derived model id, or empty → "unknown" downstream).
+//
+// This is hermetic: it exercises the pure label-resolution helper without the
+// CGO ffmpeg toolchain, the remote-signer HTTP handler, or Kafka.
+func TestResolveUsageLabels(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          RemotePaymentRequest
+		caps         *core.Capabilities
+		wantPipeline string
+		wantModelID  string
+	}{
+		{
+			name:         "lv2v unchanged: no new fields, no caps",
+			req:          RemotePaymentRequest{Type: RemoteType_LiveVideoToVideo},
+			caps:         nil,
+			wantPipeline: PipelineLiveVideoToVideo,
+			wantModelID:  "",
+		},
+		{
+			name:         "lv2v unchanged: model derived from capabilities",
+			req:          RemotePaymentRequest{Type: RemoteType_LiveVideoToVideo},
+			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
+			wantPipeline: PipelineLiveVideoToVideo,
+			wantModelID:  "streamdiffusion",
+		},
+		{
+			name: "byoc: real capability + model override lv2v defaults",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: "nano-banana",
+				ModelID:    "google/nano-banana",
+			},
+			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
+			wantPipeline: "nano-banana",
+			wantModelID:  "google/nano-banana",
+		},
+		{
+			name: "byoc: capability set, empty model falls back to caps-derived",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: "nano-banana",
+			},
+			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
+			wantPipeline: "nano-banana",
+			wantModelID:  "streamdiffusion",
+		},
+		{
+			name:         "non-lv2v with no fields: both empty (collector defaults to unknown)",
+			req:          RemotePaymentRequest{},
+			caps:         nil,
+			wantPipeline: "",
+			wantModelID:  "",
+		},
+		{
+			name: "byoc: whitespace-only override is ignored, lv2v defaults kept",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: "   ",
+				ModelID:    "\t\n",
+			},
+			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
+			wantPipeline: PipelineLiveVideoToVideo,
+			wantModelID:  "streamdiffusion",
+		},
+		{
+			name: "byoc: oversized override labels are length-capped",
+			req: RemotePaymentRequest{
+				Type:       RemoteType_LiveVideoToVideo,
+				Capability: strings.Repeat("c", maxUsageLabelLen+50),
+				ModelID:    strings.Repeat("m", maxUsageLabelLen+50),
+			},
+			caps:         nil,
+			wantPipeline: strings.Repeat("c", maxUsageLabelLen),
+			wantModelID:  strings.Repeat("m", maxUsageLabelLen),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			req := tc.req
+			pipeline, modelID := resolveUsageLabels(&req, tc.caps)
+			require.Equal(tc.wantPipeline, pipeline, "pipeline")
+			require.Equal(tc.wantModelID, modelID, "model_id")
+		})
+	}
 }
