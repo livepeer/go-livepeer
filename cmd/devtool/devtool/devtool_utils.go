@@ -289,7 +289,15 @@ func (d *Devtool) InitializeRound() error {
 	} else {
 		err = d.Client.CheckTx(tx)
 		if err != nil {
-			glog.Errorf("Error initializng round: %v", err)
+			initialized, initErr := d.Client.CurrentRoundInitialized()
+			if initErr == nil && initialized {
+				glog.Infof("Round initialized despite failed transaction: %v", err)
+				return nil
+			}
+			if initErr != nil {
+				glog.Errorf("Error checking initialized round after failed transaction: %v", initErr)
+			}
+			glog.Errorf("Error initializing round: %v", err)
 			return err
 		}
 	}
