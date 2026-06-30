@@ -37,7 +37,7 @@ func (w *wizard) transferTokens() {
 		}
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/transferTokens", w.host, w.httpPort), val)
+	w.httpPostTxWithParams("transfer LPT", fmt.Sprintf("http://%v:%v/transferTokens", w.host, w.httpPort), val)
 }
 
 func (w *wizard) requestTokens() {
