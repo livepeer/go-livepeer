@@ -400,6 +400,28 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }
 
+func TestNewLivepeerConfig_UnitSizeFlag(t *testing.T) {
+	require := require.New(t)
+
+	// Default when neither flag is set.
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{}))
+	require.Equal("1", *cfg.PixelsPerUnit)
+
+	// -pricingUnitSize sets PixelsPerUnit.
+	fs = flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg = NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-pricingUnitSize", "1000000000000"}))
+	require.Equal("1000000000000", *cfg.PixelsPerUnit)
+
+	// -pixelsPerUnit is a deprecated alias for the same value.
+	fs = flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg = NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-pixelsPerUnit", "42"}))
+	require.Equal("42", *cfg.PixelsPerUnit)
+}
+
 // Helper struct to capture output for testing
 type testWriter struct {
 	buf *[]byte
