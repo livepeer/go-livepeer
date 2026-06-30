@@ -373,15 +373,37 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
 }
 
+// maxUsageLabelLen bounds the length of gateway-supplied usage labels
+// (pipeline/model_id) before they are emitted to the metering pipeline.
+// req.Capability / req.ModelID come straight from the request body, so a buggy
+// or malicious caller could otherwise send very long / high-cardinality values
+// that inflate Kafka payload size and downstream label cardinality (the
+// pipeline label was previously a small fixed set). 128 runes is generous for
+// real capability/model identifiers.
+const maxUsageLabelLen = 128
+
+// sanitizeUsageLabel trims surrounding whitespace and caps the length (in
+// runes, to never emit invalid UTF-8) of a gateway-supplied metering label.
+func sanitizeUsageLabel(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > maxUsageLabelLen {
+		return string(r[:maxUsageLabelLen])
+	}
+	return s
+}
+
 // resolveUsageLabels derives the metering `pipeline` and `model_id` labels for
 // the emitted create_signed_ticket usage event.
 //
 // The real BYOC capability/model supplied by the gateway (req.Capability /
-// req.ModelID) take precedence so BYOC jobs are attributed to their true
-// pipeline + model. When those additive fields are empty, the labels fall back
-// to ConstrainedPipelineModelID and then the type-based defaults (lv2v / live /
-// fixed), matching pre-feature base behavior. This keeps usage attribution
-// decoupled from `Type`, which still drives fee/pixel routing.
+// req.ModelID) take precedence and override the labels whenever they are set,
+// regardless of `Type` — this decouples usage attribution from `Type`, which
+// still drives fee/pixel routing. The gateway-supplied values are sanitized
+// (trimmed + length-capped) to bound payload size and label cardinality.
+//
+// When those additive fields are empty, the labels fall back to
+// ConstrainedPipelineModelID and then the type-based defaults (lv2v / live /
+// fixed), matching pre-feature base behavior.
 func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pipeline, modelID string) {
 	if caps != nil {
 		pipeline, modelID = caps.ConstrainedPipelineModelID()
@@ -398,11 +420,11 @@ func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pip
 			pipeline = RemoteType_Fixed
 		}
 	}
-	if req.Capability != "" {
-		pipeline = req.Capability
+	if c := sanitizeUsageLabel(req.Capability); c != "" {
+		pipeline = c
 	}
-	if req.ModelID != "" {
-		modelID = req.ModelID
+	if m := sanitizeUsageLabel(req.ModelID); m != "" {
+		modelID = m
 	}
 	return pipeline, modelID
 }
