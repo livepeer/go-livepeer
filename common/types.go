@@ -177,4 +177,5 @@ type OrchNetworkCapabilities struct {
 	PriceInfo          *net.PriceInfo             `json:"price_info"`
 	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
 	Hardware           []*net.HardwareInformation `json:"hardware"`
+	DiscoveryTime      *time.Duration             `json:"discovery_time"`
 }
