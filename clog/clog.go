@@ -197,6 +197,23 @@ func infof(ctx context.Context, lastErr bool, publicLog bool, format string, arg
 // Example: Info(ctx, "hello", "key1", value1, "key2", value2)
 // This will log: "hello key1=value1 key2=value2"
 func Info(ctx context.Context, msg string, keyvals ...interface{}) {
+	msg = formatKeyvals(msg, keyvals...)
+	infof(ctx, false, false, msg)
+}
+
+// Warning logs a warning message with key-value pairs in a slog-like style.
+func Warning(ctx context.Context, msg string, keyvals ...interface{}) {
+	msg = formatKeyvals(msg, keyvals...)
+	Warningf(ctx, "%s", msg)
+}
+
+// Error logs an error message with key-value pairs in a slog-like style.
+func Error(ctx context.Context, msg string, keyvals ...interface{}) {
+	msg = formatKeyvals(msg, keyvals...)
+	Errorf(ctx, "%s", msg)
+}
+
+func formatKeyvals(msg string, keyvals ...interface{}) string {
 	if len(keyvals)%2 != 0 {
 		keyvals = append(keyvals[:len(keyvals)-1], "MISSING", keyvals[len(keyvals)-1])
 	}
@@ -225,7 +242,7 @@ func Info(ctx context.Context, msg string, keyvals ...interface{}) {
 		}
 	}
 
-	infof(ctx, false, false, sb.String())
+	return sb.String()
 }
 
 // V returns a Verbose instance for conditional logging at the specified level

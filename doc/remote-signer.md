@@ -77,7 +77,7 @@ When enabled, the signer exposes:
 
 - `GET /discover-orchestrators`
 
-The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`) in a format that is compatible with the gateway's orchestrator discovery webhook.
+The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`, and optional `runners`) in a format that is compatible with the gateway's orchestrator discovery webhook. The `address` field is the orchestrator service address used by gateways, not the signer's Ethereum/account address.
 
 Clients can filter for orchestrators matching a given capability via the `caps` query param. This param can be repeated to retrieve orchestrators supporting any one of the given capabilities. For example:
 
@@ -93,6 +93,10 @@ curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/stre
 ```
 
 The remote signer periodically retrieves latest orchestrator capabilities and pricing from the network. The periodicity can be configured via the `-liveAICapReportInterval` flag with a default of 25 minutes. Orchestrators are pre-filtered for pricing: orchestrators that have a price higher than what the remote signer is configured for will not be made available via discovery.
+
+In on-chain remote discovery mode, the signer also reads each orchestrator's `/discovery` endpoint. This lets the signer expose orchestrator service addresses learned from runner discovery.
+
+Runner discovery is merged by runner `url`. The first runner value wins; identical duplicates are ignored, and conflicting duplicates are logged. Exposed runners must include `price_info`; eligible runner `app` values are used for `/discover-orchestrators` capability filtering.
 
 Currently, remote discovery can only be enabled for nodes in remote signing mode.
 

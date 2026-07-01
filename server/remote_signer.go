@@ -17,7 +17,10 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -28,6 +31,7 @@ import (
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
+const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_LiveVideoToVideo = "lv2v"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
@@ -70,11 +74,76 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
+// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
+type SignBYOCJobRequestInput struct {
+	ID             string `json:"id"`
+	Capability     string `json:"capability"`
+	Request        string `json:"request"`
+	Parameters     string `json:"parameters"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
+type SignBYOCJobRequestResponse struct {
+	Sender    string `json:"sender"`
+	Signature string `json:"signature"`
+}
+
+func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "BYOC job signing request", "ip", remoteAddr)
+
+	gw := core.NewBroadcaster(ls.LivepeerNode)
+
+	var req SignBYOCJobRequestInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		clog.Errorf(ctx, "Failed to decode SignBYOCJobRequest err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" || req.Capability == "" {
+		err := fmt.Errorf("sign-byoc-job requires non-empty id and capability")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
+		ID:             req.ID,
+		Capability:     req.Capability,
+		Request:        req.Request,
+		Parameters:     req.Parameters,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
+
+	sig, err := gw.Sign(sigPayload)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	response := SignBYOCJobRequestResponse{
+		Sender:    gw.Address().Hex(),
+		Signature: "0x" + hex.EncodeToString(sig),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	ls.HTTPMux.Handle("POST /sign-byoc-job", http.HandlerFunc(ls.SignBYOCJobRequest))
 	if ls.LivepeerNode.RemoteDiscovery {
 		rdp := RemoteDiscoveryConfig{
 			Pool:     ls.LivepeerNode.OrchestratorPool,
@@ -443,6 +512,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	if should, err := shouldRefreshSession(ctx, sess); err == nil && should {
 		err := errors.New("refresh session for remote signer")
+		w.Header().Set(RefreshSessionOrchestratorURLHeader, oInfo.Transcoder)
 		respondJsonError(ctx, w, err, HTTPStatusRefreshSession)
 		return
 	} else if err != nil {
@@ -691,10 +761,14 @@ func GetOrchInfoSig(remoteSignerHost *url.URL, headers map[string]string) (*Orch
 	return &signerResp, nil
 }
 
+// discoveryResponse is intentionally typed. Do NOT add raw json.RawMessage blobs
+// here or pass through arbitrary orchestrator /discovery fields; every exposed
+// response field must be reviewed and modeled explicitly.
 type discoveryResponse struct {
-	Address      string   `json:"address,omitempty"`
-	Score        float32  `json:"score,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	Address      string                             `json:"address,omitempty"`
+	Score        float32                            `json:"score,omitempty"`
+	Capabilities []string                           `json:"capabilities,omitempty"`
+	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
@@ -724,11 +798,11 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 	infos := pool.Orchestrators(filteredCaps)
 	resp := make([]discoveryResponse, 0, len(infos))
 	for _, cached := range infos {
-		od := cached.OD
 		resp = append(resp, discoveryResponse{
-			Address:      od.LocalInfo.URL.String(),
-			Score:        od.LocalInfo.Score,
+			Address:      cached.URL.String(),
+			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
+			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
 		})
 	}
 

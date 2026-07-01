@@ -8,15 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	gonet "net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 	"pgregory.net/rapid"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -69,18 +75,25 @@ func (m *mockBalance) Clear() {
 }
 
 type stubOrchestrator struct {
-	priv         *ecdsa.PrivateKey
-	block        *big.Int
-	signErr      error
-	sessCapErr   error
-	ticketParams *net.TicketParams
-	priceInfo    *net.PriceInfo
-	serviceURI   string
-	res          *core.TranscodeResult
-	offchain     bool
-	caps         *core.Capabilities
-	authToken    *net.AuthToken
-	jobPriceInfo *net.PriceInfo
+	priv          *ecdsa.PrivateKey
+	block         *big.Int
+	signErr       error
+	sessCapErr    error
+	ticketParams  *net.TicketParams
+	priceInfo     *net.PriceInfo
+	serviceURI    string
+	res           *core.TranscodeResult
+	offchain      bool
+	caps          *core.Capabilities
+	authToken     *net.AuthToken
+	jobPriceInfo  *net.PriceInfo
+	secret        string
+	balanceMu     sync.Mutex
+	balances      map[ethcommon.Address]map[core.ManifestID]*big.Rat
+	paymentCredit *big.Rat
+	requestMu     sync.Mutex
+	storageReqs   []string
+	lv2vReqs      []string
 }
 
 func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
@@ -93,6 +106,62 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	}
 	url, _ := url.Parse(r.serviceURI)
 	return url
+}
+
+func (r *stubOrchestrator) LiveRunnerURI() *url.URL {
+	return r.ServiceURI()
+}
+
+func TestStartOrchestratorClientHTTP(t *testing.T) {
+	listener, err := gonet.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	orchRPC := grpc.NewServer()
+	orch := &stubOrchestrator{
+		offchain:   true,
+		serviceURI: "http://" + listener.Addr().String(),
+	}
+	lp := &lphttp{
+		orchestrator: orch,
+		orchRPC:      orchRPC,
+		transRPC:     http.NewServeMux(),
+	}
+	net.RegisterOrchestratorServer(orchRPC, lp)
+
+	srv := &http.Server{
+		Handler: h2c.NewHandler(lp, &http2.Server{}),
+	}
+	go func() {
+		_ = srv.Serve(listener)
+	}()
+	defer srv.Shutdown(context.Background())
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	client, conn, err := startOrchestratorClient(ctx, orch.ServiceURI())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = client.Ping(ctx, &net.PingPong{Value: []byte("ping")})
+	require.NoError(t, err)
+}
+
+func TestParseHTTPAddrScheme(t *testing.T) {
+	addr, listenerTLS, err := parseHTTPAddr("http://:8935")
+	require.NoError(t, err)
+	require.Equal(t, ":8935", addr)
+	require.False(t, listenerTLS)
+
+	addr, listenerTLS, err = parseHTTPAddr("https://127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:8935", addr)
+	require.True(t, listenerTLS)
+
+	addr, listenerTLS, err = parseHTTPAddr("127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:8935", addr)
+	require.True(t, listenerTLS)
 }
 
 func (r *stubOrchestrator) Nodes() []string {
@@ -144,6 +213,18 @@ func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
 }
 
 func (r *stubOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
+	if r.balances != nil && r.paymentCredit != nil {
+		r.balanceMu.Lock()
+		defer r.balanceMu.Unlock()
+		sender := getPaymentSender(payment)
+		if r.balances[sender] == nil {
+			r.balances[sender] = make(map[core.ManifestID]*big.Rat)
+		}
+		if r.balances[sender][manifestID] == nil {
+			r.balances[sender][manifestID] = big.NewRat(0, 1)
+		}
+		r.balances[sender][manifestID].Add(r.balances[sender][manifestID], r.paymentCredit)
+	}
 	return nil
 }
 
@@ -160,13 +241,39 @@ func (r *stubOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*n
 }
 
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
+	if r.balances != nil {
+		balance := r.Balance(addr, manifestID)
+		return balance != nil && balance.Sign() > 0
+	}
 	return true
 }
 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+	if r.balances == nil {
+		return
+	}
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	fee := priceRat.Mul(priceRat, big.NewRat(pixels, 1))
+	r.balanceMu.Lock()
+	defer r.balanceMu.Unlock()
+	if r.balances[addr] == nil {
+		r.balances[addr] = make(map[core.ManifestID]*big.Rat)
+	}
+	if r.balances[addr][manifestID] == nil {
+		r.balances[addr][manifestID] = big.NewRat(0, 1)
+	}
+	r.balances[addr][manifestID].Sub(r.balances[addr][manifestID], fee)
 }
 
 func (r *stubOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	if r.balances != nil {
+		r.balanceMu.Lock()
+		defer r.balanceMu.Unlock()
+		if r.balances[addr] == nil || r.balances[addr][manifestID] == nil {
+			return nil
+		}
+		return new(big.Rat).Set(r.balances[addr][manifestID])
+	}
 	return big.NewRat(0, 1)
 }
 
@@ -207,7 +314,10 @@ func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTransco
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
 }
 func (r *stubOrchestrator) TranscoderSecret() string {
-	return ""
+	return r.secret
+}
+func (r *stubOrchestrator) RegistrationSecret() string {
+	return r.TranscoderSecret()
 }
 func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
@@ -241,6 +351,9 @@ func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 }
 
 func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.lv2vReqs = append(r.lv2vReqs, requestID)
 	return nil, nil
 }
 
@@ -250,6 +363,9 @@ func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
 func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.storageReqs = append(r.storageReqs, requestID)
 	return nil
 }
 func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
@@ -758,6 +874,81 @@ func TestPing(t *testing.T) {
 	}
 }
 
+func TestCheckOrchestratorDiscoveryAvailability(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		want       bool
+	}{
+		{
+			name:       "empty discovery succeeds",
+			statusCode: http.StatusOK,
+			body:       `[]`,
+			want:       true,
+		},
+		{
+			name:       "nonempty discovery succeeds",
+			statusCode: http.StatusOK,
+			body:       `[{"address":"http://localhost:1234","runners":[]}]`,
+			want:       true,
+		},
+		{
+			name:       "not found fails",
+			statusCode: http.StatusNotFound,
+			body:       `live runners are not supported`,
+			want:       false,
+		},
+		{
+			name:       "invalid json fails",
+			statusCode: http.StatusOK,
+			body:       `not-json`,
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Equal(t, "/discovery", r.URL.Path)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			orch := newStubOrchestrator()
+			orch.serviceURI = srv.URL
+			require.Equal(t, tt.want, CheckOrchestratorDiscoveryAvailability(orch))
+		})
+	}
+}
+
+func TestCheckOrchestratorDiscoveryAvailabilityConnectionError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	uri := srv.URL
+	srv.Close()
+
+	orch := newStubOrchestrator()
+	orch.serviceURI = uri
+	require.False(t, CheckOrchestratorDiscoveryAvailability(orch))
+}
+
+func TestCheckOrchestratorDiscoveryAvailabilityTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/discovery", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	orch := newStubOrchestrator()
+	orch.serviceURI = srv.URL
+	require.True(t, CheckOrchestratorDiscoveryAvailability(orch))
+}
+
 func TestValidatePrice(t *testing.T) {
 	assert := assert.New(t)
 	mid := core.RandomManifestID()
@@ -1136,6 +1327,90 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 }
 
+func TestRefreshPayment_ReturnsPinnedPaymentChallenge(t *testing.T) {
+	sender := ethcommon.HexToAddress("0x1234567890123456789012345678901234567890")
+	manifestID := core.ManifestID("manifest-id")
+	fixedPrice := big.NewRat(7, 3)
+	ticketParams := defaultTicketParams()
+	authToken := &net.AuthToken{Token: []byte("token"), SessionId: string(manifestID), Expiration: time.Now().Add(time.Hour).Unix()}
+	orchAddr := ethcommon.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+
+	node := &core.LivepeerNode{Balances: core.NewAddressBalances(time.Hour)}
+	node.Balances.Credit(sender, manifestID, big.NewRat(0, 1))
+	node.Balances.SetFixedPrice(sender, manifestID, fixedPrice)
+
+	orch := &mockOrchestrator{}
+	orch.On("TicketParams", sender, mock.MatchedBy(func(price *net.PriceInfo) bool {
+		return price != nil && price.PricePerUnit == 7 && price.PixelsPerUnit == 3
+	})).Return(ticketParams, nil)
+	orch.On("ServiceURI").Return(mustParseUrl(t, "http://orch.example"))
+	orch.On("Address").Return(orchAddr)
+	orch.On("AuthToken", string(manifestID), mock.Anything).Return(authToken)
+
+	lp := &lphttp{orchestrator: orch, node: node}
+	body := `{"sender":"` + sender.Hex() + `","manifest_id":"` + string(manifestID) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/refresh-payment", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	lp.RefreshPayment(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	challenge, got := decodeLiveRunnerPaymentChallenge(t, rr.Body.Bytes())
+	require.Equal(t, "http://orch.example", challenge.Orchestrator)
+	require.Equal(t, string(manifestID), challenge.ManifestID)
+	require.Equal(t, "http://orch.example", got.Transcoder)
+	require.True(t, proto.Equal(ticketParams, got.TicketParams))
+	require.Equal(t, int64(7), got.PriceInfo.PricePerUnit)
+	require.Equal(t, int64(3), got.PriceInfo.PixelsPerUnit)
+	require.Equal(t, orchAddr.Bytes(), got.Address)
+	require.True(t, proto.Equal(authToken, got.AuthToken))
+	require.Nil(t, got.Capabilities)
+	require.Nil(t, got.Storage)
+	require.Nil(t, got.Hardware)
+	require.Nil(t, got.CapabilitiesPrices)
+	require.Nil(t, got.Nodes)
+	orch.AssertNotCalled(t, "VerifySig", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestRefreshPayment_NoFixedPrice_ReturnsConflict(t *testing.T) {
+	node := &core.LivepeerNode{Balances: core.NewAddressBalances(time.Hour)}
+	lp := &lphttp{node: node}
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/refresh-payment",
+		strings.NewReader(`{"sender":"0x1234567890123456789012345678901234567890","manifest_id":"manifest-id"}`),
+	)
+	rr := httptest.NewRecorder()
+
+	lp.RefreshPayment(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	require.Contains(t, rr.Body.String(), "fixed price not found for session")
+}
+
+func TestRefreshPayment_InvalidRequest(t *testing.T) {
+	lp := &lphttp{}
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "missing sender", body: `{"manifest_id":"manifest-id"}`},
+		{name: "invalid sender", body: `{"sender":"not-an-address","manifest_id":"manifest-id"}`},
+		{name: "missing manifest id", body: `{"sender":"0x1234567890123456789012345678901234567890"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/refresh-payment", strings.NewReader(tt.body))
+			rr := httptest.NewRecorder()
+
+			lp.RefreshPayment(rr, req)
+
+			require.Equal(t, http.StatusBadRequest, rr.Code)
+		})
+	}
+}
+
 func TestGetPriceInfo_NoWebhook_DefaultPriceError_ReturnsError(t *testing.T) {
 	assert := assert.New(t)
 	orch := &mockOrchestrator{}
@@ -1482,6 +1757,9 @@ func (o *mockOrchestrator) Address() ethcommon.Address {
 func (o *mockOrchestrator) TranscoderSecret() string {
 	o.Called()
 	return ""
+}
+func (o *mockOrchestrator) RegistrationSecret() string {
+	return o.TranscoderSecret()
 }
 func (o *mockOrchestrator) Sign(msg []byte) ([]byte, error) {
 	o.Called(msg)

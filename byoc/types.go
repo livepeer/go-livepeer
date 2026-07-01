@@ -3,6 +3,7 @@ package byoc
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"errors"
 	"math/big"
 	gonet "net"
@@ -278,4 +279,66 @@ type byocLiveRequestParams struct {
 
 	// when the write for the last segment started
 	lastSegmentTime time.Time
+}
+
+// Prevents cross-protocol signature replay.
+const BYOCJobSigV1Prefix = "LP_BYOC_JOB_V1\x00\x00"
+
+// BYOCJobSigningInput holds the fields that are bound into a BYOC job signature.
+type BYOCJobSigningInput struct {
+	ID             string
+	Capability     string
+	Request        string
+	Parameters     string
+	TimeoutSeconds int
+}
+
+// FlattenBYOCJob produces a deterministic binary representation of a BYOC job
+// for signing, similar to SegTranscodingMetadata.Flatten() used by LV2V.
+//
+// Wire format:
+//
+//	version(16) || timeout(4,BE) || len(id)(4,BE) || id || len(cap)(4,BE) || cap
+//	           || len(req)(4,BE) || req || len(params)(4,BE) || params
+func FlattenBYOCJob(job *BYOCJobSigningInput) []byte {
+	idBytes := []byte(job.ID)
+	capBytes := []byte(job.Capability)
+	reqBytes := []byte(job.Request)
+	paramsBytes := []byte(job.Parameters)
+
+	size := 16 + 4 +
+		4 + len(idBytes) +
+		4 + len(capBytes) +
+		4 + len(reqBytes) +
+		4 + len(paramsBytes)
+
+	buf := make([]byte, size)
+	offset := 0
+
+	copy(buf[offset:], []byte(BYOCJobSigV1Prefix))
+	offset += 16
+
+	binary.BigEndian.PutUint32(buf[offset:], uint32(job.TimeoutSeconds))
+	offset += 4
+
+	binary.BigEndian.PutUint32(buf[offset:], uint32(len(idBytes)))
+	offset += 4
+	copy(buf[offset:], idBytes)
+	offset += len(idBytes)
+
+	binary.BigEndian.PutUint32(buf[offset:], uint32(len(capBytes)))
+	offset += 4
+	copy(buf[offset:], capBytes)
+	offset += len(capBytes)
+
+	binary.BigEndian.PutUint32(buf[offset:], uint32(len(reqBytes)))
+	offset += 4
+	copy(buf[offset:], reqBytes)
+	offset += len(reqBytes)
+
+	binary.BigEndian.PutUint32(buf[offset:], uint32(len(paramsBytes)))
+	offset += 4
+	copy(buf[offset:], paramsBytes)
+
+	return buf
 }
