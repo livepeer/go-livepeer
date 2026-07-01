@@ -6,14 +6,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/lpms/ffmpeg"
 )
-
-var defaultSegInfo = ffmpeg.MediaFormatInfo{
-	Height: 720,
-	Width:  1280,
-	FPS:    30.0,
-}
 
 type LivePaymentProcessor struct {
 	interval time.Duration
@@ -61,14 +54,12 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 		return
 	}
 
-	info := defaultSegInfo
-
-	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
-	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "pixelsSinceLastProcessed", pixelsSinceLastProcessed)
+	// Meter wall-clock nanoseconds, paired with the per-second price.
+	nanos := int64(1_000_000_000 * secSinceLastProcessed)
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed)
 
-	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
+	err := p.processSegmentFunc(nanos)
 	if err != nil {
 		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os

@@ -1359,14 +1359,13 @@ func newConverterForRunner(priceInfo LiveRunnerPriceInfo) (*core.AutoConvertedPr
 		return nil, nil
 	}
 
-	usdPerPixel := usdPerPixelFromUSDPerHour(priceInfo)
-	return core.NewAutoConvertedPrice("USD", usdPerPixel, nil)
+	// Price is USD per second; usage is metered in nanoseconds (see convertedPriceInfo).
+	priceBasis := usdPerSecond(priceInfo)
+	return core.NewAutoConvertedPrice("USD", priceBasis, nil)
 }
 
-func usdPerPixelFromUSDPerHour(priceInfo LiveRunnerPriceInfo) *big.Rat {
-	pixelsPerHour := 1280 * 720 * 30 * 3600 // 720p @ 30fps
-	usdPerHour := new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
-	return new(big.Rat).Quo(usdPerHour, new(big.Rat).SetInt64(int64(pixelsPerHour)))
+func usdPerSecond(priceInfo LiveRunnerPriceInfo) *big.Rat {
+	return new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 }
 
 func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo, error) {
@@ -1378,8 +1377,9 @@ func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo
 		return LiveRunnerPriceInfo{}, err
 	}
 	return LiveRunnerPriceInfo{
-		PricePerUnit:  price.Num().Int64(),
-		PixelsPerUnit: price.Denom().Int64(),
+		PricePerUnit: price.Num().Int64(),
+		// Wei per second, metered in nanoseconds.
+		PixelsPerUnit: 1_000_000_000,
 		Unit:          "WEI",
 	}, nil
 }

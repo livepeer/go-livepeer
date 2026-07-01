@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -1097,10 +1096,9 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 		t.Fatal("expected runner price info")
 	}
 	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Per-second default: 10 USD/s at 2000 USD/ETH = 5e15 wei/s, published as wei per
+	// nanosecond (PixelsPerUnit = 1e9).
+	expected := big.NewRat(5_000_000_000_000_000, 1_000_000_000)
 	if got.Cmp(expected) != 0 {
 		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected)
 	}

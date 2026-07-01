@@ -488,7 +488,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler(t *testing.T) 
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(20000000, 1)})
+	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(1000000000, 1)})
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
@@ -532,7 +532,7 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler_Refresh(t *tes
 	ethClient := newTestEthClient(t)
 	signerNode, _ := core.NewLivepeerNode(ethClient, "", nil)
 	signerNode.Balances = core.NewAddressBalances(1 * time.Minute)
-	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(20000000, 1)})
+	signerNode.Sender = mockSender(mockSenderConfig{ev: big.NewRat(1000000000, 1)})
 	ls := &LivepeerServer{LivepeerNode: signerNode}
 
 	remoteTS := httptest.NewServer(http.HandlerFunc(ls.GenerateLivePayment))
