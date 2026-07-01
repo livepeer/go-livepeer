@@ -430,7 +430,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 		require.True(t, strings.HasPrefix(channel.ChannelName, resp.RunnerID+"-"))
 		require.True(t, strings.HasSuffix(channel.ChannelName, "-"+channel.Name))
 		require.NotEqual(t, resp.RunnerID+"-"+channel.Name, channel.ChannelName)
-		require.Equal(t, "application/octet-stream", channel.MimeType)
+		require.Equal(t, "application/json", channel.MimeType)
 		require.Equal(t, "http://localhost:1234/ai/trickle/"+channel.ChannelName, channel.URL)
 
 		w = httptest.NewRecorder()
