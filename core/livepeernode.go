@@ -146,6 +146,8 @@ type LivepeerNode struct {
 	AutoAdjustPrice      bool
 	AutoSessionLimit     bool
 
+	TrickleInsecureSkipVerify bool
+
 	// Broadcaster public fields
 	Sender     pm.Sender
 	ExtraNodes int
@@ -213,21 +215,22 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 	extCapPrices["default"] = make(map[string]*big.Rat)
 
 	return &LivepeerNode{
-		Eth:                  e,
-		WorkDir:              wd,
-		Database:             dbh,
-		AutoAdjustPrice:      true,
-		SegmentChans:         make(map[ManifestID]SegmentChan),
-		segmentMutex:         &sync.RWMutex{},
-		Capabilities:         &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
-		ExternalCapabilities: NewExternalCapabilities(),
-		priceInfo:            make(map[string]*AutoConvertedPrice),
-		priceInfoForCaps:     make(map[string]CapabilityPrices),
-		jobPriceInfo:         extCapPrices,
-		StorageConfigs:       make(map[string]*transcodeConfig),
-		storageMutex:         &sync.RWMutex{},
-		LivePipelines:        make(map[string]*LivePipeline),
-		LiveMu:               &sync.RWMutex{},
+		Eth:                       e,
+		WorkDir:                   wd,
+		Database:                  dbh,
+		AutoAdjustPrice:           true,
+		SegmentChans:              make(map[ManifestID]SegmentChan),
+		TrickleInsecureSkipVerify: true,
+		segmentMutex:              &sync.RWMutex{},
+		Capabilities:              &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
+		ExternalCapabilities:      NewExternalCapabilities(),
+		priceInfo:                 make(map[string]*AutoConvertedPrice),
+		priceInfoForCaps:          make(map[string]CapabilityPrices),
+		jobPriceInfo:              extCapPrices,
+		StorageConfigs:            make(map[string]*transcodeConfig),
+		storageMutex:              &sync.RWMutex{},
+		LivePipelines:             make(map[string]*LivePipeline),
+		LiveMu:                    &sync.RWMutex{},
 	}, nil
 }
 

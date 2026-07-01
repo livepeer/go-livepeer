@@ -72,7 +72,10 @@ func (os *orchestratorSwapper) checkSwap(ctx context.Context) error {
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
-	publisher, err := trickle.NewTricklePublisher(url.String())
+	publisher, err := trickle.NewTricklePublisherWithConfig(trickle.TricklePublisherConfig{
+		URL:                url.String(),
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
+	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("trickle publish init err: %w", err))
 		return
@@ -223,8 +226,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// subscribe to inference outputs and send them into the world
 
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
+		URL:                url.String(),
+		Ctx:                ctx,
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
 	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("trickle subscription init failed: %w", err))
@@ -596,7 +600,10 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
 	stream := params.liveParams.stream
-	controlPub, err := trickle.NewTricklePublisher(control.String())
+	controlPub, err := trickle.NewTricklePublisherWithConfig(trickle.TricklePublisherConfig{
+		URL:                control.String(),
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
+	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
@@ -692,8 +699,9 @@ const clearStreamDelay = 1 * time.Minute
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
+		URL:                url.String(),
+		Ctx:                ctx,
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
 	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
