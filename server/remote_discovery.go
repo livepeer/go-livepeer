@@ -116,7 +116,8 @@ func (p *remoteDiscoveryPool) refresh() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
-	if !p.lastRefresh.IsZero() && now.Sub(p.lastRefresh) <= p.refreshEvery {
+	// Rate-limit rebuilds to once per interval, unless empty — else an empty startup snapshot locks in for a full interval.
+	if len(p.cached) > 0 && !p.lastRefresh.IsZero() && now.Sub(p.lastRefresh) <= p.refreshEvery {
 		return
 	}
 
