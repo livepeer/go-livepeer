@@ -282,7 +282,7 @@ func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.
 		if channel.URL != channelBaseURL+channel.ChannelName {
 			t.Fatalf("unexpected bootstrap channel URL: %s", channel.URL)
 		}
-		if channel.MimeType != "application/octet-stream" {
+		if channel.MimeType != "application/json" {
 			t.Fatalf("unexpected bootstrap channel MIME type: %s", channel.MimeType)
 		}
 		if status := channelStatus(channel.ChannelName); status != http.StatusOK {

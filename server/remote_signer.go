@@ -284,7 +284,7 @@ type authResponse struct {
 	// Unix timestamp (seconds) until which auth is considered valid.
 	// Allows for skipping webhook callbacks until this time is exceeded.
 	Expiry int64 `json:"expiry,omitempty"`
-	// Optional opaque identifier.
+	// Optional opaque identifier for metering attribution.
 	AuthID string `json:"auth_id,omitempty"`
 }
 
@@ -817,7 +817,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		if state.SequenceNumber == 0 {
 			sessionStatus = "new"
 		}
-		pipeline, modelID := resolveUsageLabels(&req, streamParams.Capabilities)
+		pipeline := ""
+		modelID := ""
+		if req.Type == RemoteType_LiveVideoToVideo {
+			pipeline = PipelineLiveVideoToVideo
+			modelID = streamParams.Capabilities.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,

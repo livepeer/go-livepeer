@@ -12,12 +12,13 @@ ENV	GOARCH="$TARGETARCH" \
 	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
-	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
-	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
+	&& apt install -yqq ca-certificates curl lsb-release \
+	&& install -d -m 0755 /usr/share/keyrings \
+	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o /usr/share/keyrings/docker.asc https://download.docker.com/linux/ubuntu/gpg \
+	&& printf '%s\n' "deb [arch=${BUILDARCH} signed-by=/usr/share/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
+	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o /usr/share/keyrings/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key \
+	&& printf '%s\n' "deb [arch=${BUILDARCH} signed-by=/usr/share/keyrings/apt.llvm.org.asc] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" > /etc/apt/sources.list.d/llvm-toolchain-14.list \
 	&& apt update \
 	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev libfdk-aac-dev
 
