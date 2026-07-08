@@ -805,6 +805,56 @@ func TestModelIDForCapability(t *testing.T) {
 	assert.Equal("comfyui", c.ModelIDForCapability(Capability_LiveVideoToVideo))
 }
 
+func TestCapabilityToPipeline(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.Equal("live-video-to-video", CapabilityToPipeline(Capability_LiveVideoToVideo))
+	assert.Equal("text-to-image", CapabilityToPipeline(Capability_TextToImage))
+	assert.Equal("", CapabilityToPipeline(Capability(-999)))
+}
+
+func TestConstrainedPipelineModelID(t *testing.T) {
+	assert := assert.New(t)
+
+	var nilCaps *Capabilities
+	pipeline, modelID := nilCaps.ConstrainedPipelineModelID()
+	assert.Equal("", pipeline)
+	assert.Equal("", modelID)
+
+	c := NewCapabilities([]Capability{Capability_LiveVideoToVideo, Capability_TextToImage}, nil)
+	pipeline, modelID = c.ConstrainedPipelineModelID()
+	assert.Equal("", pipeline)
+	assert.Equal("", modelID)
+
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_TextToImage: &CapabilityConstraints{
+			Models: ModelConstraints{
+				"stabilityai/sd-turbo": &ModelConstraint{Warm: true},
+			},
+		},
+	})
+	pipeline, modelID = c.ConstrainedPipelineModelID()
+	assert.Equal("text-to-image", pipeline)
+	assert.Equal("stabilityai/sd-turbo", modelID)
+
+	// Multiple constrained capabilities resolve deterministically.
+	c.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_LiveVideoToVideo: &CapabilityConstraints{
+			Models: ModelConstraints{
+				"streamdiffusion": &ModelConstraint{},
+			},
+		},
+		Capability_AudioToText: &CapabilityConstraints{
+			Models: ModelConstraints{
+				"whisper-large": &ModelConstraint{},
+			},
+		},
+	})
+	pipeline, modelID = c.ConstrainedPipelineModelID()
+	assert.Equal("audio-to-text", pipeline)
+	assert.Equal("whisper-large", modelID)
+}
+
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
 	// the capability should be added by AddCapacity
 	for modelID, modelConstraint := range constraint.Models {

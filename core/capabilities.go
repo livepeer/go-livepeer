@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
@@ -814,6 +815,56 @@ func (bcast *Capabilities) ModelIDForCapability(cap Capability) string {
 	}
 	sort.Strings(modelIDs)
 	return modelIDs[0]
+}
+
+// CapabilityToPipeline converts a capability to a pipeline slug.
+// Returns "" when the capability is unknown.
+func CapabilityToPipeline(cap Capability) string {
+	capName, ok := CapabilityNameLookup[cap]
+	if !ok {
+		return ""
+	}
+	return strings.ReplaceAll(strings.ToLower(capName), " ", "-")
+}
+
+// ConstrainedPipelineModelID returns a deterministic pipeline/model_id pair
+// from per-capability constraints. When multiple capabilities have constrained
+// models, it returns the lexicographically first pipeline.
+func (bcast *Capabilities) ConstrainedPipelineModelID() (string, string) {
+	if bcast == nil {
+		return "", ""
+	}
+
+	type capPipeline struct {
+		capability Capability
+		pipeline   string
+	}
+
+	candidates := []capPipeline{}
+	for capability := range bcast.constraints.perCapability {
+		modelID := bcast.ModelIDForCapability(capability)
+		if modelID == "" {
+			continue
+		}
+		pipeline := CapabilityToPipeline(capability)
+		if pipeline == "" {
+			continue
+		}
+		candidates = append(candidates, capPipeline{
+			capability: capability,
+			pipeline:   pipeline,
+		})
+	}
+	if len(candidates) == 0 {
+		return "", ""
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].pipeline < candidates[j].pipeline
+	})
+
+	selected := candidates[0]
+	return selected.pipeline, bcast.ModelIDForCapability(selected.capability)
 }
 
 func (bcast *Capabilities) SetMinVersionConstraint(minVersionConstraint string) {
