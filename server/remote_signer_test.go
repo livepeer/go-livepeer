@@ -1397,6 +1397,56 @@ func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsEligibleRunnersWhenRPCCapabi
 	require.Equal([]string{"live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
 }
 
+func TestRemoteSigner_Discovery_IncludesAllRegisteredRunnersForEligibleOrchestrator(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	caps := core.NewCapabilities([]core.Capability{capability}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		capability: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				modelID: {},
+			},
+		},
+	})
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://all-runners.example.com:8935",
+			Capabilities: caps.ToNetCapabilities(),
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			Discovery: discoveryRaw(t, `[{"address": "https://all-runners.example.com:8935", "runners": [
+				{"url":"https://all-runners.example.com:8935/apps/runner/capability","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}},
+				{"url":"https://all-runners.example.com:8935/apps/runner/custom","app":"my-custom-runner-app-id","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+			]}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://all-runners.example.com:8935", resp[0].Address)
+	require.Len(resp[0].Runners, 2)
+	require.Equal("https://all-runners.example.com:8935/apps/runner/capability", resp[0].Runners[0].URL)
+	require.Equal("https://all-runners.example.com:8935/apps/runner/custom", resp[0].Runners[1].URL)
+}
+
 func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 	require := require.New(t)
 

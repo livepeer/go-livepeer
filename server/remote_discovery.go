@@ -131,7 +131,6 @@ func (p *remoteDiscoveryPool) refresh() {
 	// multiple nodes/addresses through its /discovery response.
 	validNodes := make(map[string]bool)
 	rejectedCapabilityNodes := make(map[string]bool)
-	validApps := make(map[string]map[string]bool)
 	// Create or reuse the accumulator for a node. The same node address can be
 	// seen from normal polling and from multiple /discovery responses, so merge
 	// everything for that address into one final /discover-orchestrators entry.
@@ -190,7 +189,6 @@ func (p *remoteDiscoveryPool) refresh() {
 			entry.orch.Capabilities = append(entry.orch.Capabilities, cap)
 		}
 		sort.Strings(entry.orch.Capabilities)
-		validApps[key] = eligibleCaps
 	}
 
 	for _, orchCaps := range networkCaps {
@@ -204,7 +202,7 @@ func (p *remoteDiscoveryPool) refresh() {
 			// Treat root service URIs with and without a trailing slash as the same address.
 			key := strings.TrimRight(discovery.Address, "/")
 			if validNodes[key] {
-				mergeDiscoveryRunners(merged[key], discovery, validApps[key])
+				mergeDiscoveryRunners(merged[key], discovery)
 				continue
 			}
 			// If normal polling saw this address but price/capability filtering rejected it,
@@ -217,7 +215,7 @@ func (p *remoteDiscoveryPool) refresh() {
 				continue
 			}
 			entry := ensureMerged(discovery.Address, orchURL)
-			mergeDiscoveryRunners(entry, discovery, nil)
+			mergeDiscoveryRunners(entry, discovery)
 		}
 	}
 
@@ -253,14 +251,14 @@ func cloneRemoteDiscoveryOrchestrators(cached []remoteDiscoveryOrchestrator) []r
 	return cloned
 }
 
-func mergeDiscoveryRunners(entry *remoteDiscoveryMergeEntry, discovery remoteDiscoveryEntry, eligibleCaps map[string]bool) {
+func mergeDiscoveryRunners(entry *remoteDiscoveryMergeEntry, discovery remoteDiscoveryEntry) {
 	// For each address, merge runners by URL. First wins; matching duplicates are
 	// ignored and conflicting duplicates are logged before keeping the first.
 	for _, r := range discovery.Runners {
 		if r.URL == "" {
 			continue
 		}
-		if !entry.remoteDiscoveryRunnerEligible(r, eligibleCaps) {
+		if !entry.remoteDiscoveryRunnerEligible(r) {
 			continue
 		}
 		if !slices.Contains(entry.orch.Capabilities, r.App) {
@@ -298,10 +296,7 @@ func remoteDiscoveryEntries(raw json.RawMessage) []remoteDiscoveryEntry {
 	return entries
 }
 
-func (entry *remoteDiscoveryMergeEntry) remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner, eligibleCaps map[string]bool) bool {
-	if eligibleCaps != nil && !eligibleCaps[runner.App] {
-		return false
-	}
+func (entry *remoteDiscoveryMergeEntry) remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner) bool {
 	if runner.PriceInfo == nil {
 		return false
 	}
@@ -322,7 +317,7 @@ func (entry *remoteDiscoveryMergeEntry) remoteDiscoveryRunnerEligible(runner run
 
 	capability, modelID, ok := capabilityModelFromApp(runner.App)
 	if !ok {
-		return false
+		return true
 	}
 	maxPrice := capabilityMaxPrice(capability, modelID)
 	if maxPrice == nil {
