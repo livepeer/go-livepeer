@@ -661,6 +661,59 @@ func TestLiveRunnerRegistry_ClonesRunnerGPUMetadata(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_MetadataMustBeJSONObject(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-metadata-shape")
+	req.Metadata = json.RawMessage(`["not","an","object"]`)
+
+	_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "metadata must be a valid JSON object") {
+		t.Fatalf("expected metadata object validation error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_MetadataMustBeValidJSON(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-metadata-invalid")
+	req.Metadata = json.RawMessage(`{"unterminated":`)
+
+	_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "metadata must be a valid JSON object") {
+		t.Fatalf("expected metadata JSON validation error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_MetadataHasMaxByteSize(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-metadata-size")
+	req.Metadata = json.RawMessage(`{"payload":"` + strings.Repeat("a", liveRunnerMetadataMaxBytes) + `"}`)
+
+	_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "metadata exceeds maximum size") {
+		t.Fatalf("expected metadata size validation error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_StaticRunnerMetadataGuardrails(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	_, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-invalid-metadata",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+		Metadata:  json.RawMessage(`["invalid"]`),
+	}}})
+
+	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "metadata must be a valid JSON object") {
+		t.Fatalf("expected static runner metadata validation error, got %v", err)
+	}
+}
+
 func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing.T) {
 	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"health_url":"https://runner.example.com/health","gpu":-1}]}`))
 	if err != nil {

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -33,6 +34,7 @@ const (
 	liveRunnerO2RKeepaliveMessage      = `{"keep":"alive"}`
 	liveRunnerIDRandomBytes            = 5
 	liveRunnerSeedBytes                = 32
+	liveRunnerMetadataMaxBytes         = 16 * 1024
 )
 
 var liveRunnerO2RKeepaliveInterval = 10 * time.Second
@@ -94,6 +96,7 @@ type LiveRunnerHeartbeatRequest struct {
 	Capacity   int                 `json:"capacity"`
 	PriceInfo  LiveRunnerPriceInfo `json:"price_info"`
 	SessionIDs []string            `json:"session_ids,omitempty"`
+	Metadata   json.RawMessage     `json:"metadata,omitempty"`
 }
 
 type StaticLiveRunnerConfig struct {
@@ -112,6 +115,7 @@ type StaticLiveRunnerConfigEntry struct {
 	PriceInfo         LiveRunnerPriceInfo `json:"price_info"`
 	HealthURL         string              `json:"health_url"`
 	HealthyStatusCode int                 `json:"healthy_status_code,omitempty"`
+	Metadata          json.RawMessage     `json:"metadata,omitempty"`
 }
 
 type StaticLiveRunnerRegistration struct {
@@ -149,6 +153,7 @@ type LiveRunnerDiscoveryRunner struct {
 	CapacityUsed      int                  `json:"capacity_used"`
 	CapacityAvailable int                  `json:"capacity_available"`
 	PriceInfo         *LiveRunnerPriceInfo `json:"price_info,omitempty"`
+	Metadata          json.RawMessage      `json:"metadata,omitempty"`
 }
 
 type LiveRunnerTrickleChannel struct {
@@ -602,6 +607,7 @@ func (r *LiveRunnerRegistry) buildStaticRunner(entry StaticLiveRunnerConfigEntry
 		App:       entry.App,
 		Capacity:  entry.Capacity,
 		PriceInfo: entry.PriceInfo,
+		Metadata:  entry.Metadata,
 	}
 	return r.normalizeHeartbeat("static", req)
 }
@@ -635,6 +641,11 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 	}
 	req.RunnerID = runnerID
 	req.GPU = cloneLiveRunnerGPU(req.GPU)
+	metadata, err := normalizeLiveRunnerMetadata(req.Metadata)
+	if err != nil {
+		return LiveRunnerHeartbeatRequest{}, err
+	}
+	req.Metadata = metadata
 
 	if r.offchain {
 		return req, nil
@@ -650,6 +661,27 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 	req.PriceInfo.Unit = unit
 
 	return req, nil
+}
+
+func normalizeLiveRunnerMetadata(metadata json.RawMessage) (json.RawMessage, error) {
+	if len(metadata) == 0 {
+		return nil, nil
+	}
+	if len(metadata) > liveRunnerMetadataMaxBytes {
+		return nil, fmt.Errorf("metadata exceeds maximum size of %d bytes", liveRunnerMetadataMaxBytes)
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &object); err != nil {
+		return nil, errors.New("metadata must be a valid JSON object")
+	}
+
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, metadata); err != nil {
+		return nil, errors.New("metadata must be a valid JSON object")
+	}
+
+	return append(json.RawMessage(nil), compact.Bytes()...), nil
 }
 
 func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
@@ -1314,14 +1346,15 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 		discoveryPriceInfo = &priceInfo
 	}
 	return LiveRunnerDiscoveryRunner{
-		GPU:               cloneLiveRunnerGPU(runner.GPU),
-		App:               runner.App,
-		Version:           runner.Version,
-		Mode:              runner.Mode,
-		Capacity:          runner.Capacity,
-		CapacityUsed:      len(runner.sessions),
-		CapacityAvailable: runner.Capacity - len(runner.sessions),
-		PriceInfo:         discoveryPriceInfo,
+		GPU               : cloneLiveRunnerGPU(runner.GPU),
+		App               : runner.App,
+		Version           : runner.Version,
+		Mode              : runner.Mode,
+		Capacity          : runner.Capacity,
+		CapacityUsed      : len(runner.sessions),
+		CapacityAvailable : runner.Capacity - len(runner.sessions),
+		PriceInfo         : discoveryPriceInfo,
+		Metadata          : append(json.RawMessage(nil), runner.Metadata...),
 	}
 }
 
