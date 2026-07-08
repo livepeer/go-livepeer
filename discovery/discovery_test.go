@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -1199,14 +1201,15 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	// mock webhook and orchestrator info request
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-
-	getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var wh []webhookResponse
 		for _, addr := range addresses {
 			wh = append(wh, webhookResponse{Address: addr})
 		}
-		return json.Marshal(&wh)
-	}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(json.NewEncoder(w).Encode(wh))
+	}))
+	defer webhook.Close()
 
 	wg := sync.WaitGroup{}
 	oldOrchInfo := serverGetOrchInfo
@@ -1217,7 +1220,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	}
 
 	// assert created webhook pool is correct length
-	whURL, _ := url.ParseRequestURI("https://livepeer.live/api/orchestrator")
+	whURL, _ := url.ParseRequestURI(webhook.URL)
 	whpool := NewWebhookPool(&stubBroadcaster{}, whURL, 500*time.Millisecond)
 	assert.Equal(3, whpool.Size())
 
@@ -1300,6 +1303,38 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	for _, addr := range addresses {
 		uri, _ := url.ParseRequestURI(addr)
 		assert.Contains(removeLatency(infos), common.OrchestratorLocalInfo{URL: uri, Latency: nil})
+	}
+}
+
+func TestWebhookPoolConfig_ForwardsHeaders(t *testing.T) {
+	require := require.New(t)
+
+	headersCh := make(chan map[string]string, 1)
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headersCh <- map[string]string{
+			"Authorization": r.Header.Get("Authorization"),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(json.NewEncoder(w).Encode([]webhookResponse{{Address: "https://127.0.0.1:8936"}}))
+	}))
+	defer webhook.Close()
+
+	whURL, err := url.ParseRequestURI(webhook.URL)
+	require.NoError(err)
+
+	whpool := WebhookPoolConfig{
+		Broadcaster:      &stubBroadcaster{},
+		Callback:         whURL,
+		Headers:          map[string]string{"Authorization": "Bearer gateway-token"},
+		DiscoveryTimeout: 500 * time.Millisecond,
+	}.New()
+	_ = whpool.Size()
+
+	select {
+	case gotHeaders := <-headersCh:
+		require.Equal("Bearer gateway-token", gotHeaders["Authorization"])
+	case <-time.After(time.Second):
+		require.Fail("timed out waiting for webhook call")
 	}
 }
 
@@ -1442,9 +1477,8 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	orchCb := func() error { return nil }
-	oldOrchInfo := serverGetOrchInfo
-	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	defer wg.Wait()
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{
@@ -1453,6 +1487,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	}
 
 	pool := NewOrchestratorPool(&stubBroadcaster{}, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool.getOrchInfo = getOrchInfo
 
 	// suspend https://127.0.0.1:8938
 	sus := newStubSuspender()

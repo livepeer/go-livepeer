@@ -567,15 +567,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
-		// collect all RTMP outputs
+		// collect all RTMP outputs (optional; WHEP uses the ring buffer instead)
 		var rtmpOutputs []string
-		if outputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, outputURL)
+		if !media.LiveAIDisableRTMPOutput() {
+			if outputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, outputURL)
+			}
+			if mediaMTXOutputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+			}
 		}
-		if mediaMTXOutputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
-		}
-		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs, "disabled", media.LiveAIDisableRTMPOutput())
 
 		// channel that blocks until after orch selection is complete
 		// avoids a race condition with closing the control channel
@@ -1107,13 +1109,15 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				})
 			}()
 
-			if outputURL != "" {
-				rtmpOutputs = append(rtmpOutputs, outputURL)
+			if !media.LiveAIDisableRTMPOutput() {
+				if outputURL != "" {
+					rtmpOutputs = append(rtmpOutputs, outputURL)
+				}
+				if mediamtxOutputURL != "" {
+					rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL, mediaMTXOutputAlias)
+				}
 			}
-			if mediamtxOutputURL != "" {
-				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL, mediaMTXOutputAlias)
-			}
-			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs, "disabled", media.LiveAIDisableRTMPOutput())
 
 			params := aiRequestParams{
 				node:        ls.LivepeerNode,

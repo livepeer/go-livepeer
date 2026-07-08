@@ -140,6 +140,10 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.TestOrchAvail = fs.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
 	cfg.RemoteSigner = fs.Bool("remoteSigner", *cfg.RemoteSigner, "Set to true to run remote signer service")
 	cfg.RemoteSignerUrl = fs.String("remoteSignerUrl", *cfg.RemoteSignerUrl, "URL of remote signer service to use (e.g., http://localhost:8935). Gateway only.")
+	cfg.RemoteSignerHeaders = fs.String("remoteSignerHeaders", *cfg.RemoteSignerHeaders, "Map of headers to use for gateway remote signer requests. e.g. 'header:val,header2:val2'")
+	cfg.RemoteSignerWebhookURL = fs.String("remoteSignerWebhookUrl", *cfg.RemoteSignerWebhookURL, "Authentication webhook URL called by remote signer during GenerateLivePayment")
+	cfg.RemoteSignerWebhookHeaders = fs.String("remoteSignerWebhookHeaders", *cfg.RemoteSignerWebhookHeaders, "Map of headers to use for remote signer webhook requests. e.g. 'header:val,header2:val2'")
+	cfg.RemoteSignerAllowNoAuth = fs.Bool("remoteSignerAllowNoAuth", *cfg.RemoteSignerAllowNoAuth, "Allow an unauthenticated remote signer on a public -httpAddr (no webhook). UNSAFE: signs payments from this node's deposit for any reachable caller; restrict access externally (proxy/private network).")
 	cfg.RemoteDiscovery = fs.Bool("remoteDiscovery", *cfg.RemoteDiscovery, "Enable orchestrator discovery on remote signers")
 
 	// Gateway metrics

@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/server"
 )
 
 type webhookResponse struct {
@@ -23,12 +25,14 @@ type webhookResponse struct {
 type webhookPool struct {
 	pool                *orchestratorPool
 	callback            *url.URL
+	headers             map[string]string
 	responseHash        ethcommon.Hash
 	lastRequest         time.Time
 	mu                  *sync.RWMutex
 	bcast               common.Broadcaster
 	discoveryTimeout    time.Duration
 	ignoreCapacityCheck bool
+	getOrchInfo         func(context.Context, common.Broadcaster, *url.URL, server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
 }
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration) *webhookPool {
@@ -42,6 +46,7 @@ func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeou
 type WebhookPoolConfig struct {
 	Broadcaster         common.Broadcaster
 	Callback            *url.URL
+	Headers             map[string]string
 	DiscoveryTimeout    time.Duration
 	IgnoreCapacityCheck bool
 }
@@ -49,10 +54,12 @@ type WebhookPoolConfig struct {
 func (cfg WebhookPoolConfig) New() *webhookPool {
 	p := &webhookPool{
 		callback:            cfg.Callback,
+		headers:             cfg.Headers,
 		mu:                  &sync.RWMutex{},
 		bcast:               cfg.Broadcaster,
 		discoveryTimeout:    cfg.DiscoveryTimeout,
 		ignoreCapacityCheck: cfg.IgnoreCapacityCheck,
+		getOrchInfo:         serverGetOrchInfo,
 	}
 	go p.getInfos()
 	return p
@@ -70,7 +77,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	}
 
 	// retrieve addrs from webhook if time since lastRequest is more than the refresh interval
-	body, err := getURLsfromWebhook(w.callback)
+	body, err := getURLsfromWebhook(w.callback, w.headers)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +103,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 		discoveryTimeout:    w.discoveryTimeout,
 		extraNodes:          w.bcast.ExtraNodes(),
 		ignoreCapacityCheck: w.ignoreCapacityCheck,
-		getOrchInfo:         serverGetOrchInfo,
+		getOrchInfo:         w.getOrchInfo,
 	}
 
 	w.mu.Lock()
@@ -148,11 +155,20 @@ func (w *webhookPool) Broadcaster() common.Broadcaster {
 	return w.pool.bcast
 }
 
-var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
+func getURLsfromWebhook(cbUrl *url.URL, headers map[string]string) ([]byte, error) {
 	var httpc = &http.Client{
 		Timeout: 3 * time.Second,
 	}
-	resp, err := httpc.Get(cbUrl.String())
+	req, err := http.NewRequest(http.MethodGet, cbUrl.String(), nil)
+	if err != nil {
+		glog.Error("Unable to create webhook request ", err)
+		return nil, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := httpc.Do(req)
 	if err != nil {
 		glog.Error("Unable to make webhook request ", err)
 		return nil, err
