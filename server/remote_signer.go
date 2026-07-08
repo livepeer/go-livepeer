@@ -682,9 +682,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pipeline := ""
 		modelID := ""
-		if req.Type == RemoteType_LiveVideoToVideo {
+		if streamParams.Capabilities != nil {
+			pipeline, modelID = streamParams.Capabilities.ConstrainedPipelineModelID()
+		}
+		if pipeline == "" && req.Type == RemoteType_LiveVideoToVideo {
 			pipeline = PipelineLiveVideoToVideo
-			modelID = streamParams.Capabilities.ModelIDForCapability(core.Capability_LiveVideoToVideo)
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
