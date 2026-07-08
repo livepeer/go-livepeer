@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"math"
 	"math/big"
 	gonet "net"
 	"net/http"
@@ -282,8 +284,23 @@ type byocLiveRequestParams struct {
 }
 
 // BYOCJobSigV1Prefix is the 16-byte domain separator for BYOC job signatures (V1).
-// Prevents cross-protocol signature replay.
+// Prevents cross-protocol signature replay. Changing this prefix is wire-breaking.
 const BYOCJobSigV1Prefix = "LP_BYOC_JOB_V1\x00\x00"
+
+// MaxBYOCJobTimeoutSeconds is the largest timeout_seconds value accepted on the wire.
+// The V1 format encodes timeout as a big-endian uint32.
+const MaxBYOCJobTimeoutSeconds = math.MaxUint32
+
+// ValidateBYOCJobTimeoutSeconds rejects values that cannot be encoded in the V1 wire format.
+func ValidateBYOCJobTimeoutSeconds(seconds int) error {
+	if seconds <= 0 {
+		return errors.New("timeout_seconds must be positive")
+	}
+	if seconds > MaxBYOCJobTimeoutSeconds {
+		return fmt.Errorf("timeout_seconds exceeds maximum %d", MaxBYOCJobTimeoutSeconds)
+	}
+	return nil
+}
 
 // BYOCJobSigningInput holds the fields that are bound into a BYOC job signature.
 type BYOCJobSigningInput struct {
@@ -299,7 +316,7 @@ type BYOCJobSigningInput struct {
 //
 // Wire format:
 //
-//	version(16) || timeout(4,BE) || len(id)(4,BE) || id || len(cap)(4,BE) || cap
+//	version(16) || timeout(4,BE uint32) || len(id)(4,BE) || id || len(cap)(4,BE) || cap
 //	           || len(req)(4,BE) || req || len(params)(4,BE) || params
 func FlattenBYOCJob(job *BYOCJobSigningInput) []byte {
 	idBytes := []byte(job.ID)

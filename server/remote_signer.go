@@ -113,8 +113,7 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	if req.TimeoutSeconds <= 0 {
-		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+	if err := byoc.ValidateBYOCJobTimeoutSeconds(req.TimeoutSeconds); err != nil {
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
