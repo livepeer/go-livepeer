@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -355,6 +356,46 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
 }
 
+// resolveByocPrice resolves the per-capability BYOC price advertised in the
+// orchestrator's OrchestratorInfo.CapabilitiesPrices, keyed on the BYOC model
+// constraint already present in the request capabilities
+// (caps.ModelIDForCapability(Capability_BYOC)). The orchestrator appends
+// external BYOC capability prices to CapabilitiesPrices as
+// {Capability: Capability_BYOC, Constraint: <capability/app name>} (see
+// core/orchestrator.go GetCapabilitiesPrices).
+//
+// Returns nil when there is no usable per-capability price (no BYOC constraint,
+// or no matching entry with a positive rate). A matching entry with a
+// non-positive rate is skipped rather than aborting the scan, so a later valid
+// duplicate entry for the same constraint (e.g. due to misconfiguration) is
+// still honored. Callers fall back to the base oInfo.PriceInfo when nil is
+// returned.
+func resolveByocPrice(caps *core.Capabilities, oInfo *net.OrchestratorInfo) *net.PriceInfo {
+	if caps == nil || oInfo == nil {
+		return nil
+	}
+	constraint := caps.ModelIDForCapability(core.Capability_BYOC)
+	if constraint == "" {
+		return nil
+	}
+	for _, p := range oInfo.CapabilitiesPrices {
+		if p == nil {
+			continue
+		}
+		if p.Capability != uint32(core.Capability_BYOC) || p.Constraint != constraint {
+			continue
+		}
+		// Only honor a valid positive rate. Skip invalid/zero entries and keep
+		// scanning so a later valid duplicate for the same constraint isn't
+		// shadowed; if none is found we fall back to base (never zeroing the fee).
+		if p.PricePerUnit <= 0 || p.PixelsPerUnit <= 0 {
+			continue
+		}
+		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
+	}
+	return nil
+}
+
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -389,14 +430,43 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	priceInfo := oInfo.PriceInfo
-	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
-		err := fmt.Errorf("missing or zero priceInfo")
+	if oInfo.TicketParams == nil {
+		err := fmt.Errorf("missing ticketParams in OrchestratorInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	if oInfo.TicketParams == nil {
-		err := fmt.Errorf("missing ticketParams in OrchestratorInfo")
+
+	var reqCaps *core.Capabilities
+	if len(req.Capabilities) > 0 {
+		var caps net.Capabilities
+		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		reqCaps = core.CapabilitiesFromNetCapabilities(&caps)
+	}
+
+	// BYOC per-capability pricing (flag-gated, default OFF). When enabled for an
+	// lv2v request that carries Capability_BYOC constraints, resolve the
+	// per-capability price from the orchestrator's advertised CapabilitiesPrices
+	// (keyed on the BYOC model constraint) and use it instead of the flat base
+	// price. The resolved price is written back to oInfo.PriceInfo so it is the
+	// single source for: state init, initialPrice, the max-price ceiling, the
+	// payment's ExpectedPrice, and the price-doubling guard in validatePrice.
+	// When the flag is OFF or no usable cap price matches, behavior is
+	// byte-identical to the base-price path.
+	priceInfo := oInfo.PriceInfo
+	useByocPricing := false
+	if ls.LivepeerNode.ByocPerCapPricing && req.Type == RemoteType_LiveVideoToVideo {
+		if capPrice := resolveByocPrice(reqCaps, &oInfo); capPrice != nil {
+			priceInfo = capPrice
+			oInfo.PriceInfo = capPrice
+			useByocPricing = true
+		}
+	}
+	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
+		err := fmt.Errorf("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -454,16 +524,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	streamParams := &core.StreamParameters{
 		// Embedded within genSegCreds, may be used by orch for payment accounting
-		ManifestID: core.ManifestID(manifestID),
-	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+		ManifestID:   core.ManifestID(manifestID),
+		Capabilities: reqCaps,
 	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
@@ -528,7 +590,17 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
+	if useByocPricing {
+		// BYOC per-capability tariff is denominated per compute-second (wei/sec),
+		// so charge on seconds directly rather than synthesizing lv2v pixels. With
+		// pixels = ceil(billableSecs) and the resolved per-cap price kept as its
+		// reduced wei/sec rational, calculateFee yields capPriceWeiPerSec * seconds.
+		if billableSecs <= 0 {
+			// preload with 60 seconds, mirroring the lv2v first-call behavior
+			billableSecs = (60 * time.Second).Seconds()
+		}
+		pixels = int64(math.Ceil(billableSecs))
+	} else if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V

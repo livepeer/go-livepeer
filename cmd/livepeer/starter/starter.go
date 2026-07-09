@@ -180,6 +180,7 @@ type LivepeerConfig struct {
 	RemoteSignerWebhookHeaders *string
 	RemoteSignerAllowNoAuth    *bool
 	RemoteDiscovery            *bool
+	ByocPerCapPricing          *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
@@ -326,6 +327,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRemoteSignerWebhookHeaders := ""
 	defaultRemoteSignerAllowNoAuth := false
 	defaultRemoteDiscovery := false
+	defaultByocPerCapPricing := false
 
 	// Gateway logs
 	defaultKafkaBootstrapServers := ""
@@ -458,6 +460,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
 		RemoteSignerAllowNoAuth:    &defaultRemoteSignerAllowNoAuth,
 		RemoteDiscovery:            &defaultRemoteDiscovery,
+		ByocPerCapPricing:          &defaultByocPerCapPricing,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1880,6 +1883,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	if cfg.RemoteDiscovery != nil {
 		n.RemoteDiscovery = *cfg.RemoteDiscovery
+	}
+	if cfg.ByocPerCapPricing != nil {
+		n.ByocPerCapPricing = *cfg.ByocPerCapPricing
 	}
 	if cfg.LiveAIHeartbeatHeaders != nil {
 		n.LiveAIHeartbeatHeaders = parseHeaderMap(*cfg.LiveAIHeartbeatHeaders)

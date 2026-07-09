@@ -149,6 +149,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.RemoteSignerWebhookHeaders = fs.String("remoteSignerWebhookHeaders", *cfg.RemoteSignerWebhookHeaders, "Map of headers to use for remote signer webhook requests. e.g. 'header:val,header2:val2'")
 	cfg.RemoteSignerAllowNoAuth = fs.Bool("remoteSignerAllowNoAuth", *cfg.RemoteSignerAllowNoAuth, "Allow an unauthenticated remote signer on a public -httpAddr (no webhook). UNSAFE: signs payments from this node's deposit for any reachable caller; restrict access externally (proxy/private network).")
 	cfg.RemoteDiscovery = fs.Bool("remoteDiscovery", *cfg.RemoteDiscovery, "Enable orchestrator discovery on remote signers")
+	cfg.ByocPerCapPricing = fs.Bool("byocPerCapPricing", *cfg.ByocPerCapPricing, "Remote signer: resolve BYOC live-payment fee from the orchestrator's per-capability CapabilitiesPrices (keyed on Capability_BYOC constraints in the request) instead of the flat base price. Default OFF (byte-identical to base-price behavior).")
 
 	// Gateway metrics
 	cfg.KafkaBootstrapServers = fs.String("kafkaBootstrapServers", *cfg.KafkaBootstrapServers, "URL of Kafka Bootstrap Servers")
