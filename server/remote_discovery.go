@@ -391,8 +391,6 @@ func capabilityPrice(info *common.OrchNetworkCapabilities, capability core.Capab
 	if info == nil {
 		return nil
 	}
-	// Check per-capability price if it exists (a zero rate is allowed here, e.g.
-	// a free capability).
 	if capPrice := findCapPriceInfo(info.CapabilitiesPrices, capability, modelID, false); capPrice != nil {
 		return new(big.Rat).SetFrac64(capPrice.PricePerUnit, capPrice.PixelsPerUnit)
 	}

@@ -356,14 +356,9 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
 }
 
-// findCapPriceInfo scans advertised per-capability prices for an entry whose
-// capability and model constraint match, returning a copy of its rate (or nil
-// if none matches). Entries with a non-positive PixelsPerUnit are always
-// skipped. When requirePositiveRate is set, entries with a non-positive
-// PricePerUnit are also skipped and the scan continues, so a later valid
-// duplicate for the same constraint (e.g. a misconfiguration) is still honored;
-// otherwise the first constraint match is returned (a zero rate is allowed,
-// e.g. a free capability). Pure match-only lookup with no base-price fallback.
+// findCapPriceInfo returns the first CapabilitiesPrices entry matching
+// capability+modelID. requirePositiveRate skips non-positive PricePerUnit and
+// keeps scanning; otherwise a zero rate is allowed.
 func findCapPriceInfo(prices []*net.PriceInfo, capability core.Capability, modelID string, requirePositiveRate bool) *net.PriceInfo {
 	for _, p := range prices {
 		if p == nil || core.Capability(p.Capability) != capability || p.Constraint != modelID {
@@ -380,20 +375,8 @@ func findCapPriceInfo(prices []*net.PriceInfo, capability core.Capability, model
 	return nil
 }
 
-// resolveByocPrice resolves the per-capability BYOC price advertised in the
-// orchestrator's OrchestratorInfo.CapabilitiesPrices, keyed on the BYOC model
-// constraint already present in the request capabilities
-// (caps.ModelIDForCapability(Capability_BYOC)). The orchestrator appends
-// external BYOC capability prices to CapabilitiesPrices as
-// {Capability: Capability_BYOC, Constraint: <capability/app name>} (see
-// core/orchestrator.go GetCapabilitiesPrices).
-//
-// Returns nil when there is no usable per-capability price (no BYOC constraint,
-// or no matching entry with a positive rate). A matching entry with a
-// non-positive rate is skipped rather than aborting the scan, so a later valid
-// duplicate entry for the same constraint (e.g. due to misconfiguration) is
-// still honored. Callers fall back to the base oInfo.PriceInfo when nil is
-// returned (never zeroing the fee).
+// resolveByocPrice looks up the BYOC model constraint from caps in
+// oInfo.CapabilitiesPrices. Returns nil when no usable price matches.
 func resolveByocPrice(caps *core.Capabilities, oInfo *net.OrchestratorInfo) *net.PriceInfo {
 	if caps == nil || oInfo == nil {
 		return nil
@@ -456,16 +439,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		reqCaps = core.CapabilitiesFromNetCapabilities(&caps)
 	}
 
-	// Pricing basis follows the request capability type: a BYOC capability is
-	// charged at its advertised per-capability rate over compute-seconds, while
-	// lv2v (and everything else) keeps the pricing it already used. resolveByocPrice
-	// returns nil for non-BYOC caps, so lv2v naturally falls through to the base
-	// price unchanged. The resolved BYOC price is written back to oInfo.PriceInfo
-	// so it is the single source for: state init, initialPrice, the max-price
-	// ceiling, the payment's ExpectedPrice, and the price-doubling guard in
-	// validatePrice. Flag-gated (default OFF) so BYOC pricing is opt-in; when the
-	// flag is OFF or no usable cap price matches, behavior is byte-identical to
-	// the base-price path.
+	// BYOC caps: use per-capability price (and bill compute-seconds below).
+	// Otherwise keep base PriceInfo / lv2v pixel pricing. Write back so state,
+	// ExpectedPrice, and validatePrice all see the same rate.
 	priceInfo := oInfo.PriceInfo
 	useByocPricing := false
 	if ls.LivepeerNode.ByocPerCapPricing {
@@ -601,12 +577,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
 	if useByocPricing {
-		// BYOC per-capability tariff is denominated per compute-second (wei/sec),
-		// so charge on seconds directly rather than synthesizing lv2v pixels. With
-		// pixels = ceil(billableSecs) and the resolved per-cap price kept as its
-		// reduced wei/sec rational, calculateFee yields capPriceWeiPerSec * seconds.
+		// BYOC prices are per compute-second; bill seconds instead of lv2v pixels.
 		if billableSecs <= 0 {
-			// preload with 60 seconds, mirroring the lv2v first-call behavior
 			billableSecs = (60 * time.Second).Seconds()
 		}
 		pixels = int64(math.Ceil(billableSecs))
