@@ -356,6 +356,30 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
 }
 
+// findCapPriceInfo scans advertised per-capability prices for an entry whose
+// capability and model constraint match, returning a copy of its rate (or nil
+// if none matches). Entries with a non-positive PixelsPerUnit are always
+// skipped. When requirePositiveRate is set, entries with a non-positive
+// PricePerUnit are also skipped and the scan continues, so a later valid
+// duplicate for the same constraint (e.g. a misconfiguration) is still honored;
+// otherwise the first constraint match is returned (a zero rate is allowed,
+// e.g. a free capability). Pure match-only lookup with no base-price fallback.
+func findCapPriceInfo(prices []*net.PriceInfo, capability core.Capability, modelID string, requirePositiveRate bool) *net.PriceInfo {
+	for _, p := range prices {
+		if p == nil || core.Capability(p.Capability) != capability || p.Constraint != modelID {
+			continue
+		}
+		if p.PixelsPerUnit <= 0 {
+			continue
+		}
+		if requirePositiveRate && p.PricePerUnit <= 0 {
+			continue
+		}
+		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
+	}
+	return nil
+}
+
 // resolveByocPrice resolves the per-capability BYOC price advertised in the
 // orchestrator's OrchestratorInfo.CapabilitiesPrices, keyed on the BYOC model
 // constraint already present in the request capabilities
@@ -369,7 +393,7 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 // non-positive rate is skipped rather than aborting the scan, so a later valid
 // duplicate entry for the same constraint (e.g. due to misconfiguration) is
 // still honored. Callers fall back to the base oInfo.PriceInfo when nil is
-// returned.
+// returned (never zeroing the fee).
 func resolveByocPrice(caps *core.Capabilities, oInfo *net.OrchestratorInfo) *net.PriceInfo {
 	if caps == nil || oInfo == nil {
 		return nil
@@ -378,22 +402,7 @@ func resolveByocPrice(caps *core.Capabilities, oInfo *net.OrchestratorInfo) *net
 	if constraint == "" {
 		return nil
 	}
-	for _, p := range oInfo.CapabilitiesPrices {
-		if p == nil {
-			continue
-		}
-		if p.Capability != uint32(core.Capability_BYOC) || p.Constraint != constraint {
-			continue
-		}
-		// Only honor a valid positive rate. Skip invalid/zero entries and keep
-		// scanning so a later valid duplicate for the same constraint isn't
-		// shadowed; if none is found we fall back to base (never zeroing the fee).
-		if p.PricePerUnit <= 0 || p.PixelsPerUnit <= 0 {
-			continue
-		}
-		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
-	}
-	return nil
+	return findCapPriceInfo(oInfo.CapabilitiesPrices, core.Capability_BYOC, constraint, true)
 }
 
 // GenerateLivePayment handles remote generation of a payment for live streams.
@@ -447,18 +456,19 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		reqCaps = core.CapabilitiesFromNetCapabilities(&caps)
 	}
 
-	// BYOC per-capability pricing (flag-gated, default OFF). When enabled for an
-	// lv2v request that carries Capability_BYOC constraints, resolve the
-	// per-capability price from the orchestrator's advertised CapabilitiesPrices
-	// (keyed on the BYOC model constraint) and use it instead of the flat base
-	// price. The resolved price is written back to oInfo.PriceInfo so it is the
-	// single source for: state init, initialPrice, the max-price ceiling, the
-	// payment's ExpectedPrice, and the price-doubling guard in validatePrice.
-	// When the flag is OFF or no usable cap price matches, behavior is
-	// byte-identical to the base-price path.
+	// Pricing basis follows the request capability type: a BYOC capability is
+	// charged at its advertised per-capability rate over compute-seconds, while
+	// lv2v (and everything else) keeps the pricing it already used. resolveByocPrice
+	// returns nil for non-BYOC caps, so lv2v naturally falls through to the base
+	// price unchanged. The resolved BYOC price is written back to oInfo.PriceInfo
+	// so it is the single source for: state init, initialPrice, the max-price
+	// ceiling, the payment's ExpectedPrice, and the price-doubling guard in
+	// validatePrice. Flag-gated (default OFF) so BYOC pricing is opt-in; when the
+	// flag is OFF or no usable cap price matches, behavior is byte-identical to
+	// the base-price path.
 	priceInfo := oInfo.PriceInfo
 	useByocPricing := false
-	if ls.LivepeerNode.ByocPerCapPricing && req.Type == RemoteType_LiveVideoToVideo {
+	if ls.LivepeerNode.ByocPerCapPricing {
 		if capPrice := resolveByocPrice(reqCaps, &oInfo); capPrice != nil {
 			priceInfo = capPrice
 			oInfo.PriceInfo = capPrice
