@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -19,7 +18,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/runner"
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -75,7 +73,9 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
-// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
+// SignBYOCJobRequest signs a BYOC job the same way gatewayJob.sign() and
+// network orchestrator verifyJobCreds do today: eth-sign over
+// request+parameters. (V1 FlattenBYOCJob is not yet deployed on network orchs.)
 type SignBYOCJobRequestInput struct {
 	ID             string `json:"id"`
 	Capability     string `json:"capability"`
@@ -114,15 +114,7 @@ func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
-		ID:             req.ID,
-		Capability:     req.Capability,
-		Request:        req.Request,
-		Parameters:     req.Parameters,
-		TimeoutSeconds: req.TimeoutSeconds,
-	})
-
-	sig, err := gw.Sign(sigPayload)
+	sig, err := gw.Sign([]byte(req.Request + req.Parameters))
 	if err != nil {
 		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -240,13 +232,14 @@ type RemotePaymentRequest struct {
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
 	ManifestID string
 
-	// Number of pixels to generate a ticket for. Required if `type` is not set.
+	// Number of billable units to generate tickets for (e.g. compute-seconds
+	// for BYOC, or pixels for other callers). Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
 	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
 	Type string `json:"type"`
 
-	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
+	// Capabilities to include in segment credentials / max-price policy. Optional.
 	Capabilities []byte `json:"capabilities"`
 }
 
@@ -375,19 +368,6 @@ func findCapPriceInfo(prices []*net.PriceInfo, capability core.Capability, model
 	return nil
 }
 
-// resolveByocPrice looks up the BYOC model constraint from caps in
-// oInfo.CapabilitiesPrices. Returns nil when no usable price matches.
-func resolveByocPrice(caps *core.Capabilities, oInfo *net.OrchestratorInfo) *net.PriceInfo {
-	if caps == nil || oInfo == nil {
-		return nil
-	}
-	constraint := caps.ModelIDForCapability(core.Capability_BYOC)
-	if constraint == "" {
-		return nil
-	}
-	return findCapPriceInfo(oInfo.CapabilitiesPrices, core.Capability_BYOC, constraint, true)
-}
-
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -439,16 +419,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		reqCaps = core.CapabilitiesFromNetCapabilities(&caps)
 	}
 
-	// BYOC caps: use per-capability price (and bill compute-seconds below).
-	// Otherwise keep base PriceInfo / lv2v pixel pricing. Write back so state,
-	// ExpectedPrice, and validatePrice all see the same rate.
+	// ExpectedPrice must match the rate baked into TicketParams.recipientRandHash.
+	// Never overwrite PriceInfo from CapabilitiesPrices — the orch is the sole
+	// rate source (via GetOrchestrator / JobPriceInfo).
 	priceInfo := oInfo.PriceInfo
-	useByocPricing := false
-	if capPrice := resolveByocPrice(reqCaps, &oInfo); capPrice != nil {
-		priceInfo = capPrice
-		oInfo.PriceInfo = capPrice
-		useByocPricing = true
-	}
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -575,12 +549,6 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
 	switch {
-	case useByocPricing:
-		// BYOC prices are per compute-second; bill seconds instead of lv2v pixels.
-		if billableSecs <= 0 {
-			billableSecs = (60 * time.Second).Seconds()
-		}
-		pixels = int64(math.Ceil(billableSecs))
 	case req.Type == RemoteType_LiveVideoToVideo:
 		info := defaultSegInfo
 		if billableSecs <= 0 {
@@ -595,7 +563,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if pixels <= 0 {
-		err = errors.New("missing pixels or job type")
+		err = errors.New("missing billable units or job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
