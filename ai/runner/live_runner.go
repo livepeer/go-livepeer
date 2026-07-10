@@ -328,6 +328,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		runner.LiveRunnerHeartbeatRequest = req
 		runner.LastHeartbeat = time.Now()
 		runner.route = runner.RunnerID // not doing label based routing here for now
+		slog.Info("live runner registered", "runner_id", runner.RunnerID, "app", runner.App, "runner_url", runner.RunnerURL)
 		runner.updatePriceConverterLocked()
 
 		// SessionIDs in the response come from the orchestrator's authoritative
@@ -564,6 +565,11 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		r.runners[staticRunner.route] = staticRunner
 		staticRunner.updatePriceConverterLocked()
 		r.mu.Unlock()
+
+		if existingStatic[entry.Label] == nil {
+			slog.Info("static live runner registered", "runner_id", staticRunner.RunnerID, "app", req.App, "runner_url", req.RunnerURL, "healthy", health[i])
+		}
+
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
@@ -675,7 +681,7 @@ func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	}
 	r.mu.Lock()
 	if r.runners[runnerID] == runner && !runner.removed {
-		r.removeRunnerWithRunnerLocked(runnerID, runner)
+		r.removeRunnerWithRunnerLocked(runnerID, runner, "unregister")
 	}
 	r.mu.Unlock()
 	return nil
@@ -1018,7 +1024,7 @@ func (r *LiveRunnerRegistry) removeExpiredRunners(now time.Time) {
 		if expired {
 			r.mu.Lock()
 			if r.runners[c.runnerID] == c.runner && !c.runner.removed && liveRunnerExpiredLocked(c.runner, now, heartbeatTTL) {
-				r.removeRunnerWithRunnerLocked(c.runnerID, c.runner)
+				r.removeRunnerWithRunnerLocked(c.runnerID, c.runner, "heartbeat timeout")
 			}
 			r.mu.Unlock()
 		}
@@ -1071,6 +1077,7 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 		healthy := r.staticRunnerHealthy(c.healthURL, c.healthStatus)
 		c.runner.mu.Lock()
 		if !c.runner.removed && c.runner.static {
+			prevStatus := c.runner.Status
 			if healthy {
 				c.runner.Status = "ready"
 			} else {
@@ -1078,6 +1085,9 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 				for sessionID := range c.runner.sessions {
 					c.runner.releaseSessionLocked(sessionID)
 				}
+			}
+			if c.runner.Status != prevStatus {
+				slog.Info("static live runner health changed", "runner_id", c.runner.RunnerID, "app", c.runner.App, "status", c.runner.Status, "health_url", c.healthURL)
 			}
 		}
 		c.runner.mu.Unlock()
@@ -1093,13 +1103,14 @@ func (r *LiveRunnerRegistry) staticRunnerHealthy(healthURL string, healthyStatus
 	return resp.StatusCode == healthyStatus
 }
 
-func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner) {
+func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner, reason string) {
 	// removeRunnerWithRunnerLocked requires both r.mu and runner.mu. Callers
 	// should already hold runner.mu before taking r.mu so the registry lock is
 	// not held while waiting on a busy runner.
 	// Set removed before deleting the map entry so any goroutine that already
 	// copied the runner pointer can reject it after acquiring runner.mu.
 	runner.removed = true
+	slog.Info("live runner deregistered", "runner_id", runnerID, "app", runner.App, "reason", reason)
 	runner.closeChannelsLocked()
 	for sessionID := range runner.sessions {
 		runner.releaseSessionLocked(sessionID)
@@ -1332,7 +1343,8 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 	}
 	// Heartbeats call this each time, but converter rebuild work is only done when
 	// price_info changes (or when a converter is missing after a prior failure).
-	if runner.converter != nil && runner.priceSource == runner.PriceInfo {
+	priceChanged := runner.priceSource != runner.PriceInfo
+	if runner.converter != nil && !priceChanged {
 		return
 	}
 	runner.stopPriceConverterLocked()
@@ -1343,6 +1355,10 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 	}
 	runner.priceSource = runner.PriceInfo
 	runner.converter = converter
+	if priceChanged {
+		slog.Debug("live runner price set", "runner_id", runner.RunnerID, "app", runner.App,
+			"price_per_unit", runner.PriceInfo.PricePerUnit, "pixels_per_unit", runner.PriceInfo.PixelsPerUnit, "price_unit", runner.PriceInfo.Unit)
+	}
 }
 
 func (runner *liveRunner) stopPriceConverterLocked() {

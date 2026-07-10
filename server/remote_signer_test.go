@@ -1311,6 +1311,55 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal("application/json", ineligibleRR.Header().Get("Content-Type"))
 }
 
+func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	// Node starts with no network capabilities (pool poll has not populated the cache yet).
+	node := &core.LivepeerNode{}
+
+	// Long interval: with the bug, an empty first refresh would lock discovery out for an hour.
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	// First request lands before the cache is populated: 503, cache empty.
+	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	emptyRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, emptyRR, emptyReq)
+	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
+
+	// The orchestrator pool finishes its poll and populates network capabilities.
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://late.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://late.example.com:8935",
+				"runners": [
+					{"url":"https://late.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+				]
+			}]`),
+		},
+	}))
+
+	// Follow-up within refreshEvery: the empty cache re-derives instead of staying rate-limited.
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://late.example.com:8935", resp[0].Address)
+}
+
 func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t *testing.T) {
 	require := require.New(t)
 
