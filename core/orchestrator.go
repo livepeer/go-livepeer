@@ -368,11 +368,37 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		return nil, nil
 	}
 
+	if fixedPrice := orch.sessionFixedPrice(sender, manifestID); fixedPrice != nil {
+		return priceInfoFromRat(fixedPrice)
+	}
+
+	// BYOC jobs are priced via GetPriceForJob / JobPriceInfo, not GetBasePriceForCap.
+	// When GetOrchestrator is called with BYOC caps, TicketParams must be minted at
+	// that same rate so Payment.ExpectedPrice matches recipientRandHash.
+	if caps != nil {
+		coreCaps := CapabilitiesFromNetCapabilities(caps)
+		if modelID := coreCaps.ModelIDForCapability(Capability_BYOC); modelID != "" {
+			return orch.JobPriceInfo(sender, modelID)
+		}
+	}
+
 	price, err := orch.priceInfo(sender, manifestID, caps)
 	if err != nil {
 		return nil, err
 	}
 
+	return priceInfoFromRat(price)
+}
+
+func (orch *orchestrator) sessionFixedPrice(sender ethcommon.Address, manifestID ManifestID) *big.Rat {
+	if manifestID == "" || orch.node.Balances == nil {
+		return nil
+	}
+
+	return orch.node.Balances.FixedPrice(sender, manifestID)
+}
+
+func priceInfoFromRat(price *big.Rat) (*net.PriceInfo, error) {
 	if !price.Num().IsInt64() || !price.Denom().IsInt64() {
 		fixedPrice, err := common.PriceToInt64(price)
 		if err != nil {
@@ -390,11 +416,8 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
-	if manifestID != "" {
-		fixedPrice := orch.node.Balances.FixedPrice(sender, manifestID)
-		if fixedPrice != nil {
-			return fixedPrice, nil
-		}
+	if fixedPrice := orch.sessionFixedPrice(sender, manifestID); fixedPrice != nil {
+		return fixedPrice, nil
 	}
 
 	transcodePrice := orch.node.GetBasePrice(sender.String())

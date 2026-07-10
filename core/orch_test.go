@@ -1752,6 +1752,79 @@ func TestBYOCExternalCapsSenderPricing(t *testing.T) {
 	assert.Equal(t, int64(10), getBYOCPrice(addr3), "falls back to default")
 }
 
+func TestPriceInfoForCaps_BYOCUsesJobPrice(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.AutoAdjustPrice = false
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	sender := ethcommon.HexToAddress("0x1000000000000000000000000000000000000000")
+	n.ExternalCapabilities.Capabilities["flux-schnell"] = &ExternalCapability{Name: "flux-schnell"}
+	n.SetPriceForExternalCapability("default", "flux-schnell", big.NewRat(42, 1))
+	n.SetPriceForExternalCapability(sender.Hex(), "flux-schnell", big.NewRat(99, 1))
+	// Built-in cap price must not be used for BYOC.
+	n.SetBasePriceForCap("default", Capability_BYOC, "flux-schnell", NewFixedPrice(big.NewRat(7, 1)))
+
+	byocCaps := NewCapabilities([]Capability{Capability_BYOC}, nil)
+	byocCaps.SetPerCapabilityConstraints(PerCapabilityConstraints{
+		Capability_BYOC: &CapabilityConstraints{
+			Models: map[string]*ModelConstraint{
+				"flux-schnell": {Warm: true, Capacity: 1},
+			},
+		},
+	})
+	netCaps := byocCaps.ToNetCapabilities()
+
+	price, err := orch.PriceInfoForCaps(sender, "", netCaps)
+	require.Nil(err)
+	require.NotNil(price)
+	assert.Equal(int64(99), price.PricePerUnit)
+	assert.Equal(int64(1), price.PixelsPerUnit)
+
+	other := ethcommon.HexToAddress("0x2000000000000000000000000000000000000000")
+	price, err = orch.PriceInfoForCaps(other, "", netCaps)
+	require.Nil(err)
+	require.NotNil(price)
+	assert.Equal(int64(42), price.PricePerUnit, "falls back to default job price")
+
+	// Session-pinned price wins over job price.
+	n.Balances = NewAddressBalances(time.Minute)
+	n.Balances.Credit(sender, ManifestID("sess-1"), big.NewRat(0, 1))
+	n.Balances.SetFixedPrice(sender, ManifestID("sess-1"), big.NewRat(5, 2))
+	price, err = orch.PriceInfoForCaps(sender, ManifestID("sess-1"), netCaps)
+	require.Nil(err)
+	require.NotNil(price)
+	assert.Equal(int64(5), price.PricePerUnit)
+	assert.Equal(int64(2), price.PixelsPerUnit)
+
+	// TicketParams must be minted from the same PriceInfoForCaps rate (not base/cap).
+	recipient := n.Recipient.(*pm.MockRecipient)
+	jobPrice := big.NewRat(99, 1)
+	recipient.On("TicketParams", sender, mock.MatchedBy(func(p *big.Rat) bool {
+		return p != nil && p.Cmp(jobPrice) == 0
+	})).Return(&pm.TicketParams{
+		Recipient:         sender,
+		FaceValue:         big.NewInt(100),
+		WinProb:           big.NewInt(100),
+		RecipientRandHash: pm.RandHash(),
+		Seed:              big.NewInt(1),
+		ExpirationBlock:   big.NewInt(100),
+		PricePerPixel:     jobPrice,
+		ExpirationParams:  &pm.TicketExpirationParams{},
+	}, nil).Once()
+
+	price, err = orch.PriceInfoForCaps(sender, "", netCaps)
+	require.Nil(err)
+	params, err := orch.TicketParams(sender, price)
+	require.Nil(err)
+	require.NotNil(params)
+	recipient.AssertExpectations(t)
+}
+
 func TestBYOCExternalCapsPriceEdgeCases(t *testing.T) {
 	addr := "0x1000000000000000000000000000000000000000"
 

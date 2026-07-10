@@ -182,6 +182,41 @@ func TestReceiveTicket_InvalidSignature(t *testing.T) {
 	assert.False(ok)
 }
 
+// TestBYOCAlignedPrice_RecipientRandAccepted is the payment-alignment probe:
+// TicketParams minted at the orch job price accept matching ExpectedPrice, and
+// reject a divergent CapabilitiesPrices rate (the recipientRandHash failure mode).
+func TestBYOCAlignedPrice_RecipientRandAccepted(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender, b, _, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	sv := &stubSigVerifier{}
+	sv.SetVerifyResult(true)
+	v := NewValidator(sv, tm)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg)
+
+	jobPrice := big.NewRat(99, 1)     // GetPriceForJob / PriceInfo
+	divergentCapPrice := big.NewRat(7, 1) // CapabilitiesPrices / base-cap price
+
+	params, err := r.TicketParams(sender, jobPrice)
+	require.NoError(err)
+	require.Zero(params.PricePerPixel.Cmp(jobPrice))
+
+	ticket := newTicket(sender, params, 0)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	require.NoError(err, "payment at orch job price must validate recipientRand")
+
+	// Signer/gateway substituting CapabilitiesPrices into ExpectedPrice.
+	badTicket := newTicket(sender, params, 1)
+	badTicket.PricePerPixel = divergentCapPrice
+	_, _, err = r.ReceiveTicket(badTicket, sig, params.Seed)
+	require.Error(err)
+	assert.Equal(errInvalidTicketRecipientRand.Error(), err.Error())
+	_, fatal := err.(*FatalReceiveErr)
+	assert.True(fatal)
+}
+
 func TestReceiveTicket_InvalidSender(t *testing.T) {
 	assert := assert.New(t)
 	sender, b, v, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)

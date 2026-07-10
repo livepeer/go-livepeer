@@ -1843,7 +1843,11 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 	return nil
 }
 func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
-	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
+	args := r.Called(sender, manifestID, caps)
+	if args.Get(0) != nil {
+		return args.Get(0).(*net.PriceInfo), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
 	return nil, nil
@@ -2033,6 +2037,7 @@ func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPric
 
 	orch.On("Nodes").Return()
 	orch.On("Address").Return(addr)
+	orch.On("PriceInfoForCaps", addr, core.ManifestID(""), mock.Anything).Return(&net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil)
 	orch.On("TicketParams", addr, mock.Anything).Return(&net.TicketParams{Recipient: pm.RandBytes(32)}, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{Token: []byte("tok"), SessionId: "sess", Expiration: time.Now().Add(time.Hour).Unix()})
 
@@ -2043,4 +2048,41 @@ func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPric
 
 	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
 	orch.AssertNotCalled(t, "PriceInfo", mock.Anything)
+}
+
+func TestOrchestratorInfoWithCaps_BYOCPricePassedToTicketParams(t *testing.T) {
+	require := require.New(t)
+
+	oldNodeStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldNodeStorage }()
+
+	orch := &mockOrchestrator{}
+	addr := ethcommon.HexToAddress("0x1")
+	byocPrice := &net.PriceInfo{PricePerUnit: 99, PixelsPerUnit: 1}
+	byocCaps := core.NewCapabilities([]core.Capability{core.Capability_BYOC}, nil)
+	byocCaps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		core.Capability_BYOC: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				"flux-schnell": {},
+			},
+		},
+	})
+	netCaps := byocCaps.ToNetCapabilities()
+
+	orch.On("Nodes").Return()
+	orch.On("Address").Return(addr)
+	orch.On("PriceInfoForCaps", addr, core.ManifestID(""), netCaps).Return(byocPrice, nil)
+	orch.On("TicketParams", addr, byocPrice).Return(&net.TicketParams{Recipient: pm.RandBytes(32)}, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{
+		Token:     []byte("tok"),
+		SessionId: "sess",
+		Expiration: time.Now().Add(time.Hour).Unix(),
+	})
+
+	info, err := orchestratorInfoWithCaps(orch, addr, "https://orch.example.com", "", netCaps)
+	require.NoError(err)
+	require.Equal(byocPrice, info.PriceInfo)
+	orch.AssertCalled(t, "TicketParams", addr, byocPrice)
+	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
 }
