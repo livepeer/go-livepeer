@@ -1800,7 +1800,7 @@ func TestResolveByocPrice(t *testing.T) {
 	}
 }
 
-func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
+func TestGenerateLivePayment_ByocCapabilityPricing(t *testing.T) {
 	require := require.New(t)
 
 	ethClient := newTestEthClient(t)
@@ -1903,18 +1903,8 @@ func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
 		require.Zero(gotBal.Cmp(wantBal), "balance got=%s want=%s fee=%s", gotBal.RatString(), wantBal.RatString(), fee.RatString())
 	}
 
-	ls.LivepeerNode.ByocPerCapPricing = false
-	offState := doPayment("nano-banana")
-	require.EqualValues(basePPU, offState.InitialPricePerUnit, "flag OFF must lock the base price")
-	require.EqualValues(1, offState.InitialPixelsPerUnit)
-	offFee := new(big.Rat).Mul(big.NewRat(basePPU, 1), big.NewRat(lv2vPixels, 1))
-	require.Zero(feeFromState(offState).Cmp(offFee))
-	assertBalanceConsistent(offState, offFee)
-
-	ls.LivepeerNode.ByocPerCapPricing = true
-
 	nanoState := doPayment("nano-banana")
-	require.EqualValues(capNanoPPU, nanoState.InitialPricePerUnit, "flag ON must lock the resolved cap price")
+	require.EqualValues(capNanoPPU, nanoState.InitialPricePerUnit, "must lock the resolved cap price")
 	require.EqualValues(1, nanoState.InitialPixelsPerUnit)
 	nanoFee := big.NewRat(capNanoPPU*preloadSecs, 1)
 	require.Zero(feeFromState(nanoState).Cmp(nanoFee), "nano fee")
@@ -1929,6 +1919,7 @@ func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
 
 	unknownState := doPayment("totally-unknown-cap")
 	require.EqualValues(basePPU, unknownState.InitialPricePerUnit, "unknown cap must fall back to base")
-	require.Zero(feeFromState(unknownState).Cmp(offFee))
-	assertBalanceConsistent(unknownState, offFee)
+	fallbackFee := new(big.Rat).Mul(big.NewRat(basePPU, 1), big.NewRat(lv2vPixels, 1))
+	require.Zero(feeFromState(unknownState).Cmp(fallbackFee))
+	assertBalanceConsistent(unknownState, fallbackFee)
 }

@@ -444,12 +444,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	// ExpectedPrice, and validatePrice all see the same rate.
 	priceInfo := oInfo.PriceInfo
 	useByocPricing := false
-	if ls.LivepeerNode.ByocPerCapPricing {
-		if capPrice := resolveByocPrice(reqCaps, &oInfo); capPrice != nil {
-			priceInfo = capPrice
-			oInfo.PriceInfo = capPrice
-			useByocPricing = true
-		}
+	if capPrice := resolveByocPrice(reqCaps, &oInfo); capPrice != nil {
+		priceInfo = capPrice
+		oInfo.PriceInfo = capPrice
+		useByocPricing = true
 	}
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
@@ -576,13 +574,14 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if useByocPricing {
+	switch {
+	case useByocPricing:
 		// BYOC prices are per compute-second; bill seconds instead of lv2v pixels.
 		if billableSecs <= 0 {
 			billableSecs = (60 * time.Second).Seconds()
 		}
 		pixels = int64(math.Ceil(billableSecs))
-	} else if req.Type == RemoteType_LiveVideoToVideo {
+	case req.Type == RemoteType_LiveVideoToVideo:
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
@@ -590,7 +589,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
-	} else if req.Type != "" {
+	case req.Type != "":
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
