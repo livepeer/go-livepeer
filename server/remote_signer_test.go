@@ -1708,6 +1708,25 @@ func lv2vCapsWithModel(t *testing.T, modelID string) *core.Capabilities {
 	return c
 }
 
+func byocCapsWithModel(t *testing.T, modelID string) *core.Capabilities {
+	t.Helper()
+	c := core.NewCapabilities([]core.Capability{core.Capability_BYOC}, nil)
+	c.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		core.Capability_BYOC: &core.CapabilityConstraints{
+			Models: core.ModelConstraints{modelID: &core.ModelConstraint{Warm: true}},
+		},
+	})
+	return c
+}
+
+func byocCapsProtoBytes(t *testing.T, modelID string) []byte {
+	t.Helper()
+	caps := byocCapsWithModel(t, modelID)
+	b, err := proto.Marshal(caps.ToNetCapabilities())
+	require.NoError(t, err)
+	return b
+}
+
 // TestResolveUsageLabels asserts the additive usage-attribution contract:
 //   - when the gateway supplies the real BYOC capability/model, the metered
 //     pipeline + model_id reflect them (the root-cause fix);
@@ -1737,6 +1756,15 @@ func TestResolveUsageLabels(t *testing.T) {
 			caps:         lv2vCapsWithModel(t, "streamdiffusion"),
 			wantPipeline: PipelineLiveVideoToVideo,
 			wantModelID:  "streamdiffusion",
+		},
+		{
+			name: "byoc type: labels from capabilities protobuf",
+			req: RemotePaymentRequest{
+				Type: RemoteType_BYOC,
+			},
+			caps:         byocCapsWithModel(t, "flux-schnell"),
+			wantPipeline: "flux-schnell",
+			wantModelID:  "flux-schnell",
 		},
 		{
 			name: "byoc: real capability + model override lv2v defaults",
@@ -2053,4 +2081,27 @@ func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
 	require.EqualValues(basePPU, unknownState.InitialPricePerUnit, "unknown cap must fall back to base")
 	require.Zero(feeFromState(unknownState).Cmp(offFee))
 	assertBalanceConsistent(unknownState, offFee)
+
+	// type:"byoc" + capabilities protobuf (no capability string) must bill like BYOC.
+	doPaymentByocType := func(modelID string) RemotePaymentState {
+		reqBody, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator:   orchBlob,
+			Type:           RemoteType_BYOC,
+			Capabilities:   byocCapsProtoBytes(t, modelID),
+		})
+		require.NoError(err)
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		require.Equal(http.StatusOK, rr.Code, "body=%s", rr.Body.String())
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		var state RemotePaymentState
+		require.NoError(json.Unmarshal(resp.State.State, &state))
+		return state
+	}
+
+	byocTypeState := doPaymentByocType("nano-banana")
+	require.EqualValues(capNanoPPU, byocTypeState.InitialPricePerUnit, "type byoc must resolve per-cap price from capabilities proto")
+	require.Zero(feeFromState(byocTypeState).Cmp(nanoFee), "type byoc fee")
 }
