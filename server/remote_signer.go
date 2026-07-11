@@ -34,6 +34,7 @@ const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
 const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_LiveVideoToVideo = "lv2v"
+const RemoteType_BYOC = "byoc"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
 
@@ -243,7 +244,7 @@ type RemotePaymentRequest struct {
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
+	// Job type to automatically calculate payments. Valid values: `lv2v`, `byoc`. Optional.
 	Type string `json:"type"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
@@ -407,7 +408,15 @@ func sanitizeUsageLabel(s string) string {
 func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pipeline, modelID string) {
 	if req.Type == RemoteType_LiveVideoToVideo {
 		pipeline = PipelineLiveVideoToVideo
-		modelID = caps.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+		if caps != nil {
+			modelID = caps.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+		}
+	}
+	if req.Type == RemoteType_BYOC && caps != nil {
+		if m := caps.ModelIDForCapability(core.Capability_BYOC); m != "" {
+			pipeline = m
+			modelID = m
+		}
 	}
 	if c := sanitizeUsageLabel(req.Capability); c != "" {
 		pipeline = c
@@ -416,6 +425,23 @@ func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pip
 		modelID = m
 	}
 	return pipeline, modelID
+}
+
+// byocCapabilityName returns the BYOC capability constraint used for per-cap
+// pricing lookup. The gateway may supply it as req.Capability (lv2v path) or
+// encode it in the BYOC capabilities protobuf (type:"byoc" path).
+func byocCapabilityName(req *RemotePaymentRequest, caps *core.Capabilities) string {
+	if c := sanitizeUsageLabel(req.Capability); c != "" {
+		return c
+	}
+	if caps != nil {
+		return caps.ModelIDForCapability(core.Capability_BYOC)
+	}
+	return ""
+}
+
+func isByocBillingType(t string) bool {
+	return t == RemoteType_BYOC || t == RemoteType_LiveVideoToVideo
 }
 
 // resolveByocPrice resolves the per-capability BYOC price advertised in the
@@ -505,13 +531,26 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	// byte-identical to the base-price path.
 	priceInfo := oInfo.PriceInfo
 	useByocPricing := false
-	// Additionally gate on Type=="lv2v": enabling BYOC pricing changes the
-	// billing basis (it overrides req.InPixels and bypasses lv2v pixel
-	// synthesis), so it must only apply to the live (lv2v) job type that BYOC
-	// jobs always use — never to a non-lv2v request that happens to carry a
-	// capability.
-	if ls.LivepeerNode.ByocPerCapPricing && req.Capability != "" && req.Type == RemoteType_LiveVideoToVideo {
-		if capPrice := resolveByocPrice(&req, &oInfo); capPrice != nil {
+	var parsedCaps *core.Capabilities
+	if len(req.Capabilities) > 0 {
+		var caps net.Capabilities
+		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		parsedCaps = core.CapabilitiesFromNetCapabilities(&caps)
+	}
+	capName := byocCapabilityName(&req, parsedCaps)
+	// BYOC per-cap pricing changes the billing basis (compute-seconds instead
+	// of lv2v pixels). Apply for lv2v or explicit byoc job types when a
+	// capability constraint is present.
+	if ls.LivepeerNode.ByocPerCapPricing && capName != "" && isByocBillingType(req.Type) {
+		priceReq := req
+		if priceReq.Capability == "" {
+			priceReq.Capability = capName
+		}
+		if capPrice := resolveByocPrice(&priceReq, &oInfo); capPrice != nil {
 			priceInfo = capPrice
 			oInfo.PriceInfo = capPrice
 			useByocPricing = true
@@ -583,14 +622,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
 	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+	if parsedCaps != nil {
+		streamParams.Capabilities = parsedCaps
 	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
@@ -655,7 +688,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if useByocPricing {
+	if useByocPricing || req.Type == RemoteType_BYOC {
 		// BYOC per-capability tariff is denominated per compute-second (wei/sec),
 		// so charge on seconds directly rather than synthesizing lv2v pixels. With
 		// pixels = ceil(billableSecs) and the resolved per-cap price kept as its

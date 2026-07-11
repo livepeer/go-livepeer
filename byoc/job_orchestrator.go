@@ -566,18 +566,26 @@ func (bso *BYOCOrchestratorServer) verifyJobCreds(ctx context.Context, jobCreds 
 		return nil, errSegSig
 	}
 
-	if !bso.orch.VerifySig(ethcommon.HexToAddress(jobData.Sender), jobData.Request+jobData.Parameters, sigByte) {
-		clog.Errorf(ctx, "Sig check failed sender=%v", jobData.Sender)
-		return nil, errSegSig
+	sender := ethcommon.HexToAddress(jobData.Sender)
+
+	// Verify V1 structured binary format (matches DMZ /sign-byoc-job signing).
+	v1Payload := FlattenBYOCJob(&BYOCJobSigningInput{
+		ID:             jobData.ID,
+		Capability:     jobData.Capability,
+		Request:        jobData.Request,
+		Parameters:     jobData.Parameters,
+		TimeoutSeconds: jobData.Timeout,
+	})
+	if bso.orch.VerifySig(sender, string(v1Payload), sigByte) {
+		if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
+			return nil, errZeroCapacity
+		}
+		jobData.CapabilityUrl = bso.orch.GetUrlForCapability(jobData.Capability)
+		return jobData, nil
 	}
 
-	if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
-		return nil, errZeroCapacity
-	}
-
-	jobData.CapabilityUrl = bso.orch.GetUrlForCapability(jobData.Capability)
-
-	return jobData, nil
+	clog.Errorf(ctx, "Sig check failed sender=%v", jobData.Sender)
+	return nil, errSegSig
 }
 
 func (bso *BYOCOrchestratorServer) verifyTokenCreds(ctx context.Context, tokenCreds string) (*JobSender, error) {
