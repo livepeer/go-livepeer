@@ -414,7 +414,7 @@ func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pip
 	}
 	if req.Type == RemoteType_BYOC && caps != nil {
 		if m := caps.ModelIDForCapability(core.Capability_BYOC); m != "" {
-			pipeline = m
+			pipeline = core.CapabilityToPipeline(core.Capability_BYOC)
 			modelID = m
 		}
 	}

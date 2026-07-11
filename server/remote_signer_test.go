@@ -1763,7 +1763,7 @@ func TestResolveUsageLabels(t *testing.T) {
 				Type: RemoteType_BYOC,
 			},
 			caps:         byocCapsWithModel(t, "flux-schnell"),
-			wantPipeline: "flux-schnell",
+			wantPipeline: "byoc",
 			wantModelID:  "flux-schnell",
 		},
 		{
