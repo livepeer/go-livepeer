@@ -101,6 +101,7 @@ type LivepeerConfig struct {
 	AIServerless               *bool
 	UseLiveRunners             *bool
 	LiveRunnerConfig           *string
+	LiveRunnerProxyURL         *string
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -245,6 +246,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIServerless := false
 	defaultUseLiveRunners := false
 	defaultLiveRunnerConfig := ""
+	defaultLiveRunnerProxyURL := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -375,6 +377,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIServerless:             &defaultAIServerless,
 		UseLiveRunners:           &defaultUseLiveRunners,
 		LiveRunnerConfig:         &defaultLiveRunnerConfig,
+		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -2030,9 +2033,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if n.OrchSecret == "" && *cfg.LiveRunnerConfig == "" {
 				glog.Exit("running with -useLiveRunners requires -orchSecret")
 			}
+			if cfg.LiveRunnerProxyURL != nil && *cfg.LiveRunnerProxyURL != "" {
+				if err := runner.ValidateProxyURLTemplate(*cfg.LiveRunnerProxyURL, orch.ServiceURI()); err != nil {
+					glog.Exitf("invalid -liveRunnerProxyUrl: %v", err)
+				}
+			}
 			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
-				Host:    liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
-				Onchain: *cfg.Network != "offchain",
+				Host:             liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Onchain:          *cfg.Network != "offchain",
+				ProxyURLTemplate: *cfg.LiveRunnerProxyURL,
 			})
 			if n.OrchSecret == "" {
 				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")

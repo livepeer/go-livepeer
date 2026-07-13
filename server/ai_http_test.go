@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -1376,6 +1377,99 @@ func TestLiveRunnerProxyRejectsInvalidSession(t *testing.T) {
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestLiveRunnerCreateSessionProxyAndProxyDefaultPath(t *testing.T) {
+	var gotPath, gotQuery, gotSessionID string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("proxied"))
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base"})
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var proxy runner.LiveRunnerProxy
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &proxy))
+	require.NotEmpty(t, proxy.ProxyID)
+	require.Equal(t, "http://localhost:1234/run/"+proxy.ProxyID, proxy.URL)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, proxy.URL+"/foo/bar?x=1", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "proxied", w.Body.String())
+	require.Equal(t, "/target/foo/bar", gotPath)
+	require.Equal(t, "x=1", gotQuery)
+	require.Equal(t, sessionID, gotSessionID)
+}
+
+func TestLiveRunnerSessionProxyHostTemplate(t *testing.T) {
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer upstream.Close()
+
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	orch := newStubOrchestrator()
+	orch.secret = "live-runner-secret"
+	lp := &lphttp{
+		orchestrator: orch,
+		node:         node,
+		transRPC:     http.NewServeMux(),
+	}
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+		Host:             testLiveRunnerHost{orchestrator: lp.orchestrator},
+		ProxyURLTemplate: "https://{proxy}.daydream.example.com",
+	})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
+	require.NoError(t, startAIServer(lp))
+
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base"})
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+	w := httptest.NewRecorder()
+	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var proxy runner.LiveRunnerProxy
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &proxy))
+	require.Equal(t, "https://"+proxy.ProxyID+".daydream.example.com", proxy.URL)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "https://"+proxy.ProxyID+".daydream.example.com/foo", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "/target/foo", gotPath)
+}
+
+func TestLiveRunnerCreateSessionProxyRejectsUnauthorizedAndBadTarget(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, nil)
+	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", strings.NewReader(`{"target_url":"https://runner.example.com/app"}`))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w = httptest.NewRecorder()
+	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":"https://other.example.com/app"}`)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "hostname")
 }
 
 func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
