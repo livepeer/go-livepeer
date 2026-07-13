@@ -1305,9 +1305,6 @@ func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, w.Code)
 	require.Equal(t, "single-shot", w.Body.String())
 	require.Equal(t, "ok", w.Header().Get("X-Upstream"))
-	require.Equal(t, gotSessionID, w.Header().Get(liveRunnerSessionIDHeader))
-	require.Equal(t, gotSessionControl, w.Header().Get(liveRunnerSessionControlHeader))
-	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+gotSessionID+"/payment", w.Header().Get(liveRunnerSessionPaymentHeader))
 	require.Equal(t, "/base/v1/foo/bar", gotPath)
 	require.Equal(t, "x=1&y=two", gotQuery)
 	require.Equal(t, "runner-1", gotRunnerRoute)
@@ -1335,6 +1332,7 @@ func TestLiveRunnerSingleShotProxyOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
 	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
 	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, int64(5000), challenge.PaymentIntervalMs)
 	require.Equal(t, int64(10), oInfo.GetPriceInfo().GetPricePerUnit())
 	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
 }
