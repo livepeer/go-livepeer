@@ -266,7 +266,8 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		h.startLiveRunnerSessionPaymentLoop(ctx, manager, runnerID, sessionID, payment, segData.ManifestID)
+		// Detach from the request ctx so the loop outlives this reservation call.
+		h.startLiveRunnerSessionPaymentLoop(context.WithoutCancel(ctx), manager, runnerID, sessionID, payment, segData.ManifestID)
 	}
 	controlURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID).String()
 	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
@@ -696,6 +697,7 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// Bound to the request ctx so the loop ends when this single-shot call returns.
 		h.startLiveRunnerSessionPaymentLoop(ctx, manager, runnerID, sessionID, payment, segData.ManifestID)
 	}
 
@@ -756,8 +758,10 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 	proxy.ServeHTTP(w, r)
 }
 
+// startLiveRunnerSessionPaymentLoop starts the metering loop; the caller controls
+// its lifetime via the ctx it passes.
 func (h *lphttp) startLiveRunnerSessionPaymentLoop(ctx context.Context, manager liveRunnerManager, runnerID, sessionID string, payment lpnet.Payment, manifestID core.ManifestID) {
-	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	loopCtx, cancel := context.WithCancel(ctx)
 	paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 	accountPaymentFunc := func(inPixels int64) error {
 		err := paymentReceiver.AccountPayment(loopCtx, &SegmentInfoReceiver{
