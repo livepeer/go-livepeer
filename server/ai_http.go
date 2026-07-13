@@ -655,11 +655,10 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 	}
 
 	var (
-		payment         lpnet.Payment
-		segData         *core.SegTranscodingMetadata
-		ctx             = clog.AddVal(r.Context(), "runner_id", runnerID)
-		reservedID      string
-		reservedIDInput string
+		payment   lpnet.Payment
+		segData   *core.SegTranscodingMetadata
+		ctx       = r.Context()
+		sessionID string
 	)
 	if paymentRequired {
 		var err error
@@ -671,31 +670,27 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 			respondWithError(w, "mismatched manifest and auth token", http.StatusForbidden)
 			return
 		}
-		reservedIDInput = string(segData.ManifestID)
+		// for easier correlation across orch, gw, signer
+		sessionID = string(segData.ManifestID)
 	}
-
-	sessionID, endpoint, err := manager.ReserveSession(runnerID, reservedIDInput)
+	sessionID, endpoint, err := manager.ReserveSession(runnerID, sessionID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
 	}
-	reservedID = sessionID
-	ctx = clog.AddVal(ctx, "session_id", sessionID)
+
+	// Release on return: a single-shot session lives for exactly one request.
 	defer func() {
-		if reservedID == "" {
-			return
-		}
-		if err := manager.ReleaseSession(runnerID, reservedID); err != nil {
+		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
 			slog.Error("error releasing single-shot session", "runner_id", runnerID, "session_id", sessionID, "err", err)
 		}
 	}()
 
+	ctx = clog.AddVal(r.Context(), "runner_id", runnerID)
+	ctx = clog.AddVal(ctx, "session_id", sessionID)
 	if paymentRequired {
-		if string(segData.ManifestID) != sessionID {
-			respondWithError(w, "mismatched session and payment manifest", http.StatusForbidden)
-			return
-		}
 		if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+			// Session released by the defer above.
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
