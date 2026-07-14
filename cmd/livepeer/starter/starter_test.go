@@ -460,6 +460,15 @@ func TestNewLivepeerConfig_LiveRunnerConfigFlag(t *testing.T) {
 	require.Equal("/tmp/runners.json", *cfg.LiveRunnerConfig)
 }
 
+func TestNewLivepeerConfig_LiveRunnerProxyURLFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerProxyUrl", "https://{proxy}.example.com"}))
+	require.Equal("https://{proxy}.example.com", *cfg.LiveRunnerProxyURL)
+}
+
 func TestNewLivepeerConfig_LiveRunnerAddrFlag(t *testing.T) {
 	require := require.New(t)
 
@@ -486,7 +495,9 @@ func TestLiveRunnerManagerConstruction(t *testing.T) {
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
 
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{})
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+		ProxyURLTemplate: "https://example.com/run/{proxy}",
+	})
 	t.Cleanup(manager.Stop)
 	node.LiveRunnerManager = manager
 	require.NotNil(t, node.LiveRunnerManager)
