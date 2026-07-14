@@ -493,7 +493,7 @@ func (h *lphttp) RefreshPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	data, err := marshalLivePaymentChallengeResponse(oInfo, h.node.LivePaymentInterval)
 	if err != nil {
 		respondJsonError(ctx, w, err, http.StatusInternalServerError)
 		return
