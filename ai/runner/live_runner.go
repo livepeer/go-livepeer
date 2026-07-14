@@ -1381,6 +1381,7 @@ func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runne
 func (runner *liveRunner) releaseSessionLocked(sessionID string) {
 	// releaseSessionLocked requires runner.mu.
 	if session := runner.sessions[sessionID]; session != nil {
+		slog.Debug("live runner session released", "runner_id", runner.RunnerID, "session_id", sessionID, "mode", runner.Mode, "session_duration", time.Since(session.createdAt))
 		runner.sendSessionEvent("released", sessionID)
 		session.closeChannelsLocked()
 	}
