@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -32,6 +33,7 @@ const (
 	defaultLiveRunnerHealthTimeout     = 3 * time.Second
 	liveRunnerO2RKeepaliveMessage      = `{"keep":"alive"}`
 	liveRunnerIDRandomBytes            = 5
+	proxyIDRandomBytes                 = 16
 	liveRunnerSeedBytes                = 32
 )
 
@@ -159,6 +161,19 @@ type LiveRunnerTrickleChannel struct {
 	MimeType    string `json:"mime_type"`
 }
 
+type LiveRunnerProxy struct {
+	ProxyID string `json:"proxy_id"`
+	URL     string `json:"url"`
+}
+
+type LiveRunnerProxyRoute struct {
+	RunnerID     string
+	SessionID    string
+	SessionToken string
+	TargetURL    string
+	AppPath      string
+}
+
 type liveRunner struct {
 	seed            []byte
 	heartbeatSecret string
@@ -183,6 +198,12 @@ type liveRunnerSession struct {
 	// Protected by the parent liveRunner.mu.
 	createdAt time.Time
 	channels  map[string]*liveRunnerTrickleChannel
+	proxies   map[string]proxyTarget
+}
+
+type proxyTarget struct {
+	targetURL string
+	createdAt time.Time
 }
 
 type liveRunnerTrickleChannel struct {
@@ -211,6 +232,7 @@ type LiveRunnerRegistry struct {
 	trickleSrv             *trickle.Server
 	publicTrickleBaseURL   string
 	internalTrickleBaseURL string
+	proxyTemplate          proxyURLTemplate
 }
 
 type RunnerHost interface {
@@ -220,13 +242,32 @@ type RunnerHost interface {
 }
 
 type LiveRunnerRegistryConfig struct {
-	Host    RunnerHost
-	Onchain bool
+	Host             RunnerHost
+	Onchain          bool
+	ProxyURLTemplate string
 }
 
 var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+type proxyURLTemplate struct {
+	raw               string
+	placeholderInHost bool
+	host              string
+	hostPrefix        string
+	hostSuffix        string
+	pathPrefix        string
+	staticPath        string
+}
+
 func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry {
+	var serviceURI *url.URL
+	if config.Host != nil {
+		serviceURI = config.Host.ServiceURI()
+	}
+	proxyTemplate, err := parseProxyURLTemplate(config.ProxyURLTemplate, serviceURI)
+	if err != nil {
+		panic(fmt.Sprintf("invalid live runner proxy url: %v", err))
+	}
 	r := &LiveRunnerRegistry{
 		host:              config.Host,
 		offchain:          !config.Onchain,
@@ -236,6 +277,7 @@ func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry 
 		healthClient:      &http.Client{Timeout: defaultLiveRunnerHealthTimeout},
 		healthInterval:    defaultLiveRunnerHealthInterval,
 		stopRegistry:      make(chan struct{}),
+		proxyTemplate:     proxyTemplate,
 	}
 	go r.healthLoop()
 	go r.expiryLoop()
@@ -328,6 +370,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 		runner.LiveRunnerHeartbeatRequest = req
 		runner.LastHeartbeat = time.Now()
 		runner.route = runner.RunnerID // not doing label based routing here for now
+		slog.Info("live runner registered", "runner_id", runner.RunnerID, "app", runner.App, "runner_url", runner.RunnerURL)
 		runner.updatePriceConverterLocked()
 
 		// SessionIDs in the response come from the orchestrator's authoritative
@@ -427,6 +470,149 @@ func staticRunnerHealthURL(runnerURL, healthURL string) (string, error) {
 		return "", fmt.Errorf("invalid runner_url")
 	}
 	return strings.TrimRight(runnerURL, "/") + healthURL, nil
+}
+
+func parseProxyURLTemplate(raw string, serviceURI *url.URL) (proxyURLTemplate, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		if serviceURI == nil || serviceURI.String() == "" {
+			return proxyURLTemplate{}, fmt.Errorf("live runner proxy url requires service URI")
+		}
+		raw = strings.TrimRight(serviceURI.String(), "/") + "/run/{proxy}"
+	}
+	if strings.Count(raw, "{proxy}") != 1 {
+		return proxyURLTemplate{}, fmt.Errorf("live runner proxy url must contain exactly one {proxy} placeholder")
+	}
+
+	const placeholder = "proxy-placeholder"
+	parsedRaw := strings.Replace(raw, "{proxy}", placeholder, 1)
+	u, err := url.ParseRequestURI(parsedRaw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return proxyURLTemplate{}, fmt.Errorf("live runner proxy url must be an absolute URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return proxyURLTemplate{}, fmt.Errorf("live runner proxy url scheme must be http or https")
+	}
+
+	hostHasPlaceholder := strings.Contains(u.Host, placeholder)
+	pathHasPlaceholder := strings.Contains(u.Path, placeholder)
+	if hostHasPlaceholder == pathHasPlaceholder {
+		return proxyURLTemplate{}, fmt.Errorf("live runner proxy url placeholder must be in the host or path")
+	}
+
+	tmpl := proxyURLTemplate{raw: raw}
+	if hostHasPlaceholder {
+		parts := strings.Split(u.Host, placeholder)
+		tmpl.placeholderInHost = true
+		tmpl.hostPrefix = strings.ToLower(parts[0])
+		tmpl.hostSuffix = strings.ToLower(parts[1])
+		tmpl.staticPath = strings.TrimRight(u.Path, "/")
+		if tmpl.staticPath == "/" {
+			tmpl.staticPath = ""
+		}
+		return tmpl, nil
+	}
+
+	parts := strings.Split(u.Path, placeholder)
+	if !strings.HasSuffix(parts[0], "/") || (parts[1] != "" && parts[1] != "/") {
+		return proxyURLTemplate{}, fmt.Errorf("live runner proxy url path placeholder must be the final path segment")
+	}
+	tmpl.host = strings.ToLower(u.Host)
+	tmpl.pathPrefix = parts[0]
+	return tmpl, nil
+}
+
+func (tmpl proxyURLTemplate) proxyURL(proxyID string) string {
+	replacement := proxyID
+	if !tmpl.placeholderInHost {
+		replacement = url.PathEscape(proxyID)
+	}
+	return strings.Replace(tmpl.raw, "{proxy}", replacement, 1)
+}
+
+func (tmpl proxyURLTemplate) proxyIDAndAppPath(host, path string) (string, string, bool) {
+	if tmpl.placeholderInHost {
+		requestHost := stripHostPort(host)
+		start := len(tmpl.hostPrefix)
+		end := len(requestHost) - len(tmpl.hostSuffix)
+		if start >= end {
+			return "", "", false
+		}
+		if !strings.EqualFold(requestHost[:start], tmpl.hostPrefix) || !strings.EqualFold(requestHost[end:], tmpl.hostSuffix) {
+			return "", "", false
+		}
+		proxyID := strings.ToLower(requestHost[start:end])
+		if proxyID == "" {
+			return "", "", false
+		}
+		appPath, ok := stripProxyPathPrefix(path, tmpl.staticPath)
+		if !ok {
+			return "", "", false
+		}
+		return proxyID, appPath, true
+	}
+	if !strings.EqualFold(tmpl.host, host) {
+		return "", "", false
+	}
+	if !strings.HasPrefix(path, tmpl.pathPrefix) {
+		return "", "", false
+	}
+	rest := path[len(tmpl.pathPrefix):]
+	if rest == "" {
+		return "", "", false
+	}
+	proxyID, appPath, ok := strings.Cut(rest, "/")
+	if proxyID == "" {
+		return "", "", false
+	}
+	if !ok {
+		return proxyID, "", true
+	}
+	return proxyID, appPath, true
+}
+
+func stripHostPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+func stripProxyPathPrefix(path, prefix string) (string, bool) {
+	if prefix == "" {
+		return strings.TrimPrefix(path, "/"), true
+	}
+	if path == prefix {
+		return "", true
+	}
+	if strings.HasPrefix(path, prefix+"/") {
+		return strings.TrimPrefix(path[len(prefix):], "/"), true
+	}
+	return "", false
+}
+
+func normalizeProxyTargetURL(raw string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url is required"}
+	}
+	u, err := url.ParseRequestURI(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url must be an absolute URL"}
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url scheme must be http or https"}
+	}
+	if u.Fragment != "" {
+		return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url must not include a fragment"}
+	}
+	return u, nil
+}
+
+// ValidateProxyURLTemplate checks a public live runner proxy URL template.
+func ValidateProxyURLTemplate(raw string, serviceURI *url.URL) error {
+	_, err := parseProxyURLTemplate(raw, serviceURI)
+	return err
 }
 
 func staticRunnerRoute(route, runnerID, label string) string {
@@ -564,6 +750,11 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		r.runners[staticRunner.route] = staticRunner
 		staticRunner.updatePriceConverterLocked()
 		r.mu.Unlock()
+
+		if existingStatic[entry.Label] == nil {
+			slog.Info("static live runner registered", "runner_id", staticRunner.RunnerID, "app", req.App, "runner_url", req.RunnerURL, "healthy", health[i])
+		}
+
 		registrations = append(registrations, StaticLiveRunnerRegistration{
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
@@ -675,7 +866,7 @@ func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	}
 	r.mu.Lock()
 	if r.runners[runnerID] == runner && !runner.removed {
-		r.removeRunnerWithRunnerLocked(runnerID, runner)
+		r.removeRunnerWithRunnerLocked(runnerID, runner, "unregister")
 	}
 	r.mu.Unlock()
 	return nil
@@ -714,6 +905,7 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	runner.sessions[id] = &liveRunnerSession{
 		createdAt: time.Now(),
 		channels:  make(map[string]*liveRunnerTrickleChannel),
+		proxies:   make(map[string]proxyTarget),
 	}
 	runner.sendSessionEvent("reserved", id)
 	return id, runner.RunnerURL, nil
@@ -926,6 +1118,77 @@ func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name stri
 	return nil
 }
 
+func (r *LiveRunnerRegistry) CreateSessionProxy(runnerID, sessionID, targetURL string) (LiveRunnerProxy, error) {
+	target, err := normalizeProxyTargetURL(targetURL)
+	if err != nil {
+		return LiveRunnerProxy{}, err
+	}
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return LiveRunnerProxy{}, err
+	}
+	defer unlock()
+	session, err := runner.liveRunnerSessionLocked(sessionID)
+	if err != nil {
+		return LiveRunnerProxy{}, err
+	}
+	runnerURL, err := url.ParseRequestURI(runner.RunnerURL)
+	if err != nil || runnerURL.Hostname() == "" {
+		return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadGateway, Message: "invalid registered runner_url"}
+	}
+	// For now, limit to the registered runner URL until there's a good reason to do otherwise.
+	if !strings.EqualFold(target.Hostname(), runnerURL.Hostname()) {
+		return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url hostname must match registered runner_url hostname"}
+	}
+	proxyID := session.newProxyIDLocked()
+	session.proxies[proxyID] = proxyTarget{
+		targetURL: target.String(),
+		createdAt: time.Now(),
+	}
+	return LiveRunnerProxy{
+		ProxyID: proxyID,
+		URL:     r.proxyTemplate.proxyURL(proxyID),
+	}, nil
+}
+
+func (r *LiveRunnerRegistry) ResolveSessionProxy(host, path string) (LiveRunnerProxyRoute, bool, error) {
+	proxyID, appPath, matched := r.proxyTemplate.proxyIDAndAppPath(host, path)
+	if !matched {
+		return LiveRunnerProxyRoute{}, false, nil
+	}
+
+	r.mu.Lock()
+	heartbeatTTL := r.heartbeatTTL
+	snapshot := make([]*liveRunner, 0, len(r.runners))
+	for _, runner := range r.runners {
+		snapshot = append(snapshot, runner)
+	}
+	r.mu.Unlock()
+
+	for _, runner := range snapshot {
+		runner.mu.Lock()
+		if runner.removed || liveRunnerExpiredLocked(runner, time.Now(), heartbeatTTL) || !isReadyStatus(runner.Status) {
+			runner.mu.Unlock()
+			continue
+		}
+		for sessionID, session := range runner.sessions {
+			if target, ok := session.proxies[proxyID]; ok {
+				route := LiveRunnerProxyRoute{
+					RunnerID:     runner.route,
+					SessionID:    sessionID,
+					SessionToken: runner.sessionToken(sessionID),
+					TargetURL:    target.targetURL,
+					AppPath:      appPath,
+				}
+				runner.mu.Unlock()
+				return route, true, nil
+			}
+		}
+		runner.mu.Unlock()
+	}
+	return LiveRunnerProxyRoute{}, true, &RunnerError{StatusCode: http.StatusNotFound, Message: "live runner proxy not found"}
+}
+
 func (r *LiveRunnerRegistry) Runners() []LiveRunnerDiscoveryRunner {
 	r.mu.Lock()
 	heartbeatTTL := r.heartbeatTTL
@@ -1018,7 +1281,7 @@ func (r *LiveRunnerRegistry) removeExpiredRunners(now time.Time) {
 		if expired {
 			r.mu.Lock()
 			if r.runners[c.runnerID] == c.runner && !c.runner.removed && liveRunnerExpiredLocked(c.runner, now, heartbeatTTL) {
-				r.removeRunnerWithRunnerLocked(c.runnerID, c.runner)
+				r.removeRunnerWithRunnerLocked(c.runnerID, c.runner, "heartbeat timeout")
 			}
 			r.mu.Unlock()
 		}
@@ -1071,6 +1334,7 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 		healthy := r.staticRunnerHealthy(c.healthURL, c.healthStatus)
 		c.runner.mu.Lock()
 		if !c.runner.removed && c.runner.static {
+			prevStatus := c.runner.Status
 			if healthy {
 				c.runner.Status = "ready"
 			} else {
@@ -1078,6 +1342,9 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 				for sessionID := range c.runner.sessions {
 					c.runner.releaseSessionLocked(sessionID)
 				}
+			}
+			if c.runner.Status != prevStatus {
+				slog.Info("static live runner health changed", "runner_id", c.runner.RunnerID, "app", c.runner.App, "status", c.runner.Status, "health_url", c.healthURL)
 			}
 		}
 		c.runner.mu.Unlock()
@@ -1093,13 +1360,14 @@ func (r *LiveRunnerRegistry) staticRunnerHealthy(healthURL string, healthyStatus
 	return resp.StatusCode == healthyStatus
 }
 
-func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner) {
+func (r *LiveRunnerRegistry) removeRunnerWithRunnerLocked(runnerID string, runner *liveRunner, reason string) {
 	// removeRunnerWithRunnerLocked requires both r.mu and runner.mu. Callers
 	// should already hold runner.mu before taking r.mu so the registry lock is
 	// not held while waiting on a busy runner.
 	// Set removed before deleting the map entry so any goroutine that already
 	// copied the runner pointer can reject it after acquiring runner.mu.
 	runner.removed = true
+	slog.Info("live runner deregistered", "runner_id", runnerID, "app", runner.App, "reason", reason)
 	runner.closeChannelsLocked()
 	for sessionID := range runner.sessions {
 		runner.releaseSessionLocked(sessionID)
@@ -1261,6 +1529,15 @@ func (runner *liveRunner) sessionToken(sessionID string) string {
 	return deriveSecret(runner.seed, "session:"+sessionID)
 }
 
+func (session *liveRunnerSession) newProxyIDLocked() string {
+	for {
+		id := randomStr(proxyIDRandomBytes)
+		if _, exists := session.proxies[id]; !exists {
+			return id
+		}
+	}
+}
+
 func (runner *liveRunner) sessionIDsLocked() []string {
 	// sessionIDsLocked requires runner.mu.
 	type sessionEntry struct {
@@ -1332,7 +1609,8 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 	}
 	// Heartbeats call this each time, but converter rebuild work is only done when
 	// price_info changes (or when a converter is missing after a prior failure).
-	if runner.converter != nil && runner.priceSource == runner.PriceInfo {
+	priceChanged := runner.priceSource != runner.PriceInfo
+	if runner.converter != nil && !priceChanged {
 		return
 	}
 	runner.stopPriceConverterLocked()
@@ -1343,6 +1621,10 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 	}
 	runner.priceSource = runner.PriceInfo
 	runner.converter = converter
+	if priceChanged {
+		slog.Debug("live runner price set", "runner_id", runner.RunnerID, "app", runner.App,
+			"price_per_unit", runner.PriceInfo.PricePerUnit, "pixels_per_unit", runner.PriceInfo.PixelsPerUnit, "price_unit", runner.PriceInfo.Unit)
+	}
 }
 
 func (runner *liveRunner) stopPriceConverterLocked() {

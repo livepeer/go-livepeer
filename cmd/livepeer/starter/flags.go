@@ -59,6 +59,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.AIServerless = fs.Bool("aiServerless", *cfg.AIServerless, "Set to true to use serverless AI worker")
 	cfg.UseLiveRunners = fs.Bool("useLiveRunners", *cfg.UseLiveRunners, "Set to true to use LiveRunner-backed runners for supported pipelines")
 	cfg.LiveRunnerConfig = fs.String("liveRunnerConfig", *cfg.LiveRunnerConfig, "Path to JSON config file for static LiveRunner registration")
+	cfg.LiveRunnerProxyURL = fs.String("liveRunnerProxyUrl", *cfg.LiveRunnerProxyURL, "Public LiveRunner proxy URL template. Must contain exactly one {proxy} placeholder, e.g. https://{proxy}.example.com or https://example.com/run/{proxy}")
 	cfg.AIModels = fs.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
 	cfg.AIModelsDir = fs.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 	cfg.AIRunnerImage = fs.String("aiRunnerImage", *cfg.AIRunnerImage, "[Deprecated] Specify the base Docker image for the AI runner. Example: livepeer/ai-runner:0.0.1. Use -aiRunnerImageOverrides instead.")

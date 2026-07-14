@@ -96,6 +96,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
 	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/channels", lp.CreateLiveRunnerTrickleChannel)
 	lp.transRPC.HandleFunc("DELETE /runner/{runner_id}/session/{session_id}/channels", lp.DeleteLiveRunnerTrickleChannels)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/proxy", lp.CreateLiveRunnerSessionProxy)
 	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSessionInternal)
 	// Public client endpoints
 	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
@@ -124,6 +125,8 @@ type liveRunnerManager interface {
 	SetTrickleServer(srv *trickle.Server, publicBaseURL, internalBaseURL string)
 	CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (runner.LiveRunnerTrickleChannel, error)
 	DeleteTrickleChannel(runnerID, sessionID, name string) error
+	CreateSessionProxy(runnerID, sessionID, targetURL string) (runner.LiveRunnerProxy, error)
+	ResolveSessionProxy(host, path string) (runner.LiveRunnerProxyRoute, bool, error)
 }
 
 func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
@@ -206,6 +209,10 @@ type deleteLiveRunnerTrickleChannelsRequest struct {
 
 type deleteLiveRunnerTrickleChannelsResponse struct {
 	Deleted []string `json:"deleted"`
+}
+
+type liveRunnerProxyRequest struct {
+	TargetURL string `json:"target_url"`
 }
 
 func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
@@ -567,6 +574,37 @@ func (h *lphttp) DeleteLiveRunnerTrickleChannels(w http.ResponseWriter, r *http.
 	respondJsonOk(w, data)
 }
 
+func (h *lphttp) CreateLiveRunnerSessionProxy(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	var req liveRunnerProxyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	proxy, err := manager.CreateSessionProxy(runnerID, sessionID, req.TargetURL)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	data, err := json.Marshal(proxy)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
 func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
 	if !ok {
@@ -587,7 +625,7 @@ func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint)
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
 }
 
 func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Request) {
@@ -668,17 +706,32 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		respondWithLiveRunnerError(w, err)
 		return
 	}
-
-	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint)
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
 }
 
-func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerID, sessionID, sessionToken, endpoint string) {
+func (h *lphttp) tryLiveRunnerProxy(w http.ResponseWriter, r *http.Request) bool {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		return false
+	}
+	route, matched, err := manager.ResolveSessionProxy(r.Host, r.URL.Path)
+	if !matched {
+		return false
+	}
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return true
+	}
+	h.proxyLiveRunner(w, r, route.RunnerID, route.SessionID, route.SessionToken, route.TargetURL, route.AppPath)
+	return true
+}
+
+func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerID, sessionID, sessionToken, endpoint, appPath string) {
 	target, err := url2.Parse(endpoint)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	appPath := r.PathValue("app_path")
 	proxyPath, err := url2.JoinPath("/", target.Path, appPath)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusBadGateway)

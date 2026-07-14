@@ -7,14 +7,18 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/quick"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -1234,6 +1238,496 @@ func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
 	if err := registry.ValidSessionToken("runner-1", otherSessionID, token); !isRunnerErrorStatus(err, http.StatusUnauthorized) {
 		t.Fatalf("expected token to be scoped to one session, got %v", err)
 	}
+}
+
+func TestLiveRunnerRegistry_CreateSessionProxyDefaultPath(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxy, err := registry.CreateSessionProxy("runner-1", sessionID, "https://runner.example.com:9000/ui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy.ProxyID == "" || strings.HasPrefix(proxy.ProxyID, "proxy-") {
+		t.Fatalf("unexpected proxy id: got %q", proxy.ProxyID)
+	}
+	if proxy.URL != "http://localhost:1234/run/"+proxy.ProxyID {
+		t.Fatalf("unexpected proxy url: %q", proxy.URL)
+	}
+
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/"+proxy.ProxyID+"/foo/bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatal("expected proxy route to match")
+	}
+	if route.RunnerID != "runner-1" || route.SessionID != sessionID || route.TargetURL != "https://runner.example.com:9000/ui" || route.AppPath != "foo/bar" {
+		t.Fatalf("unexpected proxy route: %+v", route)
+	}
+	if route.SessionToken == "" {
+		t.Fatal("expected session token")
+	}
+	if _, matched, err := registry.ResolveSessionProxy("public.example.com", "/run/"+proxy.ProxyID+"/foo/bar"); err != nil || matched {
+		t.Fatalf("expected mismatched proxy host to be ignored, matched=%v err=%v", matched, err)
+	}
+}
+
+func TestLiveRunnerRegistry_CreateSessionProxyHostTemplate(t *testing.T) {
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{
+		Host:             liveRunnerTestHost{},
+		ProxyURLTemplate: "https://{proxy}.daydream.example.com",
+	})
+	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy, err := registry.CreateSessionProxy("runner-1", sessionID, "https://runner.example.com/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy.URL != "https://"+proxy.ProxyID+".daydream.example.com" {
+		t.Fatalf("unexpected proxy url: %q", proxy.URL)
+	}
+	route, matched, err := registry.ResolveSessionProxy(proxy.ProxyID+".daydream.example.com", "/v1/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatal("expected proxy host to match")
+	}
+	if route.TargetURL != "https://runner.example.com/app" || route.AppPath != "v1/foo" {
+		t.Fatalf("unexpected proxy route: %+v", route)
+	}
+}
+
+func TestLiveRunnerRegistry_CreateSessionProxyValidatesTargetURL(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.CreateSessionProxy("runner-1", sessionID, "https://other.example.com/app"); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected hostname validation error, got %v", err)
+	}
+	if _, err := registry.CreateSessionProxy("runner-1", sessionID, "ftp://runner.example.com/app"); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected scheme validation error, got %v", err)
+	}
+}
+
+func TestLiveRunnerRegistry_ReleaseSessionRemovesProxy(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy, err := registry.CreateSessionProxy("runner-1", sessionID, "https://runner.example.com/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.ReleaseSession("runner-1", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	_, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/"+proxy.ProxyID)
+	if !matched || !isRunnerErrorStatus(err, http.StatusNotFound) {
+		t.Fatalf("expected released proxy to be missing, matched=%v err=%v", matched, err)
+	}
+}
+
+func TestParseProxyURLTemplate(t *testing.T) {
+	serviceURI, _ := url.Parse("http://localhost:1234")
+	for _, raw := range []string{
+		"",
+		"https://{proxy}.daydream.example.com",
+		"https://daydream.example.com/proxied/{proxy}/",
+	} {
+		if _, err := parseProxyURLTemplate(raw, serviceURI); err != nil {
+			t.Fatalf("expected valid template %q, got %v", raw, err)
+		}
+	}
+	for _, raw := range []string{
+		"https://daydream.example.com/proxied",
+		"https://{proxy}.{proxy}.example.com",
+		"ftp://daydream.example.com/{proxy}",
+		"https://daydream.example.com/proxied/{proxy}/tail",
+	} {
+		if _, err := parseProxyURLTemplate(raw, serviceURI); err == nil {
+			t.Fatalf("expected invalid template %q", raw)
+		}
+	}
+}
+
+func TestNewLiveRunnerRegistryPanicsOnInvalidProxyURLTemplate(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected invalid proxy url template to panic")
+		}
+	}()
+	_ = NewLiveRunnerRegistry(LiveRunnerRegistryConfig{
+		Host:             liveRunnerTestHost{},
+		ProxyURLTemplate: "https://daydream.example.com/proxied",
+	})
+}
+
+func TestProxyURLTemplateProxyIDAndAppPathBroadInputs(t *testing.T) {
+	serviceURI, _ := url.Parse("http://localhost:1234")
+	pathTmpl, err := parseProxyURLTemplate("", serviceURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostTmpl, err := parseProxyURLTemplate("https://edge-{proxy}.daydream.example.com/proxy", serviceURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		tmpl    proxyURLTemplate
+		host    string
+		path    string
+		proxyID string
+		appPath string
+		matched bool
+	}{
+		{
+			name:    "path template keeps user supplied punctuation",
+			tmpl:    pathTmpl,
+			host:    "LOCALHOST:1234",
+			path:    "/run/a b/%2F/snowman",
+			proxyID: "a b",
+			appPath: "%2F/snowman",
+			matched: true,
+		},
+		{
+			name:    "path template rejects mismatched host",
+			tmpl:    pathTmpl,
+			host:    "other.example.com",
+			path:    "/run/proxy/app",
+			matched: false,
+		},
+		{
+			name:    "path template rejects empty extracted proxy id",
+			tmpl:    pathTmpl,
+			host:    "localhost:1234",
+			path:    "/run//app",
+			matched: false,
+		},
+		{
+			name:    "host template strips port and lowercases proxy id",
+			tmpl:    hostTmpl,
+			host:    "EDGE-A%2FB.DAYDREAM.EXAMPLE.COM:443",
+			path:    "/proxy/%2F/snowman",
+			proxyID: "a%2fb",
+			appPath: "%2F/snowman",
+			matched: true,
+		},
+		{
+			name:    "host template rejects static path prefix lookalike",
+			tmpl:    hostTmpl,
+			host:    "edge-proxy.daydream.example.com",
+			path:    "/proxyish/app",
+			matched: false,
+		},
+		{
+			name:    "host template rejects empty extracted proxy id",
+			tmpl:    hostTmpl,
+			host:    "edge-.daydream.example.com",
+			path:    "/proxy/app",
+			matched: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxyID, appPath, matched := test.tmpl.proxyIDAndAppPath(test.host, test.path)
+			if matched != test.matched || proxyID != test.proxyID || appPath != test.appPath {
+				t.Fatalf("proxyIDAndAppPath() = (%q, %q, %v), want (%q, %q, %v)", proxyID, appPath, matched, test.proxyID, test.appPath, test.matched)
+			}
+		})
+	}
+}
+
+func TestProxyURLTemplateProxyIDAndAppPathQuick(t *testing.T) {
+	serviceURI, _ := url.Parse("http://localhost:1234")
+	pathTmpl, err := parseProxyURLTemplate("", serviceURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostTmpl, err := parseProxyURLTemplate("https://edge-{proxy}.daydream.example.com/proxy", serviceURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := &quick.Config{MaxCount: 5000}
+
+	t.Run("path template", func(t *testing.T) {
+		err := quick.Check(func(req proxyPathTemplateRequest) bool {
+			return proxyExtractionMatchesExpected(pathTmpl, req.Host, req.Path)
+		}, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("host template", func(t *testing.T) {
+		err := quick.Check(func(req proxyHostTemplateRequest) bool {
+			return proxyExtractionMatchesExpected(hostTmpl, req.Host, req.Path)
+		}, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func BenchmarkProxyURLTemplateExtraction(b *testing.B) {
+	serviceURI, _ := url.Parse("http://localhost:1234")
+	pathTmpl, err := parseProxyURLTemplate("", serviceURI)
+	if err != nil {
+		b.Fatal(err)
+	}
+	hostTmpl, err := parseProxyURLTemplate("https://edge-{proxy}.daydream.example.com/proxy", serviceURI)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	pathRequests := []proxyBenchmarkRequest{
+		{host: "localhost:1234", path: "/run/abc123/foo/bar"},
+		{host: "LOCALHOST:1234", path: "/run/a b/%2F/snowman"},
+		{host: "localhost:1234", path: "/run/%252F/with%2Fencoded"},
+		{host: "other.example.com", path: "/run/abc123/foo/bar"},
+		{host: "localhost:1234", path: "/not-run/abc123/foo/bar"},
+	}
+	hostRequests := []proxyBenchmarkRequest{
+		{host: "edge-abc123.daydream.example.com", path: "/proxy/foo/bar"},
+		{host: "EDGE-A%2FB.DAYDREAM.EXAMPLE.COM:443", path: "/proxy/%2F/snowman"},
+		{host: "edge-.daydream.example.com", path: "/proxy/foo/bar"},
+		{host: "other.daydream.example.com", path: "/proxy/foo/bar"},
+		{host: "edge-abc123.daydream.example.com", path: "/proxyish/foo/bar"},
+	}
+
+	b.Run("path/string", func(b *testing.B) {
+		benchmarkProxyExtraction(b, pathRequests, pathTmpl.proxyIDAndAppPath)
+	})
+	b.Run("host/string", func(b *testing.B) {
+		benchmarkProxyExtraction(b, hostRequests, hostTmpl.proxyIDAndAppPath)
+	})
+}
+
+type proxyPathTemplateRequest struct {
+	Host string
+	Path string
+}
+
+func (proxyPathTemplateRequest) Generate(r *rand.Rand, size int) reflect.Value {
+	req := proxyPathTemplateRequest{
+		Host: randomUserSuppliedString(r, size),
+		Path: randomUserSuppliedString(r, size),
+	}
+	switch r.Intn(6) {
+	case 0, 1:
+		req.Host = randomCase(r, "localhost:1234")
+		req.Path = "/run/" + randomNonEmptyPathSegment(r, size)
+		if r.Intn(2) == 0 {
+			req.Path += "/" + randomUserSuppliedString(r, size)
+		}
+	case 2:
+		req.Host = randomCase(r, "localhost:1234")
+		req.Path = "/run/"
+	case 3:
+		req.Host = randomUserSuppliedString(r, size)
+		req.Path = "/run/" + randomNonEmptyPathSegment(r, size)
+	case 4:
+		req.Host = randomCase(r, "localhost:1234")
+		req.Path = "/" + randomUserSuppliedString(r, size)
+	}
+	return reflect.ValueOf(req)
+}
+
+type proxyHostTemplateRequest struct {
+	Host string
+	Path string
+}
+
+func (proxyHostTemplateRequest) Generate(r *rand.Rand, size int) reflect.Value {
+	req := proxyHostTemplateRequest{
+		Host: randomUserSuppliedString(r, size),
+		Path: randomUserSuppliedString(r, size),
+	}
+	switch r.Intn(6) {
+	case 0, 1:
+		req.Host = randomCase(r, "edge-"+randomNonEmptyHostProxyID(r, size)+".daydream.example.com")
+		if r.Intn(3) == 0 {
+			req.Host += ":443"
+		}
+		req.Path = "/proxy"
+		if r.Intn(2) == 0 {
+			req.Path += "/" + randomUserSuppliedString(r, size)
+		}
+	case 2:
+		req.Host = randomCase(r, "edge-.daydream.example.com")
+		req.Path = "/proxy/" + randomUserSuppliedString(r, size)
+	case 3:
+		req.Host = randomCase(r, "edge-"+randomNonEmptyHostProxyID(r, size)+".daydream.example.com")
+		req.Path = "/proxyish/" + randomUserSuppliedString(r, size)
+	case 4:
+		req.Host = randomUserSuppliedString(r, size)
+		req.Path = "/proxy/" + randomUserSuppliedString(r, size)
+	}
+	return reflect.ValueOf(req)
+}
+
+type proxyBenchmarkRequest struct {
+	host string
+	path string
+}
+
+var (
+	benchmarkProxyID string
+	benchmarkAppPath string
+	benchmarkMatched bool
+)
+
+func proxyExtractionMatchesExpected(tmpl proxyURLTemplate, host, path string) bool {
+	gotProxyID, gotAppPath, gotMatched := tmpl.proxyIDAndAppPath(host, path)
+	wantProxyID, wantAppPath, wantMatched := expectedProxyIDAndAppPath(tmpl, host, path)
+	return gotProxyID == wantProxyID && gotAppPath == wantAppPath && gotMatched == wantMatched
+}
+
+func expectedProxyIDAndAppPath(tmpl proxyURLTemplate, host, path string) (string, string, bool) {
+	if tmpl.placeholderInHost {
+		requestHost := expectedStripHostPort(host)
+		start := len(tmpl.hostPrefix)
+		end := len(requestHost) - len(tmpl.hostSuffix)
+		if start >= end {
+			return "", "", false
+		}
+		if !strings.EqualFold(requestHost[:start], tmpl.hostPrefix) || !strings.EqualFold(requestHost[end:], tmpl.hostSuffix) {
+			return "", "", false
+		}
+		appPath, ok := expectedStripProxyPathPrefix(path, tmpl.staticPath)
+		if !ok {
+			return "", "", false
+		}
+		return strings.ToLower(requestHost[start:end]), appPath, true
+	}
+	if !strings.EqualFold(tmpl.host, host) || !strings.HasPrefix(path, tmpl.pathPrefix) {
+		return "", "", false
+	}
+	rest := path[len(tmpl.pathPrefix):]
+	if rest == "" {
+		return "", "", false
+	}
+	slash := strings.IndexByte(rest, '/')
+	if slash < 0 {
+		return rest, "", true
+	}
+	if slash == 0 {
+		return "", "", false
+	}
+	return rest[:slash], rest[slash+1:], true
+}
+
+func expectedStripHostPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+func expectedStripProxyPathPrefix(path, prefix string) (string, bool) {
+	if prefix == "" {
+		return strings.TrimPrefix(path, "/"), true
+	}
+	if path == prefix {
+		return "", true
+	}
+	if strings.HasPrefix(path, prefix+"/") {
+		return strings.TrimPrefix(path[len(prefix):], "/"), true
+	}
+	return "", false
+}
+
+func randomUserSuppliedString(r *rand.Rand, size int) string {
+	maxLen := size + 8
+	if maxLen > 96 {
+		maxLen = 96
+	}
+	n := r.Intn(maxLen + 1)
+	var b strings.Builder
+	b.Grow(n)
+	for i := 0; i < n; i++ {
+		switch r.Intn(8) {
+		case 0:
+			b.WriteByte(byte(r.Intn(32)))
+		case 1:
+			b.WriteByte(byte(127 + r.Intn(129)))
+		case 2:
+			b.WriteRune([]rune{'/', '?', '#', '[', ']', '@', ':', '%', ' ', '\t', '\n'}[r.Intn(11)])
+		case 3:
+			b.WriteString("%2F")
+		case 4:
+			b.WriteRune([]rune{'é', 'ø', '中', '☃'}[r.Intn(4)])
+		default:
+			const ascii = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;="
+			b.WriteByte(ascii[r.Intn(len(ascii))])
+		}
+	}
+	return b.String()
+}
+
+func randomNonEmptyPathSegment(r *rand.Rand, size int) string {
+	for i := 0; i < 10; i++ {
+		s := strings.ReplaceAll(randomUserSuppliedString(r, size), "/", "")
+		if s != "" {
+			return s
+		}
+	}
+	return "x"
+}
+
+func randomNonEmptyHostProxyID(r *rand.Rand, size int) string {
+	for i := 0; i < 10; i++ {
+		s := strings.Map(func(ch rune) rune {
+			if ch == ':' {
+				return -1
+			}
+			return ch
+		}, randomUserSuppliedString(r, size))
+		if s != "" {
+			return s
+		}
+	}
+	return "x"
+}
+
+func randomCase(r *rand.Rand, s string) string {
+	b := []byte(s)
+	for i, ch := range b {
+		if 'a' <= ch && ch <= 'z' && r.Intn(2) == 0 {
+			b[i] = ch - 'a' + 'A'
+		}
+	}
+	return string(b)
+}
+
+func benchmarkProxyExtraction(b *testing.B, requests []proxyBenchmarkRequest, extract func(string, string) (string, string, bool)) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	var proxyID, appPath string
+	var matched bool
+	for i := 0; i < b.N; i++ {
+		req := requests[i%len(requests)]
+		proxyID, appPath, matched = extract(req.host, req.path)
+	}
+	benchmarkProxyID = proxyID
+	benchmarkAppPath = appPath
+	benchmarkMatched = matched
 }
 
 func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) {

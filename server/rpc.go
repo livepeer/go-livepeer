@@ -223,6 +223,9 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.ProtoMajor == 2 && strings.HasPrefix(ct, "application/grpc") {
 		h.orchRPC.ServeHTTP(w, r)
 	} else {
+		if h.tryLiveRunnerProxy(w, r) {
+			return
+		}
 		h.transRPC.ServeHTTP(w, r)
 	}
 }
