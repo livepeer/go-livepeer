@@ -1218,22 +1218,26 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	body := rr.Body.Bytes()
 	var resp []discoveryResponse
 	require.NoError(json.Unmarshal(body, &resp))
-	require.Len(resp, 3)
+	require.Len(resp, 4)
 	orch1Resp := discoveryResponseByAddress(t, resp, "https://orch1.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch1Resp.Score)
-	require.Equal([]string{"live-video-to-video/model-a"}, orch1Resp.Capabilities)
-	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, orch1Resp))
+	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch1Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, orch1Resp))
 	requireNotContainsDiscoveryField(t, body, "unknown_field")
 	discoveredResp := discoveryResponseByAddress(t, resp, "https://discovered.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), discoveredResp.Score)
 	require.Equal([]string{"live-video-to-video/model-a"}, discoveredResp.Capabilities)
-	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveredResp))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveredResp))
 	require.Equal(1, discoveredResp.Runners[1].Capacity)
 	require.Equal(0, discoveredResp.Runners[1].CapacityUsed)
 	orch2Resp := discoveryResponseByAddress(t, resp, "https://orch2.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch2Resp.Score)
-	require.Equal([]string{"text-to-image/model-b"}, orch2Resp.Capabilities)
-	require.Equal([]string{"text-to-image/model-b"}, discoveryRunnerApps(t, orch2Resp))
+	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch2Resp.Capabilities)
+	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, orch2Resp))
+	orch3Resp := discoveryResponseByAddress(t, resp, "https://orch3.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch3Resp.Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, orch3Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, orch3Resp))
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
 	capsRR := httptest.NewRecorder()
@@ -1241,9 +1245,11 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, capsRR.Code)
 	var capsResp []discoveryResponse
 	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
-	require.Len(capsResp, 2)
-	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
-	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://discovered.example.com:8935")))
+	require.Len(capsResp, 4)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://discovered.example.com:8935")))
+	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch2.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch3.example.com:8935")))
 
 	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
 	repeatedRR := httptest.NewRecorder()
@@ -1251,10 +1257,11 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, repeatedRR.Code)
 	var repeatedResp []discoveryResponse
 	require.NoError(json.NewDecoder(repeatedRR.Body).Decode(&repeatedResp))
-	require.Len(repeatedResp, 3)
+	require.Len(repeatedResp, 4)
 	discoveryResponseByAddress(t, repeatedResp, "https://orch1.example.com:8935")
 	discoveryResponseByAddress(t, repeatedResp, "https://discovered.example.com:8935")
 	discoveryResponseByAddress(t, repeatedResp, "https://orch2.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://orch3.example.com:8935")
 
 	// If refresh only receives invalid or ineligible network capability entries,
 	// cache should remain empty and discovery should return service unavailable.
@@ -1375,7 +1382,7 @@ func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t 
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://runner-derived.example.com:8935",
 				"runners": [
-					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"custom-runner-v1","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
 				]
 			}]`),
 		},
@@ -1387,7 +1394,7 @@ func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t 
 	}
 	ls := &LivepeerServer{}
 
-	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=custom-runner-v1", nil)
 	rr := httptest.NewRecorder()
 	ls.GetOrchestrators(rdp, rr, req)
 
@@ -1396,11 +1403,11 @@ func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t 
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp, 1)
 	require.Equal("https://runner-derived.example.com:8935", resp[0].Address)
-	require.Equal([]string{"live-video-to-video/scope"}, resp[0].Capabilities)
-	require.Equal([]string{"live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
+	require.Equal([]string{"custom-runner-v1"}, resp[0].Capabilities)
+	require.Equal([]string{"custom-runner-v1"}, discoveryRunnerApps(t, resp[0]))
 }
 
-func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsEligibleRunnersWhenRPCCapabilitiesMissing(t *testing.T) {
+func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsValidRunnersWhenRPCCapabilitiesMissing(t *testing.T) {
 	require := require.New(t)
 
 	capability := core.Capability_LiveVideoToVideo
@@ -1419,6 +1426,7 @@ func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsEligibleRunnersWhenRPCCapabi
 					{"url":"https://mixed-runner-derived.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
 					{"url":"https://mixed-runner-derived.example.com:8935/missing-price","app":"live-video-to-video/scope"},
 					{"url":"https://mixed-runner-derived.example.com:8935/invalid-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/empty-app","app":"   ","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}},
 					{"url":"https://mixed-runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
 				]
 			}]`),
@@ -1441,9 +1449,10 @@ func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsEligibleRunnersWhenRPCCapabi
 	require.Len(resp, 1)
 	require.Equal("https://mixed-runner-derived.example.com:8935", resp[0].Address)
 	require.Equal([]string{"live-video-to-video/scope"}, resp[0].Capabilities)
-	require.Len(resp[0].Runners, 1)
-	require.Equal("https://mixed-runner-derived.example.com:8935/apps/runner/session", resp[0].Runners[0].URL)
-	require.Equal([]string{"live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
+	require.Len(resp[0].Runners, 2)
+	require.Equal("https://mixed-runner-derived.example.com:8935/too-expensive", resp[0].Runners[0].URL)
+	require.Equal("https://mixed-runner-derived.example.com:8935/apps/runner/session", resp[0].Runners[1].URL)
+	require.Equal([]string{"live-video-to-video/scope", "live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
 }
 
 func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
@@ -1451,7 +1460,11 @@ func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 
 	capability := core.Capability_LiveVideoToVideo
 	modelID := "scope"
-	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	defer BroadcastCfg.SetMaxPrice(nil)
+	// Capability/model max prices do not apply to runner discovery. This would
+	// reject price-ok under the old runner capability lookup path.
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(1, 995328000000)))
 	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
 
 	node := &core.LivepeerNode{}
@@ -1462,10 +1475,12 @@ func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 				"address": "https://filtered.example.com:8935",
 				"runners": [
 					{"url":"https://filtered.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price_per_unit":201,"pixels_per_unit":995328000000,"unit":"WEI"}},
+					{"url":"https://filtered.example.com:8935/price-ok","app":"live-video-to-video/scope","price_info":{"price_per_unit":199,"pixels_per_unit":995328000000,"unit":"WEI"}},
 					{"url":"https://filtered.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
 					{"url":"https://filtered.example.com:8935/missing-price","app":"live-video-to-video/scope"},
 					{"url":"https://filtered.example.com:8935/non-positive-price","app":"live-video-to-video/scope","price_info":{"price_per_unit":0,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}}
+					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}},
+					{"url":"https://filtered.example.com:8935/empty-app","app":"","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
 				]
 			}]`),
 		},
@@ -1481,8 +1496,13 @@ func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ls.GetOrchestrators(rdp, rr, req)
 
-	require.Equal(http.StatusServiceUnavailable, rr.Code)
+	require.Equal(http.StatusOK, rr.Code)
 	require.Equal("application/json", rr.Header().Get("Content-Type"))
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Len(resp[0].Runners, 1)
+	require.Equal("https://filtered.example.com:8935/price-ok", resp[0].Runners[0].URL)
 }
 
 func discoveryRaw(t *testing.T, data string) json.RawMessage {
@@ -1544,7 +1564,7 @@ func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
 	require.False(t, sameRemoteDiscoveryRunner(base, capacityChanged))
 }
 
-func TestRemoteSigner_Discovery_RequiresAdvertisedPriceWithoutMaxPrice(t *testing.T) {
+func TestRemoteSigner_Discovery_RunnersDoNotRequireTopLevelAdvertisedPrice(t *testing.T) {
 	require := require.New(t)
 
 	capability := core.Capability_LiveVideoToVideo
@@ -1611,10 +1631,13 @@ func TestRemoteSigner_Discovery_RequiresAdvertisedPriceWithoutMaxPrice(t *testin
 	require.Equal(http.StatusOK, rr.Code)
 	var resp []discoveryResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	require.Len(resp, 1)
-	require.Equal("https://priced.example.com:8935", resp[0].Address)
-	require.Equal([]string{"live-video-to-video/model-priced"}, resp[0].Capabilities)
-	require.Equal([]string{"live-video-to-video/model-priced"}, discoveryRunnerApps(t, resp[0]))
+	require.Len(resp, 2)
+	pricedResp := discoveryResponseByAddress(t, resp, "https://priced.example.com:8935")
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, pricedResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, discoveryRunnerApps(t, pricedResp))
+	unpricedNodeResp := discoveryResponseByAddress(t, resp, "https://unpriced.example.com:8935")
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, unpricedNodeResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, discoveryRunnerApps(t, unpricedNodeResp))
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-priced", nil)
 	capsRR := httptest.NewRecorder()
@@ -1622,16 +1645,19 @@ func TestRemoteSigner_Discovery_RequiresAdvertisedPriceWithoutMaxPrice(t *testin
 	require.Equal(http.StatusOK, capsRR.Code)
 	var capsResp []discoveryResponse
 	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
-	require.Len(capsResp, 1)
-	require.Equal("https://priced.example.com:8935", capsResp[0].Address)
+	require.Len(capsResp, 2)
+	discoveryResponseByAddress(t, capsResp, "https://priced.example.com:8935")
+	discoveryResponseByAddress(t, capsResp, "https://unpriced.example.com:8935")
 
 	unpricedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-unpriced", nil)
 	unpricedRR := httptest.NewRecorder()
 	ls.GetOrchestrators(rdp, unpricedRR, unpricedReq)
 	require.Equal(http.StatusOK, unpricedRR.Code)
-	var unpricedResp []discoveryResponse
-	require.NoError(json.NewDecoder(unpricedRR.Body).Decode(&unpricedResp))
-	require.Empty(unpricedResp)
+	var unpricedCapsResp []discoveryResponse
+	require.NoError(json.NewDecoder(unpricedRR.Body).Decode(&unpricedCapsResp))
+	require.Len(unpricedCapsResp, 2)
+	discoveryResponseByAddress(t, unpricedCapsResp, "https://priced.example.com:8935")
+	discoveryResponseByAddress(t, unpricedCapsResp, "https://unpriced.example.com:8935")
 }
 
 func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
