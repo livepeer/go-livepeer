@@ -158,6 +158,7 @@ type LivepeerNode struct {
 	RemoteEthAddr              ethcommon.Address // eth address of the remote signer
 	InfoSig                    []byte            // sig over eth address for the OrchestratorInfo request
 	RemoteDiscovery            bool              // expose remote discovery endpoint when enabled
+	ByocPerCapPricing          bool              // resolve BYOC fee from per-capability CapabilitiesPrices instead of base price (remote signer; default OFF)
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
