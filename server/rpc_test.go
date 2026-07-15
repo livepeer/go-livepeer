@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,18 +70,24 @@ func (m *mockBalance) Clear() {
 }
 
 type stubOrchestrator struct {
-	priv         *ecdsa.PrivateKey
-	block        *big.Int
-	signErr      error
-	sessCapErr   error
-	ticketParams *net.TicketParams
-	priceInfo    *net.PriceInfo
-	serviceURI   string
-	res          *core.TranscodeResult
-	offchain     bool
-	caps         *core.Capabilities
-	authToken    *net.AuthToken
-	jobPriceInfo *net.PriceInfo
+	priv          *ecdsa.PrivateKey
+	block         *big.Int
+	signErr       error
+	sessCapErr    error
+	ticketParams  *net.TicketParams
+	priceInfo     *net.PriceInfo
+	serviceURI    string
+	res           *core.TranscodeResult
+	offchain      bool
+	caps          *core.Capabilities
+	authToken     *net.AuthToken
+	jobPriceInfo  *net.PriceInfo
+	balanceMu     sync.Mutex
+	balances      map[ethcommon.Address]map[core.ManifestID]*big.Rat
+	paymentCredit *big.Rat
+	requestMu     sync.Mutex
+	storageReqs   []string
+	lv2vReqs      []string
 }
 
 func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
@@ -144,6 +151,18 @@ func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
 }
 
 func (r *stubOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
+	if r.balances != nil && r.paymentCredit != nil {
+		r.balanceMu.Lock()
+		defer r.balanceMu.Unlock()
+		sender := getPaymentSender(payment)
+		if r.balances[sender] == nil {
+			r.balances[sender] = make(map[core.ManifestID]*big.Rat)
+		}
+		if r.balances[sender][manifestID] == nil {
+			r.balances[sender][manifestID] = big.NewRat(0, 1)
+		}
+		r.balances[sender][manifestID].Add(r.balances[sender][manifestID], r.paymentCredit)
+	}
 	return nil
 }
 
@@ -160,13 +179,39 @@ func (r *stubOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*n
 }
 
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
+	if r.balances != nil {
+		balance := r.Balance(addr, manifestID)
+		return balance != nil && balance.Sign() > 0
+	}
 	return true
 }
 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+	if r.balances == nil {
+		return
+	}
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	fee := priceRat.Mul(priceRat, big.NewRat(pixels, 1))
+	r.balanceMu.Lock()
+	defer r.balanceMu.Unlock()
+	if r.balances[addr] == nil {
+		r.balances[addr] = make(map[core.ManifestID]*big.Rat)
+	}
+	if r.balances[addr][manifestID] == nil {
+		r.balances[addr][manifestID] = big.NewRat(0, 1)
+	}
+	r.balances[addr][manifestID].Sub(r.balances[addr][manifestID], fee)
 }
 
 func (r *stubOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	if r.balances != nil {
+		r.balanceMu.Lock()
+		defer r.balanceMu.Unlock()
+		if r.balances[addr] == nil || r.balances[addr][manifestID] == nil {
+			return nil
+		}
+		return new(big.Rat).Set(r.balances[addr][manifestID])
+	}
 	return big.NewRat(0, 1)
 }
 
@@ -241,6 +286,9 @@ func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 }
 
 func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.lv2vReqs = append(r.lv2vReqs, requestID)
 	return nil, nil
 }
 
@@ -250,6 +298,9 @@ func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
 func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
+	r.requestMu.Lock()
+	defer r.requestMu.Unlock()
+	r.storageReqs = append(r.storageReqs, requestID)
 	return nil
 }
 func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
