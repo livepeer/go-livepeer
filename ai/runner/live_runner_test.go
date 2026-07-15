@@ -583,18 +583,82 @@ func TestLiveRunnerRegistry_OnchainRequiresStaticRunnerPriceInfo(t *testing.T) {
 	}
 }
 
-func TestLiveRunnerRegistry_OnchainAcceptsWEIPrice(t *testing.T) {
+func TestLiveRunnerRegistry_OnchainDefaultsPriceCurrencyAndUnit(t *testing.T) {
 	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-wei-price")
-	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "wei"}
+	req := liveRunnerTestHeartbeat("runner-usd-price")
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
 
 	liveRunnerTestRegister(t, registry, req)
-	runners := registry.Runners()
-	if len(runners) != 1 {
-		t.Fatalf("expected one runner, got %d", len(runners))
+	runner, unlock, err := registry.lockLiveRunner("runner-usd-price")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if runners[0].PriceInfo == nil || *runners[0].PriceInfo != (LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 2, Unit: "WEI"}) {
-		t.Fatalf("unexpected runner price info: %+v", runners[0].PriceInfo)
+	defer unlock()
+	if runner.PriceInfo != (LiveRunnerPriceInfo{Price: json.Number("10"), Currency: "usd", Unit: "hour"}) {
+		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_OnchainNormalizes720pPriceUnit(t *testing.T) {
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-720p-price")
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "720p"}
+
+	liveRunnerTestRegister(t, registry, req)
+	runner, unlock, err := registry.lockLiveRunner("runner-720p-price")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if runner.PriceInfo != (LiveRunnerPriceInfo{Price: json.Number("10"), Currency: "usd", Unit: "720p"}) {
+		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_OnchainRejectsInvalidPriceInfo(t *testing.T) {
+	tests := []struct {
+		name      string
+		priceInfo LiveRunnerPriceInfo
+		wantErr   string
+	}{
+		{
+			name:      "zero price",
+			priceInfo: LiveRunnerPriceInfo{Price: json.Number("0")},
+			wantErr:   "price_info.price",
+		},
+		{
+			name:      "negative price",
+			priceInfo: LiveRunnerPriceInfo{Price: json.Number("-1")},
+			wantErr:   "price_info.price",
+		},
+		{
+			name:      "unsupported currency",
+			priceInfo: LiveRunnerPriceInfo{Price: json.Number("10"), Currency: "eur"},
+			wantErr:   "price_info.currency",
+		},
+		{
+			name:      "unsupported unit",
+			priceInfo: LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "minute"},
+			wantErr:   "price_info.unit",
+		},
+		{
+			name:      "invalid decimal",
+			priceInfo: LiveRunnerPriceInfo{Price: json.Number("wat")},
+			wantErr:   "price_info.price",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := newOnchainLiveRunnerTestRegistry()
+			req := liveRunnerTestHeartbeat("runner-invalid-price")
+			req.PriceInfo = tt.priceInfo
+
+			_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+			if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected bad request containing %q, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 
@@ -605,7 +669,7 @@ func TestLiveRunnerRegistry_OffchainIgnoresUSDPriceWatcher(t *testing.T) {
 
 	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-offchain-usd")
-	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "USD"}
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
 
 	liveRunnerTestRegister(t, registry, req)
 	runners := registry.Runners()
@@ -1090,26 +1154,84 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 
 	registry := newOnchainLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-1")
-	req.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "USD"}
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
 	liveRunnerTestRegister(t, registry, req)
 
-	runners := registry.Runners()
-	if len(runners) != 1 {
-		t.Fatalf("expected one runner, got %d", len(runners))
-	}
-	if runners[0].PriceInfo == nil {
-		t.Fatal("expected runner price info")
-	}
-	got := big.NewRat(runners[0].PriceInfo.PricePerUnit, runners[0].PriceInfo.PixelsPerUnit)
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 1280*720*30*3600))
+	paymentInfo, err := registry.PaymentInfo("runner-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Cmp(expected) != 0 {
-		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected)
+	if paymentInfo == nil {
+		t.Fatal("expected payment price info")
 	}
-	if runners[0].PriceInfo.Unit != "WEI" {
-		t.Fatalf("unexpected converted unit: %s", runners[0].PriceInfo.Unit)
+	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paymentInfo.Price.String(); got != expected.Num().String() {
+		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected.Num().String())
+	}
+	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "seconds" {
+		t.Fatalf("unexpected converted price info: %+v", paymentInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_Converts720pUnitAsPerPixelPrice(t *testing.T) {
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-720p")
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "720p"}
+	liveRunnerTestRegister(t, registry, req)
+
+	paymentInfo, err := registry.PaymentInfo("runner-720p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paymentInfo == nil {
+		t.Fatal("expected payment price info")
+	}
+	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600*1280*720*30))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paymentInfo.Price.String(); got != expected.Num().String() {
+		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected.Num().String())
+	}
+	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "720p-pixel-seconds" {
+		t.Fatalf("unexpected converted 720p price info: %+v", paymentInfo)
+	}
+}
+
+func TestLiveRunnerRegistry_ScopeRunnerUsesLivePriceConversion(t *testing.T) {
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+
+	registry := newOnchainLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("scope-runner")
+	req.App = "live-video-to-video/scope"
+	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
+	liveRunnerTestRegister(t, registry, req)
+
+	paymentInfo, err := registry.PaymentInfo("scope-runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paymentInfo == nil {
+		t.Fatal("expected payment price info")
+	}
+	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paymentInfo.Price.String(); got != expected.Num().String() {
+		t.Fatalf("unexpected converted scope live runner price: got=%s want=%s", got, expected.Num().String())
+	}
+	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "seconds" {
+		t.Fatalf("unexpected converted scope live runner price info: %+v", paymentInfo)
 	}
 }
 
@@ -1117,24 +1239,22 @@ func TestLiveRunnerRegistry_SharedURLAppKeepsPerRunnerPrices(t *testing.T) {
 	registry := newOnchainLiveRunnerTestRegistry()
 
 	req1 := liveRunnerTestHeartbeat("runner-1")
-	req1.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 10, PixelsPerUnit: 1, Unit: "WEI"}
+	req1.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
 	req2 := liveRunnerTestHeartbeat("runner-2")
-	req2.PriceInfo = LiveRunnerPriceInfo{PricePerUnit: 20, PixelsPerUnit: 1, Unit: "WEI"}
+	req2.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("20")}
 	resp1 := liveRunnerTestRegister(t, registry, req1)
 	liveRunnerTestRegister(t, registry, req2)
 
 	if err := registry.Unregister("runner-1", resp1.HeartbeatSecret); err != nil {
 		t.Fatal(err)
 	}
-	runners := registry.Runners()
-	if len(runners) != 1 {
-		t.Fatalf("expected one remaining runner, got %d", len(runners))
+	runner, unlock, err := registry.lockLiveRunner("runner-2")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if runners[0].PriceInfo == nil {
-		t.Fatal("expected runner price info")
-	}
-	if got := runners[0].PriceInfo.PricePerUnit; got != 20 {
-		t.Fatalf("expected remaining runner price to stay isolated, got %d", got)
+	defer unlock()
+	if got := runner.PriceInfo.Price.String(); got != "20" {
+		t.Fatalf("expected remaining runner price to stay isolated, got %s", got)
 	}
 }
 

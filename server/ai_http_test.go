@@ -193,9 +193,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 		App:       "live-video-to-video/scope",
 		Capacity:  2,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
+			Price: json.Number("10"),
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
@@ -300,9 +298,7 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 		App:       "live-video-to-video/scope",
 		Capacity:  2,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
+			Price: json.Number("10"),
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
@@ -321,8 +317,49 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
 	require.Equal(t, 2, resp[0].Runners[0].CapacityAvailable)
 	require.NotNil(t, resp[0].Runners[0].PriceInfo)
-	require.NotZero(t, resp[0].Runners[0].PriceInfo.PricePerUnit)
+	require.Equal(t, "1388888888888", resp[0].Runners[0].PriceInfo.Price.String())
+	require.Equal(t, "wei", resp[0].Runners[0].PriceInfo.Currency)
+	require.Equal(t, "seconds", resp[0].Runners[0].PriceInfo.Unit)
 	require.Contains(t, w.Body.String(), "price_info")
+}
+
+func TestLiveRunnerDiscoveryOnchainConverts720pPriceToPixel(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
+	t.Cleanup(manager.Stop)
+	lp.node.LiveRunnerManager = manager
+	trickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
+	manager.SetTrickleServer(lp.trickleSrv, trickleBaseURL, trickleBaseURL)
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+		RunnerID:  t.Name(),
+		RunnerURL: "https://runner.example.com",
+		Version:   "1.2.3",
+		Status:    "ready",
+		App:       "live-video-to-video/scope",
+		Capacity:  2,
+		PriceInfo: runner.LiveRunnerPriceInfo{
+			Price: json.Number("0.001990656"),
+			Unit:  "720p",
+		},
+	}, lp.orchestrator.RegistrationSecret())
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp []liveRunnerDiscoveryEntry
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	require.Len(t, resp[0].Runners, 1)
+	require.NotNil(t, resp[0].Runners[0].PriceInfo)
+	require.Equal(t, "10", resp[0].Runners[0].PriceInfo.Price.String())
+	require.Equal(t, "wei", resp[0].Runners[0].PriceInfo.Currency)
+	require.Equal(t, "720p-pixel-seconds", resp[0].Runners[0].PriceInfo.Unit)
 }
 
 func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
@@ -350,8 +387,9 @@ func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
 	require.Equal(t, 0, discoveryRunner.CapacityUsed)
 	require.Equal(t, 3, discoveryRunner.CapacityAvailable)
 	require.NotNil(t, discoveryRunner.PriceInfo)
-	require.Equal(t, int64(7), discoveryRunner.PriceInfo.PricePerUnit)
-	require.Equal(t, int64(1), discoveryRunner.PriceInfo.PixelsPerUnit)
+	require.Equal(t, "7", discoveryRunner.PriceInfo.Price.String())
+	require.Equal(t, "wei", discoveryRunner.PriceInfo.Currency)
+	require.Equal(t, "720p-pixel-seconds", discoveryRunner.PriceInfo.Unit)
 }
 
 func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
@@ -370,9 +408,7 @@ func TestLiveRunnerDiscoveryReturnsHeartbeatAndServerlessRunners(t *testing.T) {
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
+			Price: json.Number("10"),
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
@@ -405,9 +441,7 @@ func TestLiveRunnerHeartbeat(t *testing.T) {
 		App:       "live-video-to-video/scope",
 		Capacity:  3,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "USD",
+			Price: json.Number("10"),
 		},
 		SessionIDs: []string{"runner-reported-session"},
 	})
@@ -494,9 +528,7 @@ func TestLiveRunnerHeartbeatUsesLiveRunnerAddr(t *testing.T) {
 		App:       "live-video-to-video/scope",
 		Capacity:  1,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "WEI",
+			Price: json.Number("10"),
 		},
 	})
 	require.NoError(t, err)
@@ -512,26 +544,22 @@ func TestLiveRunnerHeartbeatUsesLiveRunnerAddr(t *testing.T) {
 	require.Equal(t, "http://go-livepeer:8935", resp.Orchestrator)
 }
 
-func TestLiveRunnerHeartbeatRejectsMissingPriceInfoUnit(t *testing.T) {
-	lp := newLiveRunnerHTTP(t, true)
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
-	t.Cleanup(manager.Stop)
-	lp.node.LiveRunnerManager = manager
+func TestLiveRunnerHeartbeatDefaultsMissingPriceInfoCurrencyAndUnit(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
 	body := []byte(fmt.Sprintf(`{
 		"runner_id":%q,
 		"runner_url":"https://runner.example.com",
-		"price_info":{"price_per_unit":1,"pixels_per_unit":1},
+		"price_info":{"price":1},
 		"app":"live-video-to-video/scope",
-		"capacity":1,
-		"pricing":{"usd_per_hour":10}
+		"capacity":1
 	}`, t.Name()))
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.RegistrationSecret())
 	lp.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "price_info.unit")
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestLiveRunnerEndpointsUnsupportedWithoutManager(t *testing.T) {
@@ -602,6 +630,22 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
 	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
 	require.Nil(t, oInfo.GetCapabilities())
+}
+
+func TestRunnerOrchInfoUsesWeiSecondsPrice(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	orch := lp.orchestrator.(*stubOrchestrator)
+
+	oInfo, err := lp.runnerOrchInfo(orch.Address(), &runner.LiveRunnerPriceInfo{
+		Price:    json.Number("10"),
+		Currency: "wei",
+		Unit:     "seconds",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, oInfo.GetPriceInfo())
+	require.Equal(t, int64(10), oInfo.GetPriceInfo().GetPricePerUnit())
+	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
 }
 
 func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
@@ -1707,6 +1751,10 @@ func newLiveRunnerHTTP(t *testing.T, withManager bool) *lphttp {
 
 func newLiveRunnerHTTPOnchain(t *testing.T) *lphttp {
 	t.Helper()
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	t.Cleanup(func() { core.PriceFeedWatcher = prevWatcher })
+
 	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
 	require.NoError(t, err)
 	node.LivePaymentInterval = 5 * time.Second
@@ -1930,9 +1978,8 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 		App:       "live-video-to-video/scope",
 		Capacity:  capacity,
 		PriceInfo: runner.LiveRunnerPriceInfo{
-			PricePerUnit:  10,
-			PixelsPerUnit: 1,
-			Unit:          "WEI",
+			Price: json.Number("0.001990656"),
+			Unit:  "720p",
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)

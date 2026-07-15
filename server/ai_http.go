@@ -411,9 +411,13 @@ func (h *lphttp) runnerOrchInfo(sender ethcommon.Address, priceInfo *runner.Live
 	if priceInfo == nil {
 		return nil, fmt.Errorf("missing live runner price info")
 	}
+	pricePerUnit, err := priceInfo.Price.Int64()
+	if err != nil || pricePerUnit <= 0 {
+		return nil, fmt.Errorf("invalid live runner price info")
+	}
 	netPriceInfo := &lpnet.PriceInfo{
-		PricePerUnit:  priceInfo.PricePerUnit,
-		PixelsPerUnit: priceInfo.PixelsPerUnit,
+		PricePerUnit:  pricePerUnit,
+		PixelsPerUnit: 1,
 	}
 	params, err := h.orchestrator.TicketParams(sender, netPriceInfo)
 	if err != nil {
@@ -810,9 +814,9 @@ func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
 						glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
 					} else {
 						priceInfo = &runner.LiveRunnerPriceInfo{
-							PricePerUnit:  priceInt64.Num().Int64(),
-							PixelsPerUnit: priceInt64.Denom().Int64(),
-							Unit:          "WEI",
+							Price:    json.Number(strconv.FormatInt(priceInt64.Num().Int64(), 10)),
+							Currency: "wei",
+							Unit:     "720p-pixel-seconds",
 						}
 					}
 				}

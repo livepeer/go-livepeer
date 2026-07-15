@@ -238,7 +238,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				return r
 			}(),
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "missing pixels or job type",
+			wantMsg:    "missing billable unit or job type",
 		},
 		{
 			name: "num tickets exceeds limit",
@@ -375,6 +375,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		stateBytes     []byte
 		stateSig       []byte
 		orchInfo       *net.OrchestratorInfo
+		reqType        string
 		omitManifestID bool
 		wantStatus     int
 		wantMsg        string
@@ -407,6 +408,23 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			stateBytes: []byte("not-json"),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "invalid state",
+		},
+		{
+			name: "job type mismatch",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+					Type:                 RemoteType_LiveVideoToVideo,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			reqType:    RemoteType_Live,
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "job type mismatch",
 		},
 		{
 			name: "orchestrator address mismatch",
@@ -479,6 +497,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 				Orchestrator: orchBlob,
 				ManifestID:   manifestID,
 				InPixels:     1,
+				Type:         tt.reqType,
 				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: stateSig},
 			})
 			require.NoError(err)
@@ -679,6 +698,92 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+
+		ethClient := newTestEthClient(t)
+		node, _ := core.NewLivepeerNode(ethClient, "", nil)
+		node.Balances = core.NewAddressBalances(1 * time.Minute)
+		defer node.Balances.StopCleanup()
+		node.Sender = newMockSender(mockSenderConfig{ev: big.NewRat(35, 1)})
+		ls := &LivepeerServer{LivepeerNode: node}
+
+		oInfo := &net.OrchestratorInfo{
+			Address:   ethClient.addr.Bytes(),
+			PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{
+				Recipient: pm.RandAddress().Bytes(),
+			},
+			AuthToken: stubAuthToken,
+		}
+		orchBlob, err := proto.Marshal(oInfo)
+		require.NoError(err)
+
+		doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, net.Payment) {
+			reqBody, err := json.Marshal(reqPayload)
+			require.NoError(err)
+
+			req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+			rr := httptest.NewRecorder()
+
+			ls.GenerateLivePayment(rr, req)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+			var resp RemotePaymentResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			require.NotEmpty(resp.Payment)
+
+			paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+			require.NoError(err)
+			var payment net.Payment
+			require.NoError(proto.Unmarshal(paymentBytes, &payment))
+
+			return resp, payment
+		}
+
+		parseBalance := func(stateBytes []byte) (RemotePaymentState, *big.Rat) {
+			var state RemotePaymentState
+			require.NoError(json.Unmarshal(stateBytes, &state))
+			bal := new(big.Rat)
+			_, ok := bal.SetString(state.Balance)
+			require.True(ok, "failed to parse balance: %q", state.Balance)
+			return state, bal
+		}
+
+		firstUpdate := time.Now()
+		resp, payment := doPayment(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			Type:         RemoteType_Live,
+		})
+		require.Len(payment.TicketSenderParams, 1)
+
+		state, bal := parseBalance(resp.State.State)
+		require.Equal(RemoteType_Live, state.Type)
+		require.EqualValues(0, state.SequenceNumber)
+		require.Equal(firstUpdate, state.LastUpdate)
+		// First live payment bills the 10-second minimum: 10s * 3 wei/s = 30 wei.
+		require.Zero(bal.Cmp(big.NewRat(5, 1)), "unexpected initial balance: %s", bal.RatString())
+
+		time.Sleep(12 * time.Second)
+		secondUpdate := time.Now()
+		resp2, payment2 := doPayment(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   "live-manifest",
+			Type:         RemoteType_Live,
+			State:        resp.State,
+		})
+		require.Len(payment2.TicketSenderParams, 1)
+
+		state2, bal2 := parseBalance(resp2.State.State)
+		require.Equal(RemoteType_Live, state2.Type)
+		require.EqualValues(1, state2.SequenceNumber)
+		require.Equal(secondUpdate, state2.LastUpdate)
+		// Follow-up live payment bills elapsed seconds: 12s * 3 wei/s = 36 wei.
+		require.Zero(bal2.Cmp(big.NewRat(4, 1)), "unexpected follow-up balance: %s", bal2.RatString())
+	})
 }
 
 func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
@@ -1107,29 +1212,29 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					"capabilities": ["evil/app"],
 					"unknown_field": "must-not-leak",
 					"runners": [
-						{"url":"https://orch1.example.com:8935/scope-ok","app":"live-video-to-video/model-a","price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://orch1.example.com:8935/scope-ok","app":"live-video-to-video/model-a","price_info":{"price":80,"currency":"wei","unit":"seconds"}},
 						{"url":"https://orch1.example.com:8935/scope-missing-price","app":"live-video-to-video/model-a"},
-						{"url":"https://orch1.example.com:8935/scope-too-expensive","app":"live-video-to-video/model-a","price_info":{"price_per_unit":120,"pixels_per_unit":1,"unit":"WEI"}},
-						{"url":"https://orch1.example.com:8935/scope-usd","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"USD"}},
-						{"url":"https://orch1.example.com:8935/scope-invalid-price","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":0,"unit":"WEI"}},
-						{"url":"https://orch1.example.com:8935/scope-missing-unit","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1}},
-						{"url":"https://orch1.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+						{"url":"https://orch1.example.com:8935/scope-too-expensive","app":"live-video-to-video/model-a","price_info":{"price":120,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-unsupported-unit","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"usd","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-invalid-price","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-invalid-pixels","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
 					]
 				},
 				{
 					"address": "https://discovered.example.com:8935",
 					"runners": [
-						{"url":"https://discovered.example.com:8935/scope","app":"live-video-to-video/model-a","capacity":3,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
-						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
+						{"url":"https://discovered.example.com:8935/scope","app":"live-video-to-video/model-a","capacity":3,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
 						{"url":"https://discovered.example.com:8935/missing-price","app":"live-video-to-video/model-a"},
-						{"url":"https://discovered.example.com:8935/too-expensive","app":"live-video-to-video/model-a","price_info":{"price_per_unit":120,"pixels_per_unit":1,"unit":"WEI"}}
+						{"url":"https://discovered.example.com:8935/too-expensive","app":"live-video-to-video/model-a","price_info":{"price":120,"currency":"wei","unit":"seconds"}}
 					]
 				},
 				{
 					"address": "https://discovered.example.com:8935/",
 					"runners": [
-						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"capacity_used":1,"capacity_available":0,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}},
-						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":2,"price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}}
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"capacity_used":1,"capacity_available":0,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":2,"price_info":{"price":80,"currency":"wei","unit":"seconds"}}
 					]
 				}
 			]`),
@@ -1159,14 +1264,14 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				{
 					"address": "https://orch2.example.com:8935",
 					"runners": [
-						{"url":"https://orch2.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price_per_unit":999,"pixels_per_unit":1,"unit":"WEI"}},
-						{"url":"https://orch2.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+						{"url":"https://orch2.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":999,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch2.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
 					]
 				},
 				{
 					"address": "https://discovered.example.com:8935",
 					"runners": [
-						{"url":"https://discovered.example.com:8935/from-orch2","app":"live-video-to-video/model-a","price_info":{"price_per_unit":80,"pixels_per_unit":1,"unit":"WEI"}}
+						{"url":"https://discovered.example.com:8935/from-orch2","app":"live-video-to-video/model-a","price_info":{"price":80,"currency":"wei","unit":"seconds"}}
 					]
 				}
 			]`),
@@ -1188,7 +1293,7 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://orch3.example.com:8935",
 				"runners": [
-					{"url":"https://orch3.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price_per_unit":1,"pixels_per_unit":1,"unit":"WEI"}}
+					{"url":"https://orch3.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},
@@ -1321,11 +1426,6 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
 	require := require.New(t)
 
-	capability := core.Capability_LiveVideoToVideo
-	modelID := "scope"
-	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
-	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
-
 	// Node starts with no network capabilities (pool poll has not populated the cache yet).
 	node := &core.LivepeerNode{}
 
@@ -1349,7 +1449,7 @@ func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://late.example.com:8935",
 				"runners": [
-					{"url":"https://late.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+					{"url":"https://late.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},
@@ -1370,11 +1470,6 @@ func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
 func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t *testing.T) {
 	require := require.New(t)
 
-	capability := core.Capability_LiveVideoToVideo
-	modelID := "scope"
-	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
-	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
-
 	node := &core.LivepeerNode{}
 	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
 		{
@@ -1382,7 +1477,7 @@ func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t 
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://runner-derived.example.com:8935",
 				"runners": [
-					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"custom-runner-v1","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"custom-runner-v1","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},
@@ -1410,11 +1505,6 @@ func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t 
 func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsValidRunnersWhenRPCCapabilitiesMissing(t *testing.T) {
 	require := require.New(t)
 
-	capability := core.Capability_LiveVideoToVideo
-	modelID := "scope"
-	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(200, 995328000000)))
-	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
-
 	node := &core.LivepeerNode{}
 	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
 		{
@@ -1422,12 +1512,12 @@ func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsValidRunnersWhenRPCCapabilit
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://mixed-runner-derived.example.com:8935",
 				"runners": [
-					{"url":"https://mixed-runner-derived.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price_per_unit":201,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://mixed-runner-derived.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price":201,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/unsupported-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"usd","unit":"seconds"}},
 					{"url":"https://mixed-runner-derived.example.com:8935/missing-price","app":"live-video-to-video/scope"},
-					{"url":"https://mixed-runner-derived.example.com:8935/invalid-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}},
-					{"url":"https://mixed-runner-derived.example.com:8935/empty-app","app":"   ","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://mixed-runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+					{"url":"https://mixed-runner-derived.example.com:8935/invalid-pixels","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/empty-app","app":"   ","price_info":{"price":5,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},
@@ -1460,11 +1550,11 @@ func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 
 	capability := core.Capability_LiveVideoToVideo
 	modelID := "scope"
-	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(200, 995328000000)))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(200, 1)))
 	defer BroadcastCfg.SetMaxPrice(nil)
 	// Capability/model max prices do not apply to runner discovery. This would
 	// reject price-ok under the old runner capability lookup path.
-	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(1, 995328000000)))
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(1, 1)))
 	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
 
 	node := &core.LivepeerNode{}
@@ -1474,13 +1564,15 @@ func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://filtered.example.com:8935",
 				"runners": [
-					{"url":"https://filtered.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price_per_unit":201,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://filtered.example.com:8935/price-ok","app":"live-video-to-video/scope","price_info":{"price_per_unit":199,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://filtered.example.com:8935/usd","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"USD"}},
+					{"url":"https://filtered.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price":201,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/price-ok","app":"live-video-to-video/scope","price_info":{"price":199,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/unsupported-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"usd","unit":"720p-pixel-seconds"}},
 					{"url":"https://filtered.example.com:8935/missing-price","app":"live-video-to-video/scope"},
-					{"url":"https://filtered.example.com:8935/non-positive-price","app":"live-video-to-video/scope","price_info":{"price_per_unit":0,"pixels_per_unit":995328000000,"unit":"WEI"}},
-					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price_per_unit":5,"pixels_per_unit":0,"unit":"WEI"}},
-					{"url":"https://filtered.example.com:8935/empty-app","app":"","price_info":{"price_per_unit":5,"pixels_per_unit":995328000000,"unit":"WEI"}}
+					{"url":"https://filtered.example.com:8935/missing-currency","app":"live-video-to-video/scope","price_info":{"price":5,"unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/missing-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"wei"}},
+					{"url":"https://filtered.example.com:8935/non-positive-price","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/empty-app","app":"","price_info":{"price":5,"currency":"wei","unit":"720p-pixel-seconds"}}
 				]
 			}]`),
 		},
@@ -1548,9 +1640,9 @@ func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
 		CapacityUsed:      1,
 		CapacityAvailable: 1,
 		PriceInfo: &runner.LiveRunnerPriceInfo{
-			PricePerUnit:  7,
-			PixelsPerUnit: 1,
-			Unit:          "WEI",
+			Price:    json.Number("7"),
+			Currency: "wei",
+			Unit:     "seconds",
 		},
 	}
 
@@ -1600,8 +1692,8 @@ func TestRemoteSigner_Discovery_RunnersDoNotRequireTopLevelAdvertisedPrice(t *te
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://priced.example.com:8935",
 				"runners": [
-					{"url":"https://priced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}},
-					{"url":"https://priced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}}
+					{"url":"https://priced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price":7,"currency":"wei","unit":"seconds"}},
+					{"url":"https://priced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price":7,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},
@@ -1611,8 +1703,8 @@ func TestRemoteSigner_Discovery_RunnersDoNotRequireTopLevelAdvertisedPrice(t *te
 			Discovery: discoveryRaw(t, `[{
 				"address": "https://unpriced.example.com:8935",
 				"runners": [
-					{"url":"https://unpriced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}},
-					{"url":"https://unpriced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price_per_unit":7,"pixels_per_unit":1,"unit":"WEI"}}
+					{"url":"https://unpriced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price":7,"currency":"wei","unit":"seconds"}},
+					{"url":"https://unpriced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price":7,"currency":"wei","unit":"seconds"}}
 				]
 			}]`),
 		},

@@ -230,7 +230,7 @@ func TestRegisterLiveRunnersCLIEndpoint(t *testing.T) {
 	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
 	defer srv.Close()
 
-	body := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL)
+	body := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","capacity":1,"price_info":{"price":10},"health_url":%q}]}`, healthSrv.URL)
 	res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", strings.NewReader(body))
 	require.NoError(t, err)
 	defer res.Body.Close()
@@ -255,7 +255,7 @@ func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
 	orch := newStubOrchestrator()
 	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: orch})
 	t.Cleanup(manager.Stop)
-	initialConfig := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL)
+	initialConfig := fmt.Sprintf(`{"runners":[{"label":"runner-a","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q}]}`, healthSrv.URL)
 	_, err = manager.RegisterStaticRunnersJSON([]byte(initialConfig))
 	require.NoError(t, err)
 	n.LiveRunnerManager = manager
@@ -263,7 +263,7 @@ func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
 	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
 	defer srv.Close()
 
-	body := fmt.Sprintf(`{"runners":[{"label":"runner-b","runner_url":"https://runner-two.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q},{"runner_url":"https://runner-three.example.com","app":"live-video-to-video/scope","price_info":{"price_per_unit":10,"pixels_per_unit":1,"unit":"WEI"},"health_url":%q}]}`, healthSrv.URL, healthSrv.URL)
+	body := fmt.Sprintf(`{"runners":[{"label":"runner-b","runner_url":"https://runner-two.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q},{"runner_url":"https://runner-three.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q}]}`, healthSrv.URL, healthSrv.URL)
 	res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", strings.NewReader(body))
 	require.NoError(t, err)
 	defer res.Body.Close()

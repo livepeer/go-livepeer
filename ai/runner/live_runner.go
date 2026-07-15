@@ -79,9 +79,47 @@ type LiveRunnerGPU struct {
 }
 
 type LiveRunnerPriceInfo struct {
-	PricePerUnit  int64  `json:"price_per_unit"`
-	PixelsPerUnit int64  `json:"pixels_per_unit"`
-	Unit          string `json:"unit,omitempty"`
+	Price    json.Number `json:"price"`
+	Currency string      `json:"currency,omitempty"`
+	Unit     string      `json:"unit,omitempty"`
+}
+
+func (p LiveRunnerPriceInfo) priceRat() (*big.Rat, error) {
+	price := strings.TrimSpace(p.Price.String())
+	if price == "" {
+		return nil, fmt.Errorf("price_info.price is required")
+	}
+	rat, ok := new(big.Rat).SetString(price)
+	if !ok || rat.Sign() <= 0 {
+		return nil, fmt.Errorf("price_info.price must be a positive decimal")
+	}
+	return rat, nil
+}
+
+func normalizeLiveRunnerPriceInfo(priceInfo LiveRunnerPriceInfo) (LiveRunnerPriceInfo, error) {
+	if _, err := priceInfo.priceRat(); err != nil {
+		return LiveRunnerPriceInfo{}, err
+	}
+	currency := strings.ToLower(strings.TrimSpace(priceInfo.Currency))
+	if currency == "" {
+		currency = "usd"
+	}
+	if currency != "usd" {
+		return LiveRunnerPriceInfo{}, fmt.Errorf("price_info.currency must be usd")
+	}
+	unit := strings.ToLower(strings.TrimSpace(priceInfo.Unit))
+	if unit == "" {
+		unit = "hour"
+	}
+	switch unit {
+	case "hour":
+	case "720p":
+	default:
+		return LiveRunnerPriceInfo{}, fmt.Errorf("price_info.unit must be hour or 720p")
+	}
+	priceInfo.Currency = currency
+	priceInfo.Unit = unit
+	return priceInfo, nil
 }
 
 type LiveRunnerHeartbeatRequest struct {
@@ -831,14 +869,11 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 		return req, nil
 	}
 
-	if req.PriceInfo.PixelsPerUnit <= 0 || req.PriceInfo.PricePerUnit <= 0 {
-		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("runner must include positive price_info")
+	priceInfo, err := normalizeLiveRunnerPriceInfo(req.PriceInfo)
+	if err != nil {
+		return LiveRunnerHeartbeatRequest{}, err
 	}
-	unit := strings.ToUpper(strings.TrimSpace(req.PriceInfo.Unit))
-	if unit != "USD" && unit != "WEI" {
-		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("price_info.unit must be USD or WEI")
-	}
-	req.PriceInfo.Unit = unit
+	req.PriceInfo = priceInfo
 
 	return req, nil
 }
@@ -923,15 +958,11 @@ func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo,
 	if runner.offchain {
 		return nil, nil
 	}
-	priceInfo := runner.PriceInfo
-	if runner.converter != nil {
-		converted, err := convertedPriceInfo(runner.converter)
-		if err != nil {
-			return nil, err
-		}
-		priceInfo = converted
+	priceInfo, err := runner.convertPrice()
+	if err != nil {
+		return nil, err
 	}
-	if priceInfo == (LiveRunnerPriceInfo{}) || priceInfo.PricePerUnit <= 0 || priceInfo.PixelsPerUnit <= 0 {
+	if _, err := priceInfo.priceRat(); err != nil {
 		return nil, nil
 	}
 	return &priceInfo, nil
@@ -1577,14 +1608,9 @@ func validSecret(got, want string) bool {
 
 func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 	// discoveryRunner requires runner.mu.
-	priceInfo := runner.PriceInfo
-	if runner.converter != nil {
-		converted, err := convertedPriceInfo(runner.converter)
-		if err != nil {
-			slog.Error("error reading converted live runner price", "app", runner.App, "endpoint", runner.RunnerURL, "err", err)
-		} else {
-			priceInfo = converted
-		}
+	priceInfo, err := runner.convertPrice()
+	if err != nil {
+		slog.Error("error reading converted live runner price", "app", runner.App, "endpoint", runner.RunnerURL, "err", err)
 	}
 	var discoveryPriceInfo *LiveRunnerPriceInfo
 	if !runner.offchain && priceInfo != (LiveRunnerPriceInfo{}) {
@@ -1623,7 +1649,7 @@ func (runner *liveRunner) updatePriceConverterLocked() {
 	runner.converter = converter
 	if priceChanged {
 		slog.Debug("live runner price set", "runner_id", runner.RunnerID, "app", runner.App,
-			"price_per_unit", runner.PriceInfo.PricePerUnit, "pixels_per_unit", runner.PriceInfo.PixelsPerUnit, "price_unit", runner.PriceInfo.Unit)
+			"price", runner.PriceInfo.Price, "currency", runner.PriceInfo.Currency, "unit", runner.PriceInfo.Unit)
 	}
 }
 
@@ -1637,32 +1663,39 @@ func (runner *liveRunner) stopPriceConverterLocked() {
 }
 
 func newConverterForRunner(priceInfo LiveRunnerPriceInfo) (*core.AutoConvertedPrice, error) {
-	if strings.ToUpper(priceInfo.Unit) != "USD" {
-		return nil, nil
+	priceInfo, err := normalizeLiveRunnerPriceInfo(priceInfo)
+	if err != nil {
+		return nil, err
 	}
 
-	usdPerPixel := usdPerPixelFromUSDPerHour(priceInfo)
-	return core.NewAutoConvertedPrice("USD", usdPerPixel, nil)
+	usdPerHour, err := priceInfo.priceRat()
+	if err != nil {
+		return nil, err
+	}
+	denom := int64(3600)
+	if priceInfo.Unit == "720p" {
+		denom *= 1280 * 720 * 30 // 720p @ 30fps
+	}
+	usdPrice := new(big.Rat).Quo(usdPerHour, new(big.Rat).SetInt64(denom))
+	return core.NewAutoConvertedPrice("USD", usdPrice, nil)
 }
 
-func usdPerPixelFromUSDPerHour(priceInfo LiveRunnerPriceInfo) *big.Rat {
-	pixelsPerHour := 1280 * 720 * 30 * 3600 // 720p @ 30fps
-	usdPerHour := new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
-	return new(big.Rat).Quo(usdPerHour, new(big.Rat).SetInt64(int64(pixelsPerHour)))
-}
-
-func convertedPriceInfo(converter *core.AutoConvertedPrice) (LiveRunnerPriceInfo, error) {
-	if converter == nil {
+func (runner *liveRunner) convertPrice() (LiveRunnerPriceInfo, error) {
+	if runner.converter == nil {
 		return LiveRunnerPriceInfo{}, nil
 	}
-	price, err := common.PriceToInt64(converter.Value())
+	price, err := common.PriceToInt64(runner.converter.Value())
 	if err != nil {
 		return LiveRunnerPriceInfo{}, err
 	}
+	convertedUnit := "seconds"
+	if runner.PriceInfo.Unit == "720p" {
+		convertedUnit = "720p-pixel-seconds"
+	}
 	return LiveRunnerPriceInfo{
-		PricePerUnit:  price.Num().Int64(),
-		PixelsPerUnit: price.Denom().Int64(),
-		Unit:          "WEI",
+		Price:    json.Number(fmt.Sprintf("%d", price.Num().Int64())),
+		Currency: "wei",
+		Unit:     convertedUnit,
 	}, nil
 }
 

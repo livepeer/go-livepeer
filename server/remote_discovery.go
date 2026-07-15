@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/url"
 	"reflect"
@@ -245,10 +246,12 @@ func mergeDiscoveryRunners(entry *remoteDiscoveryMergeEntry, discovery remoteDis
 	// For each address, merge runners by URL. First wins; matching duplicates are
 	// ignored and conflicting duplicates are logged before keeping the first.
 	for _, r := range discovery.Runners {
-		if r.URL == "" {
-			continue
-		}
-		if !entry.remoteDiscoveryRunnerEligible(r) {
+		if err := entry.validateRunner(r); err != nil {
+			orchURL := ""
+			if entry != nil && entry.orch.URL != nil {
+				orchURL = entry.orch.URL.String()
+			}
+			clog.Info(context.Background(), "Filtered remote discovery runner", "orch", orchURL, "runner", r.URL, "app", r.App, "reason", err.Error())
 			continue
 		}
 		if !slices.Contains(entry.orch.Capabilities, r.App) {
@@ -286,47 +289,51 @@ func remoteDiscoveryEntries(raw json.RawMessage) []remoteDiscoveryEntry {
 	return entries
 }
 
-func (entry *remoteDiscoveryMergeEntry) remoteDiscoveryRunnerEligible(runner runner.LiveRunnerDiscoveryRunner) bool {
+func (entry *remoteDiscoveryMergeEntry) validateRunner(runner runner.LiveRunnerDiscoveryRunner) error {
+	if runner.URL == "" {
+		return errors.New("missing URL")
+	}
 	if strings.TrimSpace(runner.App) == "" {
-		return false
+		return errors.New("missing app")
 	}
-	if runner.PriceInfo == nil {
-		return false
+	price, err := validateRunnerPrice(runner.PriceInfo)
+	if err != nil {
+		return err
 	}
-	if runner.PriceInfo.PricePerUnit <= 0 || runner.PriceInfo.PixelsPerUnit <= 0 {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(runner.PriceInfo.Unit), "WEI") {
-		clog.Warningf(context.Background(), "Rejecting remote discovery runner with unsupported price unit orch=%s runner=%s app=%s price_per_unit=%d pixels_per_unit=%d unit=%s",
-			entry.orch.URL.String(),
-			runner.URL,
-			runner.App,
-			runner.PriceInfo.PricePerUnit,
-			runner.PriceInfo.PixelsPerUnit,
-			runner.PriceInfo.Unit,
-		)
-		return false
-	}
-
 	maxPrice := BroadcastCfg.MaxPrice()
-	if maxPrice == nil {
-		return true
+	if maxPrice != nil {
+		if price.Cmp(maxPrice) > 0 {
+			return errors.New("above global max price")
+		}
 	}
-	price := new(big.Rat).SetFrac64(runner.PriceInfo.PricePerUnit, runner.PriceInfo.PixelsPerUnit)
-	if price.Cmp(maxPrice) > 0 {
-		clog.Warningf(context.Background(), "Rejecting remote discovery runner above global max price orch=%s runner=%s app=%s price_per_unit=%d pixels_per_unit=%d unit=%s price=%s max_price=%s",
-			entry.orch.URL.String(),
-			runner.URL,
-			runner.App,
-			runner.PriceInfo.PricePerUnit,
-			runner.PriceInfo.PixelsPerUnit,
-			runner.PriceInfo.Unit,
-			price.RatString(),
-			maxPrice.RatString(),
-		)
-		return false
+	return nil
+}
+
+func validateRunnerPrice(priceInfo *runner.LiveRunnerPriceInfo) (*big.Rat, error) {
+	price, ok := runnerPrice(priceInfo)
+	if !ok {
+		return nil, errors.New("invalid price")
 	}
-	return true
+	currency := strings.ToLower(strings.TrimSpace(priceInfo.Currency))
+	if currency != "wei" {
+		return nil, errors.New("unsupported currency")
+	}
+	unit := strings.ToLower(strings.TrimSpace(priceInfo.Unit))
+	if unit != "seconds" && unit != "720p-pixel-seconds" {
+		return nil, errors.New("unsupported unit")
+	}
+	return price, nil
+}
+
+func runnerPrice(priceInfo *runner.LiveRunnerPriceInfo) (*big.Rat, bool) {
+	if priceInfo == nil {
+		return nil, false
+	}
+	price, ok := new(big.Rat).SetString(strings.TrimSpace(priceInfo.Price.String()))
+	if !ok || price.Sign() <= 0 {
+		return nil, false
+	}
+	return price, true
 }
 
 func forEachRemoteDiscoveryCapability(info *common.OrchNetworkCapabilities, f func(key string, capability core.Capability, modelID string)) {
