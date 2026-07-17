@@ -92,11 +92,45 @@ curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/stre
 curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion&caps=text-to-image/black-forest-labs/FLUX.1-dev"
 ```
 
-The remote signer periodically retrieves latest orchestrator capabilities and pricing from the network. The periodicity can be configured via the `-liveAICapReportInterval` flag with a default of 25 minutes. Orchestrators are pre-filtered for pricing: orchestrators that have a price higher than what the remote signer is configured for will not be made available via discovery.
+The remote signer periodically retrieves the latest orchestrator capabilities and
+pricing. Its candidate source is, in precedence order:
 
-In on-chain remote discovery mode, the signer also reads each orchestrator's `/discovery` endpoint. This lets the signer expose orchestrator service addresses learned from runner discovery.
+1. `-orchWebhookUrl`;
+2. `-orchAddr`;
+3. on-chain orchestrator discovery when neither explicit source is configured.
 
-Runner discovery is merged by runner `url`. The first runner value wins; identical duplicates are ignored, and conflicting duplicates are logged. Exposed runners must include `price_info`; eligible runner `app` values are used for `/discover-orchestrators` capability filtering.
+The refresh period is configured with `-liveAICapReportInterval`, which defaults
+to 25 minutes. Non-empty snapshots are cached for that interval. An empty
+snapshot is retried on subsequent requests; until a usable snapshot exists,
+`/discover-orchestrators` returns 503.
+
+Orchestrators are pre-filtered for pricing: orchestrators that have a price
+higher than what the remote signer is configured for will not be made available
+via discovery.
+
+In on-chain remote discovery mode, the signer also reads each orchestrator's
+`/discovery` endpoint. Endpoint discovery is fetched with a two-second timeout
+and a 1 MiB response limit. A failure to fetch one endpoint does not invalidate
+the normal orchestrator record.
+
+Entries are merged by normalized orchestrator address. Within an address,
+runners are merged by their public discovery `url`. Identical duplicates are
+ignored. If duplicate URLs contain conflicting metadata, the first value is kept
+and the conflict is logged. Changing capacity usage alone is not treated as
+conflicting metadata.
+
+Remote discovery filters data before exposing it:
+
+- normal orchestrator capabilities must have a price and must satisfy the
+  configured capability/model maximum from `-maxPricePerCapability`, falling
+  back to the global maximum when applicable;
+- runner records require a URL, a non-empty `app`, and a positive wei price;
+- runner price units must be `seconds` or `720p-pixel-seconds`; and
+- the global `-maxPricePerUnit`, when set, also limits runner prices.
+
+Each valid runner's `app` is added to the address's capability list and can be
+matched with the same repeated `caps` query parameters as normal orchestrator
+capabilities.
 
 Currently, remote discovery can only be enabled for nodes in remote signing mode.
 
@@ -136,8 +170,8 @@ When running a gateway in offchain mode (ie, with `-remoteSignerUrl` and no Ethe
   - `-maxPricePerUnit`, `-pixelsPerUnit`
   - `-maxPricePerCapability` (optional, capability/model pricing config)
   - `-maxTicketEV`, `-maxTotalEV`, etc.
-- **Selection behavior**: if an orchestrator’s price is above the signer’s configured limits, the signer rejects the request (HTTP 481) and the gateway will retry with a different orchestrator session.
-- **LV2V session price is fixed**: like a traditional gateway setup, Live Video-to-Video (LV2V) jobs treat price as fixed for the lifetime of the session, captured at session initialization time.
+- **Selection behavior**: if an orchestrator’s price is above the signer’s configured limits, the signer rejects the payment request (HTTP 481) and the gateway will retry with a different orchestrator session.
+- **LV2V session price is fixed**: Live Video-to-Video (LV2V) jobs treat price as fixed for the lifetime of the session, captured at session initialization time.
 
 ### Tuning ticket EV to avoid “too many tickets” errors
 
