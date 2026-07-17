@@ -737,8 +737,8 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	if len(cfg.Runners) != 1 {
 		t.Fatalf("expected one runner, got %d", len(cfg.Runners))
 	}
-	if cfg.Runners[0].Route != LiveRunnerRoutingRunnerID {
-		t.Fatalf("expected default routing %q, got %q", LiveRunnerRoutingRunnerID, cfg.Runners[0].Route)
+	if cfg.Runners[0].Routing != LiveRunnerRoutingRunnerID {
+		t.Fatalf("expected default routing %q, got %q", LiveRunnerRoutingRunnerID, cfg.Runners[0].Routing)
 	}
 	if cfg.Runners[0].HealthyStatusCode != http.StatusOK {
 		t.Fatalf("expected default health status 200, got %d", cfg.Runners[0].HealthyStatusCode)
@@ -751,13 +751,13 @@ func TestParseStaticLiveRunnerConfigDefaultsHealthStatusAndNumericGPU(t *testing
 	}
 }
 
-func TestParseStaticLiveRunnerConfigRoute(t *testing.T) {
+func TestParseStaticLiveRunnerConfigRouting(t *testing.T) {
 	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","routing":"label","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","health_url":"https://runner.example.com/health"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Runners[0].Route != LiveRunnerRoutingLabel {
-		t.Fatalf("expected routing %q, got %q", LiveRunnerRoutingLabel, cfg.Runners[0].Route)
+	if cfg.Runners[0].Routing != LiveRunnerRoutingLabel {
+		t.Fatalf("expected routing %q, got %q", LiveRunnerRoutingLabel, cfg.Runners[0].Routing)
 	}
 	if _, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","routing":"bad","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","health_url":"https://runner.example.com/health"}]}`)); err == nil || !strings.Contains(err.Error(), "routing") {
 		t.Fatalf("expected invalid routing error, got %v", err)
@@ -805,7 +805,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "static-single-shot",
-		Route:     LiveRunnerRoutingLabel,
+		Routing:   LiveRunnerRoutingLabel,
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		Mode:      LiveRunnerModeSingleShot,
@@ -1017,7 +1017,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersConcurrentUpserts(t *testing.T)
 	}
 }
 
-func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
+func TestLiveRunnerRegistry_StaticRunnerRoutingLabel(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1027,7 +1027,7 @@ func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
 	_, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{
 		Runners: []StaticLiveRunnerConfigEntry{{
 			Label:     "first",
-			Route:     LiveRunnerRoutingLabel,
+			Routing:   LiveRunnerRoutingLabel,
 			RunnerURL: "https://runner.example.com",
 			App:       "live-video-to-video/scope",
 			Capacity:  2,
@@ -1053,7 +1053,7 @@ func TestLiveRunnerRegistry_StaticRunnerRouteLabel(t *testing.T) {
 	}
 }
 
-func TestLiveRunnerRegistry_StaticRunnerRouteChangesOnUpsert(t *testing.T) {
+func TestLiveRunnerRegistry_StaticRunnerRoutingChangesOnUpsert(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1062,7 +1062,7 @@ func TestLiveRunnerRegistry_StaticRunnerRouteChangesOnUpsert(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	entry := StaticLiveRunnerConfigEntry{
 		Label:     "stable-route",
-		Route:     LiveRunnerRoutingRunnerID,
+		Routing:   LiveRunnerRoutingRunnerID,
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
 		HealthURL: healthSrv.URL,
@@ -1073,7 +1073,7 @@ func TestLiveRunnerRegistry_StaticRunnerRouteChangesOnUpsert(t *testing.T) {
 	}
 	runnerID := resp.Runners[0].RunnerID
 
-	entry.Route = LiveRunnerRoutingLabel
+	entry.Routing = LiveRunnerRoutingLabel
 	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}}); err != nil {
 		t.Fatal(err)
 	}

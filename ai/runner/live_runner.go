@@ -142,7 +142,7 @@ type StaticLiveRunnerConfig struct {
 
 type StaticLiveRunnerConfigEntry struct {
 	Label             string              `json:"label,omitempty"`
-	Route             string              `json:"routing,omitempty"`
+	Routing           string              `json:"routing,omitempty"`
 	RunnerURL         string              `json:"runner_url"`
 	Version           string              `json:"version,omitempty"`
 	Mode              string              `json:"mode,omitempty"`
@@ -473,11 +473,11 @@ func (r *LiveRunnerRegistry) RegisterStaticRunnersJSON(data []byte) (*StaticLive
 
 func normalizeStaticLiveRunnerConfig(cfg StaticLiveRunnerConfig) (StaticLiveRunnerConfig, error) {
 	for i := range cfg.Runners {
-		cfg.Runners[i].Route = strings.TrimSpace(cfg.Runners[i].Route)
-		if cfg.Runners[i].Route == "" {
-			cfg.Runners[i].Route = LiveRunnerRoutingRunnerID
+		cfg.Runners[i].Routing = strings.TrimSpace(cfg.Runners[i].Routing)
+		if cfg.Runners[i].Routing == "" {
+			cfg.Runners[i].Routing = LiveRunnerRoutingRunnerID
 		}
-		if cfg.Runners[i].Route != LiveRunnerRoutingRunnerID && cfg.Runners[i].Route != LiveRunnerRoutingLabel {
+		if cfg.Runners[i].Routing != LiveRunnerRoutingRunnerID && cfg.Runners[i].Routing != LiveRunnerRoutingLabel {
 			return StaticLiveRunnerConfig{}, fmt.Errorf("runners[%d]: routing must be %q or %q", i, LiveRunnerRoutingRunnerID, LiveRunnerRoutingLabel)
 		}
 		if cfg.Runners[i].HealthyStatusCode == 0 {
@@ -710,7 +710,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		if _, duplicate := seenLabels[entry.Label]; duplicate {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: duplicate label %q", i, entry.Label)}
 		}
-		if entry.Route == LiveRunnerRoutingLabel && strings.Contains(entry.Label, "/") {
+		if entry.Routing == LiveRunnerRoutingLabel && strings.Contains(entry.Label, "/") {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: label cannot contain / when routing is %q", i, LiveRunnerRoutingLabel)}
 		}
 		seenLabels[entry.Label] = struct{}{}
@@ -778,7 +778,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.LastHeartbeat = time.Now()
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
-		staticRunner.route = staticRunnerRoute(entry.Route, staticRunner.RunnerID, req.Label)
+		staticRunner.route = staticRunnerRoute(entry.Routing, staticRunner.RunnerID, req.Label)
 		for route, runner := range r.runners {
 			if runner == staticRunner && route != staticRunner.route {
 				// route changed so remove old entry and re-add
