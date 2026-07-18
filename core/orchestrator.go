@@ -272,13 +272,15 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 				if priceInfo == nil {
 					continue
 				}
-				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				// Apply the same auto-adjust overhead the orchestrator binds into
+				// TicketParams (priceInfo) so the advertised price == bound price.
+				adjustedPrice, err := orch.applyAutoAdjustOverhead(sender, priceInfo.Value())
 				if err != nil {
-					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
+					glog.Errorf("error applying overhead to %v price for capability %v err=%v", "default", CapabilityNameLookup[cap], err)
 					continue
 				}
 				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
-				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: adjustedPrice.Num().Int64(), PixelsPerUnit: adjustedPrice.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
 			}
 		}
 	}
@@ -290,13 +292,15 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 				if priceInfo == nil {
 					continue
 				}
-				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				// Apply the same auto-adjust overhead the orchestrator binds into
+				// TicketParams (priceInfo) so the advertised price == bound price.
+				adjustedPrice, err := orch.applyAutoAdjustOverhead(sender, priceInfo.Value())
 				if err != nil {
-					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
+					glog.Errorf("error applying overhead to %v price for capability %v err=%v", "default", CapabilityNameLookup[cap], err)
 					continue
 				}
 				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
-				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: adjustedPrice.Num().Int64(), PixelsPerUnit: adjustedPrice.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
 			}
 		}
 	}
@@ -318,14 +322,18 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 			if price == nil || price.Num().Sign() < 0 {
 				continue
 			}
-			priceInt64, err := common.PriceToInt64(price)
+			// Apply the same auto-adjust overhead the orchestrator binds into
+			// TicketParams (priceInfo -> GetPriceForJob for BYOC) so the advertised
+			// per-capability price the remote signer copies into ExpectedPrice
+			// equals the price bound into RecipientRandHash.
+			adjustedPrice, err := orch.applyAutoAdjustOverhead(sender, price)
 			if err != nil {
-				glog.Errorf("error converting external capability %q price to int64: %v", name, err)
+				glog.Errorf("error applying overhead to external capability %q price: %v", name, err)
 				continue
 			}
 			capPrices = append(capPrices, &net.PriceInfo{
-				PricePerUnit:  priceInt64.Num().Int64(),
-				PixelsPerUnit: priceInt64.Denom().Int64(),
+				PricePerUnit:  adjustedPrice.Num().Int64(),
+				PixelsPerUnit: adjustedPrice.Denom().Int64(),
 				Capability:    uint32(Capability_BYOC),
 				Constraint:    name,
 			})
@@ -440,7 +448,24 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	}
 
-	if !orch.node.AutoAdjustPrice {
+	return orch.applyAutoAdjustOverhead(sender, basePrice)
+}
+
+// applyAutoAdjustOverhead applies the auto-adjust price overhead
+// (1 + 1/txCostMultiplier) to a base price and rounds it to the fixed-point
+// representation used on the wire. It is the single source of the overhead so
+// that the price the orchestrator binds into TicketParams/RecipientRandHash
+// (via priceInfo -> PriceInfoForCaps) equals the per-capability price it
+// advertises (via GetCapabilitiesPrices, which the remote signer copies into
+// the payment's ExpectedPrice). Without this parity the advertised/expected
+// price is the un-adjusted base while the bound price includes the overhead,
+// so they differ by 1/txCostMultiplier (~1%) and the orchestrator rejects the
+// ticket with "invalid recipientRand for ticket recipientRandHash".
+//
+// When AutoAdjustPrice is disabled (or no Recipient is configured to source the
+// tx-cost multiplier) the base price is returned unchanged, matching priceInfo.
+func (orch *orchestrator) applyAutoAdjustOverhead(sender ethcommon.Address, basePrice *big.Rat) (*big.Rat, error) {
+	if orch.node == nil || !orch.node.AutoAdjustPrice || orch.node.Recipient == nil {
 		return basePrice, nil
 	}
 
