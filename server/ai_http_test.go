@@ -955,21 +955,6 @@ func TestLiveRunnerReserveSessionRejectsManifestAuthMismatch(t *testing.T) {
 	require.Contains(t, w.Body.String(), "mismatched manifest and auth token")
 }
 
-func TestScopePaymentChallenge(t *testing.T) {
-	lp := newScopeHTTP(t)
-
-	challenge, oInfo := requestScopePaymentChallenge(t, lp)
-
-	require.NotEmpty(t, challenge.PaymentParams)
-	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
-	require.NotEmpty(t, challenge.ManifestID)
-	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
-	require.NotNil(t, oInfo.GetTicketParams())
-	require.NotNil(t, oInfo.GetPriceInfo())
-	require.Equal(t, int64(4), oInfo.GetPriceInfo().GetPricePerUnit())
-	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
-}
-
 func TestLiveRunnerReserveSessionOnchainUsesPublicServiceURIForPaymentChallenge(t *testing.T) {
 	lp := newLiveRunnerHTTPOnchain(t)
 	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
@@ -985,19 +970,6 @@ func TestLiveRunnerReserveSessionOnchainUsesPublicServiceURIForPaymentChallenge(
 
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
 	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
-	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
-	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
-}
-
-func TestScopePaymentChallengeUsesPublicServiceURI(t *testing.T) {
-	lp := newScopeHTTP(t)
-	liveRunnerAddr, err := url.Parse("http://go-livepeer:8935")
-	require.NoError(t, err)
-	lp.node.LiveRunnerAddr = liveRunnerAddr
-	lp.orchestrator.(*stubOrchestrator).serviceURI = "https://public.example.com"
-
-	challenge, oInfo := requestScopePaymentChallenge(t, lp)
-
 	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
 	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
 }
@@ -1174,11 +1146,12 @@ func TestScopeRejectsOversizedPayload(t *testing.T) {
 	require.Contains(t, w.Body.String(), "http: request body too large")
 }
 
-func TestScopePaymentChallengeRejectsInvalidPayer(t *testing.T) {
-	lp := newScopeHTTP(t)
+func TestLiveRunnerReserveSessionOnchainRejectsInvalidPayer(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
 	req.Header.Set(liveRunnerSenderHeader, "not-an-address")
 	lp.ServeHTTP(w, req)
 

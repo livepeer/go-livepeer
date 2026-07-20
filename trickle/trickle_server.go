@@ -186,11 +186,11 @@ func (sm *Server) getStream(streamName string) (*Stream, bool) {
 	return stream, exists
 }
 
-func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *Stream {
+func (sm *Server) getOrCreateStream(streamName, mimeType string, forceCreate bool) *Stream {
 	sm.mutex.Lock()
 
 	stream, exists := sm.streams[streamName]
-	if !exists && (isLocal || sm.config.Autocreate) {
+	if !exists && (forceCreate || sm.config.Autocreate) {
 		stream = &Stream{
 			segments:  make([]*Segment, maxSegmentsPerStream),
 			name:      streamName,
