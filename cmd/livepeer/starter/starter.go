@@ -156,7 +156,7 @@ type LivepeerConfig struct {
 	MetadataQueueUri           *string
 	MetadataAmqpExchange       *string
 	MetadataPublishTimeout     *time.Duration
-	Datadir                    *string
+	DataDir                    *string
 	AIModelsDir                *string
 	Objectstore                *string
 	Recordstore                *string
