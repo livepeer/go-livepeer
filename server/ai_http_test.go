@@ -1925,7 +1925,7 @@ func liveRunnerReservationPaymentHeadersWithPrice(t *testing.T, orch *stubOrches
 func liveRunnerTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
 	return &lpnet.PriceInfo{
 		PricePerUnit:  pricePerSecond,
-		PixelsPerUnit: int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS),
+		PixelsPerUnit: lv2vPixelsPerSecond,
 	}
 }
 

@@ -264,10 +264,10 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		}
 		monitorCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-		accountPaymentFunc := func(inPixels int64) error {
+		accountPaymentFunc := func(units int64) error {
 			err := paymentReceiver.AccountPayment(monitorCtx, &SegmentInfoReceiver{
 				sender:    getPaymentSender(payment),
-				inPixels:  inPixels,
+				units:     units,
 				priceInfo: payment.GetExpectedPrice(),
 				sessionID: string(segData.ManifestID),
 			})
@@ -980,10 +980,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		var paymentProcessor *LivePaymentProcessor
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-			accountPaymentFunc := func(inPixels int64) error {
+			accountPaymentFunc := func(units int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					inPixels:  inPixels,
+					units:     units,
 					priceInfo: priceInfo,
 					sessionID: mid,
 				})
@@ -1155,10 +1155,10 @@ func (h *lphttp) StartScope() http.Handler {
 		var paymentProcessor *LivePaymentProcessor
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-			accountPaymentFunc := func(inPixels int64) error {
+			accountPaymentFunc := func(units int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					inPixels:  inPixels,
+					units:     units,
 					priceInfo: priceInfo,
 					sessionID: manifestID,
 				})

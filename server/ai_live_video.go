@@ -84,10 +84,10 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	var paymentProcessor *LivePaymentProcessor
 	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 		paymentSender := params.liveParams.paymentSender
-		sendPaymentFunc := func(inPixels int64) error {
+		sendPaymentFunc := func(units int64) error {
 			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 				sess:      sess.BroadcastSession,
-				inPixels:  inPixels,
+				units:     units,
 				priceInfo: priceInfo,
 				mid:       params.liveParams.manifestID,
 			})

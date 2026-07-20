@@ -6,23 +6,19 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/lpms/ffmpeg"
 )
 
-var defaultSegInfo = ffmpeg.MediaFormatInfo{
-	Height: 720,
-	Width:  1280,
-	FPS:    30.0,
-}
+const lv2vPixelsPerSecond int64 = 1280 * 720 * 30
 
 type LivePaymentProcessor struct {
 	interval time.Duration
+	units    int64
 
 	lastProcessedAt time.Time
 	lastProcessedMu sync.RWMutex
 	processCh       chan time.Time
 
-	processSegmentFunc func(inPixels int64) error
+	processUnitsFunc func(units int64) error
 }
 
 type segment struct {
@@ -30,13 +26,18 @@ type segment struct {
 	segData   []byte
 }
 
-func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(inPixels int64) error) *LivePaymentProcessor {
+func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
+	return newLivePaymentProcessor(ctx, processInterval, lv2vPixelsPerSecond, processUnitsFunc)
+}
+
+func newLivePaymentProcessor(ctx context.Context, processInterval time.Duration, units int64, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
 		interval: processInterval,
+		units:    units,
 
-		processCh:          make(chan time.Time, 1),
-		processSegmentFunc: processSegmentFunc,
-		lastProcessedAt:    time.Now(),
+		processCh:        make(chan time.Time, 1),
+		processUnitsFunc: processUnitsFunc,
+		lastProcessedAt:  time.Now(),
 	}
 	pp.start(ctx)
 	return pp
@@ -61,14 +62,11 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 		return
 	}
 
-	info := defaultSegInfo
-
-	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
-	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "pixelsSinceLastProcessed", pixelsSinceLastProcessed)
+	unitsSinceLastProcessed := float64(p.units) * secSinceLastProcessed
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "unitsSinceLastProcessed", unitsSinceLastProcessed)
 
-	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
+	err := p.processUnitsFunc(int64(unitsSinceLastProcessed))
 	if err != nil {
 		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os

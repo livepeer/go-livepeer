@@ -27,7 +27,7 @@ const paymentRequestTimeout = 1 * time.Minute
 
 type SegmentInfoSender struct {
 	sess      *BroadcastSession
-	inPixels  int64
+	units     int64
 	priceInfo *net.PriceInfo
 	mid       string
 	callCount int
@@ -36,7 +36,7 @@ type SegmentInfoSender struct {
 type SegmentInfoReceiver struct {
 	sender    ethcommon.Address
 	sessionID string
-	inPixels  int64
+	units     int64
 	priceInfo *net.PriceInfo
 }
 
@@ -73,7 +73,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	sess.Params.ManifestID = core.ManifestID(segmentInfo.mid)
 	sess.lock.Unlock()
 
-	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
+	fee := calculateFee(segmentInfo.units, segmentInfo.priceInfo)
 
 	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
@@ -159,7 +159,7 @@ func (r *livePaymentReceiver) AccountPayment(
 		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting, priceInfo not set for sessionID=%s, ", segmentInfo.sessionID)
 		return nil
 	}
-	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
+	fee := calculateFee(segmentInfo.units, segmentInfo.priceInfo)
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	if balance == nil || balance.Cmp(fee) < 0 {
@@ -169,7 +169,7 @@ func (r *livePaymentReceiver) AccountPayment(
 		}
 		return fmt.Errorf("insufficient balance, mid=%s, fee=%s, balance=%s", segmentInfo.sessionID, fee.FloatString(0), balanceStr)
 	}
-	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
+	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.units)
 	balance = r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	clog.V(common.DEBUG).Infof(ctx, "Accounted payment for sessionID=%s, fee=%s balance=%s", segmentInfo.sessionID, fee.FloatString(0), balance.FloatString(0))
 	return nil
@@ -236,6 +236,7 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		ManifestID:   segmentInfo.mid,
 		Orchestrator: oInfoBytes,
 		State:        state,
+		InPixels:     segmentInfo.units,
 		Type:         RemoteType_LiveVideoToVideo,
 		Capabilities: capsBytes,
 	}
@@ -336,7 +337,7 @@ func (r *remotePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segm
 	return nil
 }
 
-func calculateFee(inPixels int64, price *net.PriceInfo) *big.Rat {
+func calculateFee(units int64, price *net.PriceInfo) *big.Rat {
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
-	return priceRat.Mul(priceRat, big.NewRat(inPixels, 1))
+	return priceRat.Mul(priceRat, big.NewRat(units, 1))
 }

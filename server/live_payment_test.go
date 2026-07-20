@@ -100,8 +100,8 @@ func TestSendPayment(t *testing.T) {
 	// Create Payment sender and segment info
 	paymentSender := livePaymentSender{}
 	segmentInfo := &SegmentInfoSender{
-		sess:     sess,
-		inPixels: 1000000,
+		sess:  sess,
+		units: 1000000,
 		priceInfo: &net.PriceInfo{
 			PricePerUnit:  1,
 			PixelsPerUnit: 1,
@@ -153,7 +153,7 @@ func TestAccountPayment(t *testing.T) {
 			segmentInfo := &SegmentInfoReceiver{
 				sender:    sender,
 				sessionID: sessionID,
-				inPixels:  1000000,
+				units:     1000000,
 				priceInfo: &net.PriceInfo{
 					PricePerUnit:  1,
 					PixelsPerUnit: 1,
@@ -285,8 +285,9 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 	r.state = RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}
 
 	segmentInfo := &SegmentInfoSender{
-		sess: sess,
-		mid:  "mid1",
+		sess:  sess,
+		mid:   "mid1",
+		units: 1000,
 	}
 
 	// when
@@ -301,6 +302,7 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 
 	// Request payload checks
 	assert.Equal("mid1", gotReq.ManifestID)
+	assert.Equal(int64(1000), gotReq.InPixels)
 	assert.Equal(RemoteType_LiveVideoToVideo, gotReq.Type)
 	assert.Equal(RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}, gotReq.State)
 

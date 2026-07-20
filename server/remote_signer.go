@@ -540,13 +540,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
 	if req.Type == RemoteType_LiveVideoToVideo {
-		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
 			billableSecs = (60 * time.Second).Seconds()
 		}
-		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
+		pixels = int64(float64(lv2vPixelsPerSecond) * billableSecs) // pixels to charge for
 		billableUnits = pixels
 	} else if req.Type == RemoteType_Live {
 		if billableSecs <= 0 {
