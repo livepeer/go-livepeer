@@ -782,7 +782,7 @@ func TestLiveRunnerSessionPaymentRejectsBadPaymentHeader(t *testing.T) {
 	require.Contains(t, w.Body.String(), "base64 decode error")
 }
 
-func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
+func TestLiveRunnerPaidSessionMonitorDebits720pBalance(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		lp := newLiveRunnerHTTPOnchain(t)
 		lp.node.LivePaymentInterval = time.Second
@@ -793,9 +793,64 @@ func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 		orch := lp.orchestrator.(*stubOrchestrator)
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(3, 1)
-		priceInfo := liveRunnerTestPricePerSecond(1)
+		priceInfo := lv2vTestPricePerSecond(1)
 
 		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", priceInfo)
+		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		balance = orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "2", balance.FloatString(0))
+
+		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
+		time.Sleep(time.Second)
+		synctest.Wait()
+	})
+}
+
+func TestLiveRunnerPaymentProcessorConstructor(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tests := []struct {
+		unit          string
+		expectedUnits int64
+	}{
+		{unit: "seconds", expectedUnits: 1},
+		{unit: "720p-pixel-seconds", expectedUnits: lv2vPixelsPerSecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.unit, func(t *testing.T) {
+			constructor, err := liveRunnerPaymentProcessorConstructor(tt.unit)
+			require.NoError(t, err)
+
+			processor := constructor(ctx, time.Second, func(int64) error { return nil })
+			require.Equal(t, tt.expectedUnits, processor.units)
+		})
+	}
+
+	_, err := liveRunnerPaymentProcessorConstructor("minutes")
+	require.ErrorContains(t, err, "unsupported live runner payment unit")
+}
+
+func TestLiveRunnerPaidSessionMonitorDebitsSecondsBalance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{PriceUnit: "hour"})
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(3, 1)
+
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveTestPricePerSecond(1))
 		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
 		require.NotNil(t, balance)
 		require.Equal(t, "3", balance.FloatString(0))
@@ -825,7 +880,7 @@ func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T)
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(0, 1)
 
-		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", lv2vTestPricePerSecond(1))
 
 		time.Sleep(time.Second)
 		synctest.Wait()
@@ -849,7 +904,7 @@ func TestLiveRunnerPaidSessionMonitorExitsAfterManualStop(t *testing.T) {
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(3, 1)
 
-		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", lv2vTestPricePerSecond(1))
 
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/stop", nil)
@@ -1018,7 +1073,7 @@ func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) 
 		orch.paymentCredit = big.NewRat(3, 1)
 
 		challenge, oInfo := requestScopePaymentChallenge(t, lp)
-		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, liveRunnerTestPricePerSecond(1))
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, lv2vTestPricePerSecond(1))
 
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
@@ -1922,10 +1977,17 @@ func liveRunnerReservationPaymentHeadersWithPrice(t *testing.T, orch *stubOrches
 	return headers
 }
 
-func liveRunnerTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
+func lv2vTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
 	return &lpnet.PriceInfo{
 		PricePerUnit:  pricePerSecond,
 		PixelsPerUnit: lv2vPixelsPerSecond,
+	}
+}
+
+func liveTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
+	return &lpnet.PriceInfo{
+		PricePerUnit:  pricePerSecond,
+		PixelsPerUnit: 1,
 	}
 }
 
@@ -1934,6 +1996,7 @@ type liveRunnerRegistrationOptions struct {
 	RunnerURL string
 	Capacity  int
 	Mode      string
+	PriceUnit string
 }
 
 func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegistrationOptions) {
@@ -1968,6 +2031,10 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 	if opts.Mode != "" && opts.Mode != runner.LiveRunnerModePersistent && opts.Mode != runner.LiveRunnerModeSingleShot {
 		require.FailNow(t, "invalid live runner mode", "mode=%q", opts.Mode)
 	}
+	priceUnit := opts.PriceUnit
+	if priceUnit == "" {
+		priceUnit = "720p"
+	}
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
@@ -1979,7 +2046,7 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 		Capacity:  capacity,
 		PriceInfo: runner.LiveRunnerPriceInfo{
 			Price: json.Number("0.001990656"),
-			Unit:  "720p",
+			Unit:  priceUnit,
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)

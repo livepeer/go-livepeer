@@ -211,6 +211,8 @@ type liveRunnerProxyRequest struct {
 	TargetURL string `json:"target_url"`
 }
 
+type paymentProcessorConstructor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
+
 func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
 	if !ok {
@@ -224,6 +226,14 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	paymentRequired := priceInfo != nil
+	var newPaymentProcessor paymentProcessorConstructor
+	if paymentRequired {
+		newPaymentProcessor, err = liveRunnerPaymentProcessorConstructor(priceInfo.Unit)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
 		h.runnerChallenge(w, r, priceInfo)
 		return
@@ -281,7 +291,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			}
 			return err
 		}
-		paymentProcessor := NewLV2VPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+		paymentProcessor := newPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
 		go func() {
 			ticker := time.NewTicker(h.node.LivePaymentInterval)
 			defer ticker.Stop()
@@ -309,6 +319,17 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	respondJsonOk(w, data)
+}
+
+func liveRunnerPaymentProcessorConstructor(unit string) (paymentProcessorConstructor, error) {
+	switch strings.ToLower(strings.TrimSpace(unit)) {
+	case "seconds":
+		return NewLivePaymentProcessor, nil
+	case "720p-pixel-seconds":
+		return NewLV2VPaymentProcessor, nil
+	default:
+		return nil, fmt.Errorf("unsupported live runner payment unit %q", unit)
+	}
 }
 
 func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceInfo *runner.LiveRunnerPriceInfo) {

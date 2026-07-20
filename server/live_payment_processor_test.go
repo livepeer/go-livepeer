@@ -53,3 +53,12 @@ func TestNewLV2VPaymentProcessorUsesLV2VUnits(t *testing.T) {
 
 	require.Equal(t, lv2vPixelsPerSecond, p.units)
 }
+
+func TestNewLivePaymentProcessorUsesSeconds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p := NewLivePaymentProcessor(ctx, time.Second, func(int64) error { return nil })
+
+	require.Equal(t, int64(1), p.units)
+}

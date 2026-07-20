@@ -30,6 +30,10 @@ func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration,
 	return newLivePaymentProcessor(ctx, processInterval, lv2vPixelsPerSecond, processUnitsFunc)
 }
 
+func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
+	return newLivePaymentProcessor(ctx, processInterval, 1, processUnitsFunc)
+}
+
 func newLivePaymentProcessor(ctx context.Context, processInterval time.Duration, units int64, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
 		interval: processInterval,
