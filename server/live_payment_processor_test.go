@@ -26,9 +26,9 @@ func TestLivePaymentProcessorProcessesConfiguredUnits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var processed int64
 			p := &LivePaymentProcessor{
-				units:            tt.units,
-				lastProcessedAt:  start,
-				processUnitsFunc: func(units int64) error { processed = units; return nil },
+				units:              tt.units,
+				lastProcessedAt:    start,
+				processSegmentFunc: func(units int64) error { processed = units; return nil },
 			}
 
 			p.processOne(context.Background(), start.Add(tt.elapsed))

@@ -319,12 +319,12 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 	respondJsonOk(w, data)
 }
 
-func newLiveRunnerPaymentProcessor(ctx context.Context, processInterval time.Duration, unit string, processUnitsFunc func(int64) error) (*LivePaymentProcessor, error) {
+func newLiveRunnerPaymentProcessor(ctx context.Context, processInterval time.Duration, unit string, processSegmentFunc func(int64) error) (*LivePaymentProcessor, error) {
 	switch strings.ToLower(strings.TrimSpace(unit)) {
 	case "seconds":
-		return NewLivePaymentProcessor(ctx, processInterval, processUnitsFunc), nil
+		return NewLivePaymentProcessor(ctx, processInterval, processSegmentFunc), nil
 	case "720p-pixel-seconds":
-		return NewLV2VPaymentProcessor(ctx, processInterval, processUnitsFunc), nil
+		return NewLV2VPaymentProcessor(ctx, processInterval, processSegmentFunc), nil
 	default:
 		return nil, fmt.Errorf("unsupported live runner payment unit %q", unit)
 	}

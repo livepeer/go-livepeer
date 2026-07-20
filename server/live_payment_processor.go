@@ -23,7 +23,7 @@ type LivePaymentProcessor struct {
 	lastProcessedMu sync.RWMutex
 	processCh       chan time.Time
 
-	processUnitsFunc func(units int64) error
+	processSegmentFunc func(units int64) error
 }
 
 type segment struct {
@@ -31,23 +31,23 @@ type segment struct {
 	segData   []byte
 }
 
-func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
+func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
 	units := int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS)
-	return newLivePaymentProcessor(ctx, processInterval, units, processUnitsFunc)
+	return newLivePaymentProcessor(ctx, processInterval, units, processSegmentFunc)
 }
 
-func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
-	return newLivePaymentProcessor(ctx, processInterval, 1, processUnitsFunc)
+func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
+	return newLivePaymentProcessor(ctx, processInterval, 1, processSegmentFunc)
 }
 
-func newLivePaymentProcessor(ctx context.Context, processInterval time.Duration, units int64, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
+func newLivePaymentProcessor(ctx context.Context, processInterval time.Duration, units int64, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
 		interval: processInterval,
 		units:    units,
 
-		processCh:        make(chan time.Time, 1),
-		processUnitsFunc: processUnitsFunc,
-		lastProcessedAt:  time.Now(),
+		processCh:          make(chan time.Time, 1),
+		processSegmentFunc: processSegmentFunc,
+		lastProcessedAt:    time.Now(),
 	}
 	pp.start(ctx)
 	return pp
@@ -76,7 +76,7 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	unitsSinceLastProcessed := float64(p.units) * secSinceLastProcessed
 	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "unitsSinceLastProcessed", unitsSinceLastProcessed)
 
-	err := p.processUnitsFunc(int64(unitsSinceLastProcessed))
+	err := p.processSegmentFunc(int64(unitsSinceLastProcessed))
 	if err != nil {
 		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
