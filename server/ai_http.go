@@ -281,7 +281,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			}
 			return err
 		}
-		paymentProcessor := NewLivePaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+		paymentProcessor := NewLV2VPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
 		go func() {
 			ticker := time.NewTicker(h.node.LivePaymentInterval)
 			defer ticker.Stop()
@@ -993,7 +993,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				}
 				return err
 			}
-			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+			paymentProcessor = NewLV2VPaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
@@ -1168,7 +1168,7 @@ func (h *lphttp) StartScope() http.Handler {
 				}
 				return err
 			}
-			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+			paymentProcessor = NewLV2VPaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}

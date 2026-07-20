@@ -26,7 +26,7 @@ type segment struct {
 	segData   []byte
 }
 
-func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
+func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
 	return newLivePaymentProcessor(ctx, processInterval, lv2vPixelsPerSecond, processUnitsFunc)
 }
 

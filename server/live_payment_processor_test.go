@@ -45,11 +45,11 @@ func TestLivePaymentProcessorTruncatesFractionalUnits(t *testing.T) {
 	require.Equal(t, start.Add(2*time.Second), p.lastProcessedAt)
 }
 
-func TestNewLivePaymentProcessorUsesLV2VUnits(t *testing.T) {
+func TestNewLV2VPaymentProcessorUsesLV2VUnits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	p := NewLivePaymentProcessor(ctx, time.Second, func(int64) error { return nil })
+	p := NewLV2VPaymentProcessor(ctx, time.Second, func(int64) error { return nil })
 
 	require.Equal(t, lv2vPixelsPerSecond, p.units)
 }
