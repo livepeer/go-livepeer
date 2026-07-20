@@ -211,8 +211,6 @@ type liveRunnerProxyRequest struct {
 	TargetURL string `json:"target_url"`
 }
 
-type paymentProcessorConstructor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
-
 func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
 	manager, ok := h.liveRunnerManager()
 	if !ok {
@@ -226,14 +224,6 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	paymentRequired := priceInfo != nil
-	var newPaymentProcessor paymentProcessorConstructor
-	if paymentRequired {
-		newPaymentProcessor, err = liveRunnerPaymentProcessorConstructor(priceInfo.Unit)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
 	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
 		h.runnerChallenge(w, r, priceInfo)
 		return
@@ -291,7 +281,15 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			}
 			return err
 		}
-		paymentProcessor := newPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+		paymentProcessor, err := newLiveRunnerPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, priceInfo.Unit, accountPaymentFunc)
+		if err != nil {
+			cancel()
+			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+				clog.Errorf(ctx, "Error releasing live runner session after payment setup failure err=%v", releaseErr)
+			}
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		go func() {
 			ticker := time.NewTicker(h.node.LivePaymentInterval)
 			defer ticker.Stop()
@@ -321,12 +319,12 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 	respondJsonOk(w, data)
 }
 
-func liveRunnerPaymentProcessorConstructor(unit string) (paymentProcessorConstructor, error) {
+func newLiveRunnerPaymentProcessor(ctx context.Context, processInterval time.Duration, unit string, processUnitsFunc func(int64) error) (*LivePaymentProcessor, error) {
 	switch strings.ToLower(strings.TrimSpace(unit)) {
 	case "seconds":
-		return NewLivePaymentProcessor, nil
+		return NewLivePaymentProcessor(ctx, processInterval, processUnitsFunc), nil
 	case "720p-pixel-seconds":
-		return NewLV2VPaymentProcessor, nil
+		return NewLV2VPaymentProcessor(ctx, processInterval, processUnitsFunc), nil
 	default:
 		return nil, fmt.Errorf("unsupported live runner payment unit %q", unit)
 	}
@@ -1001,10 +999,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		var paymentProcessor *LivePaymentProcessor
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-			accountPaymentFunc := func(units int64) error {
+			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					units:     units,
+					units:     inPixels,
 					priceInfo: priceInfo,
 					sessionID: mid,
 				})
@@ -1176,10 +1174,10 @@ func (h *lphttp) StartScope() http.Handler {
 		var paymentProcessor *LivePaymentProcessor
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-			accountPaymentFunc := func(units int64) error {
+			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					units:     units,
+					units:     inPixels,
 					priceInfo: priceInfo,
 					sessionID: manifestID,
 				})

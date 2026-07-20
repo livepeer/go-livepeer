@@ -782,7 +782,7 @@ func TestLiveRunnerSessionPaymentRejectsBadPaymentHeader(t *testing.T) {
 	require.Contains(t, w.Body.String(), "base64 decode error")
 }
 
-func TestLiveRunnerPaidSessionMonitorDebits720pBalance(t *testing.T) {
+func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		lp := newLiveRunnerHTTPOnchain(t)
 		lp.node.LivePaymentInterval = time.Second
@@ -793,7 +793,7 @@ func TestLiveRunnerPaidSessionMonitorDebits720pBalance(t *testing.T) {
 		orch := lp.orchestrator.(*stubOrchestrator)
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(3, 1)
-		priceInfo := lv2vTestPricePerSecond(1)
+		priceInfo := liveRunnerTestPricePerSecond(1)
 
 		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", priceInfo)
 		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
@@ -813,7 +813,7 @@ func TestLiveRunnerPaidSessionMonitorDebits720pBalance(t *testing.T) {
 	})
 }
 
-func TestLiveRunnerPaymentProcessorConstructor(t *testing.T) {
+func TestNewLiveRunnerPaymentProcessor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -822,19 +822,17 @@ func TestLiveRunnerPaymentProcessorConstructor(t *testing.T) {
 		expectedUnits int64
 	}{
 		{unit: "seconds", expectedUnits: 1},
-		{unit: "720p-pixel-seconds", expectedUnits: lv2vPixelsPerSecond},
+		{unit: "720p-pixel-seconds", expectedUnits: 1280 * 720 * 30},
 	}
 	for _, tt := range tests {
 		t.Run(tt.unit, func(t *testing.T) {
-			constructor, err := liveRunnerPaymentProcessorConstructor(tt.unit)
+			processor, err := newLiveRunnerPaymentProcessor(ctx, time.Second, tt.unit, func(int64) error { return nil })
 			require.NoError(t, err)
-
-			processor := constructor(ctx, time.Second, func(int64) error { return nil })
 			require.Equal(t, tt.expectedUnits, processor.units)
 		})
 	}
 
-	_, err := liveRunnerPaymentProcessorConstructor("minutes")
+	_, err := newLiveRunnerPaymentProcessor(ctx, time.Second, "minutes", func(int64) error { return nil })
 	require.ErrorContains(t, err, "unsupported live runner payment unit")
 }
 
@@ -880,7 +878,7 @@ func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T)
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(0, 1)
 
-		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", lv2vTestPricePerSecond(1))
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
 
 		time.Sleep(time.Second)
 		synctest.Wait()
@@ -904,7 +902,7 @@ func TestLiveRunnerPaidSessionMonitorExitsAfterManualStop(t *testing.T) {
 		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 		orch.paymentCredit = big.NewRat(3, 1)
 
-		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", lv2vTestPricePerSecond(1))
+		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
 
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/stop", nil)
@@ -1073,7 +1071,7 @@ func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) 
 		orch.paymentCredit = big.NewRat(3, 1)
 
 		challenge, oInfo := requestScopePaymentChallenge(t, lp)
-		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, lv2vTestPricePerSecond(1))
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, liveRunnerTestPricePerSecond(1))
 
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"model_id":"scope"}`))
@@ -1977,10 +1975,10 @@ func liveRunnerReservationPaymentHeadersWithPrice(t *testing.T, orch *stubOrches
 	return headers
 }
 
-func lv2vTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
+func liveRunnerTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
 	return &lpnet.PriceInfo{
 		PricePerUnit:  pricePerSecond,
-		PixelsPerUnit: lv2vPixelsPerSecond,
+		PixelsPerUnit: int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS),
 	}
 }
 

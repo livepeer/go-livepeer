@@ -6,9 +6,14 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
-const lv2vPixelsPerSecond int64 = 1280 * 720 * 30
+var defaultSegInfo = ffmpeg.MediaFormatInfo{
+	Height: 720,
+	Width:  1280,
+	FPS:    30.0,
+}
 
 type LivePaymentProcessor struct {
 	interval time.Duration
@@ -27,7 +32,8 @@ type segment struct {
 }
 
 func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {
-	return newLivePaymentProcessor(ctx, processInterval, lv2vPixelsPerSecond, processUnitsFunc)
+	units := int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS)
+	return newLivePaymentProcessor(ctx, processInterval, units, processUnitsFunc)
 }
 
 func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processUnitsFunc func(units int64) error) *LivePaymentProcessor {

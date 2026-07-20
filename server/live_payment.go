@@ -27,7 +27,7 @@ const paymentRequestTimeout = 1 * time.Minute
 
 type SegmentInfoSender struct {
 	sess      *BroadcastSession
-	units     int64
+	inPixels  int64
 	priceInfo *net.PriceInfo
 	mid       string
 	callCount int
@@ -73,7 +73,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	sess.Params.ManifestID = core.ManifestID(segmentInfo.mid)
 	sess.lock.Unlock()
 
-	fee := calculateFee(segmentInfo.units, segmentInfo.priceInfo)
+	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
@@ -236,7 +236,6 @@ func (r *remotePaymentSender) RequestPayment(ctx context.Context, segmentInfo *S
 		ManifestID:   segmentInfo.mid,
 		Orchestrator: oInfoBytes,
 		State:        state,
-		InPixels:     segmentInfo.units,
 		Type:         RemoteType_LiveVideoToVideo,
 		Capabilities: capsBytes,
 	}
@@ -337,7 +336,7 @@ func (r *remotePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segm
 	return nil
 }
 
-func calculateFee(units int64, price *net.PriceInfo) *big.Rat {
+func calculateFee(inPixels int64, price *net.PriceInfo) *big.Rat {
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
-	return priceRat.Mul(priceRat, big.NewRat(units, 1))
+	return priceRat.Mul(priceRat, big.NewRat(inPixels, 1))
 }

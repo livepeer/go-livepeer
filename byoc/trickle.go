@@ -65,7 +65,7 @@ func (bsg *BYOCGatewayServer) startTricklePublish(ctx context.Context, url *url.
 	//			mid:       params.liveParams.manifestID,
 	//		})
 	//	}
-	//	paymentProcessor = NewLV2VPaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
+	//	paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 	//} else {
 	//	clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	//}

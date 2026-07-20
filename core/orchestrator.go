@@ -477,14 +477,14 @@ func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID M
 	return true
 }
 
-// DebitFees debits the balance for a ManifestID based on the number of units * price
-func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestID, price *net.PriceInfo, units int64) {
+// DebitFees debits the balance for a ManifestID based on the amount of output pixels * price
+func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestID, price *net.PriceInfo, pixels int64) {
 	// Don't debit in offchain mode
 	if orch.node == nil || orch.node.Balances == nil {
 		return
 	}
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
-	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(units, 1)))
+	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
 func (orch *orchestrator) Balance(addr ethcommon.Address, manifestID ManifestID) *big.Rat {

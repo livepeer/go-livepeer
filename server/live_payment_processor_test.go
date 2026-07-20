@@ -10,55 +10,31 @@ import (
 
 func TestLivePaymentProcessorProcessesConfiguredUnits(t *testing.T) {
 	start := time.Date(2026, time.July, 20, 0, 0, 0, 0, time.UTC)
-	var processed []int64
-	p := &LivePaymentProcessor{
-		units:           lv2vPixelsPerSecond,
-		lastProcessedAt: start,
-		processUnitsFunc: func(units int64) error {
-			processed = append(processed, units)
-			return nil
-		},
+	lv2vUnits := int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS)
+	tests := []struct {
+		name    string
+		units   int64
+		elapsed time.Duration
+		want    int64
+	}{
+		{name: "LV2V", units: lv2vUnits, elapsed: 1500 * time.Millisecond, want: lv2vUnits * 3 / 2},
+		{name: "live whole seconds", units: 1, elapsed: 2 * time.Second, want: 2},
+		{name: "fractional unit truncation", units: 1, elapsed: 1500 * time.Millisecond, want: 1},
 	}
 
-	p.processOne(context.Background(), start.Add(1500*time.Millisecond))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var processed int64
+			p := &LivePaymentProcessor{
+				units:            tt.units,
+				lastProcessedAt:  start,
+				processUnitsFunc: func(units int64) error { processed = units; return nil },
+			}
 
-	require.Equal(t, []int64{lv2vPixelsPerSecond * 3 / 2}, processed)
-	require.Equal(t, start.Add(1500*time.Millisecond), p.lastProcessedAt)
-}
+			p.processOne(context.Background(), start.Add(tt.elapsed))
 
-func TestLivePaymentProcessorTruncatesFractionalUnits(t *testing.T) {
-	start := time.Date(2026, time.July, 20, 0, 0, 0, 0, time.UTC)
-	var processed []int64
-	p := &LivePaymentProcessor{
-		units:           1,
-		lastProcessedAt: start,
-		processUnitsFunc: func(units int64) error {
-			processed = append(processed, units)
-			return nil
-		},
+			require.Equal(t, tt.want, processed)
+			require.Equal(t, start.Add(tt.elapsed), p.lastProcessedAt)
+		})
 	}
-
-	p.processOne(context.Background(), start.Add(1500*time.Millisecond))
-	p.processOne(context.Background(), start.Add(2*time.Second))
-
-	require.Equal(t, []int64{1, 0}, processed)
-	require.Equal(t, start.Add(2*time.Second), p.lastProcessedAt)
-}
-
-func TestNewLV2VPaymentProcessorUsesLV2VUnits(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	p := NewLV2VPaymentProcessor(ctx, time.Second, func(int64) error { return nil })
-
-	require.Equal(t, lv2vPixelsPerSecond, p.units)
-}
-
-func TestNewLivePaymentProcessorUsesSeconds(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	p := NewLivePaymentProcessor(ctx, time.Second, func(int64) error { return nil })
-
-	require.Equal(t, int64(1), p.units)
 }
