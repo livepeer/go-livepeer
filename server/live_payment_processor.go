@@ -76,7 +76,8 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	unitsSinceLastProcessed := float64(p.units) * secSinceLastProcessed
 	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "unitsSinceLastProcessed", unitsSinceLastProcessed)
 
-	err := p.processSegmentFunc(int64(unitsSinceLastProcessed))
+	processedUnits := int64(unitsSinceLastProcessed)
+	err := p.processSegmentFunc(processedUnits)
 	if err != nil {
 		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
@@ -85,7 +86,10 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 
 	p.lastProcessedMu.Lock()
 	defer p.lastProcessedMu.Unlock()
-	p.lastProcessedAt = timestamp
+	// Advance only by the billed duration so truncated fractional units are
+	// included in a later payment instead of being discarded on every callback.
+	processedDuration := time.Duration(float64(processedUnits) / float64(p.units) * float64(time.Second))
+	p.lastProcessedAt = p.lastProcessedAt.Add(processedDuration)
 }
 
 func (p *LivePaymentProcessor) process(ctx context.Context) {
