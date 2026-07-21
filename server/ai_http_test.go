@@ -1509,6 +1509,62 @@ func TestLiveRunnerCreateSessionProxyAndProxyDefaultPath(t *testing.T) {
 	require.Equal(t, sessionID, gotSessionID)
 }
 
+func TestLiveRunnerCreateSessionProxyDefaultsToAppPath(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "empty body"},
+		{name: "empty object", body: `{}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var gotPath, gotQuery, gotSessionID string
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotQuery = r.URL.RawQuery
+				gotSessionID = r.Header.Get("Livepeer-Session-Id")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte("proxied"))
+			}))
+			defer upstream.Close()
+
+			lp := newLiveRunnerHTTP(t, true)
+			registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base"})
+			sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+sessionID+"/app/foo/bar?x=1", strings.NewReader("app-body"))
+			lp.ServeHTTP(w, req)
+			require.Equal(t, http.StatusAccepted, w.Code)
+			require.Equal(t, "proxied", w.Body.String())
+			require.Equal(t, "/base/foo/bar", gotPath)
+			require.Equal(t, "x=1", gotQuery)
+			require.Equal(t, sessionID, gotSessionID)
+			appPath, appQuery, appSessionID := gotPath, gotQuery, gotSessionID
+
+			w = httptest.NewRecorder()
+			req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", test.body)
+			lp.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			var proxy runner.LiveRunnerProxy
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &proxy))
+			require.NotEmpty(t, proxy.ProxyID)
+			require.Equal(t, "http://localhost:1234/run/"+proxy.ProxyID, proxy.URL)
+
+			w = httptest.NewRecorder()
+			req = httptest.NewRequest(http.MethodPost, proxy.URL+"/foo/bar?x=1", strings.NewReader("proxied-body"))
+			lp.ServeHTTP(w, req)
+			require.Equal(t, http.StatusAccepted, w.Code)
+			require.Equal(t, "proxied", w.Body.String())
+			require.Equal(t, appPath, gotPath)
+			require.Equal(t, appQuery, gotQuery)
+			require.Equal(t, appSessionID, gotSessionID)
+		})
+	}
+}
+
 func TestLiveRunnerSessionProxyHostTemplate(t *testing.T) {
 	var gotPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

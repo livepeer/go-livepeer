@@ -1175,10 +1175,6 @@ func (r *LiveRunnerRegistry) DeleteTrickleChannel(runnerID, sessionID, name stri
 }
 
 func (r *LiveRunnerRegistry) CreateSessionProxy(runnerID, sessionID, targetURL string) (LiveRunnerProxy, error) {
-	target, err := normalizeProxyTargetURL(targetURL)
-	if err != nil {
-		return LiveRunnerProxy{}, err
-	}
 	runner, unlock, err := r.lockLiveRunner(runnerID)
 	if err != nil {
 		return LiveRunnerProxy{}, err
@@ -1192,9 +1188,16 @@ func (r *LiveRunnerRegistry) CreateSessionProxy(runnerID, sessionID, targetURL s
 	if err != nil || runnerURL.Hostname() == "" {
 		return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadGateway, Message: "invalid registered runner_url"}
 	}
-	// For now, limit to the registered runner URL until there's a good reason to do otherwise.
-	if !strings.EqualFold(target.Hostname(), runnerURL.Hostname()) {
-		return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url hostname must match registered runner_url hostname"}
+	target := runnerURL
+	if strings.TrimSpace(targetURL) != "" {
+		target, err = normalizeProxyTargetURL(targetURL)
+		if err != nil {
+			return LiveRunnerProxy{}, err
+		}
+		// For now, limit to the registered runner URL until there's a good reason to do otherwise.
+		if !strings.EqualFold(target.Hostname(), runnerURL.Hostname()) {
+			return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadRequest, Message: "target_url hostname must match registered runner_url hostname"}
+		}
 	}
 	proxyID := session.newProxyIDLocked()
 	session.proxies[proxyID] = proxyTarget{

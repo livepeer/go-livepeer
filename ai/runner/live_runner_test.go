@@ -1491,6 +1491,36 @@ func TestLiveRunnerRegistry_SessionToken(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_CreateSessionProxyDefaultsToRegisteredRunnerURL(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-1")
+	req.RunnerURL = "https://runner.example.com/base"
+	liveRunnerTestRegister(t, registry, req)
+	sessionID, _, err := registry.ReserveSession("runner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxy, err := registry.CreateSessionProxy("runner-1", sessionID, " \t ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy.ProxyID == "" {
+		t.Fatal("expected proxy id")
+	}
+
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/"+proxy.ProxyID+"/foo/bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatal("expected proxy route to match")
+	}
+	if route.RunnerID != "runner-1" || route.SessionID != sessionID || route.TargetURL != "https://runner.example.com/base" || route.AppPath != "foo/bar" {
+		t.Fatalf("unexpected proxy route: %+v", route)
+	}
+}
+
 func TestLiveRunnerRegistry_CreateSessionProxyDefaultPath(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))

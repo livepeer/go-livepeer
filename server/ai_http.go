@@ -642,7 +642,7 @@ func (h *lphttp) CreateLiveRunnerSessionProxy(w http.ResponseWriter, r *http.Req
 	}
 
 	var req liveRunnerProxyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
 	}

@@ -323,7 +323,7 @@ Livepeer-Session-Token: <session token>
 
 To proxy the original app path itself at `/apps/.../app`, omit the target_url.
 
-The response contains a random `proxy_id` and its public `url`. The target must
+The response contains a random `proxy_id` and its public `url`. Any target must
 be an absolute HTTP or HTTPS URL, must not contain a fragment, and its hostname
 must match the hostname of the registered `runner_url`. A different port and
 path are allowed. Proxy records are scoped to the session and disappear when
@@ -539,14 +539,14 @@ runner/session.
 | --- | --- | --- | --- |
 | `POST /runner/{runner_id}/session/{session_id}/channels` | `{"channels":[{"name":"events","mime_type":"application/json"}]}` → channel descriptors | Creates up to 25 named trickle channels. Existing names are idempotent. MIME type defaults to `application/octet-stream`. | `200`, `400`, `401`, `404` |
 | `DELETE /runner/{runner_id}/session/{session_id}/channels` | `{"channels":["events"]}` → deleted names | Deletes up to 25 session trickle channels. | `200`, `400`, `401`, `404` |
-| `POST /runner/{runner_id}/session/{session_id}/proxy` | `{"target_url":"http://runner.example:9000/ui"}` → `proxy_id` and `url` | Creates a session-scoped public proxy URL subject to the target restrictions described above. | `200`, `400`, `401`, `404` |
+| `POST /runner/{runner_id}/session/{session_id}/proxy` | `{}` or `{"target_url":"http://runner.example:9000/ui"}` → `proxy_id` and `url` | Creates a session-scoped public proxy URL for the default app path or an explicit target subject to the restrictions described above. | `200`, `400`, `401`, `404` |
 | `POST /runner/{runner_id}/session/{session_id}/stop` | Empty body | Lets the runner release its own session. | `204`, `401`, `404` |
 
 ##### Generated proxy endpoint
 
 | Method and path | Authentication | Description |
 | --- | --- | --- |
-| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the opaque generated proxy URL | Resolves the proxy ID, validates the live session, and forwards to the registered target URL. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
+| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the opaque generated proxy URL | Resolves the proxy ID, validates the live session, and forwards to either the default app target or the registered explicit target URL. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
 
 Channel and proxy URLs contain random or derived secrets. Do not log or expose
 them as public identifiers. See the [trickle protocol reference](../trickle/README.md)
