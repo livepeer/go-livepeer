@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1636,6 +1637,7 @@ func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
 	base := runner.LiveRunnerDiscoveryRunner{
 		URL:               "https://runner.example.com/scope",
 		App:               "live-video-to-video/model-a",
+		Metadata:          `{"region":"us-west"}`,
 		Capacity:          2,
 		CapacityUsed:      1,
 		CapacityAvailable: 1,
@@ -1654,6 +1656,66 @@ func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
 	capacityChanged := base
 	capacityChanged.Capacity = 3
 	require.False(t, sameRemoteDiscoveryRunner(base, capacityChanged))
+
+	metadataChanged := base
+	metadataChanged.Metadata = `{"region":"eu-central"}`
+	require.False(t, sameRemoteDiscoveryRunner(base, metadataChanged))
+}
+
+func TestRemoteDiscoveryRunnerMetadataRoundTrip(t *testing.T) {
+	entries := remoteDiscoveryEntries(json.RawMessage(`[{
+		"address":"https://orch.example.com:8935",
+		"runners":[{
+			"url":"https://orch.example.com:8935/apps/runner/session",
+			"app":"live-video-to-video/model-a",
+			"metadata":"{\"region\":\"us-west\"}",
+			"price_info":{"price":7,"currency":"wei","unit":"seconds"}
+		}]
+	}]`))
+	require.Len(t, entries, 1)
+	require.Len(t, entries[0].Runners, 1)
+	require.Equal(t, `{"region":"us-west"}`, entries[0].Runners[0].Metadata)
+
+	body, err := json.Marshal(discoveryResponse{Runners: entries[0].Runners})
+	require.NoError(t, err)
+	var response discoveryResponse
+	require.NoError(t, json.Unmarshal(body, &response))
+	require.Len(t, response.Runners, 1)
+	require.Equal(t, `{"region":"us-west"}`, response.Runners[0].Metadata)
+}
+
+func TestRemoteDiscoveryFiltersInvalidRunnerMetadata(t *testing.T) {
+	orchURL, err := url.Parse("https://orch.example.com:8935")
+	require.NoError(t, err)
+	entry := &remoteDiscoveryMergeEntry{
+		orch:    remoteDiscoveryOrchestrator{URL: orchURL},
+		runners: make(map[string]runner.LiveRunnerDiscoveryRunner),
+	}
+	base := runner.LiveRunnerDiscoveryRunner{
+		URL:      "https://orch.example.com:8935/apps/valid/session",
+		App:      "live-video-to-video/model-a",
+		Metadata: "valid metadata",
+		PriceInfo: &runner.LiveRunnerPriceInfo{
+			Price:    json.Number("7"),
+			Currency: "wei",
+			Unit:     "seconds",
+		},
+	}
+	oversized := base
+	oversized.URL = "https://orch.example.com:8935/apps/oversized/session"
+	oversized.Metadata = strings.Repeat("a", 1025)
+	replacement := base
+	replacement.URL = "https://orch.example.com:8935/apps/replacement/session"
+	replacement.Metadata = "\uFFFD"
+
+	mergeDiscoveryRunners(entry, remoteDiscoveryEntry{Runners: []runner.LiveRunnerDiscoveryRunner{
+		base,
+		oversized,
+		replacement,
+	}})
+
+	require.Equal(t, []string{base.URL}, entry.runnerURLs)
+	require.Equal(t, base, entry.runners[base.URL])
 }
 
 func TestRemoteSigner_Discovery_RunnersDoNotRequireTopLevelAdvertisedPrice(t *testing.T) {

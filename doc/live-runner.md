@@ -40,8 +40,8 @@ flowchart LR
     Runner -->|"heartbeat or session callbacks"| Orch
 ```
 
-The orchestrator registry tracks each runner's application, mode, readiness,
-capacity, price, and active sessions. Static health checks and dynamic
+The orchestrator registry tracks each runner's application, metadata, mode,
+readiness, capacity, price, and active sessions. Static health checks and dynamic
 heartbeats both feed this registry. Discovery only exposes runners that the
 registry currently considers ready. The orchestrator only checks runner
 liveness but does not attempt to manage it. It will not advertise or route
@@ -119,6 +119,7 @@ To configure live runners, create a JSON file such as `runners.json`:
       "healthy_status_code": 200,
       "app": "live-video-to-video/scope",
       "version": "1.4.0",
+      "metadata": "{\"deployment\":\"scope-l40s\",\"region\":\"us-west\"}",
       "mode": "persistent",
       "capacity": 2,
       "gpu": {
@@ -255,6 +256,7 @@ The response is an array containing an orchestrator address and its runners:
         "gpu": {"id": "0", "name": "NVIDIA L40S", "vram_mb": 46068},
         "app": "live-video-to-video/scope",
         "version": "1.4.0",
+        "metadata": "{\"deployment\":\"scope-l40s\",\"region\":\"us-west\"}",
         "mode": "persistent",
         "capacity": 2,
         "capacity_used": 1,
@@ -275,6 +277,14 @@ private `runner_url`. Persistent runners advertise a session-reservation URL
 ending in `/session`. Single-shot runners advertise a direct proxy URL ending
 in `/app`. Static runners using `routing: "label"` use their label in this URL;
 other static runners and all dynamic runners use a runner ID.
+
+`metadata` is optional application-controlled text copied verbatim from the
+latest registration. It is public to clients through orchestrator discovery
+and remote signer discovery, so it must not contain credentials or other
+secrets. Livepeer does not parse or interpret it; applications may serialize
+their own format, including JSON, inside the string. The value must be valid
+UTF-8 and at most 1,024 UTF-8-encoded bytes. An empty value clears previously
+registered metadata and is omitted from discovery.
 
 On-chain discovery includes the converted wei price. Offchain runner discovery
 omits it. If the orchestrator also has a serverless AI worker, the response may
@@ -393,6 +403,7 @@ are currently ignored. Labels in one submitted batch must be unique.
 | `healthy_status_code` | integer | Default: `200` | Must be a valid HTTP status code from 100 through 599. Health requires an exact match. |
 | `app` | string | Required | Capability/application identifier, conventionally `pipeline/model`. Must already be trimmed. |
 | `version` | string | Default: empty | Advertised through discovery; no semantic-version validation is performed. |
+| `metadata` | string | Default: empty | Opaque application-controlled text advertised verbatim through discovery. Must be valid UTF-8 and no more than 1,024 UTF-8-encoded bytes. Empty values are omitted. Do not include secrets. |
 | `mode` | string | Default: `persistent` | `persistent`, `single-shot`, or the normalized alias `single_shot`. |
 | `capacity` | integer | Default: `1` when zero | Maximum concurrent sessions. Negative values are invalid. |
 | `gpu` | object or integer | Optional | Object fields are `id`, `name`, and `vram_mb`. An integer is treated as a local device index; a negative index records only that numeric ID and skips hardware lookup. |
@@ -441,10 +452,12 @@ includes:
 - the orchestrator's authoritative `session_ids` list for this runner.
 
 Runners should use the returned durations rather than hard-code the current
-defaults. Follow-up heartbeats may update the runner URL, version, status, mode,
-GPU, application, capacity, price, and runner-reported session IDs. Only an
-empty status or `ready` is eligible for discovery and reservation; status values
-must be lowercase and trimmed.
+defaults. Follow-up heartbeats may update the runner URL, version, metadata,
+status, mode, GPU, application, capacity, price, and runner-reported session
+IDs. Metadata is an opaque UTF-8 string with the same 1,024-byte limit and
+public-discovery behavior as static metadata; an empty value clears it. Only an
+empty status or `ready` is eligible for discovery and reservation; status
+values must be lowercase and trimmed.
 
 Each heartbeat response contains the orchestrator's active sessions for the
 runner, ordered by creation time. This allows a restarted or partitioned runner

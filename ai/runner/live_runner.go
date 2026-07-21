@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jaypipes/ghw"
 	"github.com/livepeer/go-livepeer/common"
@@ -35,6 +36,7 @@ const (
 	liveRunnerIDRandomBytes            = 5
 	proxyIDRandomBytes                 = 16
 	liveRunnerSeedBytes                = 32
+	maxMetadataBytes                   = 1024
 )
 
 var liveRunnerO2RKeepaliveInterval = 10 * time.Second
@@ -127,6 +129,7 @@ type LiveRunnerHeartbeatRequest struct {
 	Label      string              `json:"label,omitempty"`
 	RunnerURL  string              `json:"runner_url"`
 	Version    string              `json:"version,omitempty"`
+	Metadata   string              `json:"metadata,omitempty"`
 	Status     string              `json:"status,omitempty"`
 	Mode       string              `json:"mode,omitempty"`
 	GPU        *LiveRunnerGPU      `json:"gpu,omitempty"`
@@ -145,6 +148,7 @@ type StaticLiveRunnerConfigEntry struct {
 	Routing           string              `json:"routing,omitempty"`
 	RunnerURL         string              `json:"runner_url"`
 	Version           string              `json:"version,omitempty"`
+	Metadata          string              `json:"metadata,omitempty"`
 	Mode              string              `json:"mode,omitempty"`
 	GPU               *LiveRunnerGPU      `json:"gpu,omitempty"`
 	App               string              `json:"app"`
@@ -184,6 +188,7 @@ type LiveRunnerDiscoveryRunner struct {
 	GPU               *LiveRunnerGPU       `json:"gpu,omitempty"`
 	App               string               `json:"app"`
 	Version           string               `json:"version,omitempty"`
+	Metadata          string               `json:"metadata,omitempty"`
 	Mode              string               `json:"mode,omitempty"`
 	Capacity          int                  `json:"capacity"`
 	CapacityUsed      int                  `json:"capacity_used"`
@@ -826,6 +831,7 @@ func (r *LiveRunnerRegistry) buildStaticRunner(entry StaticLiveRunnerConfigEntry
 		Label:     entry.Label,
 		RunnerURL: entry.RunnerURL,
 		Version:   entry.Version,
+		Metadata:  entry.Metadata,
 		Mode:      entry.Mode,
 		GPU:       entry.GPU,
 		App:       entry.App,
@@ -843,6 +849,9 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 
 	if req.App == "" || req.App != strings.TrimSpace(req.App) {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("app must be trimmed")
+	}
+	if err := ValidateLiveRunnerMetadata(req.Metadata); err != nil {
+		return LiveRunnerHeartbeatRequest{}, err
 	}
 	if req.Status != strings.ToLower(strings.TrimSpace(req.Status)) {
 		return LiveRunnerHeartbeatRequest{}, fmt.Errorf("status must be lowercase and trimmed")
@@ -876,6 +885,22 @@ func (r *LiveRunnerRegistry) normalizeHeartbeat(runnerID string, req LiveRunnerH
 	req.PriceInfo = priceInfo
 
 	return req, nil
+}
+
+// ValidateLiveRunnerMetadata validates application-controlled runner metadata.
+func ValidateLiveRunnerMetadata(metadata string) error {
+	if len(metadata) > maxMetadataBytes {
+		return fmt.Errorf("metadata must be at most %d bytes", maxMetadataBytes)
+	}
+	if !utf8.ValidString(metadata) {
+		return fmt.Errorf("metadata must be valid UTF-8")
+	}
+	if strings.ContainsRune(metadata, utf8.RuneError) {
+		// This should not be necessary once we switch to encoding/json/v2
+		// which will reject invalid UTF-8
+		return fmt.Errorf("metadata must not contain Unicode replacement character U+FFFD")
+	}
+	return nil
 }
 
 func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
@@ -1620,6 +1645,7 @@ func (runner *liveRunner) discoveryRunner() LiveRunnerDiscoveryRunner {
 		GPU:               cloneLiveRunnerGPU(runner.GPU),
 		App:               runner.App,
 		Version:           runner.Version,
+		Metadata:          runner.Metadata,
 		Mode:              runner.Mode,
 		Capacity:          runner.Capacity,
 		CapacityUsed:      len(runner.sessions),

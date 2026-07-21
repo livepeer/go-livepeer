@@ -507,6 +507,99 @@ func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_MetadataValidation(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	var decodedReplacement string
+	if err := json.Unmarshal([]byte(`"\ufffd"`), &decodedReplacement); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		metadata string
+		wantErr  string
+	}{
+		{name: "empty"},
+		{name: "ascii", metadata: "region=us-west"},
+		{name: "multibyte", metadata: "région=eu"},
+		{name: "exactly 1024 ASCII bytes", metadata: strings.Repeat("a", maxMetadataBytes)},
+		{name: "exactly 1024 multibyte bytes", metadata: strings.Repeat("é", maxMetadataBytes/2)},
+		{name: "1025 bytes", metadata: strings.Repeat("a", maxMetadataBytes+1), wantErr: "at most 1024 bytes"},
+		{name: "multibyte over 1024 bytes", metadata: strings.Repeat("é", maxMetadataBytes/2+1), wantErr: "at most 1024 bytes"},
+		{name: "literal replacement rune", metadata: "\uFFFD", wantErr: "U+FFFD"},
+		{name: "JSON-decoded replacement rune", metadata: decodedReplacement, wantErr: "U+FFFD"},
+		{name: "invalid UTF-8", metadata: string([]byte{0xff}), wantErr: "valid UTF-8"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := liveRunnerTestHeartbeat("runner-metadata-validation")
+			req.Metadata = tt.metadata
+			normalized, err := registry.normalizeHeartbeat(req.RunnerID, req)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if normalized.Metadata != tt.metadata {
+				t.Fatalf("metadata changed: got %q want %q", normalized.Metadata, tt.metadata)
+			}
+		})
+	}
+}
+
+func TestLiveRunnerRegistry_MetadataDiscoveryUpdateAndClear(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-metadata")
+	req.Metadata = `{"region":"us-west","tier":"warm"}`
+	resp := liveRunnerTestRegister(t, registry, req)
+
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].Metadata != req.Metadata {
+		t.Fatalf("unexpected initial discovery metadata: %+v", runners)
+	}
+
+	req = liveRunnerTestHeartbeat(resp.RunnerID)
+	req.Metadata = "updated metadata"
+	if _, err := registry.Heartbeat(req, resp.HeartbeatSecret); err != nil {
+		t.Fatal(err)
+	}
+	runners = registry.Runners()
+	if len(runners) != 1 || runners[0].Metadata != req.Metadata {
+		t.Fatalf("unexpected updated discovery metadata: %+v", runners)
+	}
+
+	req.Metadata = ""
+	if _, err := registry.Heartbeat(req, resp.HeartbeatSecret); err != nil {
+		t.Fatal(err)
+	}
+	runners = registry.Runners()
+	if len(runners) != 1 || runners[0].Metadata != "" {
+		t.Fatalf("expected cleared discovery metadata: %+v", runners)
+	}
+	data, err := json.Marshal(runners[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"metadata"`) {
+		t.Fatalf("expected empty metadata to be omitted, got %s", data)
+	}
+}
+
+func TestLiveRunnerRegistry_MetadataValidationReturnsBadRequest(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	for _, metadata := range []string{strings.Repeat("a", maxMetadataBytes+1), "\uFFFD", string([]byte{0xff})} {
+		req := liveRunnerTestHeartbeat("runner-invalid-metadata")
+		req.Metadata = metadata
+		_, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
+		if !isRunnerErrorStatus(err, http.StatusBadRequest) {
+			t.Fatalf("expected bad request for invalid metadata, got %v", err)
+		}
+	}
+}
+
 func TestLiveRunnerRegistry_DefaultModeWhenUnset(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner_default_mode"))
@@ -808,6 +901,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 		Routing:   LiveRunnerRoutingLabel,
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
+		Metadata:  "static application metadata",
 		Mode:      LiveRunnerModeSingleShot,
 		Capacity:  1,
 		HealthURL: healthSrv.URL,
@@ -828,6 +922,43 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	runners := registry.Runners()
 	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/apps/static-single-shot/app" {
 		t.Fatalf("unexpected single-shot route discovery: %+v", runners)
+	}
+	if runners[0].Metadata != "static application metadata" {
+		t.Fatalf("unexpected static metadata: %q", runners[0].Metadata)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersMetadataValidationIsAtomic(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	existing := StaticLiveRunnerConfigEntry{
+		Label:     "existing",
+		RunnerURL: "https://existing.example.com",
+		App:       "live-video-to-video/scope",
+		Metadata:  "existing metadata",
+		HealthURL: healthSrv.URL,
+	}
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{existing}}); err != nil {
+		t.Fatal(err)
+	}
+
+	valid := existing
+	valid.Label = "valid-new"
+	valid.Metadata = "valid metadata"
+	invalid := existing
+	invalid.Label = "invalid-new"
+	invalid.Metadata = strings.Repeat("a", maxMetadataBytes+1)
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{valid, invalid}}); !isRunnerErrorStatus(err, http.StatusBadRequest) {
+		t.Fatalf("expected invalid metadata batch to fail, got %v", err)
+	}
+
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].Metadata != existing.Metadata {
+		t.Fatalf("expected existing registration to remain unchanged, got %+v", runners)
 	}
 }
 

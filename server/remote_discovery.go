@@ -289,14 +289,17 @@ func remoteDiscoveryEntries(raw json.RawMessage) []remoteDiscoveryEntry {
 	return entries
 }
 
-func (entry *remoteDiscoveryMergeEntry) validateRunner(runner runner.LiveRunnerDiscoveryRunner) error {
-	if runner.URL == "" {
+func (entry *remoteDiscoveryMergeEntry) validateRunner(inst runner.LiveRunnerDiscoveryRunner) error {
+	if inst.URL == "" {
 		return errors.New("missing URL")
 	}
-	if strings.TrimSpace(runner.App) == "" {
+	if strings.TrimSpace(inst.App) == "" {
 		return errors.New("missing app")
 	}
-	price, err := validateRunnerPrice(runner.PriceInfo)
+	if err := runner.ValidateLiveRunnerMetadata(inst.Metadata); err != nil {
+		return err
+	}
+	price, err := validateRunnerPrice(inst.PriceInfo)
 	if err != nil {
 		return err
 	}

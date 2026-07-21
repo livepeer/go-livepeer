@@ -188,6 +188,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 		RunnerID:  t.Name(),
 		RunnerURL: "https://runner.example.com",
 		Version:   "1.2.3",
+		Metadata:  `{"region":"us-west"}`,
 		Status:    "ready",
 		GPU:       &runner.LiveRunnerGPU{Name: "NVIDIA L40S", VRAMMB: 46068},
 		App:       "live-video-to-video/scope",
@@ -209,6 +210,7 @@ func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	require.Len(t, resp[0].Runners, 1)
 	require.Equal(t, "http://localhost:1234/apps/"+t.Name()+"/session", resp[0].Runners[0].URL)
 	require.Equal(t, "live-video-to-video/scope", resp[0].Runners[0].App)
+	require.Equal(t, `{"region":"us-west"}`, resp[0].Runners[0].Metadata)
 	require.Equal(t, 2, resp[0].Runners[0].Capacity)
 	require.Equal(t, 0, resp[0].Runners[0].CapacityUsed)
 	require.Equal(t, 2, resp[0].Runners[0].CapacityAvailable)
@@ -560,6 +562,30 @@ func TestLiveRunnerHeartbeatDefaultsMissingPriceInfoCurrencyAndUnit(t *testing.T
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLiveRunnerHeartbeatRejectsMalformedUTF8Metadata(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	body := []byte(fmt.Sprintf(`{
+		"runner_id":%q,
+		"runner_url":"https://runner.example.com",
+		"metadata":"invalid-`, t.Name()))
+	body = append(body, 0xff)
+	body = append(body, []byte(`",
+		"app":"live-video-to-video/scope",
+		"capacity":1
+	}`)...)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runners/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Authorization", lp.orchestrator.RegistrationSecret())
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "U+FFFD")
+	manager, ok := lp.liveRunnerManager()
+	require.True(t, ok)
+	require.Empty(t, manager.Runners())
 }
 
 func TestLiveRunnerEndpointsUnsupportedWithoutManager(t *testing.T) {

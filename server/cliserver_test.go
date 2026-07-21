@@ -263,14 +263,26 @@ func TestRegisterLiveRunnersCLIEndpointInvalidBatchDoesNotMutate(t *testing.T) {
 	srv := httptest.NewServer(s.cliWebServerHandlers("addr"))
 	defer srv.Close()
 
-	body := fmt.Sprintf(`{"runners":[{"label":"runner-b","runner_url":"https://runner-two.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q},{"runner_url":"https://runner-three.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q}]}`, healthSrv.URL, healthSrv.URL)
-	res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", strings.NewReader(body))
-	require.NoError(t, err)
-	defer res.Body.Close()
-	require.Equal(t, http.StatusBadRequest, res.StatusCode)
-	require.Len(t, manager.Runners(), 1)
-	require.Contains(t, manager.Runners()[0].URL, "http://localhost:1234/apps/runner_")
-	require.Contains(t, manager.Runners()[0].URL, "/session")
+	for _, tt := range []struct {
+		name     string
+		metadata []byte
+	}{
+		{name: "oversized", metadata: []byte(strings.Repeat("a", 1025))},
+		{name: "malformed UTF-8", metadata: []byte{0xff}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"runners":[{"label":"runner-b","runner_url":"https://runner-two.example.com","app":"live-video-to-video/scope","price_info":{"price":10},"health_url":%q},{"label":"runner-c","runner_url":"https://runner-three.example.com","app":"live-video-to-video/scope","metadata":"`, healthSrv.URL))
+			body = append(body, tt.metadata...)
+			body = append(body, []byte(fmt.Sprintf(`","price_info":{"price":10},"health_url":%q}]}`, healthSrv.URL))...)
+			res, err := http.Post(srv.URL+"/registerLiveRunners", "application/json", bytes.NewReader(body))
+			require.NoError(t, err)
+			defer res.Body.Close()
+			require.Equal(t, http.StatusBadRequest, res.StatusCode)
+			require.Len(t, manager.Runners(), 1)
+			require.Contains(t, manager.Runners()[0].URL, "http://localhost:1234/apps/runner_")
+			require.Contains(t, manager.Runners()[0].URL, "/session")
+		})
+	}
 }
 
 func TestGetEthChainID(t *testing.T) {
