@@ -732,6 +732,13 @@ func (h *lphttp) tryLiveRunnerProxy(w http.ResponseWriter, r *http.Request) bool
 		respondWithLiveRunnerError(w, err)
 		return true
 	}
+	if route.LocalPath != "" {
+		localRequest := r.Clone(r.Context())
+		localRequest.URL.Path = route.LocalPath
+		localRequest.URL.RawPath = ""
+		h.transRPC.ServeHTTP(w, localRequest)
+		return true
+	}
 	h.proxyLiveRunner(w, r, route.RunnerID, route.SessionID, route.SessionToken, route.TargetURL, route.AppPath)
 	return true
 }

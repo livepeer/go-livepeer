@@ -1509,6 +1509,55 @@ func TestLiveRunnerCreateSessionProxyAndProxyDefaultPath(t *testing.T) {
 	require.Equal(t, sessionID, gotSessionID)
 }
 
+func TestLiveRunnerStaticProxyForwardsAndReleasesSingleShotSession(t *testing.T) {
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("proxied"))
+	}))
+	defer upstream.Close()
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	_, err := manager.RegisterStaticRunners(runner.StaticLiveRunnerConfig{Runners: []runner.StaticLiveRunnerConfigEntry{{
+		Label:     "static-proxy",
+		Routing:   runner.LiveRunnerRoutingLabel,
+		Proxy:     true,
+		RunnerURL: upstream.URL + "/base",
+		App:       "live-video-to-video/scope",
+		Mode:      runner.LiveRunnerModeSingleShot,
+		Capacity:  1,
+		HealthURL: healthSrv.URL,
+	}}})
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:1234/run/static-proxy", manager.Runners()[0].URL)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:1234/run/static-proxy/foo/bar?x=1", nil)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "proxied", w.Body.String())
+	require.Equal(t, "/base/foo/bar", gotPath)
+	require.Equal(t, "x=1", gotQuery)
+	require.Equal(t, "static-proxy", gotRunnerRoute)
+	require.NotEmpty(t, gotSessionID)
+	require.NotEmpty(t, gotSessionToken)
+	runners := manager.Runners()
+	require.Len(t, runners, 1)
+	require.Equal(t, 0, runners[0].CapacityUsed)
+	require.Equal(t, 1, runners[0].CapacityAvailable)
+}
+
 func TestLiveRunnerCreateSessionProxyDefaultsToAppPath(t *testing.T) {
 	tests := []struct {
 		name string

@@ -146,6 +146,7 @@ type StaticLiveRunnerConfig struct {
 type StaticLiveRunnerConfigEntry struct {
 	Label             string              `json:"label,omitempty"`
 	Routing           string              `json:"routing,omitempty"`
+	Proxy             bool                `json:"proxy,omitempty"`
 	RunnerURL         string              `json:"runner_url"`
 	Version           string              `json:"version,omitempty"`
 	Metadata          string              `json:"metadata,omitempty"`
@@ -162,6 +163,7 @@ type StaticLiveRunnerRegistration struct {
 	RunnerID          string `json:"runner_id"`
 	Label             string `json:"label,omitempty"`
 	App               string `json:"app"`
+	Proxy             bool   `json:"proxy,omitempty"`
 	RunnerURL         string `json:"runner_url"`
 	Mode              string `json:"mode,omitempty"`
 	HealthURL         string `json:"health_url"`
@@ -215,6 +217,7 @@ type LiveRunnerProxyRoute struct {
 	SessionToken string
 	TargetURL    string
 	AppPath      string
+	LocalPath    string
 }
 
 type liveRunner struct {
@@ -232,6 +235,7 @@ type liveRunner struct {
 	healthURL     string
 	healthStatus  int
 	route         string
+	proxy         bool
 	sessions      map[string]*liveRunnerSession
 	priceSource   LiveRunnerPriceInfo
 	converter     *core.AutoConvertedPrice
@@ -712,6 +716,9 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		if err != nil {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: %v", i, err)}
 		}
+		if entry.Proxy && req.Mode != LiveRunnerModeSingleShot {
+			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: proxy requires mode %q", i, LiveRunnerModeSingleShot)}
+		}
 		if _, duplicate := seenLabels[entry.Label]; duplicate {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: duplicate label %q", i, entry.Label)}
 		}
@@ -784,6 +791,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
 		staticRunner.route = staticRunnerRoute(entry.Routing, staticRunner.RunnerID, req.Label)
+		staticRunner.proxy = entry.Proxy
 		for route, runner := range r.runners {
 			if runner == staticRunner && route != staticRunner.route {
 				// route changed so remove old entry and re-add
@@ -802,6 +810,7 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 			RunnerID:          staticRunner.RunnerID,
 			Label:             req.Label,
 			App:               req.App,
+			Proxy:             entry.Proxy,
 			RunnerURL:         req.RunnerURL,
 			Mode:              req.Mode,
 			HealthURL:         entry.HealthURL,
@@ -1245,6 +1254,23 @@ func (r *LiveRunnerRegistry) ResolveSessionProxy(host, path string) (LiveRunnerP
 		}
 		runner.mu.Unlock()
 	}
+
+	// check for runner-level proxy (single-shot only)
+	r.mu.Lock()
+	runner := r.runners[proxyID]
+	r.mu.Unlock()
+	if runner != nil {
+		runner.mu.Lock()
+		proxy := !runner.removed && runner.proxy && runner.Mode == LiveRunnerModeSingleShot
+		runner.mu.Unlock()
+		if proxy {
+			localPath, err := url.JoinPath("/apps", proxyID, "app", appPath)
+			if err != nil {
+				return LiveRunnerProxyRoute{}, true, &RunnerError{StatusCode: http.StatusBadGateway, Message: "invalid live runner proxy path"}
+			}
+			return LiveRunnerProxyRoute{LocalPath: localPath}, true, nil
+		}
+	}
 	return LiveRunnerProxyRoute{}, true, &RunnerError{StatusCode: http.StatusNotFound, Message: "live runner proxy not found"}
 }
 
@@ -1276,6 +1302,9 @@ func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
 	// Under no circumstances leak the runner URL through discovery.
 	// Discovery must only expose orchestrator proxy URLs; the runner URL is an internal endpoint.
 	// discoveryRunnerURL requires runner.mu.
+	if runner.proxy && runner.Mode == LiveRunnerModeSingleShot {
+		return r.proxyTemplate.proxyURL(runner.route)
+	}
 	if runner.Mode == LiveRunnerModeSingleShot {
 		return r.host.ServiceURI().JoinPath("apps", runner.route, "app").String()
 	}

@@ -122,6 +122,7 @@ To configure live runners, create a JSON file such as `runners.json`:
       "metadata": "{\"deployment\":\"scope-l40s\",\"region\":\"us-west\"}",
       "mode": "persistent",
       "capacity": 2,
+      "proxy": true,
       "gpu": {
         "id": "0",
         "name": "NVIDIA L40S",
@@ -141,6 +142,10 @@ In this example, the root-relative health URL resolves to
 `http://scope-runner:8080/health`. Label routing makes the public route stable:
 the persistent session endpoint ends in `/apps/scope-l40s/session` rather than
 an automatically generated runner ID.
+
+Single-shot runners can also set `"proxy": true` to advertise a URL derived
+from `-liveRunnerProxyUrl`. The `proxy` placeholder in the proxy URL template
+will be replaced with the runner label or ID, such as `scope-l40s`.
 
 Load the file when the orchestrator starts:
 
@@ -398,6 +403,7 @@ are currently ignored. Labels in one submitted batch must be unique.
 | --- | --- | --- | --- |
 | `label` | string | Required | Must be non-empty and already trimmed. Used to identify static entries across upserts. It cannot contain `/` when `routing` is `label`. |
 | `routing` | string | Default: `runner-id` | `runner-id` exposes the generated ID in client URLs. `label` exposes `label` instead. |
+| `proxy` | boolean | Default: `false` | Only valid with `mode: "single-shot"`. When true, discovery uses `-liveRunnerProxyUrl` with the selected runner route instead of `/apps/{route}/app`. |
 | `runner_url` | absolute HTTP(S) URL | Required | Private target used by the orchestrator reverse proxy. |
 | `health_url` | absolute HTTP(S) URL or root-relative path | Required | A value beginning with `/` is resolved against `runner_url`; otherwise provide a complete URL. |
 | `healthy_status_code` | integer | Default: `200` | Must be a valid HTTP status code from 100 through 599. Health requires an exact match. |
@@ -546,7 +552,7 @@ runner/session.
 
 | Method and path | Authentication | Description |
 | --- | --- | --- |
-| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the opaque generated proxy URL | Resolves the proxy ID, validates the live session, and forwards to either the default app target or the registered explicit target URL. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
+| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the opaque generated proxy URL | Resolves the proxy ID, validates or creates the live session, and forwards to either the default app target or the registered explicit target URL. Static `proxy: true` runners use this endpoint with their route as the proxy ID. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
 
 Channel and proxy URLs contain random or derived secrets. Do not log or expose
 them as public identifiers. See the [trickle protocol reference](../trickle/README.md)

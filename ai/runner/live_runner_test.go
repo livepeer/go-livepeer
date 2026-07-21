@@ -857,6 +857,16 @@ func TestParseStaticLiveRunnerConfigRouting(t *testing.T) {
 	}
 }
 
+func TestParseStaticLiveRunnerConfigProxy(t *testing.T) {
+	cfg, err := ParseStaticLiveRunnerConfig([]byte(`{"runners":[{"label":"app","proxy":true,"mode":"single-shot","runner_url":"https://runner.example.com","app":"live-video-to-video/scope","health_url":"https://runner.example.com/health"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Runners[0].Proxy {
+		t.Fatal("expected proxy to be preserved")
+	}
+}
+
 func TestLiveRunnerRegistry_RegisterStaticRunnersResolvesHealthPath(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {
@@ -928,6 +938,74 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotMode(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotProxyDiscoveryLabelRoute(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "static-proxy",
+		Routing:   LiveRunnerRoutingLabel,
+		Proxy:     true,
+		RunnerURL: "https://runner.example.com/base",
+		App:       "live-video-to-video/scope",
+		Mode:      LiveRunnerModeSingleShot,
+		Capacity:  1,
+		HealthURL: healthSrv.URL,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Runners[0].Proxy {
+		t.Fatal("expected registration response to include proxy")
+	}
+
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/run/static-proxy" {
+		t.Fatalf("unexpected static proxy discovery: %+v", runners)
+	}
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/static-proxy/v1/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatal("expected static proxy route to match")
+	}
+	if route.LocalPath != "/apps/static-proxy/app/v1/foo" || route.RunnerID != "" || route.SessionID != "" || route.SessionToken != "" || route.TargetURL != "" || route.AppPath != "" {
+		t.Fatalf("unexpected static proxy route: %+v", route)
+	}
+	if runners := registry.Runners(); len(runners) != 1 || runners[0].CapacityUsed != 0 {
+		t.Fatalf("resolving static proxy should not reserve a session: %+v", runners)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotProxyDiscoveryGeneratedRoute(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "generated-proxy",
+		Proxy:     true,
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Mode:      LiveRunnerModeSingleShot,
+		HealthURL: healthSrv.URL,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp.Runners[0].RunnerID
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/run/"+runnerID {
+		t.Fatalf("unexpected generated route static proxy discovery: %+v", runners)
+	}
+}
+
 func TestLiveRunnerRegistry_RegisterStaticRunnersMetadataValidationIsAtomic(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -959,6 +1037,35 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersMetadataValidationIsAtomic(t *t
 	runners := registry.Runners()
 	if len(runners) != 1 || runners[0].Metadata != existing.Metadata {
 		t.Fatalf("expected existing registration to remain unchanged, got %+v", runners)
+	}
+}
+
+func TestLiveRunnerRegistry_RegisterStaticRunnersProxyRequiresSingleShotAndIsAtomic(t *testing.T) {
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	existing := StaticLiveRunnerConfigEntry{
+		Label:     "existing",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		HealthURL: healthSrv.URL,
+	}
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{existing}}); err != nil {
+		t.Fatal(err)
+	}
+
+	invalid := existing
+	invalid.Label = "bad-proxy"
+	invalid.Proxy = true
+	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{invalid}}); !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "single-shot") {
+		t.Fatalf("expected proxy single-shot error, got %v", err)
+	}
+	runners := registry.Runners()
+	if len(runners) != 1 || !strings.Contains(runners[0].URL, "/apps/") {
+		t.Fatalf("expected invalid proxy batch to leave existing runners unchanged, got %+v", runners)
 	}
 }
 
