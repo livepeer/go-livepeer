@@ -549,7 +549,7 @@ func parseProxyURLTemplate(raw string, serviceURI *url.URL) (proxyURLTemplate, e
 
 	tmpl := proxyURLTemplate{raw: raw}
 	if hostHasPlaceholder {
-		parts := strings.Split(u.Host, placeholder)
+		parts := strings.Split(u.Hostname(), placeholder)
 		tmpl.placeholderInHost = true
 		tmpl.hostPrefix = strings.ToLower(parts[0])
 		tmpl.hostSuffix = strings.ToLower(parts[1])

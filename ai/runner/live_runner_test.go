@@ -944,7 +944,10 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotProxyDiscoveryLabelRo
 	}))
 	defer healthSrv.Close()
 
-	registry := newLiveRunnerTestRegistry()
+	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{
+		Host:             liveRunnerTestHost{},
+		ProxyURLTemplate: "http://{proxy}.localhost:9935",
+	})
 	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
 		Label:     "static-proxy",
 		Routing:   LiveRunnerRoutingLabel,
@@ -963,10 +966,10 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersSingleShotProxyDiscoveryLabelRo
 	}
 
 	runners := registry.Runners()
-	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/run/static-proxy" {
+	if len(runners) != 1 || runners[0].URL != "http://static-proxy.localhost:9935" {
 		t.Fatalf("unexpected static proxy discovery: %+v", runners)
 	}
-	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/static-proxy/v1/foo")
+	route, matched, err := registry.ResolveSessionProxy("static-proxy.localhost:9935", "/v1/foo")
 	if err != nil {
 		t.Fatal(err)
 	}
