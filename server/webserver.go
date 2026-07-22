@@ -2,6 +2,7 @@ package server
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 
 	// pprof adds handlers to default mux via `init()`
@@ -112,10 +113,36 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/getLogLevel", getLogLevelHandler())
 	mux.Handle("/debug", s.debugHandler())
 
+	// Health check
+	mux.Handle("/self-check", s.selfCheckHandler())
+
 	// Metrics
 	if monitor.Enabled {
 		mux.Handle("/metrics", monitor.Exporter)
 	}
 
 	return mux
+}
+
+func (s *LivepeerServer) selfCheckHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed. Use POST.", http.StatusMethodNotAllowed)
+			return
+		}
+		selfCheck := s.LivepeerNode.TranscoderSelfCheck
+		if selfCheck == nil {
+			http.Error(w, "Self-check not available: node is not configured as a transcoder with hardware acceleration", http.StatusServiceUnavailable)
+			return
+		}
+		glog.Info("Running transcoder self-check...")
+		if err := selfCheck(); err != nil {
+			glog.Errorf("Transcoder self-check failed: %v", err)
+			http.Error(w, fmt.Sprintf("Self-check FAILED: %v", err), http.StatusServiceUnavailable)
+			return
+		}
+		glog.Info("Transcoder self-check passed")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "Self-check PASSED: transcoder capabilities verified")
+	})
 }
