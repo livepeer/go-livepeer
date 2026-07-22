@@ -92,7 +92,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				mid:       params.liveParams.manifestID,
 			})
 		}
-		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
+		paymentProcessor = NewLV2VPaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 	} else {
 		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}

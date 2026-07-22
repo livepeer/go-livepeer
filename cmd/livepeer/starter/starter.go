@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
@@ -98,6 +99,9 @@ type LivepeerConfig struct {
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
 	AIServerless               *bool
+	UseLiveRunners             *bool
+	LiveRunnerConfig           *string
+	LiveRunnerProxyURL         *string
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -165,6 +169,7 @@ type LivepeerConfig struct {
 	AuthWebhookURL             *string
 	LiveAIAuthWebhookURL       *string
 	LiveAITrickleHostForRunner *string
+	LiveRunnerAddr             *string
 	OrchWebhookURL             *string
 	OrchBlacklist              *string
 	OrchMinLivepeerVersion     *string
@@ -239,6 +244,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
 	defaultAIServerless := false
+	defaultUseLiveRunners := false
+	defaultLiveRunnerConfig := ""
+	defaultLiveRunnerProxyURL := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -248,6 +256,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLiveRunnerAddr := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
@@ -366,6 +375,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
 		AIServerless:             &defaultAIServerless,
+		UseLiveRunners:           &defaultUseLiveRunners,
+		LiveRunnerConfig:         &defaultLiveRunnerConfig,
+		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -375,6 +387,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LiveRunnerAddr:           &defaultLiveRunnerAddr,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
@@ -1435,6 +1448,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
 				modelsCount := 1
+
 				if config.Capacity != 0 {
 					if config.URL == "" {
 						// Use multiple same configs if External Container is not used and capacity is set
@@ -1878,6 +1892,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}
+	if cfg.LiveRunnerAddr != nil && *cfg.LiveRunnerAddr != "" {
+		n.LiveRunnerAddr, err = parseLiveRunnerAddr(*cfg.LiveRunnerAddr)
+		if err != nil {
+			glog.Exitf("invalid -liveRunnerAddr: %v", err)
+		}
+	}
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
 	}
@@ -1959,6 +1979,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				DiscoveryTimeout:        *cfg.DiscoveryTimeout,
 				LiveAICapReportInterval: *cfg.LiveAICapReportInterval,
 				IgnoreCapacityCheck:     true,
+				UseDiscoveryEndpoint:    true,
 			}.New()
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
@@ -2008,6 +2029,36 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
+		if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+			if n.OrchSecret == "" && *cfg.LiveRunnerConfig == "" {
+				glog.Exit("running with -useLiveRunners requires -orchSecret")
+			}
+			if cfg.LiveRunnerProxyURL != nil && *cfg.LiveRunnerProxyURL != "" {
+				if err := runner.ValidateProxyURLTemplate(*cfg.LiveRunnerProxyURL, orch.ServiceURI()); err != nil {
+					glog.Exitf("invalid -liveRunnerProxyUrl: %v", err)
+				}
+			}
+			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+				Host:             liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Onchain:          *cfg.Network != "offchain",
+				ProxyURLTemplate: *cfg.LiveRunnerProxyURL,
+			})
+			if n.OrchSecret == "" {
+				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")
+			}
+			if *cfg.LiveRunnerConfig != "" {
+				configJSON, err := os.ReadFile(*cfg.LiveRunnerConfig)
+				if err != nil {
+					glog.Exitf("error reading -liveRunnerConfig: %v", err)
+				}
+				registration, err := n.LiveRunnerManager.(*runner.LiveRunnerRegistry).RegisterStaticRunnersJSON(configJSON)
+				if err != nil {
+					glog.Exitf("error registering -liveRunnerConfig: %v", err)
+				}
+				glog.Infof("Registered %d static live runners from %s", len(registration.Runners), *cfg.LiveRunnerConfig)
+			}
+		}
+
 		go func() {
 			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
 			if err != nil {
@@ -2021,10 +2072,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// check whether or not the orchestrator is available
 		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
-			orchAvail := server.CheckOrchestratorAvailability(orch)
+			var (
+				checkName string
+				orchAvail bool
+			)
+			if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+				checkName = "discovery"
+				orchAvail = server.CheckOrchestratorDiscoveryAvailability(orch)
+			} else {
+				checkName = "grpc ping"
+				orchAvail = server.CheckOrchestratorAvailability(orch)
+			}
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
+				glog.Infof("Orchestrator not available at %v (%v) via %s check; shutting down", orch.ServiceURI(), *cfg.HttpAddr, checkName)
 				tc <- struct{}{}
 			}
 		}
@@ -2167,7 +2228,11 @@ func parseHeaderMap(raw string) map[string]string {
 	for _, header := range strings.Split(raw, ",") {
 		parts := strings.SplitN(header, ":", 2)
 		if len(parts) == 2 {
-			headers[parts[0]] = parts[1]
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				headers[key] = value
+			}
 		}
 	}
 	return headers
@@ -2201,7 +2266,10 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 			// special value to signal this node is not to be used for work
 			return url.Parse("")
 		}
-		return url.ParseRequestURI("https://" + serviceAddr)
+		if !strings.HasPrefix(serviceAddr, "http://") && !strings.HasPrefix(serviceAddr, "https://") {
+			serviceAddr = "https://" + serviceAddr
+		}
+		return url.ParseRequestURI(serviceAddr)
 	}
 
 	// Infer address
@@ -2527,4 +2595,31 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 func exit(msg string, args ...any) {
 	glog.Errorf(msg, args...)
 	os.Exit(2)
+}
+
+type liveRunnerHost struct {
+	runner.RunnerHost
+	*core.LivepeerNode
+}
+
+func (h liveRunnerHost) LiveRunnerURI() *url.URL {
+	if h.LivepeerNode != nil && h.LivepeerNode.LiveRunnerAddr != nil {
+		v := *h.LivepeerNode.LiveRunnerAddr
+		return &v
+	}
+	return h.RunnerHost.ServiceURI()
+}
+
+func parseLiveRunnerAddr(addr string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return nil, err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return nil, fmt.Errorf("must be an absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https")
+	}
+	return parsed, nil
 }

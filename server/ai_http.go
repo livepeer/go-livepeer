@@ -15,6 +15,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/http/httputil"
 	url2 "net/url"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -39,8 +41,9 @@ var MaxAIRequestSize = 3000000000 // 3GB
 
 var TrickleHTTPPath = "/ai/trickle/"
 
+const maxLiveRunnerTrickleChannelsPerRequest = 25
+const liveRunnerSenderHeader = "Livepeer-Payer-Address"
 const maxScopeRequestBodySize = 1 << 20 // 1 MB
-const scopePayerAddressHeader = "Livepeer-Payer-Address"
 
 func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
@@ -69,6 +72,11 @@ func startAIServer(lp *lphttp) error {
 	if sw, ok := lp.node.AIWorker.(*worker.ServerlessWorker); ok {
 		sw.SetTrickleServer(lp.trickleSrv)
 	}
+	if manager, ok := lp.liveRunnerManager(); ok {
+		publicTrickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
+		internalTrickleBaseURL := liveRunnerURI(lp.node, lp.orchestrator).JoinPath(TrickleHTTPPath).String()
+		manager.SetTrickleServer(lp.trickleSrv, publicTrickleBaseURL, internalTrickleBaseURL)
+	}
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
@@ -81,9 +89,798 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/scope", lp.StartScope())
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	// Internal runner endpoints
+	lp.transRPC.HandleFunc("POST /runners/heartbeat", lp.LiveRunnerHeartbeat)
+	lp.transRPC.HandleFunc("POST /runners/{runner_id}/unregister", lp.UnregisterLiveRunner)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/channels", lp.CreateLiveRunnerTrickleChannel)
+	lp.transRPC.HandleFunc("DELETE /runner/{runner_id}/session/{session_id}/channels", lp.DeleteLiveRunnerTrickleChannels)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/proxy", lp.CreateLiveRunnerSessionProxy)
+	lp.transRPC.HandleFunc("POST /runner/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSessionInternal)
+	// Public client endpoints
+	lp.transRPC.HandleFunc("GET /discovery", lp.DiscoverLiveRunners)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session", lp.ReserveLiveRunnerSession)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/stop", lp.StopLiveRunnerSession)
+	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/payment", lp.PaymentForLiveRunnerSession)
+	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
+	lp.transRPC.HandleFunc("/apps/{runner_id}/app/{app_path...}", lp.ProxyLiveRunnerSingleShot)
+
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
+}
+
+type liveRunnerManager interface {
+	Heartbeat(req runner.LiveRunnerHeartbeatRequest, auth string) (*runner.LiveRunnerHeartbeatResponse, error)
+	Unregister(runnerID, auth string) error
+	Runners() []runner.LiveRunnerDiscoveryRunner
+	PaymentInfo(runnerID string) (*runner.LiveRunnerPriceInfo, error)
+	ReserveSession(runnerID string, sessionID ...string) (string, string, error)
+	ReleaseSession(runnerID, sessionID string) error
+	RunnerMode(runnerID string) (string, error)
+	RunnerEndpointForSession(runnerID, sessionID string) (string, error)
+	SessionTokenForSession(runnerID, sessionID string) (string, error)
+	ValidSessionToken(runnerID, sessionID, token string) error
+	SetTrickleServer(srv *trickle.Server, publicBaseURL, internalBaseURL string)
+	CreateTrickleChannel(runnerID, sessionID, name, mimeType string) (runner.LiveRunnerTrickleChannel, error)
+	DeleteTrickleChannel(runnerID, sessionID, name string) error
+	CreateSessionProxy(runnerID, sessionID, targetURL string) (runner.LiveRunnerProxy, error)
+	ResolveSessionProxy(host, path string) (runner.LiveRunnerProxyRoute, bool, error)
+}
+
+func (h *lphttp) liveRunnerManager() (liveRunnerManager, bool) {
+	if h.node == nil {
+		return nil, false
+	}
+	manager, ok := h.node.LiveRunnerManager.(liveRunnerManager)
+	return manager, ok
+}
+
+func (h *lphttp) LiveRunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	var req runner.LiveRunnerHeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := manager.Heartbeat(req, r.Header.Get("Authorization"))
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) UnregisterLiveRunner(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	if err := manager.Unregister(runnerID, r.Header.Get("Authorization")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type liveRunnerSessionResponse struct {
+	SessionID  string `json:"session_id"`
+	AppURL     string `json:"app_url"`
+	ControlURL string `json:"control_url"`
+}
+
+type liveRunnerPaymentChallengeResponse struct {
+	PaymentParams string `json:"payment_params"`
+	// Keep the URL in top-level JSON so clients do not need to parse the protobuf just to route payment.
+	Orchestrator string `json:"orchestrator"`
+	ManifestID   string `json:"manifest_id"`
+}
+
+type liveRunnerTrickleChannelRequest struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mime_type"`
+}
+
+type liveRunnerTrickleChannelsRequest struct {
+	Channels []liveRunnerTrickleChannelRequest `json:"channels"`
+}
+
+type liveRunnerTrickleChannelsResponse struct {
+	Channels []runner.LiveRunnerTrickleChannel `json:"channels"`
+}
+
+type deleteLiveRunnerTrickleChannelsRequest struct {
+	Channels []string `json:"channels"`
+}
+
+type deleteLiveRunnerTrickleChannelsResponse struct {
+	Deleted []string `json:"deleted"`
+}
+
+type liveRunnerProxyRequest struct {
+	TargetURL string `json:"target_url"`
+}
+
+func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	mode, err := manager.RunnerMode(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if mode != runner.LiveRunnerModePersistent {
+		respondWithError(w, "only persistent runners have sessions", http.StatusBadRequest)
+		return
+	}
+	priceInfo, err := manager.PaymentInfo(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	paymentRequired := priceInfo != nil
+	var newPaymentProcessor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
+	if paymentRequired {
+		newPaymentProcessor, err = preparePaymentProcessor(priceInfo.Unit)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
+		h.runnerChallenge(w, r, priceInfo)
+		return
+	}
+	var (
+		payment   lpnet.Payment
+		segData   *core.SegTranscodingMetadata
+		ctx       = r.Context()
+		sessionID string
+		appURL    string
+	)
+	if paymentRequired {
+		var err error
+		payment, segData, ctx, err = h.processPaymentAndSegmentHeaders(w, r)
+		if err != nil {
+			return
+		}
+		if string(segData.ManifestID) != segData.AuthToken.SessionId {
+			respondWithError(w, "mismatched manifest and auth token", http.StatusForbidden)
+			return
+		}
+		// for easier correlation across orch, gw, signer
+		sessionID = string(segData.ManifestID)
+	}
+	sessionID, appURL, err = manager.ReserveSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	ctx = clog.AddVal(ctx, "runner_id", runnerID)
+	ctx = clog.AddVal(ctx, "session_id", sessionID)
+	if paymentRequired {
+		if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+				clog.Errorf(ctx, "Error releasing live runner session after payment failure err=%v", releaseErr)
+			}
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		monitorCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+		accountPaymentFunc := func(units int64) error {
+			err := paymentReceiver.AccountPayment(monitorCtx, &SegmentInfoReceiver{
+				sender:    getPaymentSender(payment),
+				units:     units,
+				priceInfo: payment.GetExpectedPrice(),
+				sessionID: string(segData.ManifestID),
+			})
+			if err != nil {
+				clog.Errorf(monitorCtx, "Error accounting live runner payment, releasing session err=%v", err)
+				if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+					clog.Errorf(monitorCtx, "Error releasing live runner session after payment failure err=%v", releaseErr)
+				}
+				// Stop both the ticker loop below and the LivePaymentProcessor goroutine.
+				cancel()
+			}
+			return err
+		}
+		paymentProcessor := newPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+		go func() {
+			ticker := time.NewTicker(h.node.LivePaymentInterval)
+			defer ticker.Stop()
+			defer cancel()
+			for {
+				select {
+				case <-ticker.C:
+					// Stop monitoring once the live runner session has been released
+					// by an explicit stop, runner cleanup, expiry, or payment failure.
+					if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+						return
+					}
+					paymentProcessor.process(monitorCtx)
+				case <-monitorCtx.Done():
+					return
+				}
+			}
+		}()
+	}
+	controlURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID).String()
+	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL, ControlURL: controlURL})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func preparePaymentProcessor(unit string) (func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor, error) {
+	switch strings.ToLower(strings.TrimSpace(unit)) {
+	case "seconds":
+		return NewLivePaymentProcessor, nil
+	case "720p-pixel-seconds":
+		return NewLV2VPaymentProcessor, nil
+	default:
+		return nil, fmt.Errorf("unsupported live runner payment unit %q", unit)
+	}
+}
+
+func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceInfo *runner.LiveRunnerPriceInfo) {
+	sender, err := h.runnerSender(r)
+	if err != nil {
+		respondJsonError(r.Context(), w, err, http.StatusPaymentRequired)
+		return
+	}
+	oInfo, err := h.runnerOrchInfo(sender, priceInfo)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusPaymentRequired)
+	_, _ = w.Write(data)
+}
+
+func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (bool, error) {
+	sender, err := h.runnerSender(r)
+	if err != nil {
+		respondJsonError(r.Context(), w, err, http.StatusPaymentRequired)
+		return true, nil
+	}
+	constraints := core.NewCapabilities(nil, nil)
+	if h.node != nil && h.node.Capabilities != nil {
+		constraints = h.node.Capabilities
+	}
+	caps := newAICapabilities(core.Capability_LiveVideoToVideo, "scope", true, constraints)
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, sender, h.orchestrator.ServiceURI().String(), "", caps.ToNetCapabilities())
+	if err != nil {
+		return false, err
+	}
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	if err != nil {
+		return false, err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusPaymentRequired)
+	_, _ = w.Write(data)
+	return true, nil
+}
+
+func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte, error) {
+	buf, err := proto.Marshal(oInfo)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(liveRunnerPaymentChallengeResponse{
+		PaymentParams: base64.StdEncoding.EncodeToString(buf),
+		Orchestrator:  oInfo.GetTranscoder(),
+		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+	})
+}
+
+func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request) (ethcommon.Address, *lpnet.PriceInfo, string, bool, *runner.RunnerError) {
+	payment, err := getPayment(r.Header.Get(paymentHeader))
+	if err != nil || r.Header.Get(paymentHeader) == "" {
+		handled, challengeErr := h.scopePaymentChallenge(w, r)
+		if handled {
+			return ethcommon.Address{}, nil, "", true, nil
+		}
+		if challengeErr != nil {
+			return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: challengeErr.Error(), StatusCode: http.StatusInternalServerError}
+		}
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusPaymentRequired}
+	}
+	sender := getPaymentSender(payment)
+	segData, ctx, err := verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+	if err != nil {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusForbidden}
+	}
+	if string(segData.ManifestID) != segData.AuthToken.SessionId {
+		clog.Info(ctx, "Legacy Scope payment manifest mismatch", "manifest_id", segData.ManifestID, "auth_session_id", segData.AuthToken.SessionId)
+	}
+	manifestID := string(segData.ManifestID)
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: err.Error(), StatusCode: http.StatusBadRequest}
+	}
+	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, segData.ManifestID) {
+		return ethcommon.Address{}, nil, "", false, &runner.RunnerError{Message: "Insufficient balance", StatusCode: http.StatusBadRequest}
+	}
+	return sender, payment.GetExpectedPrice(), manifestID, false, nil
+}
+
+func (h *lphttp) runnerSender(r *http.Request) (ethcommon.Address, error) {
+	addr := r.Header.Get(liveRunnerSenderHeader)
+	if !ethcommon.IsHexAddress(addr) {
+		return ethcommon.Address{}, fmt.Errorf("invalid live runner payment signer address")
+	}
+	return ethcommon.HexToAddress(addr), nil
+}
+
+func (h *lphttp) runnerOrchInfo(sender ethcommon.Address, priceInfo *runner.LiveRunnerPriceInfo) (*lpnet.OrchestratorInfo, error) {
+	if priceInfo == nil {
+		return nil, fmt.Errorf("missing live runner price info")
+	}
+	pricePerUnit, err := priceInfo.Price.Int64()
+	if err != nil || pricePerUnit <= 0 {
+		return nil, fmt.Errorf("invalid live runner price info")
+	}
+	netPriceInfo := &lpnet.PriceInfo{
+		PricePerUnit:  pricePerUnit,
+		PixelsPerUnit: 1,
+	}
+	params, err := h.orchestrator.TicketParams(sender, netPriceInfo)
+	if err != nil {
+		return nil, err
+	}
+	manifestID := string(core.RandomManifestID())
+	expiration := time.Now().Add(authTokenValidPeriod).Unix()
+	authToken := h.orchestrator.AuthToken(manifestID, expiration)
+	return &lpnet.OrchestratorInfo{
+		Transcoder:   h.orchestrator.ServiceURI().String(),
+		TicketParams: params,
+		PriceInfo:    netPriceInfo,
+		Address:      h.orchestrator.Address().Bytes(),
+		AuthToken:    authToken,
+	}, nil
+}
+
+func (h *lphttp) StopLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	if err := manager.ReleaseSession(r.PathValue("runner_id"), r.PathValue("session_id")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PaymentForLiveRunnerSession receives payment for a live runner session and
+// rejects payment once the session is no longer live.
+func (h *lphttp) PaymentForLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+
+	if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	if err != nil {
+		return
+	}
+	if string(segData.ManifestID) != sessionID {
+		respondWithError(w, "mismatched session and payment manifest", http.StatusForbidden)
+		return
+	}
+
+	var netCaps *lpnet.Capabilities
+	if segData.Caps != nil {
+		netCaps = segData.Caps.ToNetCapabilities()
+	}
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), netCaps)
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	oInfo.AuthToken = segData.AuthToken
+
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	buf, err := proto.Marshal(&lpnet.PaymentResult{Info: oInfo})
+	if err != nil {
+		clog.Errorf(ctx, "Unable to marshal payment result err=%q", err)
+		return
+	}
+	clog.V(common.DEBUG).Infof(ctx, "Live runner session payment processed, current balance=%s", currentBalanceLog(h, payment, segData))
+
+	w.Write(buf)
+}
+
+func (h *lphttp) StopLiveRunnerSessionInternal(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *lphttp) CreateLiveRunnerTrickleChannel(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	var req liveRunnerTrickleChannelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) == 0 {
+		respondWithError(w, "channels is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) > maxLiveRunnerTrickleChannelsPerRequest {
+		respondWithError(w, fmt.Sprintf("channels cannot contain more than %d entries", maxLiveRunnerTrickleChannelsPerRequest), http.StatusBadRequest)
+		return
+	}
+
+	channels := make([]runner.LiveRunnerTrickleChannel, 0, len(req.Channels))
+	for _, channelReq := range req.Channels {
+		channel, err := manager.CreateTrickleChannel(
+			runnerID,
+			sessionID,
+			channelReq.Name,
+			channelReq.MimeType,
+		)
+		if err != nil {
+			respondWithLiveRunnerError(w, err)
+			return
+		}
+		channels = append(channels, channel)
+	}
+	data, err := json.Marshal(liveRunnerTrickleChannelsResponse{Channels: channels})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) DeleteLiveRunnerTrickleChannels(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	var req deleteLiveRunnerTrickleChannelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) == 0 {
+		respondWithError(w, "channels is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Channels) > maxLiveRunnerTrickleChannelsPerRequest {
+		respondWithError(w, fmt.Sprintf("channels cannot contain more than %d entries", maxLiveRunnerTrickleChannelsPerRequest), http.StatusBadRequest)
+		return
+	}
+	for _, channelName := range req.Channels {
+		if err := manager.DeleteTrickleChannel(runnerID, sessionID, channelName); err != nil {
+			respondWithLiveRunnerError(w, err)
+			return
+		}
+	}
+	data, err := json.Marshal(deleteLiveRunnerTrickleChannelsResponse{Deleted: req.Channels})
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) CreateLiveRunnerSessionProxy(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	if err := manager.ValidSessionToken(runnerID, sessionID, r.Header.Get("Livepeer-Session-Token")); err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	var req liveRunnerProxyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	proxy, err := manager.CreateSessionProxy(runnerID, sessionID, req.TargetURL)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	data, err := json.Marshal(proxy)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
+}
+
+func (h *lphttp) ProxyLiveRunnerSession(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	runnerID := r.PathValue("runner_id")
+	sessionID := r.PathValue("session_id")
+	endpoint, err := manager.RunnerEndpointForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	sessionToken, err := manager.SessionTokenForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
+}
+
+func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	runnerID := r.PathValue("runner_id")
+	mode, err := manager.RunnerMode(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if mode != runner.LiveRunnerModeSingleShot {
+		respondWithError(w, "runner is not single-shot", http.StatusBadRequest)
+		return
+	}
+
+	sessionID, endpoint, err := manager.ReserveSession(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	defer func() {
+		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
+			slog.Error("error releasing single-shot session", "runner_id", runnerID, "session_id", sessionID, "err", err)
+		}
+	}()
+
+	sessionToken, err := manager.SessionTokenForSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
+}
+
+func (h *lphttp) tryLiveRunnerProxy(w http.ResponseWriter, r *http.Request) bool {
+	manager, ok := h.liveRunnerManager()
+	if !ok {
+		return false
+	}
+	route, matched, err := manager.ResolveSessionProxy(r.Host, r.URL.Path)
+	if !matched {
+		return false
+	}
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return true
+	}
+	if route.LocalPath != "" {
+		localRequest := r.Clone(r.Context())
+		localRequest.URL.Path = route.LocalPath
+		localRequest.URL.RawPath = ""
+		h.transRPC.ServeHTTP(w, localRequest)
+		return true
+	}
+	h.proxyLiveRunner(w, r, route.RunnerID, route.SessionID, route.SessionToken, route.TargetURL, route.AppPath)
+	return true
+}
+
+func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerID, sessionID, sessionToken, endpoint, appPath string) {
+	target, err := url2.Parse(endpoint)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	proxyPath, err := url2.JoinPath("/", target.Path, appPath)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	sessionControlURL := liveRunnerURI(h.node, h.orchestrator).JoinPath("runner", runnerID, "session", sessionID).String()
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(req *httputil.ProxyRequest) {
+			req.Out.URL.Scheme = target.Scheme
+			req.Out.URL.Host = target.Host
+			req.Out.URL.Path = proxyPath
+			req.Out.URL.RawPath = ""
+			req.Out.URL.RawQuery = req.In.URL.RawQuery
+			req.Out.Host = target.Host
+			req.Out.Header.Set("Livepeer-Runner-Route", runnerID)
+			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
+			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
+			req.Out.Header.Set("Livepeer-Session-Control", sessionControlURL)
+		},
+		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+			respondWithError(w, err.Error(), http.StatusBadGateway)
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+func respondWithLiveRunnerError(w http.ResponseWriter, err error) {
+	var runnerErr *runner.RunnerError
+	if errors.As(err, &runnerErr) {
+		respondWithError(w, runnerErr.Error(), runnerErr.StatusCode)
+		return
+	}
+	respondWithError(w, err.Error(), http.StatusInternalServerError)
+}
+
+type liveRunnerDiscoveryEntry struct {
+	Address string                             `json:"address,omitempty"`
+	Runners []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+}
+
+func (h *lphttp) DiscoverLiveRunners(w http.ResponseWriter, r *http.Request) {
+	manager, ok := h.liveRunnerManager()
+	var hasServerlessWorker bool
+	if h.node != nil {
+		_, hasServerlessWorker = h.node.AIWorker.(*worker.ServerlessWorker)
+	}
+	if !ok && !hasServerlessWorker {
+		respondWithError(w, "live runners are not supported", http.StatusNotFound)
+		return
+	}
+
+	suri := h.orchestrator.ServiceURI()
+
+	var runners []runner.LiveRunnerDiscoveryRunner
+	if ok {
+		runners = append(runners, manager.Runners()...)
+	}
+	if hasServerlessWorker {
+		pipeline := "live-video-to-video"
+		capability := core.Capability_LiveVideoToVideo
+		var capConstraints *core.CapabilityConstraints
+		if h.node.Capabilities != nil {
+			capConstraints = h.node.Capabilities.PerCapability()[capability]
+		}
+
+		versionFallback := ""
+		versions := h.node.AIWorker.Version()
+		for _, version := range versions {
+			if versionFallback == "" && version.Version != "" {
+				versionFallback = version.Version
+			}
+		}
+
+		if capConstraints != nil {
+			for modelID := range capConstraints.Models {
+				versionString := versionFallback
+				for _, version := range versions {
+					if version.Pipeline == pipeline && version.ModelId == modelID && version.Version != "" {
+						versionString = version.Version
+						break
+					}
+				}
+
+				var priceInfo *runner.LiveRunnerPriceInfo
+				price := h.node.GetBasePriceForCap("default", capability, modelID)
+				if price != nil {
+					priceInt64, err := common.PriceToInt64(price)
+					if err != nil {
+						glog.Errorf("error converting discovery price for capability %v modelID=%v err=%v", core.CapabilityNameLookup[capability], modelID, err)
+					} else {
+						priceInfo = &runner.LiveRunnerPriceInfo{
+							Price:    json.Number(strconv.FormatInt(priceInt64.Num().Int64(), 10)),
+							Currency: "wei",
+							Unit:     "720p-pixel-seconds",
+						}
+					}
+				}
+
+				capacity := h.node.AIWorker.GetLiveAICapacity(pipeline, modelID)
+				runners = append(runners, runner.LiveRunnerDiscoveryRunner{
+					URL:               suri.JoinPath("scope").String(),
+					GPU:               &runner.LiveRunnerGPU{Name: "H100"},
+					App:               pipeline + "/" + modelID,
+					Version:           versionString,
+					Capacity:          capacity.ContainersIdle + capacity.ContainersInUse,
+					CapacityUsed:      capacity.ContainersInUse,
+					CapacityAvailable: capacity.ContainersIdle,
+					PriceInfo:         priceInfo,
+				})
+			}
+		}
+	}
+
+	resp := []liveRunnerDiscoveryEntry{{
+		Address: suri.String(),
+		Runners: runners,
+	}}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJsonOk(w, data)
 }
 
 // aiHttpHandle handles AI requests by decoding the request body and processing it.
@@ -103,22 +900,6 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 	})
 }
 
-type scopePaymentChallengeResponse struct {
-	PaymentParams string `json:"payment_params"`
-	// Keep the URL in top-level JSON so clients do not need to parse the protobuf just to route payment.
-	Orchestrator string `json:"orchestrator"`
-	ManifestID   string `json:"manifest_id"`
-}
-
-type scopeHTTPError struct {
-	Message    string
-	StatusCode int
-}
-
-func (e *scopeHTTPError) Error() string {
-	return e.Message
-}
-
 func serverlessHandshakeHTTPStatus(err error) (int, bool) {
 	var hsErr *worker.ServerlessHandshakeError
 	if !errors.As(err, &hsErr) {
@@ -130,81 +911,6 @@ func serverlessHandshakeHTTPStatus(err error) (int, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (bool, error) {
-	sender, err := scopePayerAddress(r)
-	if err != nil {
-		respondJsonError(r.Context(), w, err, http.StatusPaymentRequired)
-		return true, nil
-	}
-	constraints := core.NewCapabilities(nil, nil)
-	if h.node != nil && h.node.Capabilities != nil {
-		constraints = h.node.Capabilities
-	}
-	caps := newAICapabilities(core.Capability_LiveVideoToVideo, "scope", true, constraints)
-	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, sender, h.orchestrator.ServiceURI().String(), "", caps.ToNetCapabilities())
-	if err != nil {
-		return false, err
-	}
-	data, err := marshalScopePaymentChallengeResponse(oInfo)
-	if err != nil {
-		return false, err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusPaymentRequired)
-	_, _ = w.Write(data)
-	return true, nil
-}
-
-func marshalScopePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte, error) {
-	buf, err := proto.Marshal(oInfo)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(scopePaymentChallengeResponse{
-		PaymentParams: base64.StdEncoding.EncodeToString(buf),
-		Orchestrator:  oInfo.GetTranscoder(),
-		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
-	})
-}
-
-func (h *lphttp) processScopePayment(ctx context.Context, w http.ResponseWriter, r *http.Request) (ethcommon.Address, *lpnet.PriceInfo, string, bool, *scopeHTTPError) {
-	payment, err := getPayment(r.Header.Get(paymentHeader))
-	if err != nil || r.Header.Get(paymentHeader) == "" {
-		handled, challengeErr := h.scopePaymentChallenge(w, r)
-		if handled {
-			return ethcommon.Address{}, nil, "", true, nil
-		}
-		if challengeErr != nil {
-			return ethcommon.Address{}, nil, "", false, &scopeHTTPError{Message: challengeErr.Error(), StatusCode: http.StatusInternalServerError}
-		}
-		return ethcommon.Address{}, nil, "", false, &scopeHTTPError{Message: err.Error(), StatusCode: http.StatusPaymentRequired}
-	}
-	sender := getPaymentSender(payment)
-	segData, ctx, err := verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
-	if err != nil {
-		return ethcommon.Address{}, nil, "", false, &scopeHTTPError{Message: err.Error(), StatusCode: http.StatusForbidden}
-	}
-	if string(segData.ManifestID) != segData.AuthToken.SessionId {
-		clog.Info(ctx, "Legacy Scope payment manifest mismatch", "manifest_id", segData.ManifestID, "auth_session_id", segData.AuthToken.SessionId)
-	}
-	manifestID := string(segData.ManifestID)
-	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
-		return ethcommon.Address{}, nil, "", false, &scopeHTTPError{Message: err.Error(), StatusCode: http.StatusBadRequest}
-	}
-	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, segData.ManifestID) {
-		return ethcommon.Address{}, nil, "", false, &scopeHTTPError{Message: "Insufficient balance", StatusCode: http.StatusBadRequest}
-	}
-	return sender, payment.GetExpectedPrice(), manifestID, false, nil
-}
-
-func scopePayerAddress(r *http.Request) (ethcommon.Address, error) {
-	addr := r.Header.Get(scopePayerAddressHeader)
-	if !ethcommon.IsHexAddress(addr) {
-		return ethcommon.Address{}, fmt.Errorf("invalid live runner payment signer address")
-	}
-	return ethcommon.HexToAddress(addr), nil
 }
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
@@ -312,7 +1018,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					inPixels:  inPixels,
+					units:     inPixels,
 					priceInfo: priceInfo,
 					sessionID: mid,
 				})
@@ -322,7 +1028,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				}
 				return err
 			}
-			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+			paymentProcessor = NewLV2VPaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
@@ -487,7 +1193,7 @@ func (h *lphttp) StartScope() http.Handler {
 			accountPaymentFunc := func(inPixels int64) error {
 				err := paymentReceiver.AccountPayment(ctx, &SegmentInfoReceiver{
 					sender:    sender,
-					inPixels:  inPixels,
+					units:     inPixels,
 					priceInfo: priceInfo,
 					sessionID: manifestID,
 				})
@@ -497,7 +1203,7 @@ func (h *lphttp) StartScope() http.Handler {
 				}
 				return err
 			}
-			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+			paymentProcessor = NewLV2VPaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
@@ -566,6 +1272,14 @@ func (h *lphttp) StartScope() http.Handler {
 		clog.Info(ctx, "Processed Scope request", "took", took)
 		respondJsonOk(w, jsonData)
 	})
+}
+
+func liveRunnerURI(node *core.LivepeerNode, orch Orchestrator) *url2.URL {
+	if node != nil && node.LiveRunnerAddr != nil {
+		v := *node.LiveRunnerAddr
+		return &v
+	}
+	return orch.ServiceURI()
 }
 
 // overwriteHost is used to overwrite the trickle host, because it may be different for runner

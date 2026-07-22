@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -17,7 +18,9 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -28,6 +31,8 @@ import (
 const HTTPStatusRefreshSession = 480
 const HTTPStatusPriceExceeded = 481
 const HTTPStatusNoTickets = 482
+const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
+const RemoteType_Live = "live"
 const RemoteType_LiveVideoToVideo = "lv2v"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
@@ -149,6 +154,7 @@ type RemotePaymentState struct {
 	Balance              string
 	InitialPricePerUnit  int64
 	InitialPixelsPerUnit int64
+	Type                 string
 	SequenceNumber       uint64
 	AuthID               string
 }
@@ -173,7 +179,7 @@ type RemotePaymentRequest struct {
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `lv2v`. Optional.
+	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`. Optional.
 	Type string `json:"type"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
@@ -357,6 +363,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
+		if state.Type != "" && state.Type != req.Type {
+			err := fmt.Errorf("job type mismatch")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		state.Type = req.Type
 		state.SequenceNumber++
 	} else {
 		state = &RemotePaymentState{
@@ -364,6 +376,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			OrchestratorAddress:  orchAddr,
 			InitialPricePerUnit:  priceInfo.PricePerUnit,
 			InitialPixelsPerUnit: priceInfo.PixelsPerUnit,
+			Type:                 req.Type,
 		}
 	}
 
@@ -443,6 +456,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 
 	if should, err := shouldRefreshSession(ctx, sess); err == nil && should {
 		err := errors.New("refresh session for remote signer")
+		w.Header().Set(RefreshSessionOrchestratorURLHeader, oInfo.Transcoder)
 		respondJsonError(ctx, w, err, HTTPStatusRefreshSession)
 		return
 	} else if err != nil {
@@ -451,7 +465,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	pixels := req.InPixels
+	pixels := int64(0)
+	billableUnits := int64(req.InPixels)
 	now := time.Now()
 	lastUpdate := state.LastUpdate
 	if lastUpdate.IsZero() {
@@ -466,13 +481,19 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		}
 		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
+		billableUnits = pixels
+	} else if req.Type == RemoteType_Live {
+		if billableSecs <= 0 {
+			billableSecs = (10 * time.Second).Seconds()
+		}
+		billableUnits = int64(math.Ceil(billableSecs)) // seconds to charge for
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
-	if pixels <= 0 {
-		err = errors.New("missing pixels or job type")
+	if billableUnits <= 0 {
+		err = errors.New("missing billable unit or job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
@@ -488,7 +509,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 
 	// Compute required fee using initial price
-	fee := calculateFee(pixels, initialPrice)
+	fee := calculateFee(billableUnits, initialPrice)
 
 	// Create balance update
 	balUpdate, err := newBalanceUpdate(sess, fee)
@@ -557,7 +578,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	state.Balance = newBal.RatString()
-	state.LastUpdate = time.Now()
+	state.LastUpdate = now
 	state.PMSessionID = sess.PMSessionID
 	state.SenderNonce, err = sender.Nonce(sess.PMSessionID)
 	if err != nil {
@@ -613,6 +634,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		pipeline := ""
 		if req.Type == RemoteType_LiveVideoToVideo {
 			pipeline = PipelineLiveVideoToVideo
+		} else if req.Type == RemoteType_Live {
+			pipeline = RemoteType_Live
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
@@ -632,7 +655,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"pixels":             pixels,
 			"session_balance":    newBal.FloatString(0),
 			"computed_fee":       fee.FloatString(0),
-			"cost_per_pixel":     orchPrice.FloatString(10),
+			"cost":               orchPrice.FloatString(10),
 			"sequence_number":    state.SequenceNumber,
 			"num_tickets":        balUpdate.NumTickets,
 			"auth_id":            state.AuthID,
@@ -691,10 +714,14 @@ func GetOrchInfoSig(remoteSignerHost *url.URL, headers map[string]string) (*Orch
 	return &signerResp, nil
 }
 
+// discoveryResponse is intentionally typed. Do NOT add raw json.RawMessage blobs
+// here or pass through arbitrary orchestrator /discovery fields; every exposed
+// response field must be reviewed and modeled explicitly.
 type discoveryResponse struct {
-	Address      string   `json:"address,omitempty"`
-	Score        float32  `json:"score,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	Address      string                             `json:"address,omitempty"`
+	Score        float32                            `json:"score,omitempty"`
+	Capabilities []string                           `json:"capabilities,omitempty"`
+	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
@@ -724,11 +751,11 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 	infos := pool.Orchestrators(filteredCaps)
 	resp := make([]discoveryResponse, 0, len(infos))
 	for _, cached := range infos {
-		od := cached.OD
 		resp = append(resp, discoveryResponse{
-			Address:      od.LocalInfo.URL.String(),
-			Score:        od.LocalInfo.Score,
+			Address:      cached.URL.String(),
+			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
+			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
 		})
 	}
 
