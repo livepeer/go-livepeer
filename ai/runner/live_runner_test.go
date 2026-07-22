@@ -628,6 +628,27 @@ func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
 	}
 }
 
+func TestLiveRunnerRegistry_HeartbeatSingleShotProxyUsesRunnerIDRoute(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	req := liveRunnerTestHeartbeat("runner-single-shot-proxy")
+	req.Label = "metadata-label"
+	req.Mode = LiveRunnerModeSingleShot
+	req.Proxy = true
+	liveRunnerTestRegister(t, registry, req)
+
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/run/runner-single-shot-proxy" {
+		t.Fatalf("unexpected dynamic proxy discovery: %+v", runners)
+	}
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/runner-single-shot-proxy/v1/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched || route.LocalPath != "/apps/runner-single-shot-proxy/app/v1/foo" {
+		t.Fatalf("unexpected dynamic proxy route: matched=%v route=%+v", matched, route)
+	}
+}
+
 func TestLiveRunnerRegistry_HeartbeatSingleShotModeAlias(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	req := liveRunnerTestHeartbeat("runner-single-shot-alias")
@@ -1043,32 +1064,44 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersMetadataValidationIsAtomic(t *t
 	}
 }
 
-func TestLiveRunnerRegistry_RegisterStaticRunnersProxyRequiresSingleShotAndIsAtomic(t *testing.T) {
+func TestLiveRunnerRegistry_RegisterStaticRunnersPersistentProxy(t *testing.T) {
 	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer healthSrv.Close()
 
 	registry := newLiveRunnerTestRegistry()
-	existing := StaticLiveRunnerConfigEntry{
-		Label:     "existing",
+	entry := StaticLiveRunnerConfigEntry{
+		Label:     "persistent-proxy",
+		Routing:   LiveRunnerRoutingLabel,
+		Proxy:     true,
 		RunnerURL: "https://runner.example.com",
 		App:       "live-video-to-video/scope",
+		Mode:      LiveRunnerModePersistent,
 		HealthURL: healthSrv.URL,
 	}
-	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{existing}}); err != nil {
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	invalid := existing
-	invalid.Label = "bad-proxy"
-	invalid.Proxy = true
-	if _, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{invalid}}); !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "single-shot") {
-		t.Fatalf("expected proxy single-shot error, got %v", err)
+	if !resp.Runners[0].Proxy {
+		t.Fatal("expected persistent proxy registration response")
 	}
 	runners := registry.Runners()
-	if len(runners) != 1 || !strings.Contains(runners[0].URL, "/apps/") {
-		t.Fatalf("expected invalid proxy batch to leave existing runners unchanged, got %+v", runners)
+	if len(runners) != 1 || runners[0].URL != "http://localhost:1234/apps/persistent-proxy/session" {
+		t.Fatalf("unexpected persistent proxy discovery: %+v", runners)
+	}
+	sessionID, appURL, err := registry.ReserveSession("persistent-proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyID := strings.TrimPrefix(appURL, "http://localhost:1234/run/")
+	if proxyID == "" || proxyID == appURL {
+		t.Fatalf("unexpected persistent app proxy URL: %s", appURL)
+	}
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/"+proxyID)
+	if err != nil || !matched || route.SessionID != sessionID || route.TargetURL != entry.RunnerURL {
+		t.Fatalf("unexpected persistent app proxy route: matched=%v route=%+v err=%v", matched, route, err)
 	}
 }
 
@@ -1505,12 +1538,12 @@ func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
 	req.Capacity = 2
 	liveRunnerTestRegister(t, registry, req)
 
-	sessionID1, endpoint, err := registry.ReserveSession("runner-1")
+	sessionID1, appURL, err := registry.ReserveSession("runner-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoint != req.RunnerURL {
-		t.Fatalf("unexpected endpoint: %s", endpoint)
+	if want := "http://localhost:1234/apps/runner-1/session/" + sessionID1 + "/app"; appURL != want {
+		t.Fatalf("unexpected app URL: got %s want %s", appURL, want)
 	}
 	if !liveRunnerTestGeneratedSessionIDPattern.MatchString(sessionID1) {
 		t.Fatalf("expected generated base32 session id, got %q", sessionID1)
@@ -1539,15 +1572,15 @@ func TestLiveRunnerRegistry_ReserveSessionUsesProvidedID(t *testing.T) {
 	registry := newLiveRunnerTestRegistry()
 	liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-1"))
 
-	sessionID, endpoint, err := registry.ReserveSession("runner-1", "manifest-id")
+	sessionID, appURL, err := registry.ReserveSession("runner-1", "manifest-id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sessionID != "manifest-id" {
 		t.Fatalf("expected provided session id, got %q", sessionID)
 	}
-	if endpoint != "https://runner.example.com" {
-		t.Fatalf("unexpected endpoint: %s", endpoint)
+	if appURL != "http://localhost:1234/apps/runner-1/session/manifest-id/app" {
+		t.Fatalf("unexpected app URL: %s", appURL)
 	}
 }
 
@@ -1628,6 +1661,47 @@ func TestLiveRunnerRegistry_CreateSessionProxyDefaultsToRegisteredRunnerURL(t *t
 	}
 	if route.RunnerID != "runner-1" || route.SessionID != sessionID || route.TargetURL != "https://runner.example.com/base" || route.AppPath != "foo/bar" {
 		t.Fatalf("unexpected proxy route: %+v", route)
+	}
+}
+
+func TestLiveRunnerRegistry_ReserveSessionReturnsPublicAppURL(t *testing.T) {
+	registry := newLiveRunnerTestRegistry()
+	withoutProxy := liveRunnerTestHeartbeat("runner-without-proxy")
+	liveRunnerTestRegister(t, registry, withoutProxy)
+	sessionID, appURL, err := registry.ReserveSession(withoutProxy.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "http://localhost:1234/apps/runner-without-proxy/session/" + sessionID + "/app"; appURL != want {
+		t.Fatalf("unexpected direct app URL: got %s want %s", appURL, want)
+	}
+
+	withProxy := liveRunnerTestHeartbeat("runner-with-proxy")
+	withProxy.Proxy = true
+	withProxy.RunnerURL = "https://runner.example.com/base"
+	liveRunnerTestRegister(t, registry, withProxy)
+	sessionID, appURL, err = registry.ReserveSession(withProxy.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyID := strings.TrimPrefix(appURL, "http://localhost:1234/run/")
+	if proxyID == "" || proxyID == appURL {
+		t.Fatalf("unexpected proxied app URL: %s", appURL)
+	}
+	route, matched, err := registry.ResolveSessionProxy("localhost:1234", "/run/"+proxyID+"/foo")
+	if err != nil || !matched || route.TargetURL != withProxy.RunnerURL || route.AppPath != "foo" {
+		t.Fatalf("unexpected app proxy route: matched=%v route=%+v err=%v", matched, route, err)
+	}
+
+	singleShot := liveRunnerTestHeartbeat("runner-single-shot")
+	singleShot.Mode = LiveRunnerModeSingleShot
+	liveRunnerTestRegister(t, registry, singleShot)
+	_, appURL, err = registry.ReserveSession(singleShot.RunnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appURL != singleShot.RunnerURL {
+		t.Fatalf("unexpected single-shot endpoint: %s", appURL)
 	}
 }
 
@@ -2148,7 +2222,7 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 			defer runnerAWG.Done()
 			<-startRunnerA
 			sessionID := fmt.Sprintf("runner-a-session-%d", i)
-			gotSessionID, endpoint, err := registry.ReserveSession("runner-a", sessionID)
+			gotSessionID, appURL, err := registry.ReserveSession("runner-a", sessionID)
 			if err != nil {
 				runnerAErrCh <- fmt.Errorf("runner-a reserve %s: %w", sessionID, err)
 				return
@@ -2157,8 +2231,9 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 				runnerAErrCh <- fmt.Errorf("runner-a reserve got session %q want %q", gotSessionID, sessionID)
 				return
 			}
-			if endpoint != "https://runner-a.example.com" {
-				runnerAErrCh <- fmt.Errorf("runner-a endpoint got %q want %q", endpoint, "https://runner-a.example.com")
+			wantAppURL := "http://localhost:1234/apps/runner-a/session/" + sessionID + "/app"
+			if appURL != wantAppURL {
+				runnerAErrCh <- fmt.Errorf("runner-a app URL got %q want %q", appURL, wantAppURL)
 			}
 		}(i)
 	}
@@ -2175,7 +2250,7 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 		go func(i int) {
 			defer runnerBWG.Done()
 			sessionID := fmt.Sprintf("runner-b-session-%d", i)
-			gotSessionID, endpoint, err := registry.ReserveSession("runner-b", sessionID)
+			gotSessionID, appURL, err := registry.ReserveSession("runner-b", sessionID)
 			if err != nil {
 				runnerBErrCh <- fmt.Errorf("runner-b reserve %s: %w", sessionID, err)
 				return
@@ -2184,8 +2259,9 @@ func TestLiveRunnerRegistry_ConcurrentReservationsAreRunnerScoped(t *testing.T) 
 				runnerBErrCh <- fmt.Errorf("runner-b reserve got session %q want %q", gotSessionID, sessionID)
 				return
 			}
-			if endpoint != "https://runner-b.example.com" {
-				runnerBErrCh <- fmt.Errorf("runner-b endpoint got %q want %q", endpoint, "https://runner-b.example.com")
+			wantAppURL := "http://localhost:1234/apps/runner-b/session/" + sessionID + "/app"
+			if appURL != wantAppURL {
+				runnerBErrCh <- fmt.Errorf("runner-b app URL got %q want %q", appURL, wantAppURL)
 			}
 		}(i)
 	}

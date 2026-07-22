@@ -280,7 +280,8 @@ The response is an array containing an orchestrator address and its runners:
 The `url` is always an orchestrator proxy URL; discovery never leaks the
 private `runner_url`. Persistent runners advertise a session-reservation URL
 ending in `/session`. Single-shot runners advertise a direct proxy URL ending
-in `/app`. Static runners using `routing: "label"` use their label in this URL;
+in `/app`, unless `proxy: true` makes discovery use `-liveRunnerProxyUrl`
+instead. Static runners using `routing: "label"` use their label in this URL;
 other static runners and all dynamic runners use a runner ID.
 
 `metadata` is optional application-controlled text copied verbatim from the
@@ -327,6 +328,12 @@ Livepeer-Session-Token: <session token>
 ```
 
 To proxy the original app path itself at `/apps/.../app`, omit the target_url.
+
+A persistent registration with `proxy: true` performs that default-target
+proxy creation automatically for each newly reserved session and returns the
+random proxy URL as `app_url`. Its `control_url` remains the ordinary
+`/apps/{runner}/session/{session}` URL. Existing sessions keep the URL they
+were originally given if a later registration changes `proxy`.
 
 The response contains a random `proxy_id` and its public `url`. Any target must
 be an absolute HTTP or HTTPS URL, must not contain a fragment, and its hostname
@@ -403,7 +410,7 @@ are currently ignored. Labels in one submitted batch must be unique.
 | --- | --- | --- | --- |
 | `label` | string | Required | Must be non-empty and already trimmed. Used to identify static entries across upserts. It cannot contain `/` when `routing` is `label`. |
 | `routing` | string | Default: `runner-id` | `runner-id` exposes the generated ID in client URLs. `label` exposes `label` instead. |
-| `proxy` | boolean | Default: `false` | Only valid with `mode: "single-shot"`. When true, discovery uses `-liveRunnerProxyUrl` with the selected runner route instead of `/apps/{route}/app`. |
+| `proxy` | boolean | Default: `false` | For single-shot runners, discovery uses `-liveRunnerProxyUrl` with the selected runner route instead of `/apps/{route}/app`. For persistent runners, each new session receives a random default-target proxy as its `app_url`. |
 | `runner_url` | absolute HTTP(S) URL | Required | Private target used by the orchestrator reverse proxy. |
 | `health_url` | absolute HTTP(S) URL or root-relative path | Required | A value beginning with `/` is resolved against `runner_url`; otherwise provide a complete URL. |
 | `healthy_status_code` | integer | Default: `200` | Must be a valid HTTP status code from 100 through 599. Health requires an exact match. |
@@ -460,7 +467,9 @@ includes:
 Runners should use the returned durations rather than hard-code the current
 defaults. Follow-up heartbeats may update the runner URL, version, metadata,
 status, mode, GPU, application, capacity, price, and runner-reported session
-IDs. Metadata is an opaque UTF-8 string with the same 1,024-byte limit and
+IDs. They may also update the optional boolean `proxy` flag; dynamic
+single-shot proxy URLs always use the runner ID rather than the label.
+Metadata is an opaque UTF-8 string with the same 1,024-byte limit and
 public-discovery behavior as static metadata; an empty value clears it. Only an
 empty status or `ready` is eligible for discovery and reservation; status
 values must be lowercase and trimmed.
@@ -528,7 +537,7 @@ session.
 
 | Method and path | Caller / authentication | Description | Principal responses |
 | --- | --- | --- | --- |
-| `POST /apps/{runner_id}/session` | Client; no auth offchain. Onchain uses `Livepeer-Payer-Address` for the initial challenge and `Livepeer-Payment` plus `Livepeer-Segment` to reserve. | Reserves a persistent session. Returns `session_id`, `app_url`, and `control_url`; a priced runner first returns a payment challenge. | `200`, `402`, `404`, `503` |
+| `POST /apps/{runner_id}/session` | Client; no auth offchain. Onchain uses `Livepeer-Payer-Address` for the initial challenge and `Livepeer-Payment` plus `Livepeer-Segment` to reserve. | Reserves a persistent session. Returns `session_id`, `app_url`, and `control_url`; `proxy: true` registrations receive a random proxy-template `app_url`. A priced runner first returns a payment challenge. | `200`, `402`, `404`, `503` |
 | `POST /apps/{runner_id}/session/{session_id}/stop` | Client; session is identified by the URL | Releases a persistent session, its channels, and proxies. | `204`, `404` |
 | `POST /apps/{runner_id}/session/{session_id}/payment` | Paying client; `Livepeer-Payment` and `Livepeer-Segment` | Adds payment for an active session. The payment manifest must match `session_id`. | `200`, `400`, `403`, `404` |
 | `ANY /apps/{runner_id}/session/{session_id}/app/{app_path...}` | Client; access is by the reserved public URL | Proxies any HTTP method, SSE response, or WebSocket upgrade to a persistent runner. | Upstream status, `404`, `502` |
@@ -552,7 +561,7 @@ runner/session.
 
 | Method and path | Authentication | Description |
 | --- | --- | --- |
-| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the opaque generated proxy URL | Resolves the proxy ID, validates or creates the live session, and forwards to either the default app target or the registered explicit target URL. Static `proxy: true` runners use this endpoint with their route as the proxy ID. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
+| `ANY {liveRunnerProxyUrl}/{app_path...}` | Possession of the proxy URL | Resolves the proxy ID, validates or creates the live session, and forwards to either the default app target or the registered explicit target URL. Proxy-enabled single-shot runners use this endpoint with their existing route as the proxy ID; persistent app and manually created proxies use a random ID. The exact path or host shape comes from `-liveRunnerProxyUrl`. |
 
 Channel and proxy URLs contain random or derived secrets. Do not log or expose
 them as public identifiers. See the [trickle protocol reference](../trickle/README.md)

@@ -218,6 +218,15 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	runnerID := r.PathValue("runner_id")
+	mode, err := manager.RunnerMode(runnerID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+	if mode != runner.LiveRunnerModePersistent {
+		respondWithError(w, "only persistent runners have sessions", http.StatusBadRequest)
+		return
+	}
 	priceInfo, err := manager.PaymentInfo(runnerID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
@@ -233,6 +242,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		segData   *core.SegTranscodingMetadata
 		ctx       = r.Context()
 		sessionID string
+		appURL    string
 	)
 	if paymentRequired {
 		var err error
@@ -247,7 +257,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		// for easier correlation across orch, gw, signer
 		sessionID = string(segData.ManifestID)
 	}
-	sessionID, _, err = manager.ReserveSession(runnerID, sessionID)
+	sessionID, appURL, err = manager.ReserveSession(runnerID, sessionID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
@@ -310,7 +320,6 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		}()
 	}
 	controlURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID).String()
-	appURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "app").String()
 	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL, ControlURL: controlURL})
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)

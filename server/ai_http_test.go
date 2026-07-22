@@ -635,6 +635,86 @@ func TestLiveRunnerReserveSession(t *testing.T) {
 	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID, resp.ControlURL)
 }
 
+func TestLiveRunnerReserveSessionRejectsSingleShotRunner(t *testing.T) {
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{
+		RunnerURL: "https://private-runner.example.com",
+		Mode:      runner.LiveRunnerModeSingleShot,
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.NotContains(t, w.Body.String(), "private-runner.example.com")
+	manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	require.Equal(t, 0, manager.Runners()[0].CapacityUsed)
+}
+
+func TestLiveRunnerReserveSessionReturnsAutomaticAppProxy(t *testing.T) {
+	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		gotSessionToken = r.Header.Get("Livepeer-Session-Token")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("proxied"))
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{
+		RunnerURL: upstream.URL + "/base",
+		Capacity:  2,
+		Mode:      runner.LiveRunnerModePersistent,
+		Proxy:     true,
+	})
+	manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session", manager.Runners()[0].URL)
+
+	reserve := func() liveRunnerSessionResponse {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+		lp.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp liveRunnerSessionResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		return resp
+	}
+	first := reserve()
+	second := reserve()
+	require.NotEmpty(t, first.SessionID)
+	require.NotEmpty(t, second.SessionID)
+	require.NotEqual(t, first.SessionID, second.SessionID)
+	require.Contains(t, first.AppURL, "http://localhost:1234/run/")
+	require.Contains(t, second.AppURL, "http://localhost:1234/run/")
+	require.NotEqual(t, first.AppURL, second.AppURL)
+	require.NotContains(t, first.AppURL, first.SessionID)
+	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+first.SessionID, first.ControlURL)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, first.AppURL+"/foo/bar?x=1", strings.NewReader("body"))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "proxied", w.Body.String())
+	require.Equal(t, "/base/foo/bar", gotPath)
+	require.Equal(t, "x=1", gotQuery)
+	require.Equal(t, "runner-1", gotRunnerRoute)
+	require.Equal(t, first.SessionID, gotSessionID)
+	require.NotEmpty(t, gotSessionToken)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+first.SessionID+"/stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, first.AppURL+"/after-stop", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	lp := newLiveRunnerHTTPOnchain(t)
 	registerLiveRunnerForSession(t, lp, nil)
@@ -1509,6 +1589,35 @@ func TestLiveRunnerCreateSessionProxyAndProxyDefaultPath(t *testing.T) {
 	require.Equal(t, sessionID, gotSessionID)
 }
 
+func TestLiveRunnerDynamicSingleShotProxyForwardsAndReleasesSession(t *testing.T) {
+	var gotPath, gotRunnerRoute, gotSessionID string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotRunnerRoute = r.Header.Get("Livepeer-Runner-Route")
+		gotSessionID = r.Header.Get("Livepeer-Session-Id")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer upstream.Close()
+
+	lp := newLiveRunnerHTTP(t, true)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{
+		RunnerURL: upstream.URL + "/base",
+		Mode:      runner.LiveRunnerModeSingleShot,
+		Proxy:     true,
+	})
+	manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	require.Equal(t, "http://localhost:1234/run/runner-1", manager.Runners()[0].URL)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:1234/run/runner-1/foo", nil)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, "/base/foo", gotPath)
+	require.Equal(t, "runner-1", gotRunnerRoute)
+	require.NotEmpty(t, gotSessionID)
+	require.Equal(t, 0, manager.Runners()[0].CapacityUsed)
+}
+
 func TestLiveRunnerStaticProxyForwardsAndReleasesSingleShotSession(t *testing.T) {
 	var gotPath, gotQuery, gotRunnerRoute, gotSessionID, gotSessionToken string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2098,6 +2207,7 @@ type liveRunnerRegistrationOptions struct {
 	RunnerURL string
 	Capacity  int
 	Mode      string
+	Proxy     bool
 	PriceUnit string
 }
 
@@ -2141,6 +2251,7 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 	require.True(t, ok)
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  runnerID,
+		Proxy:     opts.Proxy,
 		RunnerURL: runnerURL,
 		Status:    "ready",
 		Mode:      opts.Mode,

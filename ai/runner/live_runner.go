@@ -127,6 +127,7 @@ func normalizeLiveRunnerPriceInfo(priceInfo LiveRunnerPriceInfo) (LiveRunnerPric
 type LiveRunnerHeartbeatRequest struct {
 	RunnerID   string              `json:"runner_id,omitempty"`
 	Label      string              `json:"label,omitempty"`
+	Proxy      bool                `json:"proxy,omitempty"`
 	RunnerURL  string              `json:"runner_url"`
 	Version    string              `json:"version,omitempty"`
 	Metadata   string              `json:"metadata,omitempty"`
@@ -235,7 +236,6 @@ type liveRunner struct {
 	healthURL     string
 	healthStatus  int
 	route         string
-	proxy         bool
 	sessions      map[string]*liveRunnerSession
 	priceSource   LiveRunnerPriceInfo
 	converter     *core.AutoConvertedPrice
@@ -716,9 +716,6 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		if err != nil {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: %v", i, err)}
 		}
-		if entry.Proxy && req.Mode != LiveRunnerModeSingleShot {
-			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: proxy requires mode %q", i, LiveRunnerModeSingleShot)}
-		}
 		if _, duplicate := seenLabels[entry.Label]; duplicate {
 			return nil, &RunnerError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("runners[%d]: duplicate label %q", i, entry.Label)}
 		}
@@ -791,7 +788,6 @@ func (r *LiveRunnerRegistry) RegisterStaticRunners(cfg StaticLiveRunnerConfig) (
 		staticRunner.healthURL = entry.HealthURL
 		staticRunner.healthStatus = entry.HealthyStatusCode
 		staticRunner.route = staticRunnerRoute(entry.Routing, staticRunner.RunnerID, req.Label)
-		staticRunner.proxy = entry.Proxy
 		for route, runner := range r.runners {
 			if runner == staticRunner && route != staticRunner.route {
 				// route changed so remove old entry and re-add
@@ -838,6 +834,7 @@ func (r *LiveRunnerRegistry) buildStaticRunner(entry StaticLiveRunnerConfigEntry
 	}
 	req := LiveRunnerHeartbeatRequest{
 		Label:     entry.Label,
+		Proxy:     entry.Proxy,
 		RunnerURL: entry.RunnerURL,
 		Version:   entry.Version,
 		Metadata:  entry.Metadata,
@@ -941,6 +938,10 @@ func (r *LiveRunnerRegistry) Unregister(runnerID, auth string) error {
 	return nil
 }
 
+// ReserveSession reserves runner capacity and returns the session ID and the
+// URL its caller should use for the app request. Persistent reservations return
+// a public app URL, while single-shot reservations return the runner endpoint
+// for internal forwarding.
 func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...string) (string, string, error) {
 	runner, unlock, err := r.lockLiveRunner(runnerID)
 	if err != nil {
@@ -971,13 +972,26 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 			id = "session_" + randomStr(liveRunnerIDRandomBytes)
 		}
 	}
-	runner.sessions[id] = &liveRunnerSession{
+	session := &liveRunnerSession{
 		createdAt: time.Now(),
 		channels:  make(map[string]*liveRunnerTrickleChannel),
 		proxies:   make(map[string]proxyTarget),
 	}
+	appURL := r.host.ServiceURI().JoinPath("apps", runner.route, "session", id, "app").String()
+	if runner.Mode == LiveRunnerModeSingleShot {
+		// Single-shot runner URLs stay private and are returned only for internal
+		// forwarding; persistent session app URLs are public client-facing URLs.
+		appURL = runner.RunnerURL
+	} else if runner.Proxy {
+		proxy, err := r.createSessionProxyLocked(runner, session, "")
+		if err != nil {
+			return "", "", err
+		}
+		appURL = proxy.URL
+	}
+	runner.sessions[id] = session
 	runner.sendSessionEvent("reserved", id)
-	return id, runner.RunnerURL, nil
+	return id, appURL, nil
 }
 
 func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo, error) {
@@ -1193,6 +1207,11 @@ func (r *LiveRunnerRegistry) CreateSessionProxy(runnerID, sessionID, targetURL s
 	if err != nil {
 		return LiveRunnerProxy{}, err
 	}
+	return r.createSessionProxyLocked(runner, session, targetURL)
+}
+
+// createSessionProxyLocked requires runner.mu and a session owned by runner.
+func (r *LiveRunnerRegistry) createSessionProxyLocked(runner *liveRunner, session *liveRunnerSession, targetURL string) (LiveRunnerProxy, error) {
 	runnerURL, err := url.ParseRequestURI(runner.RunnerURL)
 	if err != nil || runnerURL.Hostname() == "" {
 		return LiveRunnerProxy{}, &RunnerError{StatusCode: http.StatusBadGateway, Message: "invalid registered runner_url"}
@@ -1261,7 +1280,7 @@ func (r *LiveRunnerRegistry) ResolveSessionProxy(host, path string) (LiveRunnerP
 	r.mu.Unlock()
 	if runner != nil {
 		runner.mu.Lock()
-		proxy := !runner.removed && runner.proxy && runner.Mode == LiveRunnerModeSingleShot
+		proxy := !runner.removed && runner.Proxy && runner.Mode == LiveRunnerModeSingleShot
 		runner.mu.Unlock()
 		if proxy {
 			localPath, err := url.JoinPath("/apps", proxyID, "app", appPath)
@@ -1302,7 +1321,7 @@ func (r *LiveRunnerRegistry) discoveryRunnerURL(runner *liveRunner) string {
 	// Under no circumstances leak the runner URL through discovery.
 	// Discovery must only expose orchestrator proxy URLs; the runner URL is an internal endpoint.
 	// discoveryRunnerURL requires runner.mu.
-	if runner.proxy && runner.Mode == LiveRunnerModeSingleShot {
+	if runner.Proxy && runner.Mode == LiveRunnerModeSingleShot {
 		return r.proxyTemplate.proxyURL(runner.route)
 	}
 	if runner.Mode == LiveRunnerModeSingleShot {
