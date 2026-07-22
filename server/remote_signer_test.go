@@ -764,7 +764,7 @@ func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
 		state, bal := parseBalance(resp.State.State)
 		require.Equal(RemoteType_Live, state.Type)
 		require.EqualValues(0, state.SequenceNumber)
-		require.Equal(firstUpdate, state.LastUpdate)
+		require.True(firstUpdate.Equal(state.LastUpdate))
 		// First live payment bills the 10-second minimum: 10s * 3 wei/s = 30 wei.
 		require.Zero(bal.Cmp(big.NewRat(5, 1)), "unexpected initial balance: %s", bal.RatString())
 
@@ -781,7 +781,7 @@ func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
 		state2, bal2 := parseBalance(resp2.State.State)
 		require.Equal(RemoteType_Live, state2.Type)
 		require.EqualValues(1, state2.SequenceNumber)
-		require.Equal(secondUpdate, state2.LastUpdate)
+		require.True(secondUpdate.Equal(state2.LastUpdate))
 		// Follow-up live payment bills elapsed seconds: 12s * 3 wei/s = 36 wei.
 		require.Zero(bal2.Cmp(big.NewRat(4, 1)), "unexpected follow-up balance: %s", bal2.RatString())
 	})
