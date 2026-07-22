@@ -82,6 +82,7 @@ jobs:
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
+            GIT_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           context: .
           provenance: mode=max
           sbom: true
@@ -92,8 +93,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           annotations: ${{ steps.meta.outputs.annotations }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=livepeerci/build:cache
-          cache-to: type=registry,ref=livepeerci/build:cache,mode=max
+          # PR builds must not reuse the shared registry cache — it can serve a
+          # stale livepeer binary while metadata tags the PR head SHA (see #3947).
+          cache-from: ${{ github.event_name != 'pull_request' && 'type=registry,ref=livepeerci/build:cache' || '' }}
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=registry,ref=livepeerci/build:cache,mode=max' || '' }}
 
   builder:
     name: go-livepeer builder docker image generation

@@ -206,7 +206,7 @@ type authResponse struct {
 	// Unix timestamp (seconds) until which auth is considered valid.
 	// Allows for skipping webhook callbacks until this time is exceeded.
 	Expiry int64 `json:"expiry,omitempty"`
-	// Optional opaque identifier.
+	// Optional opaque identifier for metering attribution.
 	AuthID string `json:"auth_id,omitempty"`
 }
 
@@ -632,7 +632,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			sessionStatus = "new"
 		}
 		pipeline := ""
-		if req.Type == RemoteType_LiveVideoToVideo {
+		modelID := ""
+		if streamParams.Capabilities != nil {
+			pipeline, modelID = streamParams.Capabilities.ConstrainedPipelineModelID()
+		}
+		if pipeline == "" && req.Type == RemoteType_LiveVideoToVideo {
 			pipeline = PipelineLiveVideoToVideo
 		} else if req.Type == RemoteType_Live {
 			pipeline = RemoteType_Live
@@ -642,6 +646,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
 			"pipeline":           pipeline,
+			"model_id":           modelID,
 			"request_id":         requestID,
 			"orch_address":       orchAddr.Hex(),
 			"orch_url":           oInfo.Transcoder,
