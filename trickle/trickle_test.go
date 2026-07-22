@@ -97,6 +97,74 @@ func TestTrickle_Close(t *testing.T) {
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
 
+func TestTrickle_TLSDefaultValidatesCertificates(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/tls-default"
+	lp := NewLocalPublisher(server, "tls-default", "text/plain")
+	lp.CreateChannel()
+	require.NoError(lp.Write(bytes.NewReader([]byte("hello"))))
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.NoError(err)
+	err = pub.Write(bytes.NewReader([]byte("world")))
+	require.Error(err)
+	require.Contains(err.Error(), "certificate")
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.NoError(err)
+	_, err = sub.Read()
+	require.Error(err)
+	require.Contains(err.Error(), "certificate")
+}
+
+func TestTrickle_InsecureSkipVerifyAllowsSelfSignedCertificates(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/tls-insecure"
+	lp := NewLocalPublisher(server, "tls-insecure", "text/plain")
+	lp.CreateChannel()
+
+	pub, err := NewTricklePublisherWithConfig(TricklePublisherConfig{
+		URL:                channelURL,
+		InsecureSkipVerify: true,
+	})
+	require.NoError(err)
+	defer pub.Close()
+	require.NoError(pub.Write(bytes.NewReader([]byte("hello"))))
+
+	sub, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL:                channelURL,
+		Ctx:                t.Context(),
+		InsecureSkipVerify: true,
+	})
+	require.NoError(err)
+	sub.SetSeq(0)
+
+	resp, err := sub.Read()
+	require.NoError(err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+	require.Equal("hello", string(body))
+}
+
 func TestLocalPublisher_CreateContract(t *testing.T) {
 	t.Run("write without autocreate returns stream not found", func(t *testing.T) {
 		require := require.New(t)

@@ -638,6 +638,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.TrickleInsecureSkipVerify = !((cfg.UseLiveRunners != nil && *cfg.UseLiveRunners) ||
+		(cfg.LiveRunnerConfig != nil && *cfg.LiveRunnerConfig != ""))
 	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
