@@ -991,6 +991,7 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	}
 	runner.sessions[id] = session
 	runner.sendSessionEvent("reserved", id)
+	slog.Info("live runner session reserved", "runner_id", runner.RunnerID, "session_id", id, "app", runner.App)
 	return id, appURL, nil
 }
 
@@ -1490,6 +1491,7 @@ func (runner *liveRunner) releaseSessionLocked(sessionID string) {
 	if session := runner.sessions[sessionID]; session != nil {
 		runner.sendSessionEvent("released", sessionID)
 		session.closeChannelsLocked()
+		slog.Info("live runner session released", "runner_id", runner.RunnerID, "session_id", sessionID, "app", runner.App, "duration", time.Since(session.createdAt))
 	}
 	delete(runner.sessions, sessionID)
 }
