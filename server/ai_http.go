@@ -233,6 +233,14 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	paymentRequired := priceInfo != nil
+	var newPaymentProcessor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
+	if paymentRequired {
+		newPaymentProcessor, err = preparePaymentProcessor(priceInfo.Unit)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
 		h.runnerChallenge(w, r, priceInfo)
 		return
@@ -291,15 +299,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			}
 			return err
 		}
-		paymentProcessor, err := newLiveRunnerPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, priceInfo.Unit, accountPaymentFunc)
-		if err != nil {
-			cancel()
-			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
-				clog.Errorf(ctx, "Error releasing live runner session after payment setup failure err=%v", releaseErr)
-			}
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		paymentProcessor := newPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
 		go func() {
 			ticker := time.NewTicker(h.node.LivePaymentInterval)
 			defer ticker.Stop()
@@ -328,12 +328,12 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 	respondJsonOk(w, data)
 }
 
-func newLiveRunnerPaymentProcessor(ctx context.Context, processInterval time.Duration, unit string, processSegmentFunc func(int64) error) (*LivePaymentProcessor, error) {
+func preparePaymentProcessor(unit string) (func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor, error) {
 	switch strings.ToLower(strings.TrimSpace(unit)) {
 	case "seconds":
-		return NewLivePaymentProcessor(ctx, processInterval, processSegmentFunc), nil
+		return NewLivePaymentProcessor, nil
 	case "720p-pixel-seconds":
-		return NewLV2VPaymentProcessor(ctx, processInterval, processSegmentFunc), nil
+		return NewLV2VPaymentProcessor, nil
 	default:
 		return nil, fmt.Errorf("unsupported live runner payment unit %q", unit)
 	}

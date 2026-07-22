@@ -919,7 +919,7 @@ func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 	})
 }
 
-func TestNewLiveRunnerPaymentProcessor(t *testing.T) {
+func TestPreparePaymentProcessor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -932,13 +932,14 @@ func TestNewLiveRunnerPaymentProcessor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.unit, func(t *testing.T) {
-			processor, err := newLiveRunnerPaymentProcessor(ctx, time.Second, tt.unit, func(int64) error { return nil })
+			newPaymentProcessor, err := preparePaymentProcessor(tt.unit)
 			require.NoError(t, err)
+			processor := newPaymentProcessor(ctx, time.Second, func(int64) error { return nil })
 			require.Equal(t, tt.expectedUnits, processor.units)
 		})
 	}
 
-	_, err := newLiveRunnerPaymentProcessor(ctx, time.Second, "minutes", func(int64) error { return nil })
+	_, err := preparePaymentProcessor("minutes")
 	require.ErrorContains(t, err, "unsupported live runner payment unit")
 }
 
