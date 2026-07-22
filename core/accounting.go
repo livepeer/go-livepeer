@@ -104,6 +104,28 @@ func (a *AddressBalances) Balance(addr ethcommon.Address, id ManifestID) *big.Ra
 	return a.balancesForAddr(addr).Balance(id)
 }
 
+// FixedPrice retrieves the fixed price for an address' ManifestID.
+func (a *AddressBalances) FixedPrice(addr ethcommon.Address, id ManifestID) *big.Rat {
+	a.mtx.Lock()
+	balances := a.balances[addr]
+	a.mtx.Unlock()
+	if balances == nil {
+		return nil
+	}
+	return balances.FixedPrice(id)
+}
+
+// SetFixedPrice sets the fixed price for an address' ManifestID.
+func (a *AddressBalances) SetFixedPrice(addr ethcommon.Address, id ManifestID, fixedPrice *big.Rat) {
+	a.mtx.Lock()
+	balances := a.balances[addr]
+	a.mtx.Unlock()
+	if balances == nil {
+		return
+	}
+	balances.SetFixedPrice(id, fixedPrice)
+}
+
 // StopCleanup stops the cleanup loop for all balances
 func (a *AddressBalances) StopCleanup() {
 	a.mtx.Lock()

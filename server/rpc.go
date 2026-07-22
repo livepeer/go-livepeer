@@ -13,8 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/byoc"
@@ -50,6 +53,7 @@ type Orchestrator interface {
 	ServiceURI() *url.URL
 	Address() ethcommon.Address
 	TranscoderSecret() string
+	RegistrationSecret() string
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
@@ -161,6 +165,11 @@ type GetOrchestratorInfoParams struct {
 	IgnoreCapacityCheck bool
 }
 
+type refreshPaymentParamsRequest struct {
+	Sender     string `json:"sender"`
+	ManifestID string `json:"manifest_id"`
+}
+
 func (bs *BroadcastSession) Transcoder() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
@@ -214,6 +223,9 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.ProtoMajor == 2 && strings.HasPrefix(ct, "application/grpc") {
 		h.orchRPC.ServeHTTP(w, r)
 	} else {
+		if h.tryLiveRunnerProxy(w, r) {
+			return
+		}
 		h.transRPC.ServeHTTP(w, r)
 	}
 }
@@ -238,6 +250,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
 	lp.transRPC.HandleFunc("/payment", lp.Payment)
+	lp.transRPC.HandleFunc("POST /refresh-payment", lp.RefreshPayment)
 	if acceptRemoteTranscoders {
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
@@ -254,21 +267,54 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	//API for dynamic capabilities
 	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
 
-	cert, key, err := getCert(orch.ServiceURI(), workDir)
+	stopTrickle := lp.trickleSrv.Start()
+	defer stopTrickle()
+
+	bind, listenerTLS, err := parseHTTPAddr(bind)
 	if err != nil {
 		return err
 	}
 
-	stopTrickle := lp.trickleSrv.Start()
-	defer stopTrickle()
-
-	glog.Info("Listening for RPC on ", bind)
+	scheme := "https"
+	handler := http.Handler(&lp)
+	if !listenerTLS {
+		scheme = "http"
+		handler = h2c.NewHandler(&lp, &http2.Server{})
+	}
+	glog.Infof("Listening for RPC on %s://%s", scheme, bind)
 	srv := http.Server{
 		Addr:        bind,
-		Handler:     &lp,
+		Handler:     handler,
 		IdleTimeout: HTTPIdleTimeout,
 	}
+	if !listenerTLS {
+		return srv.ListenAndServe()
+	}
+
+	cert, key, err := getCert(orch.ServiceURI(), workDir)
+	if err != nil {
+		return err
+	}
 	return srv.ListenAndServeTLS(cert, key)
+}
+
+func parseHTTPAddr(addr string) (string, bool, error) {
+	if !strings.Contains(addr, "://") {
+		return addr, true, nil
+	}
+
+	uri, err := url.Parse(addr)
+	if err != nil {
+		return "", false, err
+	}
+	if uri.Scheme != "http" && uri.Scheme != "https" {
+		return "", false, fmt.Errorf("unsupported -httpAddr scheme %q", uri.Scheme)
+	}
+	if uri.Path != "" && uri.Path != "/" {
+		return "", false, fmt.Errorf("-httpAddr must not include a path")
+	}
+
+	return uri.Host, uri.Scheme != "http", nil
 }
 
 // CheckOrchestratorAvailability - the broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator
@@ -297,6 +343,38 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	}
 
 	return orch.VerifySig(orch.Address(), string(ping), pong.Value)
+}
+
+func CheckOrchestratorDiscoveryAvailability(orch Orchestrator) bool {
+	uri := orch.ServiceURI().JoinPath("discovery")
+	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri.String(), nil)
+	if err != nil {
+		glog.Error("Unable to create discovery availability request: ", err)
+		return false
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		glog.Error("Was not able to submit discovery availability request: ", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		glog.Errorf("Discovery availability check failed with status %d", resp.StatusCode)
+		return false
+	}
+
+	var discovery []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		glog.Error("Unable to decode discovery availability response: ", err)
+		return false
+	}
+
+	return true
 }
 
 func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.PingPong, error) {
@@ -348,8 +426,12 @@ func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
 
 func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
 	clog.V(common.DEBUG).Infof(ctx, "Connecting RPC to uri=%v", uri)
+	transportCredentials := credentials.NewTLS(tlsConfig)
+	if uri.Scheme == "http" {
+		transportCredentials = insecure.NewCredentials()
+	}
 	conn, err := grpc.Dial(uri.Host,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithTransportCredentials(transportCredentials),
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
@@ -367,6 +449,78 @@ func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) 
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
 	return &net.EndTranscodingSessionRequest{AuthToken: sess.OrchestratorInfo.AuthToken}, nil
+}
+
+func (h *lphttp) RefreshPayment(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req refreshPaymentParamsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.Sender == "" || !ethcommon.IsHexAddress(req.Sender) {
+		respondJsonError(ctx, w, fmt.Errorf("invalid sender"), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.ManifestID) == "" {
+		respondJsonError(ctx, w, fmt.Errorf("missing manifest_id"), http.StatusBadRequest)
+		return
+	}
+
+	sender := ethcommon.HexToAddress(req.Sender)
+	manifestID := core.ManifestID(strings.TrimSpace(req.ManifestID))
+	priceInfo, ok, err := fixedPriceInfo(h.node, sender, manifestID)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		respondJsonError(ctx, w, fmt.Errorf("fixed price not found for session"), http.StatusConflict)
+		return
+	}
+
+	ticketParams, err := h.orchestrator.TicketParams(sender, priceInfo)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	expiration := time.Now().Add(authTokenValidPeriod).Unix()
+	oInfo := &net.OrchestratorInfo{
+		Transcoder:   h.orchestrator.ServiceURI().String(),
+		TicketParams: ticketParams,
+		PriceInfo:    priceInfo,
+		Address:      h.orchestrator.Address().Bytes(),
+		AuthToken:    h.orchestrator.AuthToken(string(manifestID), expiration),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(data); err != nil {
+		clog.Errorf(ctx, "Error encoding refreshed payment params err=%v", err)
+	}
+}
+
+func fixedPriceInfo(node *core.LivepeerNode, sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, bool, error) {
+	if node == nil || node.Balances == nil {
+		return nil, false, nil
+	}
+	fixedPrice := node.Balances.FixedPrice(sender, manifestID)
+	if fixedPrice == nil {
+		return nil, false, nil
+	}
+	if !fixedPrice.Num().IsInt64() || !fixedPrice.Denom().IsInt64() {
+		return nil, true, fmt.Errorf("fixed price cannot be represented as int64 price info")
+	}
+	return &net.PriceInfo{
+		PricePerUnit:  fixedPrice.Num().Int64(),
+		PixelsPerUnit: fixedPrice.Denom().Int64(),
+	}, true, nil
 }
 
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {

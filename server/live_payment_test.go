@@ -153,7 +153,7 @@ func TestAccountPayment(t *testing.T) {
 			segmentInfo := &SegmentInfoReceiver{
 				sender:    sender,
 				sessionID: sessionID,
-				inPixels:  1000000,
+				units:     1000000,
 				priceInfo: &net.PriceInfo{
 					PricePerUnit:  1,
 					PixelsPerUnit: 1,

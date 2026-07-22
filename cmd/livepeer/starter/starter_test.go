@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -87,6 +88,44 @@ func TestIsLocalURL(t *testing.T) {
 	isLocal, err = isLocalURL("https://7.7.7.7:8935")
 	assert.Nil(err)
 	assert.False(isLocal)
+}
+
+func TestGetServiceURIServiceAddrScheme(t *testing.T) {
+	uri, err := getServiceURI(nil, "127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "https://127.0.0.1:8935", uri.String())
+
+	uri, err = getServiceURI(nil, "http://127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "http://127.0.0.1:8935", uri.String())
+
+	uri, err = getServiceURI(nil, "https://orch.example.com:443")
+	require.NoError(t, err)
+	require.Equal(t, "https://orch.example.com:443", uri.String())
+
+	uri, err = getServiceURI(nil, "gopher://orch.example.com:443")
+	require.NoError(t, err)
+	require.Equal(t, "https://gopher://orch.example.com:443", uri.String())
+
+	uri, err = getServiceURI(nil, "none")
+	require.NoError(t, err)
+	require.Equal(t, "", uri.String())
+}
+
+func TestParseLiveRunnerAddr(t *testing.T) {
+	uri, err := parseLiveRunnerAddr("http://go-livepeer:8935")
+	require.NoError(t, err)
+	require.Equal(t, "http://go-livepeer:8935", uri.String())
+
+	uri, err = parseLiveRunnerAddr("https://public.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "https://public.example.com", uri.String())
+
+	_, err = parseLiveRunnerAddr("go-livepeer:8935")
+	require.Error(t, err)
+
+	_, err = parseLiveRunnerAddr("ftp://go-livepeer:8935")
+	require.Error(t, err)
 }
 
 func TestParseGetGatewayPrices(t *testing.T) {
@@ -377,10 +416,13 @@ func TestPrintConfigRedaction(t *testing.T) {
 
 func TestParseHeaderMap(t *testing.T) {
 	require := require.New(t)
-	headers := parseHeaderMap("Authorization:Bearer abc,X-API-Key:secret,invalid")
+	headers := parseHeaderMap("Authorization: Bearer abc, X-Webhook-Secret: webhook-secret, X-API-Key: secret,invalid, :missing-key")
 	require.Equal("Bearer abc", headers["Authorization"])
+	require.Equal("webhook-secret", headers["X-Webhook-Secret"])
 	require.Equal("secret", headers["X-API-Key"])
 	_, exists := headers["invalid"]
+	require.False(exists)
+	_, exists = headers[""]
 	require.False(exists)
 }
 
@@ -398,6 +440,67 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
 	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
+}
+
+func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-useLiveRunners"}))
+	require.True(*cfg.UseLiveRunners)
+}
+
+func TestNewLivepeerConfig_LiveRunnerConfigFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerConfig", "/tmp/runners.json"}))
+	require.Equal("/tmp/runners.json", *cfg.LiveRunnerConfig)
+}
+
+func TestNewLivepeerConfig_LiveRunnerProxyURLFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerProxyUrl", "https://{proxy}.example.com"}))
+	require.Equal("https://{proxy}.example.com", *cfg.LiveRunnerProxyURL)
+}
+
+func TestNewLivepeerConfig_LiveRunnerAddrFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerAddr", "http://go-livepeer:8935"}))
+	require.Equal("http://go-livepeer:8935", *cfg.LiveRunnerAddr)
+}
+
+func TestNewLivepeerConfig_UseLiveWorkersFlagRemoved(t *testing.T) {
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	NewLivepeerConfig(fs)
+	require.Error(t, fs.Parse([]string{"-useLiveWorkers"}))
+}
+
+func TestLiveRunnerOrchSecretLiteralBehavior(t *testing.T) {
+	secret, err := common.ReadFromFile("literal-secret")
+	require.Error(t, err)
+	require.Equal(t, "literal-secret", secret)
+	require.NotEmpty(t, secret)
+}
+
+func TestLiveRunnerManagerConstruction(t *testing.T) {
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+		ProxyURLTemplate: "https://example.com/run/{proxy}",
+	})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
+	require.NotNil(t, node.LiveRunnerManager)
 }
 
 // Helper struct to capture output for testing
