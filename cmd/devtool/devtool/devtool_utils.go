@@ -283,26 +283,32 @@ func (d *Devtool) InitializeRound() error {
 	// ErrRoundInitialized
 	if err != nil {
 		if err.Error() != "ErrRoundInitialized" {
-			glog.Errorf("Error initializing round: %v", err)
-			return err
+			return tolerateInitializedRound(d.Client, err)
 		}
 	} else {
 		err = d.Client.CheckTx(tx)
 		if err != nil {
-			initialized, initErr := d.Client.CurrentRoundInitialized()
-			if initErr == nil && initialized {
-				glog.Infof("Round initialized despite failed transaction: %v", err)
-				return nil
-			}
-			if initErr != nil {
-				glog.Errorf("Error checking initialized round after failed transaction: %v", initErr)
-			}
-			glog.Errorf("Error initializing round: %v", err)
-			return err
+			return tolerateInitializedRound(d.Client, err)
 		}
 	}
 	glog.Info("Done initializing round.")
 	return nil
+}
+
+// tolerateInitializedRound treats a failed initialization as successful when
+// another initializer completed the same round concurrently. The transaction
+// can fail either during gas estimation or after it has been mined.
+func tolerateInitializedRound(client eth.LivepeerEthClient, initErr error) error {
+	initialized, err := client.CurrentRoundInitialized()
+	if err == nil && initialized {
+		glog.Infof("Round initialized despite failed transaction: %v", initErr)
+		return nil
+	}
+	if err != nil {
+		glog.Errorf("Error checking initialized round after failed transaction: %v", err)
+	}
+	glog.Errorf("Error initializing round: %v", initErr)
+	return initErr
 }
 
 func (d *Devtool) RegisterOrchestrator(cfg DevtoolConfig) error {
