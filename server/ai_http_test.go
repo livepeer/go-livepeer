@@ -1535,7 +1535,7 @@ func TestLiveRunnerSingleShotProxyAllowsPaymentWhileRequestOpen(t *testing.T) {
 	orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
 	orch.paymentCredit = big.NewRat(100, 1)
 
-	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	challenge, oInfo := requestLiveRunnerSingleShotPaymentChallenge(t, lp, "runner-1")
 	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
 
 	proxyDone := make(chan int, 1)
@@ -2179,6 +2179,16 @@ func requestLiveRunnerPaymentChallenge(t *testing.T, lp *lphttp, runnerID string
 	t.Helper()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/session", nil)
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+}
+
+func requestLiveRunnerSingleShotPaymentChallenge(t *testing.T, lp *lphttp, runnerID string) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/"+runnerID+"/app/v1/foo", strings.NewReader(`{"prompt":"hi"}`))
 	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
