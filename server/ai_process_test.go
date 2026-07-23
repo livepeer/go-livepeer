@@ -9,6 +9,20 @@ import (
 	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
+func TestProcessAIRequest_DeprecatedPipelineRejected(t *testing.T) {
+	// A deprecated batch pipeline request must be rejected with a
+	// PipelineDeprecatedError before any orchestrator selection happens, so an
+	// empty aiRequestParams is sufficient to reach the guard.
+	_, err := processAIRequest(context.Background(), aiRequestParams{}, worker.GenTextToImageJSONRequestBody{})
+	if err == nil {
+		t.Fatal("expected deprecated pipeline error, got nil")
+	}
+	var deprecatedErr *PipelineDeprecatedError
+	if !errors.As(err, &deprecatedErr) {
+		t.Fatalf("expected *PipelineDeprecatedError, got %T: %v", err, err)
+	}
+}
+
 func Test_submitLLM(t *testing.T) {
 	type args struct {
 		ctx    context.Context

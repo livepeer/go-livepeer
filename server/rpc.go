@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -84,13 +83,6 @@ type Orchestrator interface {
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
-	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
-	RemoveExternalCapability(extCapability string) error
-	GetUrlForCapability(extCapability string) string
-	CheckExternalCapabilityCapacity(extCapability string) int64
-	ReserveExternalCapabilityCapacity(extCapability string) error
-	FreeExternalCapabilityCapacity(extCapability string) error
-	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -197,7 +189,6 @@ type lphttp struct {
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
 	trickleSrv   *trickle.Server
-	byocSrv      *byoc.BYOCOrchestratorServer
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
@@ -251,8 +242,6 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
-	//API for dynamic capabilities
-	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {

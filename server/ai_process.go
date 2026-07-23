@@ -62,6 +62,20 @@ func (e *BadRequestError) Error() string {
 	return e.err.Error()
 }
 
+// pipelineDeprecationSunset is the advertised sunset date (RFC 1123) for
+// deprecated AI pipelines, surfaced via the HTTP Sunset header.
+const pipelineDeprecationSunset = "Wed, 31 Dec 2025 23:59:59 GMT"
+
+// PipelineDeprecatedError indicates a request targeted a deprecated AI pipeline
+// (the batch request/response pipelines and BYOC). It maps to HTTP 410 Gone.
+type PipelineDeprecatedError struct {
+	pipeline string
+}
+
+func (e *PipelineDeprecatedError) Error() string {
+	return fmt.Sprintf("pipeline %q is deprecated and no longer supported", e.pipeline)
+}
+
 // parseBadRequestError checks if the error is a bad request error and returns a BadRequestError.
 func parseBadRequestError(err error) *BadRequestError {
 	if err == nil {
@@ -1484,6 +1498,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
+	if core.IsDeprecatedCapability(cap) {
+		return nil, &PipelineDeprecatedError{pipeline: capName}
+	}
 	if capName != "Live video to video" {
 		ctx = clog.AddVal(ctx, "capability", capName)
 	}

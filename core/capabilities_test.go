@@ -751,6 +751,57 @@ func TestMinRunnerVersion(t *testing.T) {
 	assert.Equal("", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "other"))
 }
 
+func TestCapability_DeprecatedCapabilitiesNotAdvertised(t *testing.T) {
+	assert := assert.New(t)
+
+	// The batch AI pipelines and BYOC are deprecated; live-video-to-video and
+	// transcoding capabilities are not.
+	for _, c := range []Capability{
+		Capability_TextToImage, Capability_ImageToImage, Capability_ImageToVideo,
+		Capability_Upscale, Capability_AudioToText, Capability_SegmentAnything2,
+		Capability_LLM, Capability_ImageToText, Capability_TextToSpeech, Capability_BYOC,
+	} {
+		assert.True(IsDeprecatedCapability(c), "expected %v to be deprecated", CapabilityNameLookup[c])
+	}
+	for _, c := range []Capability{Capability_LiveVideoToVideo, Capability_H264, Capability_AuthToken} {
+		assert.False(IsDeprecatedCapability(c), "expected %v to not be deprecated", CapabilityNameLookup[c])
+	}
+
+	hasBit := func(bitstring []uint64, c Capability) bool {
+		word := int(c) / 64
+		if word >= len(bitstring) {
+			return false
+		}
+		return bitstring[word]&(uint64(1)<<(uint(c)%64)) != 0
+	}
+
+	caps := NewCapabilities(
+		[]Capability{Capability_LiveVideoToVideo, Capability_TextToImage, Capability_LLM, Capability_H264},
+		nil,
+	)
+
+	// The general serializer must NOT strip deprecated capabilities, so that
+	// round-trip serialization of an arbitrary capability set is preserved.
+	netCaps := caps.ToNetCapabilities()
+	assert.True(hasBit(netCaps.Bitstring, Capability_TextToImage), "ToNetCapabilities should preserve deprecated caps")
+	assert.True(hasBit(netCaps.Bitstring, Capability_LLM))
+	assert.Contains(netCaps.Capacities, uint32(Capability_TextToImage))
+
+	// The advertise-time strip must drop deprecated caps and keep the rest.
+	advertised := stripDeprecatedCapabilities(netCaps)
+	assert.False(hasBit(advertised.Bitstring, Capability_TextToImage), "advertised caps must not include deprecated TextToImage")
+	assert.False(hasBit(advertised.Bitstring, Capability_LLM), "advertised caps must not include deprecated LLM")
+	assert.True(hasBit(advertised.Bitstring, Capability_LiveVideoToVideo), "advertised caps must keep LiveVideoToVideo")
+	assert.True(hasBit(advertised.Bitstring, Capability_H264), "advertised caps must keep transcoding H264")
+	assert.NotContains(advertised.Capacities, uint32(Capability_TextToImage), "advertised capacities must not include deprecated caps")
+	assert.NotContains(advertised.Capacities, uint32(Capability_LLM))
+	assert.Contains(advertised.Capacities, uint32(Capability_LiveVideoToVideo))
+
+	// The strip must not mutate its input.
+	assert.True(hasBit(netCaps.Bitstring, Capability_TextToImage), "stripDeprecatedCapabilities must not mutate its input")
+	assert.Contains(netCaps.Capacities, uint32(Capability_TextToImage))
+}
+
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
 	// the capability should be added by AddCapacity
 	for modelID, modelConstraint := range constraint.Models {

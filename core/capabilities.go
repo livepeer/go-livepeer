@@ -91,6 +91,79 @@ const (
 	Capability_BYOC                       Capability = 37
 )
 
+// deprecatedCapabilities are AI capabilities that are being sunset. The batch
+// (request/response) AI pipelines and BYOC are deprecated in favor of the
+// live-video-to-video pipeline and transcoding. The enum values above are
+// retained and MUST NOT be renumbered (bit positions are wire format); these
+// capabilities are simply no longer advertised, and requests for them are
+// rejected with HTTP 410 Gone.
+var deprecatedCapabilities = map[Capability]bool{
+	Capability_TextToImage:      true,
+	Capability_ImageToImage:     true,
+	Capability_ImageToVideo:     true,
+	Capability_Upscale:          true,
+	Capability_AudioToText:      true,
+	Capability_SegmentAnything2: true,
+	Capability_LLM:              true,
+	Capability_ImageToText:      true,
+	Capability_TextToSpeech:     true,
+	Capability_BYOC:             true,
+}
+
+// IsDeprecatedCapability reports whether the given capability has been deprecated
+// and should no longer be advertised or served.
+func IsDeprecatedCapability(cap Capability) bool {
+	return deprecatedCapabilities[cap]
+}
+
+// stripDeprecatedCapabilities returns a copy of netCaps with deprecated
+// capabilities removed from the bitstring, capacities, and per-capability
+// constraints, so they are not advertised to gateways. The input is not mutated.
+// This is applied only when an orchestrator advertises its capabilities, not in
+// the general ToNetCapabilities serializer, so round-trip serialization of an
+// arbitrary capability set is preserved.
+func stripDeprecatedCapabilities(netCaps *net.Capabilities) *net.Capabilities {
+	if netCaps == nil {
+		return nil
+	}
+
+	bitstring := make([]uint64, len(netCaps.Bitstring))
+	copy(bitstring, netCaps.Bitstring)
+	for capability := range deprecatedCapabilities {
+		word := int(capability) / 64
+		if word < len(bitstring) {
+			bitstring[word] &^= uint64(1) << (uint(capability) % 64)
+		}
+	}
+
+	out := &net.Capabilities{
+		Bitstring:   bitstring,
+		Mandatories: netCaps.Mandatories,
+		Version:     netCaps.Version,
+		Capacities:  make(map[uint32]uint32, len(netCaps.Capacities)),
+	}
+	for capability, capacity := range netCaps.Capacities {
+		if IsDeprecatedCapability(Capability(capability)) {
+			continue
+		}
+		out.Capacities[capability] = capacity
+	}
+	if netCaps.Constraints != nil {
+		perCap := make(map[uint32]*net.Capabilities_CapabilityConstraints, len(netCaps.Constraints.PerCapability))
+		for capability, constraints := range netCaps.Constraints.PerCapability {
+			if IsDeprecatedCapability(Capability(capability)) {
+				continue
+			}
+			perCap[capability] = constraints
+		}
+		out.Constraints = &net.Capabilities_Constraints{
+			MinVersion:    netCaps.Constraints.MinVersion,
+			PerCapability: perCap,
+		}
+	}
+	return out
+}
+
 var CapabilityNameLookup = map[Capability]string{
 	Capability_Invalid:                    "Invalid",
 	Capability_Unused:                     "Unused",

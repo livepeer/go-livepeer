@@ -497,6 +497,13 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if core.IsDeprecatedCapability(cap) {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Sunset", pipelineDeprecationSunset)
+		respondWithError(w, fmt.Sprintf("pipeline %q is deprecated and no longer supported", pipeline), http.StatusGone)
+		return
+	}
+
 	clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
 
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)

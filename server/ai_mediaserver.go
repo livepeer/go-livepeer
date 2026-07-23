@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/cenkalti/backoff"
@@ -122,9 +121,6 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
-	//API for dynamic capabilities
-	ls.byocSrv = byoc.NewBYOCGatewayServer(ls.LivepeerNode, &StreamStatusStore, whipServer, whepServer, ls.HTTPMux)
-
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 
 	startHearbeats(ctx, ls.LivepeerNode)
@@ -142,6 +138,21 @@ func generateWhepUrl(streamName, requestID string) string {
 	}
 	whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
 	return whepURL
+}
+
+// respondDeprecatedPipeline writes an HTTP 410 Gone deprecation response when err
+// is a *PipelineDeprecatedError and returns true; otherwise it returns false and
+// leaves the response untouched so the caller can handle other error types.
+func respondDeprecatedPipeline(ctx context.Context, w http.ResponseWriter, err error) bool {
+	var deprecatedErr *PipelineDeprecatedError
+	if !errors.As(err, &deprecatedErr) {
+		return false
+	}
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("Sunset", pipelineDeprecationSunset)
+	w.Header().Set("Warning", fmt.Sprintf("299 - %q", deprecatedErr.Error()))
+	respondJsonError(ctx, w, err, http.StatusGone)
+	return true
 }
 
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
@@ -165,6 +176,9 @@ func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *htt
 
 		resp, err := processorFunc(ctx, params, req)
 		if err != nil {
+			if respondDeprecatedPipeline(ctx, w, err) {
+				return
+			}
 			var serviceUnavailableErr *ServiceUnavailableError
 			var badRequestErr *BadRequestError
 			if errors.As(err, &serviceUnavailableErr) {
@@ -223,6 +237,9 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 			resp, err := processImageToVideo(ctx, params, req)
 			if err != nil {
+				if respondDeprecatedPipeline(ctx, w, err) {
+					return
+				}
 				var serviceUnavailableErr *ServiceUnavailableError
 				var badRequestErr *BadRequestError
 				if errors.As(err, &serviceUnavailableErr) {
@@ -329,6 +346,9 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		start := time.Now()
 		resp, err := processLLM(ctx, params, req)
 		if err != nil {
+			if respondDeprecatedPipeline(ctx, w, err) {
+				return
+			}
 			var e *ServiceUnavailableError
 			if errors.As(err, &e) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
