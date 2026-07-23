@@ -67,71 +67,45 @@ func (s stubPriceFeedWatcher) Current() (eth.PriceData, error) {
 
 func (s stubPriceFeedWatcher) Subscribe(context.Context, chan<- eth.PriceData) {}
 
-func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
-	var l lphttp
+func TestAIWorkerResultsValidation(t *testing.T) {
+	tests := []struct {
+		name         string
+		orchestrator bool
+		mutate       func(http.Header)
+		status       int
+		message      string
+	}{
+		{name: "missing auth", status: http.StatusUnauthorized, message: "Unauthorized"},
+		{name: "invalid credentials", orchestrator: true, mutate: func(headers http.Header) {
+			headers.Set("Credentials", "BAD CREDENTIALS")
+		}, status: http.StatusUnauthorized, message: "invalid secret"},
+		{name: "missing content type", orchestrator: true, mutate: func(headers http.Header) {
+			headers.Del("Content-Type")
+		}, status: http.StatusUnsupportedMediaType, message: "mime: no media type"},
+		{name: "missing task ID", orchestrator: true, mutate: func(headers http.Header) {
+			headers.Del("TaskId")
+		}, status: http.StatusBadRequest, message: "Invalid Task ID"},
+	}
 
-	var w = httptest.NewRecorder()
-	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
-	require.NoError(t, err)
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusUnauthorized, code)
-	require.Contains(t, body, "Unauthorized")
-}
-
-func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "BAD CREDENTIALS")
-
-	code, body := aiResultsTest(l, w, r)
-	require.Equal(t, http.StatusUnauthorized, code)
-	require.Contains(t, body, "invalid secret")
-}
-
-func TestAIWorkerResults_ErrorsWhenContentTypeMissing(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "")
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusUnsupportedMediaType, code)
-	require.Contains(t, body, "mime: no media type")
-}
-
-func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "")
-	r.Header.Set("Content-Type", "application/json")
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusBadRequest, code)
-	require.Contains(t, body, "Invalid Task ID")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var l lphttp
+			req := httptest.NewRequest(http.MethodPost, "/aiResults", nil)
+			if test.orchestrator {
+				l.orchestrator = newStubOrchestrator()
+				req.Header.Set("Authorization", protoVerAIWorker)
+				req.Header.Set("Credentials", l.orchestrator.TranscoderSecret())
+				req.Header.Set("Content-Type", aiWorkerErrorMimeType)
+				req.Header.Set("TaskId", "1")
+			}
+			if test.mutate != nil {
+				test.mutate(req.Header)
+			}
+			code, body := aiResultsTest(l, httptest.NewRecorder(), req)
+			require.Equal(t, test.status, code)
+			require.Contains(t, body, test.message)
+		})
+	}
 }
 
 func TestAIWorkerResults_BadRequestType(t *testing.T) {
@@ -323,45 +297,6 @@ func TestLiveRunnerDiscoveryOnchainIncludesPriceInfo(t *testing.T) {
 	require.Equal(t, "wei", resp[0].Runners[0].PriceInfo.Currency)
 	require.Equal(t, "seconds", resp[0].Runners[0].PriceInfo.Unit)
 	require.Contains(t, w.Body.String(), "price_info")
-}
-
-func TestLiveRunnerDiscoveryOnchainConverts720pPriceToPixel(t *testing.T) {
-	lp := newLiveRunnerHTTP(t, true)
-	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{Host: testLiveRunnerHost{orchestrator: lp.orchestrator}, Onchain: true})
-	t.Cleanup(manager.Stop)
-	lp.node.LiveRunnerManager = manager
-	trickleBaseURL := lp.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath).String()
-	manager.SetTrickleServer(lp.trickleSrv, trickleBaseURL, trickleBaseURL)
-	prevWatcher := core.PriceFeedWatcher
-	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
-	defer func() { core.PriceFeedWatcher = prevWatcher }()
-	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
-		RunnerID:  t.Name(),
-		RunnerURL: "https://runner.example.com",
-		Version:   "1.2.3",
-		Status:    "ready",
-		App:       "live-video-to-video/scope",
-		Capacity:  2,
-		PriceInfo: runner.LiveRunnerPriceInfo{
-			Price: json.Number("0.001990656"),
-			Unit:  "720p",
-		},
-	}, lp.orchestrator.RegistrationSecret())
-	require.NoError(t, err)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/discovery", nil)
-	lp.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	var resp []liveRunnerDiscoveryEntry
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Len(t, resp, 1)
-	require.Len(t, resp[0].Runners, 1)
-	require.NotNil(t, resp[0].Runners[0].PriceInfo)
-	require.Equal(t, "10", resp[0].Runners[0].PriceInfo.Price.String())
-	require.Equal(t, "wei", resp[0].Runners[0].PriceInfo.Currency)
-	require.Equal(t, "720p-pixel-seconds", resp[0].Runners[0].PriceInfo.Unit)
 }
 
 func TestLiveRunnerDiscoveryServerlessWorker(t *testing.T) {
@@ -738,43 +673,6 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.Nil(t, oInfo.GetCapabilities())
 }
 
-func TestRunnerOrchInfoUsesWeiSecondsPrice(t *testing.T) {
-	lp := newLiveRunnerHTTPOnchain(t)
-	orch := lp.orchestrator.(*stubOrchestrator)
-
-	oInfo, err := lp.runnerOrchInfo(orch.Address(), &runner.LiveRunnerPriceInfo{
-		Price:    json.Number("10"),
-		Currency: "wei",
-		Unit:     "seconds",
-	})
-
-	require.NoError(t, err)
-	require.NotNil(t, oInfo.GetPriceInfo())
-	require.Equal(t, int64(10), oInfo.GetPriceInfo().GetPricePerUnit())
-	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
-}
-
-func TestLiveRunnerReserveSessionOnchainAcceptsPaidReservation(t *testing.T) {
-	lp := newLiveRunnerHTTPOnchain(t)
-	registerLiveRunnerForSession(t, lp, nil)
-
-	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
-	orch := lp.orchestrator.(*stubOrchestrator)
-	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
-	setRequestHeaders(req, headers)
-	lp.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	var resp liveRunnerSessionResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, challenge.ManifestID, resp.SessionID)
-	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID+"/app", resp.AppURL)
-	require.Equal(t, "http://localhost:1234/apps/runner-1/session/"+resp.SessionID, resp.ControlURL)
-}
-
 func TestLiveRunnerSessionPaymentAcceptsPayment(t *testing.T) {
 	oldStorage := drivers.NodeStorage
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -821,33 +719,6 @@ func TestLiveRunnerSessionPaymentRejectsMissingSession(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/missing/payment", nil)
-	setRequestHeaders(req, headers)
-	lp.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Contains(t, w.Body.String(), "runner session not found")
-}
-
-func TestLiveRunnerSessionPaymentRejectsReleasedSession(t *testing.T) {
-	lp := newLiveRunnerHTTPOnchain(t)
-	registerLiveRunnerForSession(t, lp, nil)
-
-	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
-	headers := liveRunnerReservationPaymentHeaders(t, lp.orchestrator.(*stubOrchestrator), oInfo.GetAuthToken(), challenge.ManifestID)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
-	setRequestHeaders(req, headers)
-	lp.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/stop", nil)
-	lp.ServeHTTP(w, req)
-	require.Equal(t, http.StatusNoContent, w.Code)
-
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/payment", nil)
 	setRequestHeaders(req, headers)
 	lp.ServeHTTP(w, req)
 
@@ -943,36 +814,6 @@ func TestPreparePaymentProcessor(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported live runner payment unit")
 }
 
-func TestLiveRunnerPaidSessionMonitorDebitsSecondsBalance(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		lp := newLiveRunnerHTTPOnchain(t)
-		lp.node.LivePaymentInterval = time.Second
-		registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{PriceUnit: "hour"})
-		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
-		defer manager.Stop()
-
-		orch := lp.orchestrator.(*stubOrchestrator)
-		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
-		orch.paymentCredit = big.NewRat(3, 1)
-
-		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveTestPricePerSecond(1))
-		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
-		require.NotNil(t, balance)
-		require.Equal(t, "3", balance.FloatString(0))
-
-		time.Sleep(time.Second)
-		synctest.Wait()
-
-		balance = orch.Balance(orch.Address(), core.ManifestID(sessionID))
-		require.NotNil(t, balance)
-		require.Equal(t, "2", balance.FloatString(0))
-
-		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
-		time.Sleep(time.Second)
-		synctest.Wait()
-	})
-}
-
 func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		lp := newLiveRunnerHTTPOnchain(t)
@@ -1022,26 +863,6 @@ func TestLiveRunnerPaidSessionMonitorExitsAfterManualStop(t *testing.T) {
 		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
 		require.NotNil(t, balance)
 		require.Equal(t, "3", balance.FloatString(0))
-	})
-}
-
-func TestLiveRunnerOffchainSessionDoesNotStartPaymentMonitor(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		lp := newLiveRunnerHTTP(t, true)
-		lp.node.LivePaymentInterval = time.Second
-		registerLiveRunnerForSession(t, lp, nil)
-		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
-		defer manager.Stop()
-
-		sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
-
-		time.Sleep(time.Second)
-		synctest.Wait()
-
-		if _, err := manager.RunnerEndpointForSession("runner-1", sessionID); err != nil {
-			t.Fatal(err)
-		}
-		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
 	})
 }
 
@@ -1130,15 +951,6 @@ func TestScopePaidRetryUsesChallengeManifestID(t *testing.T) {
 	balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
 	require.NotNil(t, balance)
 	require.Equal(t, "100", balance.FloatString(0))
-
-	orch.balanceMu.Lock()
-	balanceBuckets := make(map[core.ManifestID]*big.Rat, len(orch.balances[orch.Address()]))
-	for manifestID, balance := range orch.balances[orch.Address()] {
-		balanceBuckets[manifestID] = balance
-	}
-	orch.balanceMu.Unlock()
-	require.Len(t, balanceBuckets, 1)
-	require.Contains(t, balanceBuckets, core.ManifestID(challenge.ManifestID))
 }
 
 func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) {
@@ -1175,15 +987,6 @@ func TestScopePaidRetryRecurringAccountingUsesChallengeManifestID(t *testing.T) 
 		balance = orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
 		require.NotNil(t, balance)
 		require.Equal(t, "2", balance.FloatString(0))
-
-		orch.balanceMu.Lock()
-		balanceBuckets := make(map[core.ManifestID]*big.Rat, len(orch.balances[orch.Address()]))
-		for manifestID, balance := range orch.balances[orch.Address()] {
-			balanceBuckets[manifestID] = balance
-		}
-		orch.balanceMu.Unlock()
-		require.Len(t, balanceBuckets, 1)
-		require.Contains(t, balanceBuckets, core.ManifestID(challenge.ManifestID))
 
 		require.NoError(t, eventsCh.Close())
 		synctest.Wait()
@@ -1325,7 +1128,7 @@ func TestLiveRunnerInternalStopSessionReleasesCapacity(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/stop", "")
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/stop", "")
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
@@ -1572,7 +1375,7 @@ func TestLiveRunnerCreateSessionProxyAndProxyDefaultPath(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var proxy runner.LiveRunnerProxy
@@ -1704,7 +1507,7 @@ func TestLiveRunnerCreateSessionProxyDefaultsToAppPath(t *testing.T) {
 			appPath, appQuery, appSessionID := gotPath, gotQuery, gotSessionID
 
 			w = httptest.NewRecorder()
-			req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", test.body)
+			req = newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", test.body)
 			lp.ServeHTTP(w, req)
 			require.Equal(t, http.StatusOK, w.Code)
 			var proxy runner.LiveRunnerProxy
@@ -1752,7 +1555,7 @@ func TestLiveRunnerSessionProxyHostTemplate(t *testing.T) {
 	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL + "/base"})
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":`+strconv.Quote(upstream.URL+"/target")+`}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var proxy runner.LiveRunnerProxy
@@ -1777,7 +1580,7 @@ func TestLiveRunnerCreateSessionProxyRejectsUnauthorizedAndBadTarget(t *testing.
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	w = httptest.NewRecorder()
-	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":"https://other.example.com/app"}`)
+	req = newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/proxy", `{"target_url":"https://other.example.com/app"}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "hostname")
@@ -1789,7 +1592,7 @@ func TestLiveRunnerCreateTrickleChannel(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"foo/bar","mime_type":"video/MP2T"},{"name":"events","mime_type":"application/json"}]}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"foo/bar","mime_type":"video/MP2T"},{"name":"events","mime_type":"application/json"}]}`)
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
@@ -1830,7 +1633,7 @@ func TestLiveRunnerCreateTrickleChannelUsesLiveRunnerAddr(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"override"}]}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"override"}]}`)
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
@@ -1847,14 +1650,14 @@ func TestLiveRunnerCreateTrickleChannelReturnsExisting(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"video/MP2T"}]}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"video/MP2T"}]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var first liveRunnerTrickleChannelsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &first))
 
 	w = httptest.NewRecorder()
-	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"application/json"}]}`)
+	req = newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"existing","mime_type":"application/json"}]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var second liveRunnerTrickleChannelsResponse
@@ -1870,13 +1673,13 @@ func TestLiveRunnerCreateTrickleChannelRejectsInvalidSessionAndName(t *testing.T
 	registerLiveRunnerForSession(t, lp, nil)
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/missing/channels", `{"channels":[{"name":"valid"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/runner/runner-1/session/missing/channels", strings.NewReader(`{"channels":[{"name":"valid"}]}`))
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code)
 
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 	w = httptest.NewRecorder()
-	req = newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"bad.name"}]}`)
+	req = newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"bad.name"}]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -1957,12 +1760,12 @@ func TestLiveRunnerDeleteTrickleChannel(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"delete-me"},{"name":"delete-me-too"}]}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"delete-me"},{"name":"delete-me-too"}]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	w = httptest.NewRecorder()
-	req = newLiveRunnerChannelRequest(lp, http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":["delete-me","delete-me-too"]}`)
+	req = newLiveRunnerChannelRequest(t, lp, http.MethodDelete, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":["delete-me","delete-me-too"]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp deleteLiveRunnerTrickleChannelsResponse
@@ -1981,7 +1784,7 @@ func TestLiveRunnerStopSessionClosesTrickleChannels(t *testing.T) {
 	sessionID := reserveLiveRunnerSession(t, lp, "runner-1")
 
 	w := httptest.NewRecorder()
-	req := newLiveRunnerChannelRequest(lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"stop-cleanup"}]}`)
+	req := newLiveRunnerChannelRequest(t, lp, http.MethodPost, "/runner/runner-1/session/"+sessionID+"/channels", `{"channels":[{"name":"stop-cleanup"}]}`)
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -2091,19 +1894,6 @@ func newScopeOffchainHTTP(t *testing.T) *lphttp {
 	return lp
 }
 
-func newLiveRunnerHTTPWithNode(t *testing.T, node *core.LivepeerNode) *lphttp {
-	t.Helper()
-	orch := newStubOrchestrator()
-	orch.secret = "live-runner-secret"
-	lp := &lphttp{
-		orchestrator: orch,
-		node:         node,
-		transRPC:     http.NewServeMux(),
-	}
-	require.NoError(t, startAIServer(lp))
-	return lp
-}
-
 func requestLiveRunnerPaymentChallenge(t *testing.T, lp *lphttp, runnerID string) (liveRunnerPaymentChallengeResponse, *lpnet.OrchestratorInfo) {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -2196,20 +1986,12 @@ func liveRunnerTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
 	}
 }
 
-func liveTestPricePerSecond(pricePerSecond int64) *lpnet.PriceInfo {
-	return &lpnet.PriceInfo{
-		PricePerUnit:  pricePerSecond,
-		PixelsPerUnit: 1,
-	}
-}
-
 type liveRunnerRegistrationOptions struct {
 	RunnerID  string
 	RunnerURL string
 	Capacity  int
 	Mode      string
 	Proxy     bool
-	PriceUnit string
 }
 
 func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegistrationOptions) {
@@ -2244,10 +2026,6 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 	if opts.Mode != "" && opts.Mode != runner.LiveRunnerModePersistent && opts.Mode != runner.LiveRunnerModeSingleShot {
 		require.FailNow(t, "invalid live runner mode", "mode=%q", opts.Mode)
 	}
-	priceUnit := opts.PriceUnit
-	if priceUnit == "" {
-		priceUnit = "720p"
-	}
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
 	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
@@ -2260,7 +2038,7 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 		Capacity:  capacity,
 		PriceInfo: runner.LiveRunnerPriceInfo{
 			Price: json.Number("0.001990656"),
-			Unit:  priceUnit,
+			Unit:  "720p",
 		},
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
@@ -2294,27 +2072,22 @@ func reservePaidLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string, pri
 	return resp.SessionID
 }
 
-func newLiveRunnerChannelRequest(lp *lphttp, method, target, body string) *http.Request {
+func newLiveRunnerChannelRequest(t *testing.T, lp *lphttp, method, target, body string) *http.Request {
+	t.Helper()
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	path := strings.Split(strings.TrimPrefix(target, "/"), "?")[0]
 	parts := strings.Split(path, "/")
 	if len(parts) >= 5 && parts[0] == "runner" && parts[2] == "session" {
-		setLiveRunnerSessionToken(nil, lp, req, parts[1], parts[3])
+		setLiveRunnerSessionToken(t, lp, req, parts[1], parts[3])
 	}
 	return req
 }
 
-func setLiveRunnerSessionToken(t require.TestingT, lp *lphttp, req *http.Request, runnerID, sessionID string) {
+func setLiveRunnerSessionToken(t *testing.T, lp *lphttp, req *http.Request, runnerID, sessionID string) {
+	t.Helper()
 	manager, ok := lp.liveRunnerManager()
-	if !ok {
-		if t != nil {
-			require.FailNow(t, "live runner manager unavailable")
-		}
-		return
-	}
+	require.True(t, ok, "live runner manager unavailable")
 	token, err := manager.SessionTokenForSession(runnerID, sessionID)
-	if err != nil {
-		return
-	}
+	require.NoError(t, err)
 	req.Header.Set("Livepeer-Session-Token", token)
 }

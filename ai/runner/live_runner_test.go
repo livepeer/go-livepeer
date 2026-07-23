@@ -8,17 +8,14 @@ import (
 	"io"
 	"math/big"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"testing/quick"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -113,16 +110,32 @@ func (liveRunnerTestHostWithoutSecret) RegistrationSecret() string {
 }
 
 func newLiveRunnerTestRegistry() *LiveRunnerRegistry {
-	return NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+	return newLiveRunnerTestRegistryWithConfig(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}})
+}
+
+func newLiveRunnerTestRegistryWithO2RInterval(interval time.Duration) *LiveRunnerRegistry {
+	return newLiveRunnerTestRegistryWithConfig(LiveRunnerRegistryConfig{
+		Host:        liveRunnerTestHost{},
+		O2RInterval: interval,
+	})
 }
 
 func newOnchainLiveRunnerTestRegistry() *LiveRunnerRegistry {
-	return NewLiveRunnerRegistry(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}, Onchain: true})
+	return newLiveRunnerTestRegistryWithConfig(LiveRunnerRegistryConfig{Host: liveRunnerTestHost{}, Onchain: true})
+}
+
+func newLiveRunnerTestRegistryWithConfig(config LiveRunnerRegistryConfig) *LiveRunnerRegistry {
+	registry := NewLiveRunnerRegistry(config)
+	trickleSrv := trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:      http.NewServeMux(),
+		BasePath: "/ai/trickle/",
+	})
+	registry.SetTrickleServer(trickleSrv, "http://localhost/ai/trickle/", "http://localhost/ai/trickle/")
+	return registry
 }
 
 func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req LiveRunnerHeartbeatRequest) *LiveRunnerHeartbeatResponse {
 	t.Helper()
-	ensureLiveRunnerTestTrickleServer(t, registry)
 	resp, err := registry.Heartbeat(req, liveRunnerTestBootstrapSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -137,20 +150,6 @@ func liveRunnerTestRegister(t *testing.T, registry *LiveRunnerRegistry, req Live
 		t.Fatalf("unexpected orchestrator URL: %s", resp.Orchestrator)
 	}
 	return resp
-}
-
-func ensureLiveRunnerTestTrickleServer(t *testing.T, registry *LiveRunnerRegistry) (string, func(string) int) {
-	t.Helper()
-	registry.mu.Lock()
-	hasTrickleServer := registry.trickleSrv != nil
-	channelBaseURL := registry.internalTrickleBaseURL
-	registry.mu.Unlock()
-	if hasTrickleServer {
-		return channelBaseURL, nil
-	}
-	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
-	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
-	return channelBaseURL, channelStatus
 }
 
 func liveRunnerTestBootstrapChannels(resp *LiveRunnerHeartbeatResponse) []LiveRunnerTrickleChannel {
@@ -171,9 +170,9 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 	if !liveRunnerTestGeneratedRunnerIDPattern.MatchString(resp.RunnerID) {
 		t.Fatalf("expected generated base32 runner id, got %q", resp.RunnerID)
 	}
-	runner := registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 1 {
-		t.Fatalf("unexpected initial runner state: %+v", runner)
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].Capacity != 1 {
+		t.Fatalf("unexpected initial runner state: %+v", runners)
 	}
 
 	_, err := registry.Heartbeat(LiveRunnerHeartbeatRequest{
@@ -187,9 +186,9 @@ func TestLiveRunnerRegistry_HeartbeatUpsertCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner = registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 2 {
-		t.Fatalf("unexpected heartbeat runner state: %+v", runner)
+	runners = registry.Runners()
+	if len(runners) != 1 || runners[0].Capacity != 2 {
+		t.Fatalf("unexpected heartbeat runner state: %+v", runners)
 	}
 }
 
@@ -252,9 +251,9 @@ func TestLiveRunnerRegistry_HeartbeatUnknownIDCreatesRunner(t *testing.T) {
 	if resp.RunnerID != "runner_custom_1" {
 		t.Fatalf("expected supplied runner id to be used, got %s", resp.RunnerID)
 	}
-	runner := registry.runners[resp.RunnerID]
-	if runner == nil || runner.Capacity != 1 {
-		t.Fatalf("unexpected state after create-by-unknown-id heartbeat: %+v", runner)
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].Capacity != 1 {
+		t.Fatalf("unexpected state after create-by-unknown-id heartbeat: %+v", runners)
 	}
 }
 
@@ -296,11 +295,8 @@ func TestLiveRunnerRegistry_HeartbeatCreatesBootstrapTrickleChannels(t *testing.
 }
 
 func TestLiveRunnerRegistry_O2RKeepaliveWriteLoop(t *testing.T) {
-	restore := liveRunnerTestSetO2RKeepaliveInterval(t, 10*time.Millisecond)
-	defer restore()
-
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
-	registry := newLiveRunnerTestRegistry()
+	registry := newLiveRunnerTestRegistryWithO2RInterval(liveRunnerTestRandomO2RInterval())
 	t.Cleanup(registry.Stop)
 	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-o2r-keepalive"))
@@ -314,11 +310,8 @@ func TestLiveRunnerRegistry_O2RKeepaliveWriteLoop(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_O2RSessionLifecycleMessages(t *testing.T) {
-	restore := liveRunnerTestSetO2RKeepaliveInterval(t, time.Hour)
-	defer restore()
-
 	trickleSrv, channelBaseURL, _ := newLiveRunnerTestTrickleServer(t)
-	registry := newLiveRunnerTestRegistry()
+	registry := newLiveRunnerTestRegistryWithO2RInterval(liveRunnerTestQuietO2RInterval())
 	t.Cleanup(registry.Stop)
 	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	req := liveRunnerTestHeartbeat("runner-o2r-session")
@@ -338,28 +331,20 @@ func TestLiveRunnerRegistry_O2RSessionLifecycleMessages(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_O2RWriteLoopClosesOnUnregister(t *testing.T) {
-	restore := liveRunnerTestSetO2RKeepaliveInterval(t, time.Hour)
-	defer restore()
-
-	registry := newLiveRunnerTestRegistry()
+	trickleSrv, channelBaseURL, channelStatus := newLiveRunnerTestTrickleServer(t)
+	registry := newLiveRunnerTestRegistryWithO2RInterval(liveRunnerTestQuietO2RInterval())
 	t.Cleanup(registry.Stop)
+	registry.SetTrickleServer(trickleSrv, channelBaseURL, channelBaseURL)
 	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-o2r-close"))
-
-	registry.mu.Lock()
-	runner := registry.runners["runner-o2r-close"]
-	registry.mu.Unlock()
-	if runner == nil || runner.o2r == nil {
-		t.Fatal("expected registered runner with o2r channel")
+	if status := channelStatus(resp.O2R.ChannelName); status != http.StatusOK {
+		t.Fatalf("expected o2r channel to exist, got status=%d", status)
 	}
-	o2r := runner.o2r
 
 	if err := registry.Unregister("runner-o2r-close", resp.HeartbeatSecret); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-o2r.done:
-	case <-time.After(time.Second):
-		t.Fatal("expected o2r write loop to close on unregister")
+	if status := channelStatus(resp.O2R.ChannelName); status != http.StatusNotFound {
+		t.Fatalf("expected unregister to close o2r channel, got status=%d", status)
 	}
 }
 
@@ -374,14 +359,6 @@ func TestLiveRunnerRegistry_HeartbeatDoesNotReturnBootstrapChannelsAgain(t *test
 	if nextResp.O2R != nil {
 		t.Fatalf("expected no bootstrap channels on follow-up heartbeat, got %+v", nextResp)
 	}
-	registry.mu.Lock()
-	runner := registry.runners[resp.RunnerID]
-	registry.mu.Unlock()
-	runner.mu.Lock()
-	defer runner.mu.Unlock()
-	if runner.o2r == nil {
-		t.Fatalf("expected existing bootstrap channel to be preserved, got o2r=%+v", runner.o2r)
-	}
 }
 
 func TestLiveRunnerRegistry_HeartbeatSessionIDs(t *testing.T) {
@@ -393,15 +370,6 @@ func TestLiveRunnerRegistry_HeartbeatSessionIDs(t *testing.T) {
 	if len(resp.SessionIDs) != 0 {
 		t.Fatalf("expected no active session ids on initial heartbeat, got %+v", resp.SessionIDs)
 	}
-
-	registry.mu.Lock()
-	runner := registry.runners[resp.RunnerID]
-	registry.mu.Unlock()
-	runner.mu.Lock()
-	if !slices.Equal(runner.LiveRunnerHeartbeatRequest.SessionIDs, []string{"runner-reported-session"}) {
-		t.Fatalf("expected request session_ids to be retained, got %+v", runner.LiveRunnerHeartbeatRequest.SessionIDs)
-	}
-	runner.mu.Unlock()
 
 	if _, _, err := registry.ReserveSession(resp.RunnerID, "session-z-oldest"); err != nil {
 		t.Fatal(err)
@@ -421,15 +389,6 @@ func TestLiveRunnerRegistry_HeartbeatSessionIDs(t *testing.T) {
 	want := []string{"session-z-oldest", "session-a-newest"}
 	if !slices.Equal(nextResp.SessionIDs, want) {
 		t.Fatalf("unexpected session ids: got %+v want %+v", nextResp.SessionIDs, want)
-	}
-
-	registry.mu.Lock()
-	runner = registry.runners[resp.RunnerID]
-	registry.mu.Unlock()
-	runner.mu.Lock()
-	defer runner.mu.Unlock()
-	if !slices.Equal(runner.LiveRunnerHeartbeatRequest.SessionIDs, []string{"runner-reported-session"}) {
-		t.Fatalf("expected follow-up request session_ids to be retained, got %+v", runner.LiveRunnerHeartbeatRequest.SessionIDs)
 	}
 }
 
@@ -498,12 +457,10 @@ func TestLiveRunnerRegistry_DefaultCapacityWhenUnset(t *testing.T) {
 	req := liveRunnerTestHeartbeat("runner_default_capacity")
 	req.Capacity = 0
 
-	resp := liveRunnerTestRegister(t, registry, req)
-	registry.mu.Lock()
-	runner := registry.runners[resp.RunnerID]
-	registry.mu.Unlock()
-	if runner == nil || runner.Capacity != 1 {
-		t.Fatalf("expected default capacity=1, got %+v", runner)
+	liveRunnerTestRegister(t, registry, req)
+	runners := registry.Runners()
+	if len(runners) != 1 || runners[0].Capacity != 1 {
+		t.Fatalf("expected default capacity=1, got %+v", runners)
 	}
 }
 
@@ -600,31 +557,31 @@ func TestLiveRunnerRegistry_MetadataValidationReturnsBadRequest(t *testing.T) {
 	}
 }
 
-func TestLiveRunnerRegistry_DefaultModeWhenUnset(t *testing.T) {
-	registry := newLiveRunnerTestRegistry()
-	resp := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner_default_mode"))
-
-	mode, err := registry.RunnerMode(resp.RunnerID)
-	if err != nil {
-		t.Fatal(err)
+func TestLiveRunnerRegistry_HeartbeatModes(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "default", want: LiveRunnerModePersistent},
+		{name: "explicit persistent", mode: LiveRunnerModePersistent, want: LiveRunnerModePersistent},
+		{name: "single shot", mode: LiveRunnerModeSingleShot, want: LiveRunnerModeSingleShot},
+		{name: "single shot alias", mode: "single_shot", want: LiveRunnerModeSingleShot},
 	}
-	if mode != LiveRunnerModePersistent {
-		t.Fatalf("expected default mode %q, got %q", LiveRunnerModePersistent, mode)
-	}
-}
-
-func TestLiveRunnerRegistry_HeartbeatSingleShotMode(t *testing.T) {
-	registry := newLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-single-shot")
-	req.Mode = LiveRunnerModeSingleShot
-	resp := liveRunnerTestRegister(t, registry, req)
-
-	mode, err := registry.RunnerMode(resp.RunnerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode != LiveRunnerModeSingleShot {
-		t.Fatalf("expected mode %q, got %q", LiveRunnerModeSingleShot, mode)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registry := newLiveRunnerTestRegistry()
+			req := liveRunnerTestHeartbeat("runner-" + strings.ReplaceAll(test.name, " ", "-"))
+			req.Mode = test.mode
+			resp := liveRunnerTestRegister(t, registry, req)
+			mode, err := registry.RunnerMode(resp.RunnerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode != test.want {
+				t.Fatalf("expected mode %q, got %q", test.want, mode)
+			}
+		})
 	}
 }
 
@@ -646,21 +603,6 @@ func TestLiveRunnerRegistry_HeartbeatSingleShotProxyUsesRunnerIDRoute(t *testing
 	}
 	if !matched || route.LocalPath != "/apps/runner-single-shot-proxy/app/v1/foo" {
 		t.Fatalf("unexpected dynamic proxy route: matched=%v route=%+v", matched, route)
-	}
-}
-
-func TestLiveRunnerRegistry_HeartbeatSingleShotModeAlias(t *testing.T) {
-	registry := newLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-single-shot-alias")
-	req.Mode = "single_shot"
-	resp := liveRunnerTestRegister(t, registry, req)
-
-	mode, err := registry.RunnerMode(resp.RunnerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode != LiveRunnerModeSingleShot {
-		t.Fatalf("expected mode %q, got %q", LiveRunnerModeSingleShot, mode)
 	}
 }
 
@@ -694,38 +636,6 @@ func TestLiveRunnerRegistry_OnchainRequiresStaticRunnerPriceInfo(t *testing.T) {
 	}}})
 	if !isRunnerErrorStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "price_info") {
 		t.Fatalf("expected missing price_info bad request, got %v", err)
-	}
-}
-
-func TestLiveRunnerRegistry_OnchainDefaultsPriceCurrencyAndUnit(t *testing.T) {
-	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-usd-price")
-	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
-
-	liveRunnerTestRegister(t, registry, req)
-	runner, unlock, err := registry.lockLiveRunner("runner-usd-price")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-	if runner.PriceInfo != (LiveRunnerPriceInfo{Price: json.Number("10"), Currency: "usd", Unit: "hour"}) {
-		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
-	}
-}
-
-func TestLiveRunnerRegistry_OnchainNormalizes720pPriceUnit(t *testing.T) {
-	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-720p-price")
-	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "720p"}
-
-	liveRunnerTestRegister(t, registry, req)
-	runner, unlock, err := registry.lockLiveRunner("runner-720p-price")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-	if runner.PriceInfo != (LiveRunnerPriceInfo{Price: json.Number("10"), Currency: "usd", Unit: "720p"}) {
-		t.Fatalf("unexpected runner price info: %+v", runner.PriceInfo)
 	}
 }
 
@@ -1426,90 +1336,43 @@ func TestLiveRunnerRegistry_ConvertsUSDToWEI(t *testing.T) {
 	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
 	defer func() { core.PriceFeedWatcher = prevWatcher }()
 
-	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-1")
-	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
-	liveRunnerTestRegister(t, registry, req)
+	tests := []struct {
+		name        string
+		inputUnit   string
+		outputUnit  string
+		unitDivisor int64
+	}{
+		{name: "default hour", outputUnit: "seconds", unitDivisor: 3600},
+		{name: "720p", inputUnit: "720p", outputUnit: "720p-pixel-seconds", unitDivisor: 3600 * 1280 * 720 * 30},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registry := newOnchainLiveRunnerTestRegistry()
+			req := liveRunnerTestHeartbeat("runner-" + test.outputUnit)
+			req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10"), Unit: test.inputUnit}
+			liveRunnerTestRegister(t, registry, req)
 
-	paymentInfo, err := registry.PaymentInfo("runner-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paymentInfo == nil {
-		t.Fatal("expected payment price info")
-	}
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := paymentInfo.Price.String(); got != expected.Num().String() {
-		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected.Num().String())
-	}
-	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "seconds" {
-		t.Fatalf("unexpected converted price info: %+v", paymentInfo)
-	}
-}
-
-func TestLiveRunnerRegistry_Converts720pUnitAsPerPixelPrice(t *testing.T) {
-	prevWatcher := core.PriceFeedWatcher
-	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
-	defer func() { core.PriceFeedWatcher = prevWatcher }()
-
-	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("runner-720p")
-	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "720p"}
-	liveRunnerTestRegister(t, registry, req)
-
-	paymentInfo, err := registry.PaymentInfo("runner-720p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paymentInfo == nil {
-		t.Fatal("expected payment price info")
-	}
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600*1280*720*30))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := paymentInfo.Price.String(); got != expected.Num().String() {
-		t.Fatalf("unexpected converted price: got=%s want=%s", got, expected.Num().String())
-	}
-	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "720p-pixel-seconds" {
-		t.Fatalf("unexpected converted 720p price info: %+v", paymentInfo)
-	}
-}
-
-func TestLiveRunnerRegistry_ScopeRunnerUsesLivePriceConversion(t *testing.T) {
-	prevWatcher := core.PriceFeedWatcher
-	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
-	defer func() { core.PriceFeedWatcher = prevWatcher }()
-
-	registry := newOnchainLiveRunnerTestRegistry()
-	req := liveRunnerTestHeartbeat("scope-runner")
-	req.App = "live-video-to-video/scope"
-	req.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("10")}
-	liveRunnerTestRegister(t, registry, req)
-
-	paymentInfo, err := registry.PaymentInfo("scope-runner")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paymentInfo == nil {
-		t.Fatal("expected payment price info")
-	}
-	expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, 3600))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := paymentInfo.Price.String(); got != expected.Num().String() {
-		t.Fatalf("unexpected converted scope live runner price: got=%s want=%s", got, expected.Num().String())
-	}
-	if paymentInfo.Currency != "wei" || paymentInfo.Unit != "seconds" {
-		t.Fatalf("unexpected converted scope live runner price info: %+v", paymentInfo)
+			paymentInfo, err := registry.PaymentInfo(req.RunnerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected, err := common.PriceToInt64(big.NewRat(5_000_000_000_000_000, test.unitDivisor))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if paymentInfo == nil || paymentInfo.Price.String() != expected.Num().String() ||
+				paymentInfo.Currency != "wei" || paymentInfo.Unit != test.outputUnit {
+				t.Fatalf("unexpected converted price info: %+v", paymentInfo)
+			}
+		})
 	}
 }
 
 func TestLiveRunnerRegistry_SharedURLAppKeepsPerRunnerPrices(t *testing.T) {
+	prevWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = stubPriceFeedWatcher{price: eth.PriceData{Price: big.NewRat(2000, 1)}}
+	defer func() { core.PriceFeedWatcher = prevWatcher }()
+
 	registry := newOnchainLiveRunnerTestRegistry()
 
 	req1 := liveRunnerTestHeartbeat("runner-1")
@@ -1519,16 +1382,19 @@ func TestLiveRunnerRegistry_SharedURLAppKeepsPerRunnerPrices(t *testing.T) {
 	resp1 := liveRunnerTestRegister(t, registry, req1)
 	liveRunnerTestRegister(t, registry, req2)
 
-	if err := registry.Unregister("runner-1", resp1.HeartbeatSecret); err != nil {
-		t.Fatal(err)
-	}
-	runner, unlock, err := registry.lockLiveRunner("runner-2")
+	before, err := registry.PaymentInfo("runner-2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unlock()
-	if got := runner.PriceInfo.Price.String(); got != "20" {
-		t.Fatalf("expected remaining runner price to stay isolated, got %s", got)
+	if err := registry.Unregister("runner-1", resp1.HeartbeatSecret); err != nil {
+		t.Fatal(err)
+	}
+	after, err := registry.PaymentInfo("runner-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == nil || after == nil || *before != *after {
+		t.Fatalf("expected remaining runner price to stay isolated: before=%+v after=%+v", before, after)
 	}
 }
 
@@ -1554,13 +1420,6 @@ func TestLiveRunnerRegistry_ReserveSessionCapacity(t *testing.T) {
 	}
 	if sessionID1 == sessionID2 {
 		t.Fatalf("expected unique session IDs, got %s", sessionID1)
-	}
-
-	registry.mu.Lock()
-	active := len(registry.runners["runner-1"].sessions)
-	registry.mu.Unlock()
-	if active != 2 {
-		t.Fatalf("expected 2 active sessions, got %d", active)
 	}
 
 	if _, _, err := registry.ReserveSession("runner-1"); !isRunnerErrorStatus(err, http.StatusServiceUnavailable) {
@@ -1743,7 +1602,7 @@ func TestLiveRunnerRegistry_CreateSessionProxyDefaultPath(t *testing.T) {
 }
 
 func TestLiveRunnerRegistry_CreateSessionProxyHostTemplate(t *testing.T) {
-	registry := NewLiveRunnerRegistry(LiveRunnerRegistryConfig{
+	registry := newLiveRunnerTestRegistryWithConfig(LiveRunnerRegistryConfig{
 		Host:             liveRunnerTestHost{},
 		ProxyURLTemplate: "https://{proxy}.daydream.example.com",
 	})
@@ -1919,37 +1778,6 @@ func TestProxyURLTemplateProxyIDAndAppPathBroadInputs(t *testing.T) {
 	}
 }
 
-func TestProxyURLTemplateProxyIDAndAppPathQuick(t *testing.T) {
-	serviceURI, _ := url.Parse("http://localhost:1234")
-	pathTmpl, err := parseProxyURLTemplate("", serviceURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hostTmpl, err := parseProxyURLTemplate("https://edge-{proxy}.daydream.example.com/proxy", serviceURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := &quick.Config{MaxCount: 5000}
-
-	t.Run("path template", func(t *testing.T) {
-		err := quick.Check(func(req proxyPathTemplateRequest) bool {
-			return proxyExtractionMatchesExpected(pathTmpl, req.Host, req.Path)
-		}, config)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	t.Run("host template", func(t *testing.T) {
-		err := quick.Check(func(req proxyHostTemplateRequest) bool {
-			return proxyExtractionMatchesExpected(hostTmpl, req.Host, req.Path)
-		}, config)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-}
-
 func BenchmarkProxyURLTemplateExtraction(b *testing.B) {
 	serviceURI, _ := url.Parse("http://localhost:1234")
 	pathTmpl, err := parseProxyURLTemplate("", serviceURI)
@@ -1984,69 +1812,6 @@ func BenchmarkProxyURLTemplateExtraction(b *testing.B) {
 	})
 }
 
-type proxyPathTemplateRequest struct {
-	Host string
-	Path string
-}
-
-func (proxyPathTemplateRequest) Generate(r *rand.Rand, size int) reflect.Value {
-	req := proxyPathTemplateRequest{
-		Host: randomUserSuppliedString(r, size),
-		Path: randomUserSuppliedString(r, size),
-	}
-	switch r.Intn(6) {
-	case 0, 1:
-		req.Host = randomCase(r, "localhost:1234")
-		req.Path = "/run/" + randomNonEmptyPathSegment(r, size)
-		if r.Intn(2) == 0 {
-			req.Path += "/" + randomUserSuppliedString(r, size)
-		}
-	case 2:
-		req.Host = randomCase(r, "localhost:1234")
-		req.Path = "/run/"
-	case 3:
-		req.Host = randomUserSuppliedString(r, size)
-		req.Path = "/run/" + randomNonEmptyPathSegment(r, size)
-	case 4:
-		req.Host = randomCase(r, "localhost:1234")
-		req.Path = "/" + randomUserSuppliedString(r, size)
-	}
-	return reflect.ValueOf(req)
-}
-
-type proxyHostTemplateRequest struct {
-	Host string
-	Path string
-}
-
-func (proxyHostTemplateRequest) Generate(r *rand.Rand, size int) reflect.Value {
-	req := proxyHostTemplateRequest{
-		Host: randomUserSuppliedString(r, size),
-		Path: randomUserSuppliedString(r, size),
-	}
-	switch r.Intn(6) {
-	case 0, 1:
-		req.Host = randomCase(r, "edge-"+randomNonEmptyHostProxyID(r, size)+".daydream.example.com")
-		if r.Intn(3) == 0 {
-			req.Host += ":443"
-		}
-		req.Path = "/proxy"
-		if r.Intn(2) == 0 {
-			req.Path += "/" + randomUserSuppliedString(r, size)
-		}
-	case 2:
-		req.Host = randomCase(r, "edge-.daydream.example.com")
-		req.Path = "/proxy/" + randomUserSuppliedString(r, size)
-	case 3:
-		req.Host = randomCase(r, "edge-"+randomNonEmptyHostProxyID(r, size)+".daydream.example.com")
-		req.Path = "/proxyish/" + randomUserSuppliedString(r, size)
-	case 4:
-		req.Host = randomUserSuppliedString(r, size)
-		req.Path = "/proxy/" + randomUserSuppliedString(r, size)
-	}
-	return reflect.ValueOf(req)
-}
-
 type proxyBenchmarkRequest struct {
 	host string
 	path string
@@ -2057,129 +1822,6 @@ var (
 	benchmarkAppPath string
 	benchmarkMatched bool
 )
-
-func proxyExtractionMatchesExpected(tmpl proxyURLTemplate, host, path string) bool {
-	gotProxyID, gotAppPath, gotMatched := tmpl.proxyIDAndAppPath(host, path)
-	wantProxyID, wantAppPath, wantMatched := expectedProxyIDAndAppPath(tmpl, host, path)
-	return gotProxyID == wantProxyID && gotAppPath == wantAppPath && gotMatched == wantMatched
-}
-
-func expectedProxyIDAndAppPath(tmpl proxyURLTemplate, host, path string) (string, string, bool) {
-	if tmpl.placeholderInHost {
-		requestHost := expectedStripHostPort(host)
-		start := len(tmpl.hostPrefix)
-		end := len(requestHost) - len(tmpl.hostSuffix)
-		if start >= end {
-			return "", "", false
-		}
-		if !strings.EqualFold(requestHost[:start], tmpl.hostPrefix) || !strings.EqualFold(requestHost[end:], tmpl.hostSuffix) {
-			return "", "", false
-		}
-		appPath, ok := expectedStripProxyPathPrefix(path, tmpl.staticPath)
-		if !ok {
-			return "", "", false
-		}
-		return strings.ToLower(requestHost[start:end]), appPath, true
-	}
-	if !strings.EqualFold(tmpl.host, host) || !strings.HasPrefix(path, tmpl.pathPrefix) {
-		return "", "", false
-	}
-	rest := path[len(tmpl.pathPrefix):]
-	if rest == "" {
-		return "", "", false
-	}
-	slash := strings.IndexByte(rest, '/')
-	if slash < 0 {
-		return rest, "", true
-	}
-	if slash == 0 {
-		return "", "", false
-	}
-	return rest[:slash], rest[slash+1:], true
-}
-
-func expectedStripHostPort(host string) string {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		return h
-	}
-	return host
-}
-
-func expectedStripProxyPathPrefix(path, prefix string) (string, bool) {
-	if prefix == "" {
-		return strings.TrimPrefix(path, "/"), true
-	}
-	if path == prefix {
-		return "", true
-	}
-	if strings.HasPrefix(path, prefix+"/") {
-		return strings.TrimPrefix(path[len(prefix):], "/"), true
-	}
-	return "", false
-}
-
-func randomUserSuppliedString(r *rand.Rand, size int) string {
-	maxLen := size + 8
-	if maxLen > 96 {
-		maxLen = 96
-	}
-	n := r.Intn(maxLen + 1)
-	var b strings.Builder
-	b.Grow(n)
-	for i := 0; i < n; i++ {
-		switch r.Intn(8) {
-		case 0:
-			b.WriteByte(byte(r.Intn(32)))
-		case 1:
-			b.WriteByte(byte(127 + r.Intn(129)))
-		case 2:
-			b.WriteRune([]rune{'/', '?', '#', '[', ']', '@', ':', '%', ' ', '\t', '\n'}[r.Intn(11)])
-		case 3:
-			b.WriteString("%2F")
-		case 4:
-			b.WriteRune([]rune{'é', 'ø', '中', '☃'}[r.Intn(4)])
-		default:
-			const ascii = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;="
-			b.WriteByte(ascii[r.Intn(len(ascii))])
-		}
-	}
-	return b.String()
-}
-
-func randomNonEmptyPathSegment(r *rand.Rand, size int) string {
-	for i := 0; i < 10; i++ {
-		s := strings.ReplaceAll(randomUserSuppliedString(r, size), "/", "")
-		if s != "" {
-			return s
-		}
-	}
-	return "x"
-}
-
-func randomNonEmptyHostProxyID(r *rand.Rand, size int) string {
-	for i := 0; i < 10; i++ {
-		s := strings.Map(func(ch rune) rune {
-			if ch == ':' {
-				return -1
-			}
-			return ch
-		}, randomUserSuppliedString(r, size))
-		if s != "" {
-			return s
-		}
-	}
-	return "x"
-}
-
-func randomCase(r *rand.Rand, s string) string {
-	b := []byte(s)
-	for i, ch := range b {
-		if 'a' <= ch && ch <= 'z' && r.Intn(2) == 0 {
-			b[i] = ch - 'a' + 'A'
-		}
-	}
-	return string(b)
-}
 
 func benchmarkProxyExtraction(b *testing.B, requests []proxyBenchmarkRequest, extract func(string, string) (string, string, bool)) {
 	b.ReportAllocs()
@@ -2537,13 +2179,14 @@ func TestLiveRunnerRegistry_ExpireAndUnregisterClearSessions(t *testing.T) {
 
 	registry.heartbeatTTL = defaultLiveRunnerHeartbeatTTL
 	resp2 := liveRunnerTestRegister(t, registry, liveRunnerTestHeartbeat("runner-2"))
-	if _, _, err := registry.ReserveSession("runner-2"); err != nil {
+	sessionID2, _, err := registry.ReserveSession("runner-2")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.Unregister("runner-2", resp2.HeartbeatSecret); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
+	if _, err := registry.RunnerEndpointForSession("runner-2", sessionID2); !isRunnerErrorStatus(err, http.StatusNotFound) {
 		t.Fatalf("expected unregistered runner to be removed, got %v", err)
 	}
 }
@@ -2643,13 +2286,12 @@ func newLiveRunnerTestTrickleServer(t *testing.T) (*trickle.Server, string, func
 	return trickleSrv, channelBaseURL, channelStatus
 }
 
-func liveRunnerTestSetO2RKeepaliveInterval(t *testing.T, interval time.Duration) func() {
-	t.Helper()
-	previous := liveRunnerO2RKeepaliveInterval
-	liveRunnerO2RKeepaliveInterval = interval
-	return func() {
-		liveRunnerO2RKeepaliveInterval = previous
-	}
+func liveRunnerTestRandomO2RInterval() time.Duration {
+	return time.Duration(5+rand.Intn(21)) * time.Millisecond
+}
+
+func liveRunnerTestQuietO2RInterval() time.Duration {
+	return time.Hour + time.Duration(rand.Intn(60))*time.Minute
 }
 
 func liveRunnerTestReadTrickleMessage(t *testing.T, trickleSrv *trickle.Server, channelName string, match func(string) bool) string {

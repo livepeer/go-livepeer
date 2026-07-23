@@ -32,14 +32,13 @@ const (
 	defaultLiveRunnerHealthInterval    = 5 * time.Second
 	defaultLiveRunnerHealthStatusCode  = http.StatusOK
 	defaultLiveRunnerHealthTimeout     = 3 * time.Second
+	defaultLiveRunnerO2RInterval       = 10 * time.Second
 	liveRunnerO2RKeepaliveMessage      = `{"keep":"alive"}`
 	liveRunnerIDRandomBytes            = 5
 	proxyIDRandomBytes                 = 16
 	liveRunnerSeedBytes                = 32
 	maxMetadataBytes                   = 1024
 )
-
-var liveRunnerO2RKeepaliveInterval = 10 * time.Second
 
 const (
 	LiveRunnerModePersistent      = "persistent"
@@ -268,6 +267,7 @@ type LiveRunnerRegistry struct {
 	heartbeatTTL      time.Duration
 	healthClient      *http.Client
 	healthInterval    time.Duration
+	o2rInterval       time.Duration
 	stopRegistry      chan struct{}
 	stopRegistryOnce  sync.Once
 
@@ -292,6 +292,7 @@ type LiveRunnerRegistryConfig struct {
 	Host             RunnerHost
 	Onchain          bool
 	ProxyURLTemplate string
+	O2RInterval      time.Duration
 }
 
 var liveRunnerChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -315,6 +316,10 @@ func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry 
 	if err != nil {
 		panic(fmt.Sprintf("invalid live runner proxy url: %v", err))
 	}
+	o2rInterval := config.O2RInterval
+	if o2rInterval <= 0 {
+		o2rInterval = defaultLiveRunnerO2RInterval
+	}
 	r := &LiveRunnerRegistry{
 		host:              config.Host,
 		offchain:          !config.Onchain,
@@ -323,6 +328,7 @@ func NewLiveRunnerRegistry(config LiveRunnerRegistryConfig) *LiveRunnerRegistry 
 		heartbeatTTL:      defaultLiveRunnerHeartbeatTTL,
 		healthClient:      &http.Client{Timeout: defaultLiveRunnerHealthTimeout},
 		healthInterval:    defaultLiveRunnerHealthInterval,
+		o2rInterval:       o2rInterval,
 		stopRegistry:      make(chan struct{}),
 		proxyTemplate:     proxyTemplate,
 	}
@@ -403,7 +409,7 @@ func (r *LiveRunnerRegistry) Heartbeat(req LiveRunnerHeartbeatRequest, auth stri
 			route:           req.RunnerID, // No label-based routing for now
 			sessions:        make(map[string]*liveRunnerSession),
 		}
-		if err := runner.setRunnerTrickleChannels(trickleSrv, trickleBaseURL, req.RunnerID); err != nil {
+		if err := runner.setRunnerTrickleChannels(trickleSrv, trickleBaseURL, req.RunnerID, r.o2rInterval); err != nil {
 			runner.closeChannelsLocked()
 			r.mu.Unlock()
 			return nil, err
@@ -1135,13 +1141,13 @@ func (r *LiveRunnerRegistry) CreateTrickleChannel(runnerID, sessionID, name, mim
 	return channel.channel, nil
 }
 
-func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, trickleBaseURL, runnerID string) error {
+func (runner *liveRunner) setRunnerTrickleChannels(trickleSrv *trickle.Server, trickleBaseURL, runnerID string, o2rInterval time.Duration) error {
 	o2r, err := runner.createBootstrapTrickleChannel(trickleSrv, trickleBaseURL, runnerID, LiveRunnerTrickleOrchestratorToRunner)
 	if err != nil {
 		return err
 	}
 	runner.o2r = o2r
-	go writeO2RLoop(runner.o2r)
+	go writeO2RLoop(runner.o2r, o2rInterval)
 	return nil
 }
 
@@ -1557,8 +1563,8 @@ func (session *liveRunnerSession) closeChannelsLocked() {
 	}
 }
 
-func writeO2RLoop(channel *liveRunnerTrickleChannel) {
-	ticker := time.NewTicker(liveRunnerO2RKeepaliveInterval)
+func writeO2RLoop(channel *liveRunnerTrickleChannel, o2rInterval time.Duration) {
+	ticker := time.NewTicker(o2rInterval)
 	defer ticker.Stop()
 
 	for {
