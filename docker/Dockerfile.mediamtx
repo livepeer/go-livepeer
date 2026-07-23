@@ -22,7 +22,7 @@ ENV CGO_ENABLED=0
 RUN go generate ./...
 RUN go build -o mediamtx
 
-FROM	ubuntu:24.04
+FROM	ubuntu:26.04
 
 # we need curl in the image as it's later used in the runOnReady command
 RUN	apt update \
