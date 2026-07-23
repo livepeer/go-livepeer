@@ -1989,7 +1989,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	}()
 
-	if n.NodeType == core.TranscoderNode || n.NodeType == core.AIWorkerNode {
+	if n.NodeType == core.TranscoderNode {
 		if n.OrchSecret == "" {
 			glog.Exit("Missing -orchSecret")
 		}
@@ -1997,13 +1997,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Missing -orchAddr")
 		}
 
-		if n.NodeType == core.TranscoderNode {
-			go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
-		}
-
-		if n.NodeType == core.AIWorkerNode {
-			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
-		}
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
 
 	switch n.NodeType {

@@ -1,105 +1,27 @@
 package server
 
 import (
-	"context"
 	"errors"
-	"reflect"
+	"net/http"
+	"net/http/httptest"
 	"testing"
-
-	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
-func TestProcessAIRequest_DeprecatedPipelineRejected(t *testing.T) {
-	// A deprecated batch pipeline request must be rejected with a
-	// PipelineDeprecatedError before any orchestrator selection happens, so an
-	// empty aiRequestParams is sufficient to reach the guard.
-	_, err := processAIRequest(context.Background(), aiRequestParams{}, worker.GenTextToImageJSONRequestBody{})
-	if err == nil {
-		t.Fatal("expected deprecated pipeline error, got nil")
-	}
-	var deprecatedErr *PipelineDeprecatedError
-	if !errors.As(err, &deprecatedErr) {
-		t.Fatalf("expected *PipelineDeprecatedError, got %T: %v", err, err)
-	}
-}
+func TestDeprecatedPipelineHandler_Returns410(t *testing.T) {
+	// The batch AI pipeline routes are deprecated and now served by a stub that
+	// responds with HTTP 410 Gone plus deprecation headers.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/text-to-image", nil)
+	deprecatedPipelineHandler("text-to-image").ServeHTTP(rec, req)
 
-func Test_submitLLM(t *testing.T) {
-	type args struct {
-		ctx    context.Context
-		params aiRequestParams
-		sess   *AISession
-		req    worker.GenLLMJSONRequestBody
+	if rec.Code != http.StatusGone {
+		t.Fatalf("expected status 410 Gone, got %d", rec.Code)
 	}
-	tests := []struct {
-		name    string
-		args    args
-		want    interface{}
-		wantErr bool
-	}{
-		// TODO: Add test cases.
+	if got := rec.Header().Get("Deprecation"); got != "true" {
+		t.Errorf("expected Deprecation: true header, got %q", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := submitLLM(tt.args.ctx, tt.args.params, tt.args.sess, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("submitLLM() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("submitLLM() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_submitAudioToText(t *testing.T) {
-	type args struct {
-		ctx    context.Context
-		params aiRequestParams
-		sess   *AISession
-		req    worker.GenAudioToTextMultipartRequestBody
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    interface{}
-		wantErr bool
-	}{
-		{
-			name: "invalid request (no file)",
-			args: args{
-				ctx:    context.Background(),
-				params: aiRequestParams{},
-				sess:   &AISession{},
-				req:    worker.GenAudioToTextMultipartRequestBody{},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "nil session",
-			args: args{
-				ctx:    context.Background(),
-				params: aiRequestParams{},
-				sess:   nil,
-				req:    worker.GenAudioToTextMultipartRequestBody{},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := submitAudioToText(tt.args.ctx, tt.args.params, tt.args.sess, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("submitAudioToText() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("submitAudioToText() = %v, want %v", got, tt.want)
-			}
-		})
+	if rec.Header().Get("Sunset") == "" {
+		t.Error("expected a Sunset header")
 	}
 }
 
