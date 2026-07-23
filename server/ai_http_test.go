@@ -1497,6 +1497,77 @@ func TestLiveRunnerSingleShotProxyForwardsAndReleasesCapacity(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, w.Code)
 }
 
+func TestLiveRunnerSingleShotProxyOnchainReturnsPaymentChallenge(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{Mode: runner.LiveRunnerModeSingleShot})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/app/v1/foo", strings.NewReader(`{"prompt":"hi"}`))
+	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code)
+	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, int64(5000), challenge.PaymentIntervalMs)
+	require.Equal(t, int64(10), oInfo.GetPriceInfo().GetPricePerUnit())
+	require.Equal(t, int64(1), oInfo.GetPriceInfo().GetPixelsPerUnit())
+}
+
+func TestLiveRunnerSingleShotProxyAllowsPaymentWhileRequestOpen(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("done"))
+	}))
+	defer upstream.Close()
+
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	t.Cleanup(func() { drivers.NodeStorage = oldStorage })
+
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{RunnerURL: upstream.URL, Mode: runner.LiveRunnerModeSingleShot})
+	orch := lp.orchestrator.(*stubOrchestrator)
+	orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+	orch.paymentCredit = big.NewRat(100, 1)
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	headers := liveRunnerReservationPaymentHeaders(t, orch, oInfo.GetAuthToken(), challenge.ManifestID)
+
+	proxyDone := make(chan int, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/apps/runner-1/app/hold", nil)
+		setRequestHeaders(req, headers)
+		lp.ServeHTTP(w, req)
+		proxyDone <- w.Code
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for single-shot request to reach runner")
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/payment", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var paymentResult lpnet.PaymentResult
+	require.NoError(t, proto.Unmarshal(w.Body.Bytes(), &paymentResult))
+	require.NotNil(t, paymentResult.GetInfo())
+	require.Equal(t, challenge.ManifestID, paymentResult.GetInfo().GetAuthToken().GetSessionId())
+
+	close(release)
+	require.Equal(t, http.StatusOK, <-proxyDone)
+}
+
 func TestLiveRunnerSingleShotProxyNoCapacityWhileRequestInFlight(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
