@@ -643,7 +643,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 				pipeline = RemoteType_Live
 			}
 		}
-		// NB: This could could drop events if tha Kafka queue is full!
+		// NB: This could drop events if the Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
