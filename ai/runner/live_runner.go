@@ -115,8 +115,9 @@ func normalizeLiveRunnerPriceInfo(priceInfo LiveRunnerPriceInfo) (LiveRunnerPric
 	switch unit {
 	case "hour":
 	case "720p":
+	case "fixed":
 	default:
-		return LiveRunnerPriceInfo{}, fmt.Errorf("price_info.unit must be hour or 720p")
+		return LiveRunnerPriceInfo{}, fmt.Errorf("price_info.unit must be hour, 720p, or fixed")
 	}
 	priceInfo.Currency = currency
 	priceInfo.Unit = unit
@@ -243,6 +244,7 @@ type liveRunner struct {
 type liveRunnerSession struct {
 	// Protected by the parent liveRunner.mu.
 	createdAt time.Time
+	priceInfo LiveRunnerPriceInfo
 	channels  map[string]*liveRunnerTrickleChannel
 	proxies   map[string]proxyTarget
 }
@@ -957,9 +959,6 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	if !isReadyStatus(runner.Status) {
 		return "", "", &RunnerError{StatusCode: http.StatusNotFound, Message: "runner not found"}
 	}
-	if len(runner.sessions) >= runner.Capacity {
-		return "", "", &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: "no capacity available for runner"}
-	}
 	id := ""
 	if len(optSessionID) > 0 {
 		// use supplied id if given - usually ticket param's auth token id / manifest id
@@ -967,9 +966,14 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	}
 	if id != "" {
 		if _, exists := runner.sessions[id]; exists {
+			// Consider another status code if session enumeration becomes a concern.
 			return "", "", &RunnerError{StatusCode: http.StatusConflict, Message: "session already exists"}
 		}
-	} else {
+	}
+	if len(runner.sessions) >= runner.Capacity {
+		return "", "", &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: "no capacity available for runner"}
+	}
+	if id == "" {
 		id = "session_" + randomStr(liveRunnerIDRandomBytes)
 		for {
 			if _, exists := runner.sessions[id]; !exists {
@@ -980,6 +984,7 @@ func (r *LiveRunnerRegistry) ReserveSession(runnerID string, optSessionID ...str
 	}
 	session := &liveRunnerSession{
 		createdAt: time.Now(),
+		priceInfo: runner.PriceInfo,
 		channels:  make(map[string]*liveRunnerTrickleChannel),
 		proxies:   make(map[string]proxyTarget),
 	}
@@ -1015,12 +1020,25 @@ func (r *LiveRunnerRegistry) PaymentInfo(runnerID string) (*LiveRunnerPriceInfo,
 	}
 	priceInfo, err := runner.convertPrice()
 	if err != nil {
-		return nil, err
+		return nil, &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: fmt.Sprintf("live runner price unavailable: %v", err)}
 	}
 	if _, err := priceInfo.priceRat(); err != nil {
-		return nil, nil
+		return nil, &RunnerError{StatusCode: http.StatusServiceUnavailable, Message: fmt.Sprintf("live runner price unavailable: %v", err)}
 	}
 	return &priceInfo, nil
+}
+
+func (r *LiveRunnerRegistry) SessionPriceInfo(runnerID, sessionID string) (LiveRunnerPriceInfo, error) {
+	runner, unlock, err := r.lockLiveRunner(runnerID)
+	if err != nil {
+		return LiveRunnerPriceInfo{}, err
+	}
+	defer unlock()
+	session, err := runner.liveRunnerSessionLocked(sessionID)
+	if err != nil {
+		return LiveRunnerPriceInfo{}, err
+	}
+	return session.priceInfo, nil
 }
 
 func (r *LiveRunnerRegistry) ReleaseSession(runnerID, sessionID string) error {
@@ -1753,15 +1771,19 @@ func newConverterForRunner(priceInfo LiveRunnerPriceInfo) (*core.AutoConvertedPr
 		return nil, err
 	}
 
-	usdPerHour, err := priceInfo.priceRat()
+	usdPrice, err := priceInfo.priceRat()
 	if err != nil {
 		return nil, err
 	}
-	denom := int64(3600)
-	if priceInfo.Unit == "720p" {
-		denom *= 1280 * 720 * 30 // 720p @ 30fps
+	switch priceInfo.Unit {
+	case "hour":
+		usdPrice = new(big.Rat).Quo(usdPrice, new(big.Rat).SetInt64(3600))
+	case "720p":
+		denom := int64(3600 * 1280 * 720 * 30) // 1h of 720p @ 30fps
+		usdPrice = new(big.Rat).Quo(usdPrice, new(big.Rat).SetInt64(denom))
+	case "fixed":
+		// Fixed prices are already denominated per request.
 	}
-	usdPrice := new(big.Rat).Quo(usdPerHour, new(big.Rat).SetInt64(denom))
 	return core.NewAutoConvertedPrice("USD", usdPrice, nil)
 }
 
@@ -1773,15 +1795,25 @@ func (runner *liveRunner) convertPrice() (LiveRunnerPriceInfo, error) {
 	if err != nil {
 		return LiveRunnerPriceInfo{}, err
 	}
-	convertedUnit := "seconds"
-	if runner.PriceInfo.Unit == "720p" {
-		convertedUnit = "720p-pixel-seconds"
+	if price.Sign() <= 0 {
+		return LiveRunnerPriceInfo{}, fmt.Errorf("converted live runner price must be at least one wei")
 	}
 	return LiveRunnerPriceInfo{
 		Price:    json.Number(fmt.Sprintf("%d", price.Num().Int64())),
 		Currency: "wei",
-		Unit:     convertedUnit,
+		Unit:     convertedLiveRunnerPriceUnit(runner.PriceInfo.Unit),
 	}, nil
+}
+
+func convertedLiveRunnerPriceUnit(unit string) string {
+	switch strings.ToLower(strings.TrimSpace(unit)) {
+	case "720p":
+		return "720p-pixel-seconds"
+	case "fixed":
+		return "fixed"
+	default:
+		return "seconds"
+	}
 }
 
 func isReadyStatus(status string) bool {
