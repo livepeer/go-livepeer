@@ -266,6 +266,31 @@ func (w *wizard) readDefaultFloat(def float64) float64 {
 	return def
 }
 
+const defaultTxGasLimit = uint64(21000)
+
+func (w *wizard) confirmTransaction(action string) bool {
+	maxGasPrice, ok := new(big.Int).SetString(strings.TrimSpace(w.maxGasPrice()), 10)
+	if !ok || maxGasPrice.Sign() <= 0 {
+		fmt.Printf("Estimated transaction cost for %s: unavailable (max gas price is not set).\n", action)
+	} else {
+		maxCost := new(big.Int).Mul(new(big.Int).SetUint64(defaultTxGasLimit), maxGasPrice)
+		fmt.Printf("Estimated maximum transaction cost for %s: %s ETH (%s wei, assuming %d gas at the configured max gas price).\n", action, eth.FormatUnits(maxCost, "ETH"), maxCost.String(), defaultTxGasLimit)
+	}
+	fmt.Printf("Submit this transaction? (y/n) - ")
+	if strings.ToLower(w.readStringYesOrNo()) != "y" {
+		fmt.Printf("Transaction cancelled: Interrupted by user.\n")
+		return false
+	}
+	return true
+}
+
+func (w *wizard) httpPostTxWithParams(action string, url string, val url.Values) (string, bool) {
+	if !w.confirmTransaction(action) {
+		return "", false
+	}
+	return httpPostWithParams(url, val)
+}
+
 func httpGet(url string) string {
 	resp, err := http.Get(url)
 	if err != nil {
