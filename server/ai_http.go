@@ -764,7 +764,7 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	ctx = clog.AddVal(r.Context(), "runner_id", runnerID)
+	ctx = clog.AddVal(ctx, "runner_id", runnerID)
 	ctx = clog.AddVal(ctx, "session_id", sessionID)
 	if paymentRequired {
 		var newPaymentProcessor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
