@@ -247,7 +247,7 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 		ctx = clog.AddVal(ctx, "session_id", sessionID)
 	} else {
 		var reservationOK bool
-		sessionID, appURL, reservationOK = h.reservePaidLiveRunnerSession(ctx, w, r, manager, runnerID, priceInfo)
+		sessionID, appURL, reservationOK = h.reservePaidLiveRunnerSession(ctx, w, r, manager, runnerID, priceInfo, nil)
 		if !reservationOK {
 			return
 		}
@@ -268,6 +268,7 @@ func (h *lphttp) reservePaidLiveRunnerSession(
 	manager liveRunnerManager,
 	runnerID string,
 	priceInfo *runner.LiveRunnerPriceInfo,
+	cancelRequest func(),
 ) (string, string, bool) {
 	// This helper owns all challenge and error responses for paid reservations.
 	fixedPayment := strings.EqualFold(strings.TrimSpace(priceInfo.Unit), "fixed")
@@ -349,6 +350,9 @@ func (h *lphttp) reservePaidLiveRunnerSession(
 			clog.Errorf(monitorCtx, "Error accounting live runner payment, releasing session err=%v", err)
 			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
 				clog.Errorf(monitorCtx, "Error releasing live runner session after payment failure err=%v", releaseErr)
+			}
+			if cancelRequest != nil {
+				cancelRequest()
 			}
 			// Stop both the ticker loop below and the LivePaymentProcessor goroutine.
 			cancel()
@@ -763,10 +767,29 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sessionID, endpoint, err := manager.ReserveSession(runnerID)
+	priceInfo, err := manager.PaymentInfo(runnerID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
+	}
+	var (
+		sessionID string
+		endpoint  string
+	)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	if priceInfo == nil {
+		sessionID, endpoint, err = manager.ReserveSession(runnerID)
+		if err != nil {
+			respondWithLiveRunnerError(w, err)
+			return
+		}
+	} else {
+		var reserved bool
+		sessionID, endpoint, reserved = h.reservePaidLiveRunnerSession(ctx, w, r, manager, runnerID, priceInfo, cancel)
+		if !reserved {
+			return
+		}
 	}
 	defer func() {
 		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
@@ -779,7 +802,7 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		respondWithLiveRunnerError(w, err)
 		return
 	}
-	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
+	h.proxyLiveRunner(w, r.Clone(ctx), runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
 }
 
 func (h *lphttp) tryLiveRunnerProxy(w http.ResponseWriter, r *http.Request) bool {
