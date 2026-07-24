@@ -34,6 +34,7 @@ const HTTPStatusNoTickets = 482
 const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_Live = "live"
 const RemoteType_LiveVideoToVideo = "lv2v"
+const RemoteType_Fixed = "fixed"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
 
@@ -179,7 +180,7 @@ type RemotePaymentRequest struct {
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`. Optional.
+	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`, `fixed`. Optional.
 	Type string `json:"type"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
@@ -487,6 +488,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			billableSecs = (10 * time.Second).Seconds()
 		}
 		billableUnits = int64(math.Ceil(billableSecs)) // seconds to charge for
+	} else if req.Type == RemoteType_Fixed {
+		billableUnits = 1
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -636,6 +639,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			pipeline = PipelineLiveVideoToVideo
 		} else if req.Type == RemoteType_Live {
 			pipeline = RemoteType_Live
+		} else if req.Type == RemoteType_Fixed {
+			pipeline = RemoteType_Fixed
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{

@@ -125,7 +125,7 @@ Remote discovery filters data before exposing it:
   configured capability/model maximum from `-maxPricePerCapability`, falling
   back to the global maximum when applicable;
 - runner records require a URL, a non-empty `app`, and a positive wei price;
-- runner price units must be `seconds` or `720p-pixel-seconds`; and
+- runner price units must be `seconds`, `720p-pixel-seconds`, or `fixed`; and
 - the global `-maxPricePerUnit`, when set, also limits runner prices.
 
 Each valid runner's `app` is added to the address's capability list and can be
