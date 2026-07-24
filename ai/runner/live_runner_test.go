@@ -1147,7 +1147,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 		t.Fatal(err)
 	}
 	if sessionPriceInfo.Price.String() != "10" || sessionPriceInfo.Unit != "fixed" {
-		t.Fatalf("unexpected static session price snapshot: %+v", sessionPriceInfo)
+		t.Fatalf("expected static session price snapshot with price 10 and unit fixed, got: %+v", sessionPriceInfo)
 	}
 }
 
