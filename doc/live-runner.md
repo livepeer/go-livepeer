@@ -393,8 +393,15 @@ Required` with payment parameters. The client retries with
 usage on its configured payment interval and releases the session if payment
 fails.
 
-The current single-shot proxy path does not perform a payment challenge or
-accounting. Use persistent mode when on-chain payment enforcement is required.
+A priced single-shot runner uses the same payment challenge and accounting as a
+persistent session, but scoped to a single request. Without payment material the
+orchestrator returns `402 Payment Required` with payment parameters; the client
+retries with `Livepeer-Payment` and `Livepeer-Segment`. The orchestrator
+processes the initial payment, accounts usage on its configured payment interval
+for the lifetime of the proxied request, and releases the session when the
+request completes. Because a single-shot session lives for exactly one request,
+there is no per-session `/payment` refresh endpoint; use persistent mode when a
+client must refresh payment across multiple requests.
 
 Offchain runners do not issue payment challenges. For the underlying ticket
 protocol, see [Payments](payments.md).
@@ -541,7 +548,7 @@ session.
 | `POST /apps/{runner_id}/session/{session_id}/stop` | Client; session is identified by the URL | Releases a persistent session, its channels, and proxies. | `204`, `404` |
 | `POST /apps/{runner_id}/session/{session_id}/payment` | Paying client; `Livepeer-Payment` and `Livepeer-Segment` | Adds payment for an active session. The payment manifest must match `session_id`. | `200`, `400`, `403`, `404` |
 | `ANY /apps/{runner_id}/session/{session_id}/app/{app_path...}` | Client; access is by the reserved public URL | Proxies any HTTP method, SSE response, or WebSocket upgrade to a persistent runner. | Upstream status, `404`, `502` |
-| `ANY /apps/{runner_id}/app/{app_path...}` | Client; no application-level authentication | Reserves a single-shot session, proxies one request, then releases it. The current path does not enforce runner payment. | Upstream status, `400`, `404`, `503`, `502` |
+| `ANY /apps/{runner_id}/app/{app_path...}` | Client; no auth offchain. Onchain uses `Livepeer-Payer-Address` for the initial challenge and `Livepeer-Payment` plus `Livepeer-Segment` to reserve. | Reserves a single-shot session, proxies one request, then releases it. A priced runner first returns a payment challenge and accounts usage for the duration of the request. | Upstream status, `400`, `402`, `404`, `503`, `502` |
 
 The `runner_id` path value may be a static label when `routing` is `label`.
 
