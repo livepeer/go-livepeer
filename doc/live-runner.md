@@ -194,10 +194,12 @@ On an on-chain network, every runner must provide a positive `price_info.price`.
 The registration price is denominated in USD:
 
 - `currency` defaults to `usd`; no other registration currency is accepted.
-- `unit` defaults to `hour` and accepts `hour` or `720p`.
+- `unit` defaults to `hour` and accepts `hour`, `720p`, or `fixed`.
 - `hour` is converted to a wei-per-second discovery/payment price.
 - `720p` is converted using 720p at 30 fps and is advertised in
   `720p-pixel-seconds`.
+- `fixed` is converted directly from USD to wei without a time or pixel
+  divisor and is advertised as `fixed`.
 
 The conversion follows the node's USD/ETH price feed. On an offchain network,
 runner prices are not advertised and no payment challenge is required.
@@ -293,9 +295,7 @@ UTF-8 and at most 1,024 UTF-8-encoded bytes. An empty value clears previously
 registered metadata and is omitted from discovery.
 
 On-chain discovery includes the converted wei price. Offchain runner discovery
-omits it. If the orchestrator also has a serverless AI worker, the response may
-contain synthetic live-video-to-video runner records alongside registered live
-runners.
+omits it.
 
 #### Remote signer discovery
 
@@ -391,7 +391,7 @@ Required` with payment parameters. The client retries with
 `Livepeer-Payment` and `Livepeer-Segment`, then periodically refreshes payment at
 `POST /apps/{runner_id}/session/{session_id}/payment`. The orchestrator accounts
 usage on its configured payment interval and releases the session if payment
-fails.
+fails. If the payment unit is `fixed` then payment is only processed once.
 
 The current single-shot proxy path does not perform a payment challenge or
 accounting. Use persistent mode when on-chain payment enforcement is required.
@@ -420,7 +420,7 @@ are currently ignored. Labels in one submitted batch must be unique.
 | `mode` | string | Default: `persistent` | `persistent`, `single-shot`, or the normalized alias `single_shot`. |
 | `capacity` | integer | Default: `1` when zero | Maximum concurrent sessions. Negative values are invalid. |
 | `gpu` | object or integer | Optional | Object fields are `id`, `name`, and `vram_mb`. An integer is treated as a local device index; a negative index records only that numeric ID and skips hardware lookup. |
-| `price_info` | object | Required onchain; ignored for offchain payment/discovery | `price` is a positive decimal. `currency` defaults to and must equal `usd`. `unit` defaults to `hour` and accepts `hour` or `720p`. |
+| `price_info` | object | Required onchain; ignored for offchain payment/discovery | `price` is a positive decimal. `currency` defaults to and must equal `usd`. `unit` defaults to `hour` and accepts `hour`, `720p`, or `fixed`. |
 
 ### CLI flags
 
@@ -537,9 +537,9 @@ session.
 
 | Method and path | Caller / authentication | Description | Principal responses |
 | --- | --- | --- | --- |
-| `POST /apps/{runner_id}/session` | Client; no auth offchain. Onchain uses `Livepeer-Payer-Address` for the initial challenge and `Livepeer-Payment` plus `Livepeer-Segment` to reserve. | Reserves a persistent session. Returns `session_id`, `app_url`, and `control_url`; `proxy: true` registrations receive a random proxy-template `app_url`. A priced runner first returns a payment challenge. | `200`, `402`, `404`, `503` |
+| `POST /apps/{runner_id}/session` | Client; no auth offchain. Onchain uses `Livepeer-Payer-Address` for the initial challenge and `Livepeer-Payment` plus `Livepeer-Segment` to reserve. | Reserves a persistent session. Returns `session_id`, `app_url`, and `control_url`; `proxy: true` registrations receive a random proxy-template `app_url`. A priced runner first returns a payment challenge. | `200`, `400`, `402`, `404`, `409`, `503` |
 | `POST /apps/{runner_id}/session/{session_id}/stop` | Client; session is identified by the URL | Releases a persistent session, its channels, and proxies. | `204`, `404` |
-| `POST /apps/{runner_id}/session/{session_id}/payment` | Paying client; `Livepeer-Payment` and `Livepeer-Segment` | Adds payment for an active session. The payment manifest must match `session_id`. | `200`, `400`, `403`, `404` |
+| `POST /apps/{runner_id}/session/{session_id}/payment` | Paying client; `Livepeer-Payment` and `Livepeer-Segment` | Adds payment for an active session. The payment manifest must match `session_id`. Fixed-payment sessions do not need to call this. | `200`, `400`, `403`, `404`, `409` |
 | `ANY /apps/{runner_id}/session/{session_id}/app/{app_path...}` | Client; access is by the reserved public URL | Proxies any HTTP method, SSE response, or WebSocket upgrade to a persistent runner. | Upstream status, `404`, `502` |
 | `ANY /apps/{runner_id}/app/{app_path...}` | Client; no application-level authentication | Reserves a single-shot session, proxies one request, then releases it. The current path does not enforce runner payment. | Upstream status, `400`, `404`, `503`, `502` |
 

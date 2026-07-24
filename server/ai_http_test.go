@@ -673,6 +673,73 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.Nil(t, oInfo.GetCapabilities())
 }
 
+func TestLiveRunnerFixedPriceSessionAccountsOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{
+			PriceInfo: &runner.LiveRunnerPriceInfo{Price: json.Number("0.001"), Unit: "fixed"},
+		})
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+
+		challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+		orch.paymentCredit = big.NewRat(oInfo.GetPriceInfo().GetPricePerUnit(), 1)
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, oInfo.GetPriceInfo())
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+		setRequestHeaders(req, headers)
+		lp.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+		require.NotNil(t, balance)
+		require.Zero(t, balance.Sign())
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		_, err := manager.RunnerEndpointForSession("runner-1", challenge.ManifestID)
+		require.NoError(t, err)
+		balance = orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
+		require.NotNil(t, balance)
+		require.Zero(t, balance.Sign())
+
+		w = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodPost, "/apps/runner-1/session/"+challenge.ManifestID+"/payment", nil)
+		setRequestHeaders(req, headers)
+		lp.ServeHTTP(w, req)
+		require.Equal(t, http.StatusConflict, w.Code)
+	})
+}
+
+func TestLiveRunnerFixedPriceSessionRejectsMismatchedPriceBeforeReservation(t *testing.T) {
+	lp := newLiveRunnerHTTPOnchain(t)
+	registerLiveRunnerForSession(t, lp, &liveRunnerRegistrationOptions{
+		PriceInfo: &runner.LiveRunnerPriceInfo{Price: json.Number("0.001"), Unit: "fixed"},
+	})
+
+	challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+	orch := lp.orchestrator.(*stubOrchestrator)
+	mismatchedPrice := proto.Clone(oInfo.GetPriceInfo()).(*lpnet.PriceInfo)
+	mismatchedPrice.PricePerUnit--
+	headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, mismatchedPrice)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+	setRequestHeaders(req, headers)
+	lp.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "payment price does not match live runner price")
+	manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+	_, err := manager.RunnerEndpointForSession("runner-1", challenge.ManifestID)
+	require.Error(t, err)
+}
+
 func TestLiveRunnerSessionPaymentAcceptsPayment(t *testing.T) {
 	oldStorage := drivers.NodeStorage
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -787,6 +854,47 @@ func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
 		time.Sleep(time.Second)
 		synctest.Wait()
+	})
+}
+
+func TestReservePaidLiveRunnerSessionContextCancellationStopsBilling(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(3, 1)
+
+		challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, oInfo.GetPriceInfo())
+		priceInfo, err := manager.PaymentInfo("runner-1")
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+		setRequestHeaders(req, headers)
+		ctx, cancel := context.WithCancel(context.Background())
+		sessionID, _, ok := lp.reservePaidLiveRunnerSession(ctx, w, req, manager, "runner-1", priceInfo)
+		require.True(t, ok, w.Body.String())
+
+		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
+
+		// An active monitor would debit one unit per second. Canceling its parent
+		// context must stop billing without releasing the reserved session.
+		cancel()
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+
+		_, err = manager.RunnerEndpointForSession("runner-1", sessionID)
+		require.NoError(t, err)
+		balance = orch.Balance(orch.Address(), core.ManifestID(sessionID))
+		require.NotNil(t, balance)
+		require.Equal(t, "3", balance.FloatString(0))
 	})
 }
 
@@ -1992,9 +2100,10 @@ type liveRunnerRegistrationOptions struct {
 	Capacity  int
 	Mode      string
 	Proxy     bool
+	PriceInfo *runner.LiveRunnerPriceInfo
 }
 
-func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegistrationOptions) {
+func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegistrationOptions) *runner.LiveRunnerHeartbeatResponse {
 	t.Helper()
 	if lp == nil {
 		require.FailNow(t, "live runner lphttp is required")
@@ -2026,9 +2135,16 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 	if opts.Mode != "" && opts.Mode != runner.LiveRunnerModePersistent && opts.Mode != runner.LiveRunnerModeSingleShot {
 		require.FailNow(t, "invalid live runner mode", "mode=%q", opts.Mode)
 	}
+	priceInfo := runner.LiveRunnerPriceInfo{
+		Price: json.Number("0.001990656"),
+		Unit:  "720p",
+	}
+	if opts.PriceInfo != nil {
+		priceInfo = *opts.PriceInfo
+	}
 	manager, ok := lp.liveRunnerManager()
 	require.True(t, ok)
-	_, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
+	resp, err := manager.Heartbeat(runner.LiveRunnerHeartbeatRequest{
 		RunnerID:  runnerID,
 		Proxy:     opts.Proxy,
 		RunnerURL: runnerURL,
@@ -2036,12 +2152,10 @@ func registerLiveRunnerForSession(t *testing.T, lp *lphttp, opts *liveRunnerRegi
 		Mode:      opts.Mode,
 		App:       "live-video-to-video/scope",
 		Capacity:  capacity,
-		PriceInfo: runner.LiveRunnerPriceInfo{
-			Price: json.Number("0.001990656"),
-			Unit:  "720p",
-		},
+		PriceInfo: priceInfo,
 	}, lp.orchestrator.RegistrationSecret())
 	require.NoError(t, err)
+	return resp
 }
 
 func reserveLiveRunnerSession(t *testing.T, lp *lphttp, runnerID string) string {
