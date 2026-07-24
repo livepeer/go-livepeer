@@ -43,6 +43,8 @@ var TrickleHTTPPath = "/ai/trickle/"
 
 const maxLiveRunnerTrickleChannelsPerRequest = 25
 const liveRunnerSenderHeader = "Livepeer-Payer-Address"
+const liveRunnerSessionIDHeader = "Livepeer-Session-Id"
+const liveRunnerSessionControlHeader = "Livepeer-Session-Control"
 const maxScopeRequestBodySize = 1 << 20 // 1 MB
 
 func startAIServer(lp *lphttp) error {
@@ -184,6 +186,8 @@ type liveRunnerPaymentChallengeResponse struct {
 	// Keep the URL in top-level JSON so clients do not need to parse the protobuf just to route payment.
 	Orchestrator string `json:"orchestrator"`
 	ManifestID   string `json:"manifest_id"`
+	// Interval at which the orchestrator debits the session balance.
+	PaymentIntervalMs int64 `json:"payment_interval_ms"`
 }
 
 type liveRunnerTrickleChannelRequest struct {
@@ -280,44 +284,8 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		monitorCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-		accountPaymentFunc := func(units int64) error {
-			err := paymentReceiver.AccountPayment(monitorCtx, &SegmentInfoReceiver{
-				sender:    getPaymentSender(payment),
-				units:     units,
-				priceInfo: payment.GetExpectedPrice(),
-				sessionID: string(segData.ManifestID),
-			})
-			if err != nil {
-				clog.Errorf(monitorCtx, "Error accounting live runner payment, releasing session err=%v", err)
-				if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
-					clog.Errorf(monitorCtx, "Error releasing live runner session after payment failure err=%v", releaseErr)
-				}
-				// Stop both the ticker loop below and the LivePaymentProcessor goroutine.
-				cancel()
-			}
-			return err
-		}
-		paymentProcessor := newPaymentProcessor(monitorCtx, h.node.LivePaymentInterval, accountPaymentFunc)
-		go func() {
-			ticker := time.NewTicker(h.node.LivePaymentInterval)
-			defer ticker.Stop()
-			defer cancel()
-			for {
-				select {
-				case <-ticker.C:
-					// Stop monitoring once the live runner session has been released
-					// by an explicit stop, runner cleanup, expiry, or payment failure.
-					if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
-						return
-					}
-					paymentProcessor.process(monitorCtx)
-				case <-monitorCtx.Done():
-					return
-				}
-			}
-		}()
+		// Detach from the request ctx so the loop outlives this reservation call.
+		h.startLiveRunnerSessionPaymentLoop(context.WithoutCancel(ctx), manager, newPaymentProcessor, runnerID, sessionID, payment, segData.ManifestID)
 	}
 	controlURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID).String()
 	data, err := json.Marshal(liveRunnerSessionResponse{SessionID: sessionID, AppURL: appURL, ControlURL: controlURL})
@@ -339,6 +307,49 @@ func preparePaymentProcessor(unit string) (func(context.Context, time.Duration, 
 	}
 }
 
+// startLiveRunnerSessionPaymentLoop starts the metering loop; the caller controls
+// its lifetime via the ctx it passes.
+func (h *lphttp) startLiveRunnerSessionPaymentLoop(ctx context.Context, manager liveRunnerManager, newPaymentProcessor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor, runnerID, sessionID string, payment lpnet.Payment, manifestID core.ManifestID) {
+	loopCtx, cancel := context.WithCancel(ctx)
+	paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+	accountPaymentFunc := func(units int64) error {
+		err := paymentReceiver.AccountPayment(loopCtx, &SegmentInfoReceiver{
+			sender:    getPaymentSender(payment),
+			units:     units,
+			priceInfo: payment.GetExpectedPrice(),
+			sessionID: string(manifestID),
+		})
+		if err != nil {
+			clog.Errorf(loopCtx, "Error accounting live runner payment, releasing session err=%v", err)
+			if releaseErr := manager.ReleaseSession(runnerID, sessionID); releaseErr != nil {
+				clog.Errorf(loopCtx, "Error releasing live runner session after payment failure err=%v", releaseErr)
+			}
+			// Stop both the ticker loop below and the LivePaymentProcessor goroutine.
+			cancel()
+		}
+		return err
+	}
+	paymentProcessor := newPaymentProcessor(loopCtx, h.node.LivePaymentInterval, accountPaymentFunc)
+	go func() {
+		ticker := time.NewTicker(h.node.LivePaymentInterval)
+		defer ticker.Stop()
+		defer cancel()
+		for {
+			select {
+			case <-ticker.C:
+				// Stop the loop once the live runner session has been released
+				// by an explicit stop, runner cleanup, expiry, or payment failure.
+				if _, err := manager.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+					return
+				}
+				paymentProcessor.process(loopCtx)
+			case <-loopCtx.Done():
+				return
+			}
+		}
+	}()
+}
+
 func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceInfo *runner.LiveRunnerPriceInfo) {
 	sender, err := h.runnerSender(r)
 	if err != nil {
@@ -350,7 +361,7 @@ func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceIn
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	data, err := marshalLivePaymentChallengeResponse(oInfo, h.node.LivePaymentInterval)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -375,7 +386,7 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return false, err
 	}
-	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	data, err := marshalLivePaymentChallengeResponse(oInfo, h.node.LivePaymentInterval)
 	if err != nil {
 		return false, err
 	}
@@ -385,15 +396,16 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	return true, nil
 }
 
-func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte, error) {
+func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo, paymentInterval time.Duration) ([]byte, error) {
 	buf, err := proto.Marshal(oInfo)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(liveRunnerPaymentChallengeResponse{
-		PaymentParams: base64.StdEncoding.EncodeToString(buf),
-		Orchestrator:  oInfo.GetTranscoder(),
-		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+		PaymentParams:     base64.StdEncoding.EncodeToString(buf),
+		Orchestrator:      oInfo.GetTranscoder(),
+		ManifestID:        oInfo.GetAuthToken().GetSessionId(),
+		PaymentIntervalMs: paymentInterval.Milliseconds(),
 	})
 }
 
@@ -709,22 +721,73 @@ func (h *lphttp) ProxyLiveRunnerSingleShot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sessionID, endpoint, err := manager.ReserveSession(runnerID)
+	priceInfo, err := manager.PaymentInfo(runnerID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
 	}
+	paymentRequired := priceInfo != nil
+	if paymentRequired && r.Header.Get(paymentHeader) == "" && r.Header.Get(segmentHeader) == "" {
+		h.runnerChallenge(w, r, priceInfo)
+		return
+	}
+
+	var (
+		payment   lpnet.Payment
+		segData   *core.SegTranscodingMetadata
+		ctx       = r.Context()
+		sessionID string
+	)
+	if paymentRequired {
+		var err error
+		payment, segData, ctx, err = h.processPaymentAndSegmentHeaders(w, r)
+		if err != nil {
+			return
+		}
+		if string(segData.ManifestID) != segData.AuthToken.SessionId {
+			respondWithError(w, "mismatched manifest and auth token", http.StatusForbidden)
+			return
+		}
+		// for easier correlation across orch, gw, signer
+		sessionID = string(segData.ManifestID)
+	}
+	sessionID, endpoint, err := manager.ReserveSession(runnerID, sessionID)
+	if err != nil {
+		respondWithLiveRunnerError(w, err)
+		return
+	}
+
+	// Release on return: a single-shot session lives for exactly one request.
 	defer func() {
 		if err := manager.ReleaseSession(runnerID, sessionID); err != nil {
 			slog.Error("error releasing single-shot session", "runner_id", runnerID, "session_id", sessionID, "err", err)
 		}
 	}()
 
+	ctx = clog.AddVal(ctx, "runner_id", runnerID)
+	ctx = clog.AddVal(ctx, "session_id", sessionID)
+	if paymentRequired {
+		var newPaymentProcessor func(context.Context, time.Duration, func(int64) error) *LivePaymentProcessor
+		newPaymentProcessor, err = preparePaymentProcessor(priceInfo.Unit)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+			// Session released by the defer above.
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Bound to the request ctx so the loop ends when this single-shot call returns.
+		h.startLiveRunnerSessionPaymentLoop(ctx, manager, newPaymentProcessor, runnerID, sessionID, payment, segData.ManifestID)
+	}
+
 	sessionToken, err := manager.SessionTokenForSession(runnerID, sessionID)
 	if err != nil {
 		respondWithLiveRunnerError(w, err)
 		return
 	}
+
 	h.proxyLiveRunner(w, r, runnerID, sessionID, sessionToken, endpoint, r.PathValue("app_path"))
 }
 
@@ -773,9 +836,9 @@ func (h *lphttp) proxyLiveRunner(w http.ResponseWriter, r *http.Request, runnerI
 			req.Out.URL.RawQuery = req.In.URL.RawQuery
 			req.Out.Host = target.Host
 			req.Out.Header.Set("Livepeer-Runner-Route", runnerID)
-			req.Out.Header.Set("Livepeer-Session-Id", sessionID)
+			req.Out.Header.Set(liveRunnerSessionIDHeader, sessionID)
 			req.Out.Header.Set("Livepeer-Session-Token", sessionToken)
-			req.Out.Header.Set("Livepeer-Session-Control", sessionControlURL)
+			req.Out.Header.Set(liveRunnerSessionControlHeader, sessionControlURL)
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
 			respondWithError(w, err.Error(), http.StatusBadGateway)
@@ -1204,6 +1267,7 @@ func (h *lphttp) StartScope() http.Handler {
 				return err
 			}
 			paymentProcessor = NewLV2VPaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+
 		} else {
 			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
