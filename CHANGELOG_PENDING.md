@@ -15,6 +15,8 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#3693 Forward `HF_TOKEN` env var (for huggingface) to runner container on spawn (@hjpotter92)
+- \#3693 Better hostname for runner container to distinguish when multiple containers are running on same host (@hjpotter92)
 
 - [#3943](https://github.com/livepeer/go-livepeer/pull/3943) Log live runner register and deregister events (@rickstaa)
 
