@@ -386,15 +386,12 @@ The proxy ID must be the final template path segment, so a template such as
 ### Payments
 
 On-chain runner sessions use Livepeer probabilistic micropayments. Reserving a
-priced persistent runner without payment material returns `402 Payment
-Required` with payment parameters. The client retries with
-`Livepeer-Payment` and `Livepeer-Segment`, then periodically refreshes payment at
+runner without payment material returns `402 Payment Required` with payment
+parameters. The client retries the same request with `Livepeer-Payment` and
+`Livepeer-Segment`, then periodically refreshes payment at
 `POST /apps/{runner_id}/session/{session_id}/payment`. The orchestrator accounts
 usage on its configured payment interval and releases the session if payment
 fails. If the payment unit is `fixed` then payment is only processed once.
-
-The current single-shot proxy path does not perform a payment challenge or
-accounting. Use persistent mode when on-chain payment enforcement is required.
 
 Offchain runners do not issue payment challenges. For the underlying ticket
 protocol, see [Payments](payments.md).
@@ -541,7 +538,7 @@ session.
 | `POST /apps/{runner_id}/session/{session_id}/stop` | Client; session is identified by the URL | Releases a persistent session, its channels, and proxies. | `204`, `404` |
 | `POST /apps/{runner_id}/session/{session_id}/payment` | Paying client; `Livepeer-Payment` and `Livepeer-Segment` | Adds payment for an active session. The payment manifest must match `session_id`. Fixed-payment sessions do not need to call this. | `200`, `400`, `403`, `404`, `409` |
 | `ANY /apps/{runner_id}/session/{session_id}/app/{app_path...}` | Client; access is by the reserved public URL | Proxies any HTTP method, SSE response, or WebSocket upgrade to a persistent runner. | Upstream status, `404`, `502` |
-| `ANY /apps/{runner_id}/app/{app_path...}` | Client; no application-level authentication | Reserves a single-shot session, proxies one request, then releases it. The current path does not enforce runner payment. | Upstream status, `400`, `404`, `503`, `502` |
+| `ANY /apps/{runner_id}/app/{app_path...}` | Client; no application-level authentication | Reserves a single-shot session, proxies one request, then releases it. | Upstream status, `400`, `404`, `503`, `502` |
 
 The `runner_id` path value may be a static label when `routing` is `label`.
 

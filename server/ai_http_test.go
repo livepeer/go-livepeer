@@ -877,7 +877,7 @@ func TestReservePaidLiveRunnerSessionContextCancellationStopsBilling(t *testing.
 		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
 		setRequestHeaders(req, headers)
 		ctx, cancel := context.WithCancel(context.Background())
-		sessionID, _, ok := lp.reservePaidLiveRunnerSession(ctx, w, req, manager, "runner-1", priceInfo)
+		sessionID, _, ok := lp.reservePaidLiveRunnerSession(ctx, w, req, manager, "runner-1", priceInfo, nil)
 		require.True(t, ok, w.Body.String())
 
 		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
@@ -943,6 +943,41 @@ func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T)
 		var runnerErr *runner.RunnerError
 		require.True(t, errors.As(err, &runnerErr), "expected runner error, got %v", err)
 		require.Equal(t, http.StatusNotFound, runnerErr.StatusCode)
+	})
+}
+
+func TestLiveRunnerPaidSessionMonitorCancelsRequestOnInsufficientBalance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		lp := newLiveRunnerHTTPOnchain(t)
+		lp.node.LivePaymentInterval = time.Second
+		registerLiveRunnerForSession(t, lp, nil)
+		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
+		defer manager.Stop()
+
+		orch := lp.orchestrator.(*stubOrchestrator)
+		orch.balances = make(map[ethcommon.Address]map[core.ManifestID]*big.Rat)
+		orch.paymentCredit = big.NewRat(0, 1)
+
+		challenge, oInfo := requestLiveRunnerPaymentChallenge(t, lp, "runner-1")
+		headers := liveRunnerReservationPaymentHeadersWithPrice(t, orch, oInfo.GetAuthToken(), challenge.ManifestID, oInfo.GetPriceInfo())
+		priceInfo, err := manager.PaymentInfo("runner-1")
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/apps/runner-1/session", nil)
+		setRequestHeaders(req, headers)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, _, ok := lp.reservePaidLiveRunnerSession(ctx, w, req, manager, "runner-1", priceInfo, cancel)
+		require.True(t, ok, w.Body.String())
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		select {
+		case <-ctx.Done():
+		default:
+			t.Fatal("expected payment failure to cancel request context")
+		}
 	})
 }
 
