@@ -244,11 +244,10 @@ func (h *lphttp) ReserveLiveRunnerSession(w http.ResponseWriter, r *http.Request
 			respondWithLiveRunnerError(w, err)
 			return
 		}
-		ctx = clog.AddVal(ctx, "session_id", sessionID)
 	} else {
-		var reservationOK bool
-		sessionID, appURL, reservationOK = h.reservePaidLiveRunnerSession(ctx, w, r, manager, runnerID, priceInfo, nil)
-		if !reservationOK {
+		var reserved bool
+		sessionID, appURL, reserved = h.reservePaidLiveRunnerSession(ctx, w, r, manager, runnerID, priceInfo, nil)
+		if !reserved {
 			return
 		}
 	}
