@@ -391,7 +391,9 @@ parameters. The client retries the same request with `Livepeer-Payment` and
 `Livepeer-Segment`, then periodically refreshes payment at
 `POST /apps/{runner_id}/session/{session_id}/payment`. The orchestrator accounts
 usage on its configured payment interval and releases the session if payment
-fails. If the payment unit is `fixed` then payment is only processed once.
+fails. The challenge response reports that interval as `payment_interval_ms` so
+clients can size and time payments to keep the session balance funded. If the
+payment unit is `fixed` then payment is only processed once.
 
 Offchain runners do not issue payment challenges. For the underlying ticket
 protocol, see [Payments](payments.md).

@@ -664,6 +664,7 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.NotEmpty(t, challenge.PaymentParams)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
 	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, int64(5000), challenge.PaymentIntervalMs)
 	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
 	require.NotNil(t, oInfo.GetTicketParams())
 	require.NotNil(t, oInfo.GetPriceInfo())
