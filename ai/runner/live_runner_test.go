@@ -1118,6 +1118,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 		App:       "live-video-to-video/scope",
 		Capacity:  2,
 		HealthURL: healthSrv.URL,
+		PriceInfo: LiveRunnerPriceInfo{Price: json.Number("10"), Unit: "fixed"},
 	}
 	resp1, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
 	if err != nil {
@@ -1130,6 +1131,7 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 	}
 
 	entry.RunnerURL = "https://runner-updated.example.com"
+	entry.PriceInfo = LiveRunnerPriceInfo{Price: json.Number("20"), Unit: "hour"}
 	resp2, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{entry}})
 	if err != nil {
 		t.Fatal(err)
@@ -1139,6 +1141,13 @@ func TestLiveRunnerRegistry_RegisterStaticRunnersUpsertsWithoutDroppingSession(t
 	}
 	if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); err != nil {
 		t.Fatalf("expected active session to survive healthy static upsert: %v", err)
+	}
+	sessionPriceInfo, err := registry.SessionPriceInfo(runnerID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionPriceInfo.Price.String() != "10" || sessionPriceInfo.Unit != "fixed" {
+		t.Fatalf("unexpected static session price snapshot: %+v", sessionPriceInfo)
 	}
 }
 

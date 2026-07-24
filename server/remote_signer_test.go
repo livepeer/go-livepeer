@@ -277,6 +277,20 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "orchestrator price",
 		},
 		{
+			name: "fixed orchestrator price uses existing max price check",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					ManifestID:   "fixed-manifest",
+					Type:         RemoteType_Fixed,
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "orchestrator price",
+		},
+		{
 			name: "orchestrator price exceeds per-capability max price",
 			req: func() RemotePaymentRequest {
 				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
@@ -785,6 +799,80 @@ func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
 		// Follow-up live payment bills elapsed seconds: 12s * 3 wei/s = 36 wei.
 		require.Zero(bal2.Cmp(big.NewRat(4, 1)), "unexpected follow-up balance: %s", bal2.RatString())
 	})
+}
+
+func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(time.Minute)
+	defer node.Balances.StopCleanup()
+	var ticketNonce uint32
+	node.Sender = newMockSender(mockSenderConfig{
+		ev: big.NewRat(3, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			require.Equal(1, args.Int(1))
+			*batch = *defaultTicketBatch()
+			ticketNonce++
+			batch.SenderParams = []*pm.TicketSenderParams{{
+				SenderNonce: ticketNonce,
+				Sig:         pm.RandBytes(42),
+			}}
+		},
+	})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPayment := func(manifestID string, state RemotePaymentStateSig) (RemotePaymentResponse, net.Payment) {
+		body, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   manifestID,
+			InPixels:     1_000_000,
+			Type:         RemoteType_Fixed,
+			State:        state,
+		})
+		require.NoError(err)
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(body)))
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+		require.NoError(err)
+		var payment net.Payment
+		require.NoError(proto.Unmarshal(paymentBytes, &payment))
+		return resp, payment
+	}
+
+	// Like other payment types, an initial request may omit the manifest ID.
+	first, firstPayment := doPayment("", RemotePaymentStateSig{})
+	require.Len(firstPayment.TicketSenderParams, 1)
+	var firstState RemotePaymentState
+	require.NoError(json.Unmarshal(first.State.State, &firstState))
+	require.Equal(RemoteType_Fixed, firstState.Type)
+	require.EqualValues(0, firstState.SequenceNumber)
+	require.Equal("0", firstState.Balance)
+
+	second, secondPayment := doPayment("fixed-manifest", first.State)
+	require.Len(secondPayment.TicketSenderParams, 1)
+	require.NotEqual(firstPayment.TicketSenderParams[0].SenderNonce, secondPayment.TicketSenderParams[0].SenderNonce)
+	var secondState RemotePaymentState
+	require.NoError(json.Unmarshal(second.State.State, &secondState))
+	require.Equal(RemoteType_Fixed, secondState.Type)
+	require.EqualValues(1, secondState.SequenceNumber)
+	require.Equal("0", secondState.Balance)
 }
 
 func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
@@ -1602,6 +1690,16 @@ func discoveryRaw(t *testing.T, data string) json.RawMessage {
 	t.Helper()
 	require.True(t, json.Valid([]byte(data)))
 	return json.RawMessage(data)
+}
+
+func TestValidateRunnerPriceAcceptsFixedUnit(t *testing.T) {
+	price, err := validateRunnerPrice(&runner.LiveRunnerPriceInfo{
+		Price:    json.Number("7"),
+		Currency: "wei",
+		Unit:     "fixed",
+	})
+	require.NoError(t, err)
+	require.Zero(t, price.Cmp(big.NewRat(7, 1)))
 }
 
 func discoveryRunnerApps(t *testing.T, resp discoveryResponse) []string {
