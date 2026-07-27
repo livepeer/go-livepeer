@@ -19,6 +19,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/runner"
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -35,6 +36,7 @@ const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_Live = "live"
 const RemoteType_LiveVideoToVideo = "lv2v"
 const RemoteType_Fixed = "fixed"
+const RemoteType_BYOC = "byoc"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
 
@@ -76,11 +78,76 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(results)
 }
 
+// SignBYOCJobRequest signs a BYOC job using the V1 binary format (FlattenBYOCJob).
+type SignBYOCJobRequestInput struct {
+	ID             string `json:"id"`
+	Capability     string `json:"capability"`
+	Request        string `json:"request"`
+	Parameters     string `json:"parameters"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
+type SignBYOCJobRequestResponse struct {
+	Sender    string `json:"sender"`
+	Signature string `json:"signature"`
+}
+
+func (ls *LivepeerServer) SignBYOCJobRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
+	remoteAddr := getRemoteAddr(r)
+	clog.Info(ctx, "BYOC job signing request", "ip", remoteAddr)
+
+	gw := core.NewBroadcaster(ls.LivepeerNode)
+
+	var req SignBYOCJobRequestInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		clog.Errorf(ctx, "Failed to decode SignBYOCJobRequest err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" || req.Capability == "" {
+		err := fmt.Errorf("sign-byoc-job requires non-empty id and capability")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		err := fmt.Errorf("sign-byoc-job requires positive timeout_seconds")
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	sigPayload := byoc.FlattenBYOCJob(&byoc.BYOCJobSigningInput{
+		ID:             req.ID,
+		Capability:     req.Capability,
+		Request:        req.Request,
+		Parameters:     req.Parameters,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
+
+	sig, err := gw.Sign(sigPayload)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to sign BYOC job request err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
+		return
+	}
+
+	response := SignBYOCJobRequestResponse{
+		Sender:    gw.Address().Hex(),
+		Signature: "0x" + hex.EncodeToString(sig),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
+	ls.HTTPMux.Handle("POST /sign-byoc-job", http.HandlerFunc(ls.SignBYOCJobRequest))
 	if ls.LivepeerNode.RemoteDiscovery {
 		rdp := RemoteDiscoveryConfig{
 			Pool:     ls.LivepeerNode.OrchestratorPool,
@@ -180,11 +247,25 @@ type RemotePaymentRequest struct {
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`, `fixed`. Optional.
+	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`, `fixed`, `byoc`. Optional.
 	Type string `json:"type"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
+
+	// Capability is the real BYOC capability name (e.g. "nano-banana"). When
+	// set, it overrides the metered `pipeline` label for the emitted
+	// create_signed_ticket usage event, decoupling usage attribution from
+	// `Type` (which stays "lv2v" for fee/pixel routing). Optional; empty
+	// preserves the previous behavior (pipeline falls back to the lv2v
+	// constant when Type=="lv2v").
+	Capability string `json:"capability,omitempty"`
+
+	// ModelID is the specific provider model from the request
+	// payload/parameters. When set, it overrides the metered `model_id`
+	// label. Optional; empty preserves the previous behavior (the
+	// capabilities-derived model id, which defaults to "unknown" downstream).
+	ModelID string `json:"model_id,omitempty"`
 }
 
 // Returned by the remote signer and includes a new payment plus updated state.
@@ -293,6 +374,125 @@ func (ls *LivepeerServer) authLivePayment(r *http.Request, state *RemotePaymentS
 	return *webhookResp.Status, &webhookResp, errors.New(webhookResp.Reason)
 }
 
+// maxUsageLabelLen bounds the length of gateway-supplied usage labels
+// (pipeline/model_id) before they are emitted to the metering pipeline.
+// req.Capability / req.ModelID come straight from the request body, so a buggy
+// or malicious caller could otherwise send very long / high-cardinality values
+// that inflate Kafka payload size and downstream label cardinality (the
+// pipeline label was previously a small fixed set). 128 runes is generous for
+// real capability/model identifiers.
+const maxUsageLabelLen = 128
+
+// sanitizeUsageLabel trims surrounding whitespace and caps the length (in
+// runes, to never emit invalid UTF-8) of a gateway-supplied metering label.
+func sanitizeUsageLabel(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > maxUsageLabelLen {
+		return string(r[:maxUsageLabelLen])
+	}
+	return s
+}
+
+// resolveUsageLabels derives the metering `pipeline` and `model_id` labels for
+// the emitted create_signed_ticket usage event.
+//
+// The real BYOC capability/model supplied by the gateway (req.Capability /
+// req.ModelID) take precedence and override the labels whenever they are set,
+// regardless of `Type` — this decouples usage attribution from `Type`, which
+// still drives fee/pixel routing. The gateway-supplied values are sanitized
+// (trimmed + length-capped) to bound payload size and label cardinality.
+//
+// When those additive fields are empty, the labels fall back to
+// ConstrainedPipelineModelID and then the type-based defaults (lv2v / live /
+// fixed / byoc), matching pre-feature base behavior.
+func resolveUsageLabels(req *RemotePaymentRequest, caps *core.Capabilities) (pipeline, modelID string) {
+	if caps != nil {
+		pipeline, modelID = caps.ConstrainedPipelineModelID()
+	}
+	if pipeline == "" {
+		if req.Type == RemoteType_LiveVideoToVideo {
+			pipeline = PipelineLiveVideoToVideo
+			if caps != nil {
+				modelID = caps.ModelIDForCapability(core.Capability_LiveVideoToVideo)
+			}
+		} else if req.Type == RemoteType_Live {
+			pipeline = RemoteType_Live
+		} else if req.Type == RemoteType_Fixed {
+			pipeline = RemoteType_Fixed
+		} else if req.Type == RemoteType_BYOC && caps != nil {
+			if m := caps.ModelIDForCapability(core.Capability_BYOC); m != "" {
+				pipeline = core.CapabilityToPipeline(core.Capability_BYOC)
+				modelID = m
+			}
+		}
+	}
+	if c := sanitizeUsageLabel(req.Capability); c != "" {
+		pipeline = c
+	}
+	if m := sanitizeUsageLabel(req.ModelID); m != "" {
+		modelID = m
+	}
+	return pipeline, modelID
+}
+
+// byocCapabilityName returns the BYOC capability constraint used for per-cap
+// pricing lookup. The gateway may supply it as req.Capability (lv2v path) or
+// encode it in the BYOC capabilities protobuf (type:"byoc" path).
+func byocCapabilityName(req *RemotePaymentRequest, caps *core.Capabilities) string {
+	if c := sanitizeUsageLabel(req.Capability); c != "" {
+		return c
+	}
+	if caps != nil {
+		return caps.ModelIDForCapability(core.Capability_BYOC)
+	}
+	return ""
+}
+
+func isByocBillingType(t string) bool {
+	return t == RemoteType_BYOC || t == RemoteType_LiveVideoToVideo
+}
+
+// resolveByocPrice resolves the per-capability BYOC price advertised in the
+// orchestrator's OrchestratorInfo.CapabilitiesPrices, keyed on the request
+// capability name (req.Capability). The orchestrator appends external BYOC
+// capability prices to CapabilitiesPrices as
+// {Capability: Capability_BYOC, Constraint: <capability name>} (see
+// core/orchestrator.go GetCapabilitiesPrices), so a match is a BYOC entry whose
+// Constraint equals req.Capability.
+//
+// Granularity is per-capability only: req.ModelID is intentionally NOT used for
+// price selection (model_id still flows through for metering attribution).
+//
+// Returns nil when there is no usable per-capability price (no capability set,
+// or no matching entry with a positive rate). A matching entry with a
+// non-positive rate is skipped rather than aborting the scan, so a later valid
+// duplicate entry for the same constraint (e.g. due to misconfiguration) is
+// still honored. Callers fall back to the base oInfo.PriceInfo when nil is
+// returned, preserving today's behavior for unconfigured or misconfigured
+// capabilities. This is a pure function (no flag, no IO) so it is hermetically
+// testable without the CGO/ffmpeg toolchain.
+func resolveByocPrice(req *RemotePaymentRequest, oInfo *net.OrchestratorInfo) *net.PriceInfo {
+	if req == nil || oInfo == nil || req.Capability == "" {
+		return nil
+	}
+	for _, p := range oInfo.CapabilitiesPrices {
+		if p == nil {
+			continue
+		}
+		if p.Capability != uint32(core.Capability_BYOC) || p.Constraint != req.Capability {
+			continue
+		}
+		// Only honor a valid positive rate. Skip invalid/zero entries and keep
+		// scanning so a later valid duplicate for the same constraint isn't
+		// shadowed; if none is found we fall back to base (never zeroing the fee).
+		if p.PricePerUnit <= 0 || p.PixelsPerUnit <= 0 {
+			continue
+		}
+		return &net.PriceInfo{PricePerUnit: p.PricePerUnit, PixelsPerUnit: p.PixelsPerUnit}
+	}
+	return nil
+}
+
 // GenerateLivePayment handles remote generation of a payment for live streams.
 func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Request) {
 	requestID := string(core.RandomManifestID())
@@ -327,7 +527,43 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
 		return
 	}
+	// BYOC per-capability pricing (flag-gated, default OFF). When enabled and the
+	// gateway supplied a real capability, resolve the per-capability price from
+	// the orchestrator's advertised CapabilitiesPrices and use it instead of the
+	// flat base price. The resolved price is written back to oInfo.PriceInfo so it
+	// is the single source for: state init, initialPrice, the max-price ceiling,
+	// the payment's ExpectedPrice (which the orchestrator uses to set its fixed
+	// per-session price), and the price-doubling guard in validatePrice (which
+	// reads sess.OrchestratorInfo.PriceInfo) — keeping all of them cap-vs-cap
+	// consistent. When the flag is OFF or no usable cap price matches, behavior is
+	// byte-identical to the base-price path.
 	priceInfo := oInfo.PriceInfo
+	useByocPricing := false
+	var parsedCaps *core.Capabilities
+	if len(req.Capabilities) > 0 {
+		var caps net.Capabilities
+		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
+			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+		parsedCaps = core.CapabilitiesFromNetCapabilities(&caps)
+	}
+	capName := byocCapabilityName(&req, parsedCaps)
+	// BYOC per-cap pricing changes the billing basis (compute-seconds instead
+	// of lv2v pixels). Apply for lv2v or explicit byoc job types when a
+	// capability constraint is present.
+	if ls.LivepeerNode.ByocPerCapPricing && capName != "" && isByocBillingType(req.Type) {
+		priceReq := req
+		if priceReq.Capability == "" {
+			priceReq.Capability = capName
+		}
+		if capPrice := resolveByocPrice(&priceReq, &oInfo); capPrice != nil {
+			priceInfo = capPrice
+			oInfo.PriceInfo = capPrice
+			useByocPricing = true
+		}
+	}
 	if priceInfo == nil || priceInfo.PricePerUnit == 0 || priceInfo.PixelsPerUnit == 0 {
 		err := fmt.Errorf("missing or zero priceInfo")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -401,14 +637,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		// Embedded within genSegCreds, may be used by orch for payment accounting
 		ManifestID: core.ManifestID(manifestID),
 	}
-	if len(req.Capabilities) > 0 {
-		var caps net.Capabilities
-		if err := proto.Unmarshal(req.Capabilities, &caps); err != nil {
-			clog.Errorf(ctx, "Failed to unmarshal capabilities err=%q", err)
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-		streamParams.Capabilities = core.CapabilitiesFromNetCapabilities(&caps)
+	if parsedCaps != nil {
+		streamParams.Capabilities = parsedCaps
 	}
 
 	pmParams := pmTicketParams(oInfo.TicketParams)
@@ -474,7 +704,18 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		lastUpdate = now
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
-	if req.Type == RemoteType_LiveVideoToVideo {
+	if useByocPricing || req.Type == RemoteType_BYOC {
+		// BYOC per-capability tariff is denominated per compute-second (wei/sec),
+		// so charge on seconds directly rather than synthesizing lv2v pixels. With
+		// billableUnits = ceil(billableSecs) and the resolved per-cap price kept as
+		// its reduced wei/sec rational, calculateFee yields capPriceWeiPerSec * seconds.
+		if billableSecs <= 0 {
+			// preload with 60 seconds, mirroring the lv2v first-call behavior
+			billableSecs = (60 * time.Second).Seconds()
+		}
+		pixels = int64(math.Ceil(billableSecs))
+		billableUnits = pixels
+	} else if req.Type == RemoteType_LiveVideoToVideo {
 		info := defaultSegInfo
 		if billableSecs <= 0 {
 			// preload with 60 seconds of data for LV2V
@@ -634,20 +875,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		if state.SequenceNumber == 0 {
 			sessionStatus = "new"
 		}
-		pipeline := ""
-		modelID := ""
-		if streamParams.Capabilities != nil {
-			pipeline, modelID = streamParams.Capabilities.ConstrainedPipelineModelID()
-		}
-		if pipeline == "" {
-			if req.Type == RemoteType_LiveVideoToVideo {
-				pipeline = PipelineLiveVideoToVideo
-			} else if req.Type == RemoteType_Live {
-				pipeline = RemoteType_Live
-			} else if req.Type == RemoteType_Fixed {
-				pipeline = RemoteType_Fixed
-			}
-		}
+		pipeline, modelID := resolveUsageLabels(&req, streamParams.Capabilities)
 		// NB: This could drop events if the Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
