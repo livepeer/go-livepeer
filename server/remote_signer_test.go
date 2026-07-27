@@ -2411,9 +2411,9 @@ func TestGenerateLivePayment_ByocPerCapPricing(t *testing.T) {
 	// type:"byoc" + capabilities protobuf (no capability string) must bill like BYOC.
 	doPaymentByocType := func(modelID string) RemotePaymentState {
 		reqBody, err := json.Marshal(RemotePaymentRequest{
-			Orchestrator:   orchBlob,
-			Type:           RemoteType_BYOC,
-			Capabilities:   byocCapsProtoBytes(t, modelID),
+			Orchestrator: orchBlob,
+			Type:         RemoteType_BYOC,
+			Capabilities: byocCapsProtoBytes(t, modelID),
 		})
 		require.NoError(err)
 		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
