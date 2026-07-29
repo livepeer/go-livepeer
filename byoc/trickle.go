@@ -42,7 +42,10 @@ var (
 
 func (bsg *BYOCGatewayServer) startTricklePublish(ctx context.Context, url *url.URL, params byocAIRequestParams, orchAddr string, orchUrl string) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
-	publisher, err := trickle.NewTricklePublisher(url.String())
+	publisher, err := trickle.NewTricklePublisherWithConfig(trickle.TricklePublisherConfig{
+		URL:                url.String(),
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
+	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("trickle publish init err: %w", err))
 		return
@@ -181,8 +184,9 @@ func (bsg *BYOCGatewayServer) startTrickleSubscribe(ctx context.Context, url *ur
 	// subscribe to inference outputs and send them into the world
 
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
+		URL:                url.String(),
+		Ctx:                ctx,
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
 	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("trickle subscription init failed: %w", err))
@@ -471,7 +475,10 @@ func (bsg *BYOCGatewayServer) setOutWriter(ctx context.Context, writer *media.Ri
 }
 
 func (bsg *BYOCGatewayServer) startControlPublish(ctx context.Context, control *url.URL, params byocAIRequestParams, orchAddr string, orchUrl string) {
-	controlPub, err := trickle.NewTricklePublisher(control.String())
+	controlPub, err := trickle.NewTricklePublisherWithConfig(trickle.TricklePublisherConfig{
+		URL:                control.String(),
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
+	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
@@ -579,8 +586,9 @@ func (bsg *BYOCGatewayServer) startEventsSubscribe(
 	orchUrl string,
 ) {
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
+		URL:                url.String(),
+		Ctx:                ctx,
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
 	})
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
@@ -796,8 +804,9 @@ func (bsg *BYOCGatewayServer) startDataSubscribe(ctx context.Context, url *url.U
 
 	// subscribe to the outputs
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
+		URL:                url.String(),
+		Ctx:                ctx,
+		InsecureSkipVerify: params.node.TrickleInsecureSkipVerify,
 	})
 	if err != nil {
 		clog.Infof(ctx, "Failed to create data subscriber: %s", err)

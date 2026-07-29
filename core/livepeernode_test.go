@@ -59,6 +59,15 @@ func (t *StubTranscoder) Stop() {
 	t.StoppedCount++
 }
 
+func TestTrickleInsecureSkipVerify(t *testing.T) {
+	n, err := NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	require.True(t, n.TrickleInsecureSkipVerify)
+
+	n.TrickleInsecureSkipVerify = false
+	require.False(t, n.TrickleInsecureSkipVerify)
+}
+
 func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}

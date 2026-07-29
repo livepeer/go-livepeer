@@ -56,6 +56,10 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// AI:
 	cfg.AIServiceRegistry = fs.Bool("aiServiceRegistry", *cfg.AIServiceRegistry, "Set to true to use an AI ServiceRegistry contract address")
 	cfg.AIWorker = fs.Bool("aiWorker", *cfg.AIWorker, "Set to true to run an AI worker")
+	cfg.AIServerless = fs.Bool("aiServerless", *cfg.AIServerless, "Set to true to use serverless AI worker")
+	cfg.UseLiveRunners = fs.Bool("useLiveRunners", *cfg.UseLiveRunners, "Set to true to use LiveRunner-backed runners for supported pipelines")
+	cfg.LiveRunnerConfig = fs.String("liveRunnerConfig", *cfg.LiveRunnerConfig, "Path to JSON config file for static LiveRunner registration")
+	cfg.LiveRunnerProxyURL = fs.String("liveRunnerProxyUrl", *cfg.LiveRunnerProxyURL, "Public LiveRunner proxy URL template. Must contain exactly one {proxy} placeholder, e.g. https://{proxy}.example.com or https://example.com/run/{proxy}")
 	cfg.AIModels = fs.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
 	cfg.AIModelsDir = fs.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 	cfg.AIRunnerImage = fs.String("aiRunnerImage", *cfg.AIRunnerImage, "[Deprecated] Specify the base Docker image for the AI runner. Example: livepeer/ai-runner:0.0.1. Use -aiRunnerImageOverrides instead.")
@@ -67,6 +71,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 
 	// Live AI:
 	cfg.MediaMTXApiPassword = fs.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
+	cfg.LiveRunnerAddr = fs.String("liveRunnerAddr", *cfg.LiveRunnerAddr, "Base URL used by live runners for heartbeat, control-plane callbacks, and internal trickle channels. Must be a full URL such as http://go-livepeer:8935")
 	cfg.LiveAITrickleHostForRunner = fs.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
 	cfg.LiveAIAuthApiKey = fs.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
 	cfg.LiveAIHeartbeatURL = fs.String("liveAIHeartbeatURL", "", "Base URL for Live AI heartbeat requests")

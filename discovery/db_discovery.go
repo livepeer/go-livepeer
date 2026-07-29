@@ -2,8 +2,11 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -22,6 +25,10 @@ import (
 	"github.com/golang/glog"
 )
 
+const orchestratorEndpointDiscoveryMaxBytes = 1 << 20
+
+var orchestratorEndpointDiscoveryTimeout = 2 * time.Second
+
 type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
 }
@@ -35,7 +42,15 @@ type DBOrchestratorPoolCache struct {
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
 	ignoreCapacityCheck   bool
+	useDiscoveryEndpoint  bool
 	node                  *core.LivepeerNode
+}
+
+type orchPollingInfo struct {
+	level     int
+	orchInfo  *net.OrchestratorInfo
+	dbOrch    *common.DBOrch
+	discovery json.RawMessage
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration, liveAICapReportInterval time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -57,6 +72,7 @@ type DBOrchestratorPoolCacheConfig struct {
 	DiscoveryTimeout        time.Duration
 	LiveAICapReportInterval time.Duration
 	IgnoreCapacityCheck     bool
+	UseDiscoveryEndpoint    bool
 }
 
 func (cfg DBOrchestratorPoolCacheConfig) New() (*DBOrchestratorPoolCache, error) {
@@ -74,6 +90,7 @@ func (cfg DBOrchestratorPoolCacheConfig) New() (*DBOrchestratorPoolCache, error)
 		orchBlacklist:         cfg.OrchBlacklist,
 		discoveryTimeout:      cfg.DiscoveryTimeout,
 		ignoreCapacityCheck:   cfg.IgnoreCapacityCheck,
+		useDiscoveryEndpoint:  cfg.UseDiscoveryEndpoint,
 		node:                  node,
 	}
 
@@ -338,12 +355,6 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		glog.Infof("Using DB orchestrator pool with %d orchestrators", len(orchs))
 	}
 
-	type orchPollingInfo struct {
-		level    int
-		orchInfo *net.OrchestratorInfo
-		dbOrch   *common.DBOrch
-	}
-
 	nodesPerOrch := dbo.bcast.ExtraNodes()
 	// Each base orchestrator can contribute itself plus up to nodesPerOrch first-level advertised nodes.
 	maxOrchs := len(orchs) * (nodesPerOrch + 1)
@@ -367,6 +378,19 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
+
+		var discoveryCh chan json.RawMessage
+		if dbo.useDiscoveryEndpoint {
+			discoveryCh = make(chan json.RawMessage, 1)
+			go func() {
+				discovery, err := callOrchestratorDiscovery(ctx, uri)
+				if err != nil {
+					clog.V(common.DEBUG).Infof(ctx, "unable to fetch orchestrator endpoint discovery orch=%v err=%q", uri, err)
+				}
+				discoveryCh <- discovery
+			}()
+		}
+
 		info, err := getOrchInfoRPC(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
 			IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
 		})
@@ -407,10 +431,20 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			}
 		}
 
+		var discovery json.RawMessage
+		if discoveryCh != nil {
+			select {
+			case discovery = <-discoveryCh:
+			case <-ctx.Done():
+				clog.V(common.DEBUG).Infof(ctx, "skipping orchestrator endpoint discovery orch=%v err=%q", uri, ctx.Err())
+			}
+		}
+
 		resc <- orchPollingInfo{
-			level:    level,
-			orchInfo: info,
-			dbOrch:   dbOrch,
+			level:     level,
+			orchInfo:  info,
+			dbOrch:    dbOrch,
+			discovery: discovery,
 		}
 	}
 
@@ -438,7 +472,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		select {
 		case res := <-resc:
 			//add response to network capabilities
-			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo))
+			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res))
 
 			// discover newly advertised nodes. only recurse the first level.
 			if res.level == 0 && len(res.orchInfo.GetNodes()) > 0 {
@@ -578,10 +612,11 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 	}
 }
 
-func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchNetworkCapabilities {
+func orchInfoToOrchNetworkCapabilities(res orchPollingInfo) *common.OrchNetworkCapabilities {
 	var orch common.OrchNetworkCapabilities
 
 	// add orch operating information if available
+	info := res.orchInfo
 	if info != nil {
 		orch.LocalAddress = ethcommon.BytesToAddress(info.GetAddress()).Hex()
 		orch.OrchURI = info.GetTranscoder()
@@ -593,6 +628,50 @@ func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchN
 			orch.Address = string(ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex())
 		}
 	}
+	orch.Discovery = res.discovery
 
 	return &orch
+}
+
+func callOrchestratorDiscovery(ctx context.Context, orchURI *url.URL) (json.RawMessage, error) {
+	if orchURI == nil {
+		return nil, fmt.Errorf("missing orchestrator URI")
+	}
+	if orchURI.Host == "" {
+		return nil, fmt.Errorf("missing host in orchestrator URI %q", orchURI.String())
+	}
+
+	discoveryURL := orchURI.JoinPath("discovery")
+	reqCtx, cancel := context.WithTimeout(ctx, orchestratorEndpointDiscoveryTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, discoveryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: orchestratorEndpointDiscoveryTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("endpoint discovery returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, orchestratorEndpointDiscoveryMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > orchestratorEndpointDiscoveryMaxBytes {
+		return nil, fmt.Errorf("endpoint discovery response exceeds %d bytes", orchestratorEndpointDiscoveryMaxBytes)
+	}
+
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("invalid endpoint discovery JSON")
+	}
+
+	return json.RawMessage(body), nil
 }

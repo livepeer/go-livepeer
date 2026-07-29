@@ -15,12 +15,13 @@ var StreamNotFoundErr = errors.New("stream not found")
 
 // TricklePublisher represents a trickle streaming client
 type TricklePublisher struct {
-	client      *http.Client
-	baseURL     string
-	index       int          // Current index for segments
-	writeLock   sync.Mutex   // Mutex to manage concurrent access
-	pendingPost *pendingPost // Pre-initialized POST request
-	contentType string
+	client             *http.Client
+	baseURL            string
+	index              int          // Current index for segments
+	writeLock          sync.Mutex   // Mutex to manage concurrent access
+	pendingPost        *pendingPost // Pre-initialized POST request
+	contentType        string
+	insecureSkipVerify bool
 }
 
 // HTTPError gets returned with a >=400 status code (non-400)
@@ -44,12 +45,25 @@ type pendingPost struct {
 	client  *TricklePublisher
 }
 
+type TricklePublisherConfig struct {
+	URL string
+
+	// InsecureSkipVerify skips TLS certificate validation when true.
+	// Defaults to false.
+	InsecureSkipVerify bool
+}
+
 // NewTricklePublisher creates a new trickle stream client
 func NewTricklePublisher(url string) (*TricklePublisher, error) {
+	return NewTricklePublisherWithConfig(TricklePublisherConfig{URL: url})
+}
+
+func NewTricklePublisherWithConfig(config TricklePublisherConfig) (*TricklePublisher, error) {
 	c := &TricklePublisher{
-		baseURL:     url,
-		contentType: "video/MP2T",
-		client:      httpClient(),
+		baseURL:            config.URL,
+		contentType:        "video/MP2T",
+		client:             httpClient(config.InsecureSkipVerify),
+		insecureSkipVerify: config.InsecureSkipVerify,
 	}
 	p, err := c.preconnect()
 	if err != nil {
@@ -83,6 +97,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 		resp, err := httpclient.Do(req)
 		if err != nil {
 			slog.Error("Failed to complete POST for segment", "url", url, "err", err)
+			_ = pr.CloseWithError(err)
 			errCh <- err
 			return
 		}
@@ -132,7 +147,7 @@ func (c *TricklePublisher) Close() error {
 		return err
 	}
 	// Use a new client for a fresh connection
-	resp, err := httpClient().Do(req)
+	resp, err := httpClient(c.insecureSkipVerify).Do(req)
 	if err != nil {
 		return err
 	}
@@ -188,7 +203,7 @@ func (p *pendingPost) reconnect() (*pendingPost, error) {
 	defer p.client.writeLock.Unlock()
 	currentSeq := p.client.index
 	p.client.index = p.index
-	p.client.client = httpClient()
+	p.client.client = httpClient(p.client.insecureSkipVerify)
 	pp, err := p.client.preconnect()
 	p.client.index = currentSeq
 	return pp, err
@@ -278,7 +293,7 @@ func (p *pendingPost) Close() error {
 	// Since this method typically gets invoked when
 	// there is a problem sending the segment, use a
 	// new client for a fresh connection just in case
-	resp, err := httpClient().Do(req)
+	resp, err := httpClient(p.client.insecureSkipVerify).Do(req)
 	if err != nil {
 		return err
 	}
@@ -300,12 +315,11 @@ func (c *TricklePublisher) Write(data io.Reader) error {
 	return err
 }
 
-func httpClient() *http.Client {
+func httpClient(insecureSkipVerify bool) *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		// Re-enable keepalives to avoid connection pooling
 		// DisableKeepAlives: true,
-		// ignore orch certs for now
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 
 		// Prevent old TCP connections from accumulating
 		IdleConnTimeout: 1 * time.Minute,
