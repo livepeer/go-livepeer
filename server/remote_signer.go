@@ -405,6 +405,16 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			byocCapability = priceInfo.Constraint
 		}
 	}
+	// The orchestrator's live-runner enforces SegData.ManifestID == AuthToken.SessionId
+	// for fixed live payments; a mismatch is rejected with "mismatched manifest and
+	// auth token". Bind the live manifest id to the challenge's session id so the
+	// SegData emitted by genSegCreds carries a matching pair. BYOC keeps its
+	// capability-name manifest id for shared balance tracking across streams.
+	if req.Type != RemoteType_BYOC {
+		if sessionID := oInfo.AuthToken.GetSessionId(); sessionID != "" {
+			manifestID = sessionID
+		}
+	}
 	if manifestID == "" {
 		if hasState {
 			// Required for lv2v so stateful requests stay tied to the same id.

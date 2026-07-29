@@ -425,6 +425,13 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 				require.NoError(err)
 				return state
 			}(),
+			// Without an AuthToken session id to bind the manifest id to, a
+			// stateful request that also omits the manifest id must be rejected.
+			orchInfo: func() *net.OrchestratorInfo {
+				oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
+				oInfo.AuthToken = &net.AuthToken{}
+				return oInfo
+			}(),
 			omitManifestID: true,
 			wantStatus:     http.StatusBadRequest,
 			wantMsg:        "missing manifestID",
@@ -713,6 +720,110 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		capBal.RatString(), expectedCapBal.RatString(), capFee.RatString(), len(capPayment.TicketSenderParams), ev.RatString(),
 	)
 
+}
+
+// TestGenerateLivePayment_LV2V_ManifestBoundToSessionId proves the signer binds
+// the live SegData.ManifestID to the 402 challenge's AuthToken.SessionId. The
+// orchestrator's live-runner rejects a fixed live payment whose
+// SegData.ManifestID does not equal AuthToken.SessionId ("mismatched manifest
+// and auth token"), so the emitted segment credentials must carry
+// manifestID == sessionId regardless of whether the request supplies its own
+// (mismatched) manifest id or omits it entirely.
+func TestGenerateLivePayment_LV2V_ManifestBoundToSessionId(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	var totalTickets uint32
+	sender := newMockSender(mockSenderConfig{
+		ev: big.NewRat(35, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			size := args.Int(1)
+			*batch = *defaultTicketBatch()
+			baseSig := []byte(nil)
+			if len(batch.SenderParams) > 0 && batch.SenderParams[0] != nil {
+				baseSig = batch.SenderParams[0].Sig
+			}
+			batch.SenderParams = make([]*pm.TicketSenderParams, size)
+			for i := 0; i < size; i++ {
+				totalTickets++
+				batch.SenderParams[i] = &pm.TicketSenderParams{
+					SenderNonce: totalTickets,
+					Sig:         baseSig,
+				}
+			}
+		},
+	})
+	node.Sender = sender
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	maxPrice := big.NewRat(200, 1)
+	autoPrice, err := core.NewAutoConvertedPrice("", maxPrice, nil)
+	require.NoError(err)
+	BroadcastCfg.SetMaxPrice(autoPrice)
+	defer BroadcastCfg.SetMaxPrice(nil)
+
+	// The session id the orchestrator issued in its 402 challenge auth token.
+	const sessionID = "orch-session-abc123"
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 150, PixelsPerUnit: 175},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: &net.AuthToken{
+			Token:      []byte("challenge-token"),
+			SessionId:  sessionID,
+			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+		},
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	// Decode the signed segment credentials and return the manifest id the
+	// orchestrator will see, asserting the auth token was preserved.
+	segManifestID := func(resp RemotePaymentResponse) string {
+		require.NotEmpty(resp.SegCreds)
+		raw, err := base64.StdEncoding.DecodeString(resp.SegCreds)
+		require.NoError(err)
+		var segData net.SegData
+		require.NoError(proto.Unmarshal(raw, &segData))
+		require.NotNil(segData.AuthToken)
+		require.Equal(sessionID, segData.AuthToken.SessionId)
+		return string(segData.ManifestId)
+	}
+
+	doPayment := func(reqPayload RemotePaymentRequest) RemotePaymentResponse {
+		reqBody, err := json.Marshal(reqPayload)
+		require.NoError(err)
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		require.Equal(http.StatusOK, rr.Code, "unexpected status; body=%s", rr.Body.String())
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		return resp
+	}
+
+	// A client-supplied manifest id different from the session id must be
+	// overridden so the orchestrator's manifest/auth-token check passes.
+	respOverride := doPayment(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		ManifestID:   "client-supplied-manifest",
+		InPixels:     1000,
+	})
+	require.Equal(sessionID, segManifestID(respOverride),
+		"SegData.ManifestID must equal the challenge AuthToken.SessionId")
+
+	// An omitted manifest id must resolve to the session id, not a fresh random
+	// manifest id (the previous, rejected behavior).
+	respEmpty := doPayment(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		InPixels:     1000,
+	})
+	require.Equal(sessionID, segManifestID(respEmpty),
+		"an omitted manifest id must bind to the session id, not a random id")
 }
 
 func TestRemoteSigner_Discovery(t *testing.T) {
