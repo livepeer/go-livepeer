@@ -233,7 +233,11 @@ type RemotePaymentRequest struct {
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
 	ManifestID string `json:"manifestId,omitempty"`
 
-	// Number of pixels to generate a ticket for. Required if `type` is not set.
+	// Number of pixels (units) to generate a ticket for. Required if `type` is
+	// not set. For the `lv2v` type it is optional and, when supplied (> 0),
+	// takes precedence over the automatic 720p time-based estimate; a
+	// fixed-price single-shot live-runner generation sets it to 1 so the fee
+	// equals the orchestrator's per-request fixed price.
 	InPixels int64 `json:"inPixels"`
 
 	// Job type to automatically calculate payments. Valid values: `lv2v`, `byoc`. Optional.
@@ -507,13 +511,29 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	billableSecs := now.Sub(lastUpdate).Seconds()
 	if req.Type == RemoteType_LiveVideoToVideo {
-		info := defaultSegInfo
-		if billableSecs <= 0 {
-			// preload with 60 seconds of data for LV2V
-			billableSecs = (60 * time.Second).Seconds()
+		if pixels <= 0 {
+			// No explicit unit count supplied: estimate the billable volume of a
+			// continuous 720p30 live-video stream for the elapsed window. This is
+			// the daydream live-video plane and the live-runner "720p"
+			// (720p-pixel-seconds) unit, which top up payment per ~60s of video.
+			//
+			// A fixed-price single-shot live-runner generation is different: the
+			// orchestrator advertises a per-request price (LiveRunnerPriceInfo
+			// unit "fixed") and debits exactly one unit for the generation
+			// (server/ai_http.go reservePaidLiveRunnerSession -> AccountPayment
+			// units:1, requiring ExpectedPrice.PixelsPerUnit == 1). For that path
+			// the gateway supplies the unit count directly via inPixels (typically
+			// 1); we must honor it so the fee equals the fixed per-request price.
+			// Overriding it with the 720p estimate multiplies the fee by ~1.66e9
+			// pixels, which inflates numTickets past the max-100 guard.
+			info := defaultSegInfo
+			if billableSecs <= 0 {
+				// preload with 60 seconds of data for LV2V
+				billableSecs = (60 * time.Second).Seconds()
+			}
+			pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
+			pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 		}
-		pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-		pixels = int64(pixelsPerSec * billableSecs) // pixels to charge for
 	} else if req.Type == RemoteType_BYOC {
 		// BYOC uses time-based pricing: price per unit of time (typically seconds)
 		// The pixelsPerUnit in the price info represents the time scaling factor

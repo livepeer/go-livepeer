@@ -826,6 +826,107 @@ func TestGenerateLivePayment_LV2V_ManifestBoundToSessionId(t *testing.T) {
 		"an omitted manifest id must bind to the session id, not a random id")
 }
 
+// TestGenerateLivePayment_LV2V_FixedPriceHonorsInPixels proves that a
+// fixed-price single-shot live-runner generation is charged for exactly one
+// unit. The v0.9.0 live-runner orchestrator advertises a per-request price with
+// PixelsPerUnit == 1 and debits units:1 for the generation (server/ai_http.go
+// reservePaidLiveRunnerSession). The gateway signals this by sending inPixels:1
+// with type "lv2v". Without honoring inPixels the signer falls back to the
+// continuous 720p estimate (720*1280*30*60 = 1,658,880,000 pixels), which
+// multiplies the fixed per-request price and makes numTickets explode past the
+// max-100 guard (observed in e2e as HTTP 400 "numTickets 2721947758 exceeds
+// maximum of 100").
+func TestGenerateLivePayment_LV2V_FixedPriceHonorsInPixels(t *testing.T) {
+	require := require.New(t)
+
+	// Representative flux-schnell per-cap fixed price advertised by the v0.9.0
+	// live-runner orchestrator: $0.00315 -> 1648852084881 wei, PixelsPerUnit 1.
+	const fixedPricePerUnit int64 = 1648852084881
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	sender := newMockSender(mockSenderConfig{
+		// Ticket EV equals the fixed per-request price so a single winning
+		// ticket covers exactly one unit.
+		ev: new(big.Rat).SetInt64(fixedPricePerUnit),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			size := args.Int(1)
+			*batch = *defaultTicketBatch()
+			baseSig := []byte(nil)
+			if len(batch.SenderParams) > 0 && batch.SenderParams[0] != nil {
+				baseSig = batch.SenderParams[0].Sig
+			}
+			batch.SenderParams = make([]*pm.TicketSenderParams, size)
+			for i := 0; i < size; i++ {
+				batch.SenderParams[i] = &pm.TicketSenderParams{
+					SenderNonce: uint32(i + 1),
+					Sig:         baseSig,
+				}
+			}
+		},
+	})
+	node.Sender = sender
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	// Global max price must clear the fixed per-request price.
+	maxPrice, err := core.NewAutoConvertedPrice("", big.NewRat(fixedPricePerUnit*2, 1), nil)
+	require.NoError(err)
+	BroadcastCfg.SetMaxPrice(maxPrice)
+	defer BroadcastCfg.SetMaxPrice(nil)
+
+	oInfo := &net.OrchestratorInfo{
+		Address:      ethClient.addr.Bytes(),
+		PriceInfo:    &net.PriceInfo{PricePerUnit: fixedPricePerUnit, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
+		AuthToken: &net.AuthToken{
+			Token:      []byte("challenge-token"),
+			SessionId:  "orch-session-fixed",
+			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+		},
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPayment := func(reqPayload RemotePaymentRequest) *httptest.ResponseRecorder {
+		reqBody, err := json.Marshal(reqPayload)
+		require.NoError(err)
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		return rr
+	}
+
+	// Fixed single-shot: inPixels:1 must charge exactly one unit -> one ticket.
+	rr := doPayment(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		Type:         RemoteType_LiveVideoToVideo,
+		InPixels:     1,
+	})
+	require.Equal(http.StatusOK, rr.Code, "unexpected status; body=%s", rr.Body.String())
+
+	var resp RemotePaymentResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+	require.NoError(err)
+	var payment net.Payment
+	require.NoError(proto.Unmarshal(paymentBytes, &payment))
+	require.Len(payment.TicketSenderParams, 1,
+		"a fixed-price single-shot generation must mint exactly one ticket")
+
+	// Regression guard: with no inPixels the lv2v path falls back to the
+	// continuous 720p estimate, which at this fixed per-request price explodes
+	// numTickets past the max-100 guard. This confirms the fix relies on the
+	// gateway signalling the fixed unit via inPixels while leaving the
+	// continuous live-video estimate unchanged.
+	rrAuto := doPayment(RemotePaymentRequest{
+		Orchestrator: orchBlob,
+		Type:         RemoteType_LiveVideoToVideo,
+	})
+	require.Equal(http.StatusBadRequest, rrAuto.Code)
+	require.Contains(rrAuto.Body.String(), "exceeds maximum of 100")
+}
+
 func TestRemoteSigner_Discovery(t *testing.T) {
 	require := require.New(t)
 
