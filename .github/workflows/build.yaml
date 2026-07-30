@@ -56,9 +56,7 @@ jobs:
       - name: Setup ubuntu container
         run: |
           apt update
-          apt install -yqq build-essential make software-properties-common
-          add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev yasm
+          apt install -yqq build-essential make git zip unzip zlib1g-dev zlib1g libzlcore-dev yasm
 
       - name: Check out code
         uses: actions/checkout@v4
@@ -97,15 +95,24 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt update \
-            && apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-            && add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
-            && apt update \
-            && apt -yqq install \
-              nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev \
-              golang-goprotobuf-dev protobuf-compiler-grpc
+          apt update
+          apt install -yqq ca-certificates curl lsb-release
+
+          if ! apt-cache show clang-14 >/dev/null 2>&1; then
+            install -d -m 0755 /usr/share/keyrings
+            curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 \
+              -o /usr/share/keyrings/apt.llvm.org.asc \
+              https://apt.llvm.org/llvm-snapshot.gpg.key
+            printf '%s\n' \
+              "deb [signed-by=/usr/share/keyrings/apt.llvm.org.asc] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
+              > /etc/apt/sources.list.d/llvm-toolchain-14.list
+            apt update
+          fi
+
+          apt install -yqq \
+            nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
+            gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev \
+            golang-goprotobuf-dev protobuf-compiler-grpc
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
@@ -124,11 +131,13 @@ jobs:
         if: matrix.target.GOOS == 'windows'
         env:
           CC: x86_64-w64-mingw32-gcc
+          ZLIB_VERSION: 1.2.11
         run: |
-          apt install -yqq wget
-          wget https://zlib.net/fossils/zlib-1.2.11.tar.gz
-          tar -xzf zlib-1.2.11.tar.gz
-          cd zlib-1.2.11
+          curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 \
+            -o "zlib-${ZLIB_VERSION}.tar.gz" \
+            "https://github.com/madler/zlib/archive/refs/tags/v${ZLIB_VERSION}.tar.gz"
+          tar -xzf "zlib-${ZLIB_VERSION}.tar.gz"
+          cd "zlib-${ZLIB_VERSION}"
           ./configure --prefix=/usr/x86_64-w64-mingw32 --static
           make
           make install

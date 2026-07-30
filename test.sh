@@ -13,6 +13,9 @@ go test -run Nvidia_ -race
 go test -run Capabilities_ -race
 cd ..
 
+# Be more strict with live runner tests: run with race detector enabled
+go test ./ai/runner -race
+
 # Be more strict with discovery tests: run with race detector enabled
 cd discovery
 go test -race

@@ -38,7 +38,7 @@ This project requires `go` and a unix shell.
 
 ## Getting Started
 
-To get started, clone the repo and follow the [installation guide](https://docs.livepeer.org/guides/orchestrating/install-go-livepeer).
+To get started, clone the repo and follow the [installation guide](https://docs.livepeer.org/v2/orchestrators/setup/install).
 
 Next, follow [the guide to set up a private ETH network with the Livepeer protocol deployed](cmd/devtool/README.md).
 

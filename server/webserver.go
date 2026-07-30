@@ -1,13 +1,16 @@
 package server
 
 import (
+	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 
 	// pprof adds handlers to default mux via `init()`
 	_ "net/http/pprof"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/monitor"
 )
 
@@ -52,6 +55,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setMaxPriceForCapability", mustHaveFormParams(s.setMaxPriceForCapability(), "maxPricePerUnit", "pixelsPerUnit", "currency", "pipeline", "modelID"))
 	mux.Handle("/getAISessionPoolsInfo", s.getAIPoolsInfoHandler())
 	mux.Handle("/getNetworkCapabilities", s.getNetworkCapabilitiesHandler())
+	mux.Handle("/registerLiveRunners", s.registerLiveRunnersHandler())
 
 	// Rounds
 	mux.Handle("/currentRound", currentRoundHandler(client))
@@ -118,4 +122,42 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	}
 
 	return mux
+}
+
+func (s *LivepeerServer) registerLiveRunnersHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		manager, ok := s.LivepeerNode.LiveRunnerManager.(interface {
+			RegisterStaticRunnersJSON([]byte) (*runner.StaticLiveRunnerRegistrationResponse, error)
+		})
+		if !ok {
+			http.Error(w, "live runners are not supported", http.StatusNotFound)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := manager.RegisterStaticRunnersJSON(body)
+		if err != nil {
+			statusCode := http.StatusBadRequest
+			if runnerErr, ok := err.(*runner.RunnerError); ok {
+				statusCode = runnerErr.StatusCode
+			}
+			http.Error(w, err.Error(), statusCode)
+			return
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	})
 }

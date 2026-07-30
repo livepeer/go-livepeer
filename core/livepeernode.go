@@ -128,6 +128,8 @@ type LivepeerNode struct {
 	AIWorkerManager           *RemoteAIWorkerManager
 	AIProcesssingRetryTimeout time.Duration
 
+	LiveRunnerManager any // NB: kludge to avoid ai/runner circular dependency
+
 	// Transcoder public fields
 	SegmentChans         map[ManifestID]SegmentChan
 	Recipient            pm.Recipient
@@ -144,15 +146,20 @@ type LivepeerNode struct {
 	AutoAdjustPrice      bool
 	AutoSessionLimit     bool
 
+	TrickleInsecureSkipVerify bool
+
 	// Broadcaster public fields
 	Sender     pm.Sender
 	ExtraNodes int
 
 	// Gateway fields for remote signers
-	RemoteSignerUrl *url.URL
-	RemoteEthAddr   ethcommon.Address // eth address of the remote signer
-	InfoSig         []byte            // sig over eth address for the OrchestratorInfo request
-	RemoteDiscovery bool              // expose remote discovery endpoint when enabled
+	RemoteSignerUrl            *url.URL          // URL of remote signer service to use (gateway only)
+	RemoteSignerHeaders        map[string]string // Headers to use for gateway remote signer requests
+	RemoteSignerWebhookURL     *url.URL          // Authentication webhook URL called by remote signer during GenerateLivePayment
+	RemoteSignerWebhookHeaders map[string]string // Headers to use for remote signer webhook requests
+	RemoteEthAddr              ethcommon.Address // eth address of the remote signer
+	InfoSig                    []byte            // sig over eth address for the OrchestratorInfo request
+	RemoteDiscovery            bool              // expose remote discovery endpoint when enabled
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -171,6 +178,7 @@ type LivepeerNode struct {
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
 
+	LiveRunnerAddr             *url.URL
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthWebhookURL       *url.URL
@@ -208,21 +216,22 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 	extCapPrices["default"] = make(map[string]*big.Rat)
 
 	return &LivepeerNode{
-		Eth:                  e,
-		WorkDir:              wd,
-		Database:             dbh,
-		AutoAdjustPrice:      true,
-		SegmentChans:         make(map[ManifestID]SegmentChan),
-		segmentMutex:         &sync.RWMutex{},
-		Capabilities:         &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
-		ExternalCapabilities: NewExternalCapabilities(),
-		priceInfo:            make(map[string]*AutoConvertedPrice),
-		priceInfoForCaps:     make(map[string]CapabilityPrices),
-		jobPriceInfo:         extCapPrices,
-		StorageConfigs:       make(map[string]*transcodeConfig),
-		storageMutex:         &sync.RWMutex{},
-		LivePipelines:        make(map[string]*LivePipeline),
-		LiveMu:               &sync.RWMutex{},
+		Eth:                       e,
+		WorkDir:                   wd,
+		Database:                  dbh,
+		AutoAdjustPrice:           true,
+		SegmentChans:              make(map[ManifestID]SegmentChan),
+		TrickleInsecureSkipVerify: true,
+		segmentMutex:              &sync.RWMutex{},
+		Capabilities:              &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
+		ExternalCapabilities:      NewExternalCapabilities(),
+		priceInfo:                 make(map[string]*AutoConvertedPrice),
+		priceInfoForCaps:          make(map[string]CapabilityPrices),
+		jobPriceInfo:              extCapPrices,
+		StorageConfigs:            make(map[string]*transcodeConfig),
+		storageMutex:              &sync.RWMutex{},
+		LivePipelines:             make(map[string]*LivePipeline),
+		LiveMu:                    &sync.RWMutex{},
 	}, nil
 }
 

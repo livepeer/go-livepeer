@@ -6,9 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -18,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -88,8 +92,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	defer BroadcastCfg.SetCapabilityMaxPrice(capability1, modelID1, nil) // Clean up
 
 	baseOrchInfo := &net.OrchestratorInfo{
-		Address:   ethcommon.HexToAddress("0x1").Bytes(),
-		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		Address:    ethcommon.HexToAddress("0x1").Bytes(),
+		Transcoder: "http://orch.example",
+		PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		TicketParams: &net.TicketParams{
 			Recipient: pm.RandAddress().Bytes(),
 		},
@@ -116,6 +121,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 		sender     *pm.MockSender
 		wantStatus int
 		wantMsg    string
+		wantHeader string
 	}{
 		{
 			name:       "invalid JSON",
@@ -201,6 +207,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			}(),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "ticket params expired triggers 480",
@@ -212,6 +219,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			sender:     newMockSender(mockSenderConfig{validateErr: pm.ErrTicketParamsExpired}),
 			wantStatus: HTTPStatusRefreshSession,
 			wantMsg:    "refresh session for remote signer",
+			wantHeader: "http://orch.example",
 		},
 		{
 			name: "invalid job type",
@@ -231,7 +239,7 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				return r
 			}(),
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "missing pixels or job type",
+			wantMsg:    "missing billable unit or job type",
 		},
 		{
 			name: "num tickets exceeds limit",
@@ -263,6 +271,20 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 				return RemotePaymentRequest{
 					Orchestrator: makeOrchBlob(oInfo),
 					InPixels:     1,
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "orchestrator price",
+		},
+		{
+			name: "fixed orchestrator price uses existing max price check",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					ManifestID:   "fixed-manifest",
+					Type:         RemoteType_Fixed,
 				}
 			}(),
 			wantStatus: HTTPStatusPriceExceeded,
@@ -317,6 +339,9 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
 			require.NotEmpty(apiErr.Error.Message)
 			require.Contains(apiErr.Error.Message, tt.wantMsg)
+			if tt.wantHeader != "" {
+				require.Equal(tt.wantHeader, rr.Header().Get(RefreshSessionOrchestratorURLHeader))
+			}
 		})
 	}
 }
@@ -365,6 +390,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		stateBytes     []byte
 		stateSig       []byte
 		orchInfo       *net.OrchestratorInfo
+		reqType        string
 		omitManifestID bool
 		wantStatus     int
 		wantMsg        string
@@ -397,6 +423,23 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			stateBytes: []byte("not-json"),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "invalid state",
+		},
+		{
+			name: "job type mismatch",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+					Type:                 RemoteType_LiveVideoToVideo,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			reqType:    RemoteType_Live,
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "job type mismatch",
 		},
 		{
 			name: "orchestrator address mismatch",
@@ -469,6 +512,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 				Orchestrator: orchBlob,
 				ManifestID:   manifestID,
 				InPixels:     1,
+				Type:         tt.reqType,
 				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: stateSig},
 			})
 			require.NoError(err)
@@ -671,6 +715,526 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 
 }
 
+func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+
+		ethClient := newTestEthClient(t)
+		node, _ := core.NewLivepeerNode(ethClient, "", nil)
+		node.Balances = core.NewAddressBalances(1 * time.Minute)
+		defer node.Balances.StopCleanup()
+		node.Sender = newMockSender(mockSenderConfig{ev: big.NewRat(35, 1)})
+		ls := &LivepeerServer{LivepeerNode: node}
+
+		oInfo := &net.OrchestratorInfo{
+			Address:   ethClient.addr.Bytes(),
+			PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{
+				Recipient: pm.RandAddress().Bytes(),
+			},
+			AuthToken: stubAuthToken,
+		}
+		orchBlob, err := proto.Marshal(oInfo)
+		require.NoError(err)
+
+		doPayment := func(reqPayload RemotePaymentRequest) (RemotePaymentResponse, net.Payment) {
+			reqBody, err := json.Marshal(reqPayload)
+			require.NoError(err)
+
+			req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+			rr := httptest.NewRecorder()
+
+			ls.GenerateLivePayment(rr, req)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+			var resp RemotePaymentResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			require.NotEmpty(resp.Payment)
+
+			paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+			require.NoError(err)
+			var payment net.Payment
+			require.NoError(proto.Unmarshal(paymentBytes, &payment))
+
+			return resp, payment
+		}
+
+		parseBalance := func(stateBytes []byte) (RemotePaymentState, *big.Rat) {
+			var state RemotePaymentState
+			require.NoError(json.Unmarshal(stateBytes, &state))
+			bal := new(big.Rat)
+			_, ok := bal.SetString(state.Balance)
+			require.True(ok, "failed to parse balance: %q", state.Balance)
+			return state, bal
+		}
+
+		firstUpdate := time.Now()
+		resp, payment := doPayment(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			Type:         RemoteType_Live,
+		})
+		require.Len(payment.TicketSenderParams, 1)
+
+		state, bal := parseBalance(resp.State.State)
+		require.Equal(RemoteType_Live, state.Type)
+		require.EqualValues(0, state.SequenceNumber)
+		require.True(firstUpdate.Equal(state.LastUpdate))
+		// First live payment bills the 10-second minimum: 10s * 3 wei/s = 30 wei.
+		require.Zero(bal.Cmp(big.NewRat(5, 1)), "unexpected initial balance: %s", bal.RatString())
+
+		time.Sleep(12 * time.Second)
+		secondUpdate := time.Now()
+		resp2, payment2 := doPayment(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   "live-manifest",
+			Type:         RemoteType_Live,
+			State:        resp.State,
+		})
+		require.Len(payment2.TicketSenderParams, 1)
+
+		state2, bal2 := parseBalance(resp2.State.State)
+		require.Equal(RemoteType_Live, state2.Type)
+		require.EqualValues(1, state2.SequenceNumber)
+		require.True(secondUpdate.Equal(state2.LastUpdate))
+		// Follow-up live payment bills elapsed seconds: 12s * 3 wei/s = 36 wei.
+		require.Zero(bal2.Cmp(big.NewRat(4, 1)), "unexpected follow-up balance: %s", bal2.RatString())
+	})
+}
+
+func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(time.Minute)
+	defer node.Balances.StopCleanup()
+	var ticketNonce uint32
+	node.Sender = newMockSender(mockSenderConfig{
+		ev: big.NewRat(3, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			require.Equal(1, args.Int(1))
+			*batch = *defaultTicketBatch()
+			ticketNonce++
+			batch.SenderParams = []*pm.TicketSenderParams{{
+				SenderNonce: ticketNonce,
+				Sig:         pm.RandBytes(42),
+			}}
+		},
+	})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPayment := func(manifestID string, state RemotePaymentStateSig) (RemotePaymentResponse, net.Payment) {
+		body, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   manifestID,
+			InPixels:     1_000_000,
+			Type:         RemoteType_Fixed,
+			State:        state,
+		})
+		require.NoError(err)
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(body)))
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+		require.NoError(err)
+		var payment net.Payment
+		require.NoError(proto.Unmarshal(paymentBytes, &payment))
+		return resp, payment
+	}
+
+	// Like other payment types, an initial request may omit the manifest ID.
+	first, firstPayment := doPayment("", RemotePaymentStateSig{})
+	require.Len(firstPayment.TicketSenderParams, 1)
+	var firstState RemotePaymentState
+	require.NoError(json.Unmarshal(first.State.State, &firstState))
+	require.Equal(RemoteType_Fixed, firstState.Type)
+	require.EqualValues(0, firstState.SequenceNumber)
+	require.Equal("0", firstState.Balance)
+
+	second, secondPayment := doPayment("fixed-manifest", first.State)
+	require.Len(secondPayment.TicketSenderParams, 1)
+	require.NotEqual(firstPayment.TicketSenderParams[0].SenderNonce, secondPayment.TicketSenderParams[0].SenderNonce)
+	var secondState RemotePaymentState
+	require.NoError(json.Unmarshal(second.State.State, &secondState))
+	require.Equal(RemoteType_Fixed, secondState.Type)
+	require.EqualValues(1, secondState.SequenceNumber)
+	require.Equal("0", secondState.Balance)
+}
+
+func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(1 * time.Minute)
+	node.Sender = newMockSender(mockSenderConfig{})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPaymentWithStateAndAuthID := func(requestHeader string, authID string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+		reqBody, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   "manifest",
+			InPixels:     1,
+			State:        state,
+		})
+		require.NoError(err)
+
+		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+		req.Header.Set("X-Request-ID", requestHeader)
+		if authID != "" {
+			req.Header.Set(remoteSignerAuthIDHeader, authID)
+		}
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, req)
+		return rr
+	}
+	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+		return doPaymentWithStateAndAuthID(requestHeader, "", state)
+	}
+	doPaymentWithAuthID := func(requestHeader string, authID string) *httptest.ResponseRecorder {
+		return doPaymentWithStateAndAuthID(requestHeader, authID, RemotePaymentStateSig{})
+	}
+	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
+		return doPaymentWithState(requestHeader, RemotePaymentStateSig{})
+	}
+	parseResponseState := func(rr *httptest.ResponseRecorder) RemotePaymentState {
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		var state RemotePaymentState
+		require.NoError(json.Unmarshal(resp.State.State, &state))
+		return state
+	}
+
+	t.Run("callback omitted succeeds", func(t *testing.T) {
+		ls.LivepeerNode.RemoteSignerWebhookURL = nil
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("no-callback")
+		require.Equal(http.StatusOK, rr.Code)
+	})
+
+	t.Run("callback receives request headers and outbound auth headers", func(t *testing.T) {
+		callbackCalled := false
+		var payload generateLivePaymentWebhookBody
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalled = true
+			require.Equal("Bearer abc", r.Header.Get("Authorization"))
+			require.Equal("secret", r.Header.Get("X-API-Key"))
+			require.Equal("application/json", r.Header.Get("Content-Type"))
+			require.NoError(json.NewDecoder(r.Body).Decode(&payload))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = map[string]string{
+			"Authorization": "Bearer abc",
+			"X-API-Key":     "secret",
+		}
+
+		rr := doPayment("req-123")
+		require.Equal(http.StatusOK, rr.Code)
+		require.True(callbackCalled)
+		require.Equal([]string{"req-123"}, payload.Headers["X-Request-Id"])
+		require.NotNil(payload.State)
+		require.Equal("pmSession", payload.State.PMSessionID)
+	})
+
+	t.Run("callback 200 with status 200 succeeds", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-status-200")
+		require.Equal(http.StatusOK, rr.Code)
+	})
+
+	t.Run("callback 200 with expiry sets state auth expiry", func(t *testing.T) {
+		expiry := time.Now().Add(5 * time.Minute).Unix()
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-expiry-set")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal(expiry, state.AuthExpiry)
+	})
+
+	t.Run("callback auth id sets state", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("webhook-auth-id", state.AuthID)
+	})
+
+	t.Run("request auth id header is fallback when callback omits auth id", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPaymentWithAuthID("req-auth-id-fallback", "header-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("header-auth-id", state.AuthID)
+	})
+
+	t.Run("callback auth id wins over request header", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPaymentWithAuthID("req-auth-id-priority", "header-auth-id")
+		require.Equal(http.StatusOK, rr.Code)
+		state := parseResponseState(rr)
+		require.Equal("webhook-auth-id", state.AuthID)
+	})
+
+	t.Run("sequential requests skip callback while auth expiry still valid", func(t *testing.T) {
+		callbackCalls := 0
+		expiry := time.Now().Add(5 * time.Minute).Unix()
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id"}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		first := doPayment("req-skip-first")
+		require.Equal(http.StatusOK, first.Code)
+
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		var firstState RemotePaymentState
+		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
+		require.Equal("cached-auth-id", firstState.AuthID)
+
+		second := doPaymentWithState("req-skip-second", firstResp.State)
+		require.Equal(http.StatusOK, second.Code)
+		var secondResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
+		var secondState RemotePaymentState
+		require.NoError(json.Unmarshal(secondResp.State.State, &secondState))
+		require.Equal("cached-auth-id", secondState.AuthID)
+		require.Equal(1, callbackCalls)
+
+		third := doPaymentWithStateAndAuthID("req-skip-third", "new-header-auth-id", secondResp.State)
+		require.Equal(http.StatusInternalServerError, third.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(third.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
+		require.Equal(1, callbackCalls)
+	})
+
+	t.Run("expired auth expiry triggers callback on next request", func(t *testing.T) {
+		callbackCalls := 0
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			expiry := time.Now().Add(-1 * time.Minute).Unix()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		first := doPayment("req-expired-first")
+		require.Equal(http.StatusOK, first.Code)
+
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		second := doPaymentWithState("req-expired-second", firstResp.State)
+		require.Equal(http.StatusOK, second.Code)
+		require.Equal(2, callbackCalls)
+	})
+
+	t.Run("callback auth id change returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"auth_id":"updated-auth-id"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		initialState := RemotePaymentState{
+			StateID:              string(core.RandomManifestID()),
+			OrchestratorAddress:  ethcommon.BytesToAddress(oInfo.Address),
+			InitialPricePerUnit:  oInfo.PriceInfo.PricePerUnit,
+			InitialPixelsPerUnit: oInfo.PriceInfo.PixelsPerUnit,
+			AuthID:               "cached-auth-id",
+		}
+		stateBytes, err := json.Marshal(initialState)
+		require.NoError(err)
+		stateSig, err := signState(ls, stateBytes)
+		require.NoError(err)
+
+		rr := doPaymentWithState("req-auth-id-replaced", RemotePaymentStateSig{State: stateBytes, Sig: stateSig})
+		require.Equal(http.StatusInternalServerError, rr.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
+	})
+
+	t.Run("callback 200 missing status returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"expiry":123}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-missing-status")
+		require.Equal(http.StatusInternalServerError, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
+	})
+
+	t.Run("callback 200 with rejection status returns reason", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":403,"reason":"denied"}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-rejected")
+		require.Equal(http.StatusForbidden, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "denied")
+	})
+
+	t.Run("callback 200 with rejection status and no reason uses fallback", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":429}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-no-reason")
+		require.Equal(http.StatusTooManyRequests, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "signer auth rejected request with status 429")
+	})
+
+	t.Run("callback HTTP non-200 returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`denied`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("req-401")
+		require.Equal(http.StatusInternalServerError, rr.Code)
+
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Equal("Internal Server Error", apiErr.Error.Message)
+	})
+}
+
 func TestRemoteSigner_Discovery(t *testing.T) {
 	require := require.New(t)
 
@@ -730,6 +1294,39 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-a",
 				},
 			},
+			Discovery: discoveryRaw(t, `[
+				{
+					"address": "https://orch1.example.com:8935/",
+					"score": 99,
+					"capabilities": ["evil/app"],
+					"unknown_field": "must-not-leak",
+					"runners": [
+						{"url":"https://orch1.example.com:8935/scope-ok","app":"live-video-to-video/model-a","price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-missing-price","app":"live-video-to-video/model-a"},
+						{"url":"https://orch1.example.com:8935/scope-too-expensive","app":"live-video-to-video/model-a","price_info":{"price":120,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-unsupported-unit","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"usd","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-invalid-price","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/scope-invalid-pixels","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch1.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/scope","app":"live-video-to-video/model-a","capacity":3,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://discovered.example.com:8935/missing-price","app":"live-video-to-video/model-a"},
+						{"url":"https://discovered.example.com:8935/too-expensive","app":"live-video-to-video/model-a","price_info":{"price":120,"currency":"wei","unit":"seconds"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935/",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":1,"capacity_used":1,"capacity_available":0,"price_info":{"price":80,"currency":"wei","unit":"seconds"}},
+						{"url":"https://discovered.example.com:8935/dupe","app":"live-video-to-video/model-a","capacity":2,"price_info":{"price":80,"currency":"wei","unit":"seconds"}}
+					]
+				}
+			]`),
 		},
 		{
 			OrchURI:      "https://orch2.example.com:8935",
@@ -752,6 +1349,21 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-b",
 				},
 			},
+			Discovery: discoveryRaw(t, `[
+				{
+					"address": "https://orch2.example.com:8935",
+					"runners": [
+						{"url":"https://orch2.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":999,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch2.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
+					]
+				},
+				{
+					"address": "https://discovered.example.com:8935",
+					"runners": [
+						{"url":"https://discovered.example.com:8935/from-orch2","app":"live-video-to-video/model-a","price_info":{"price":80,"currency":"wei","unit":"seconds"}}
+					]
+				}
+			]`),
 		},
 		{
 			OrchURI:      "https://orch3.example.com:8935",
@@ -767,6 +1379,12 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 					Constraint:    "model-a",
 				},
 			},
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://orch3.example.com:8935",
+				"runners": [
+					{"url":"https://orch3.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
 		},
 		// Invalid URI should be dropped during refresh and never returned from discovery.
 		{
@@ -791,15 +1409,29 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 	require.Equal("application/json", rr.Header().Get("Content-Type"))
 
+	body := rr.Body.Bytes()
 	var resp []discoveryResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	require.Len(resp, 2)
-	require.Equal("https://orch1.example.com:8935", resp[0].Address)
-	require.Greater(resp[0].Score, float32(0))
-	require.Equal([]string{"live-video-to-video/model-a"}, resp[0].Capabilities)
-	require.Equal("https://orch2.example.com:8935", resp[1].Address)
-	require.Greater(resp[1].Score, float32(0))
-	require.Equal([]string{"text-to-image/model-b"}, resp[1].Capabilities)
+	require.NoError(json.Unmarshal(body, &resp))
+	require.Len(resp, 4)
+	orch1Resp := discoveryResponseByAddress(t, resp, "https://orch1.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch1Resp.Score)
+	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch1Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, orch1Resp))
+	requireNotContainsDiscoveryField(t, body, "unknown_field")
+	discoveredResp := discoveryResponseByAddress(t, resp, "https://discovered.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), discoveredResp.Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveredResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveredResp))
+	require.Equal(1, discoveredResp.Runners[1].Capacity)
+	require.Equal(0, discoveredResp.Runners[1].CapacityUsed)
+	orch2Resp := discoveryResponseByAddress(t, resp, "https://orch2.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch2Resp.Score)
+	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch2Resp.Capabilities)
+	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, orch2Resp))
+	orch3Resp := discoveryResponseByAddress(t, resp, "https://orch3.example.com:8935")
+	require.Equal(float32(common.Score_Trusted), orch3Resp.Score)
+	require.Equal([]string{"live-video-to-video/model-a"}, orch3Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, orch3Resp))
 
 	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a", nil)
 	capsRR := httptest.NewRecorder()
@@ -807,8 +1439,11 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, capsRR.Code)
 	var capsResp []discoveryResponse
 	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
-	require.Len(capsResp, 1)
-	require.Equal("https://orch1.example.com:8935", capsResp[0].Address)
+	require.Len(capsResp, 4)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://discovered.example.com:8935")))
+	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch2.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch3.example.com:8935")))
 
 	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
 	repeatedRR := httptest.NewRecorder()
@@ -816,9 +1451,11 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(http.StatusOK, repeatedRR.Code)
 	var repeatedResp []discoveryResponse
 	require.NoError(json.NewDecoder(repeatedRR.Body).Decode(&repeatedResp))
-	require.Len(repeatedResp, 2)
-	require.Equal("https://orch1.example.com:8935", repeatedResp[0].Address)
-	require.Equal("https://orch2.example.com:8935", repeatedResp[1].Address)
+	require.Len(repeatedResp, 4)
+	discoveryResponseByAddress(t, repeatedResp, "https://orch1.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://discovered.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://orch2.example.com:8935")
+	discoveryResponseByAddress(t, repeatedResp, "https://orch3.example.com:8935")
 
 	// If refresh only receives invalid or ineligible network capability entries,
 	// cache should remain empty and discovery should return service unavailable.
@@ -873,6 +1510,406 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	ls.GetOrchestrators(ineligibleRDP, ineligibleRR, ineligibleReq)
 	require.Equal(http.StatusServiceUnavailable, ineligibleRR.Code)
 	require.Equal("application/json", ineligibleRR.Header().Get("Content-Type"))
+}
+
+func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
+	require := require.New(t)
+
+	// Node starts with no network capabilities (pool poll has not populated the cache yet).
+	node := &core.LivepeerNode{}
+
+	// Long interval: with the bug, an empty first refresh would lock discovery out for an hour.
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	// First request lands before the cache is populated: 503, cache empty.
+	emptyReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	emptyRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, emptyRR, emptyReq)
+	require.Equal(http.StatusServiceUnavailable, emptyRR.Code)
+
+	// The orchestrator pool finishes its poll and populates network capabilities.
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://late.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://late.example.com:8935",
+				"runners": [
+					{"url":"https://late.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
+		},
+	}))
+
+	// Follow-up within refreshEvery: the empty cache re-derives instead of staying rate-limited.
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://late.example.com:8935", resp[0].Address)
+}
+
+func TestRemoteSigner_Discovery_UsesRunnerDiscoveryWhenRPCCapabilitiesMissing(t *testing.T) {
+	require := require.New(t)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://runner-derived.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://runner-derived.example.com:8935",
+				"runners": [
+					{"url":"https://runner-derived.example.com:8935/apps/runner/session","app":"custom-runner-v1","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=custom-runner-v1", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://runner-derived.example.com:8935", resp[0].Address)
+	require.Equal([]string{"custom-runner-v1"}, resp[0].Capabilities)
+	require.Equal([]string{"custom-runner-v1"}, discoveryRunnerApps(t, resp[0]))
+}
+
+func TestRemoteSigner_Discovery_RunnerDiscoveryKeepsValidRunnersWhenRPCCapabilitiesMissing(t *testing.T) {
+	require := require.New(t)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://mixed-runner-derived.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://mixed-runner-derived.example.com:8935",
+				"runners": [
+					{"url":"https://mixed-runner-derived.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price":201,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/unsupported-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"usd","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/missing-price","app":"live-video-to-video/scope"},
+					{"url":"https://mixed-runner-derived.example.com:8935/invalid-pixels","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/empty-app","app":"   ","price_info":{"price":5,"currency":"wei","unit":"seconds"}},
+					{"url":"https://mixed-runner-derived.example.com:8935/apps/runner/session","app":"live-video-to-video/scope","capacity":1,"price_info":{"price":5,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/scope", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Equal("https://mixed-runner-derived.example.com:8935", resp[0].Address)
+	require.Equal([]string{"live-video-to-video/scope"}, resp[0].Capabilities)
+	require.Len(resp[0].Runners, 2)
+	require.Equal("https://mixed-runner-derived.example.com:8935/too-expensive", resp[0].Runners[0].URL)
+	require.Equal("https://mixed-runner-derived.example.com:8935/apps/runner/session", resp[0].Runners[1].URL)
+	require.Equal([]string{"live-video-to-video/scope", "live-video-to-video/scope"}, discoveryRunnerApps(t, resp[0]))
+}
+
+func TestRemoteSigner_Discovery_FiltersRunnerDiscoveryPricing(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelID := "scope"
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(200, 1)))
+	defer BroadcastCfg.SetMaxPrice(nil)
+	// Capability/model max prices do not apply to runner discovery. This would
+	// reject price-ok under the old runner capability lookup path.
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, core.NewFixedPrice(big.NewRat(1, 1)))
+	defer BroadcastCfg.SetCapabilityMaxPrice(capability, modelID, nil)
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI: "https://filtered.example.com:8935",
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://filtered.example.com:8935",
+				"runners": [
+					{"url":"https://filtered.example.com:8935/too-expensive","app":"live-video-to-video/scope","price_info":{"price":201,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/price-ok","app":"live-video-to-video/scope","price_info":{"price":199,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/unsupported-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"usd","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/missing-price","app":"live-video-to-video/scope"},
+					{"url":"https://filtered.example.com:8935/missing-currency","app":"live-video-to-video/scope","price_info":{"price":5,"unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/missing-unit","app":"live-video-to-video/scope","price_info":{"price":5,"currency":"wei"}},
+					{"url":"https://filtered.example.com:8935/non-positive-price","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/non-positive-pixels","app":"live-video-to-video/scope","price_info":{"price":0,"currency":"wei","unit":"720p-pixel-seconds"}},
+					{"url":"https://filtered.example.com:8935/empty-app","app":"","price_info":{"price":5,"currency":"wei","unit":"720p-pixel-seconds"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	require.Equal("application/json", rr.Header().Get("Content-Type"))
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 1)
+	require.Len(resp[0].Runners, 1)
+	require.Equal("https://filtered.example.com:8935/price-ok", resp[0].Runners[0].URL)
+}
+
+func discoveryRaw(t *testing.T, data string) json.RawMessage {
+	t.Helper()
+	require.True(t, json.Valid([]byte(data)))
+	return json.RawMessage(data)
+}
+
+func TestValidateRunnerPriceAcceptsFixedUnit(t *testing.T) {
+	price, err := validateRunnerPrice(&runner.LiveRunnerPriceInfo{
+		Price:    json.Number("7"),
+		Currency: "wei",
+		Unit:     "fixed",
+	})
+	require.NoError(t, err)
+	require.Zero(t, price.Cmp(big.NewRat(7, 1)))
+}
+
+func discoveryRunnerApps(t *testing.T, resp discoveryResponse) []string {
+	t.Helper()
+	apps := make([]string, 0, len(resp.Runners))
+	for _, runner := range resp.Runners {
+		apps = append(apps, runner.App)
+	}
+	return apps
+}
+
+func discoveryResponseByAddress(t *testing.T, resp []discoveryResponse, address string) discoveryResponse {
+	t.Helper()
+	for _, entry := range resp {
+		if entry.Address == address {
+			return entry
+		}
+	}
+	require.Failf(t, "missing discovery response", "address=%s", address)
+	return discoveryResponse{}
+}
+
+func requireNotContainsDiscoveryField(t *testing.T, body []byte, field string) {
+	t.Helper()
+	var raw []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &raw))
+	for _, entry := range raw {
+		require.NotContains(t, entry, field)
+	}
+}
+
+func TestRemoteDiscoveryRunnerDuplicateComparison(t *testing.T) {
+	base := runner.LiveRunnerDiscoveryRunner{
+		URL:               "https://runner.example.com/scope",
+		App:               "live-video-to-video/model-a",
+		Metadata:          `{"region":"us-west"}`,
+		Capacity:          2,
+		CapacityUsed:      1,
+		CapacityAvailable: 1,
+		PriceInfo: &runner.LiveRunnerPriceInfo{
+			Price:    json.Number("7"),
+			Currency: "wei",
+			Unit:     "seconds",
+		},
+	}
+
+	usageChanged := base
+	usageChanged.CapacityUsed = 0
+	usageChanged.CapacityAvailable = 2
+	require.True(t, sameRemoteDiscoveryRunner(base, usageChanged))
+
+	capacityChanged := base
+	capacityChanged.Capacity = 3
+	require.False(t, sameRemoteDiscoveryRunner(base, capacityChanged))
+
+	metadataChanged := base
+	metadataChanged.Metadata = `{"region":"eu-central"}`
+	require.False(t, sameRemoteDiscoveryRunner(base, metadataChanged))
+}
+
+func TestRemoteDiscoveryRunnerMetadataRoundTrip(t *testing.T) {
+	entries := remoteDiscoveryEntries(json.RawMessage(`[{
+		"address":"https://orch.example.com:8935",
+		"runners":[{
+			"url":"https://orch.example.com:8935/apps/runner/session",
+			"app":"live-video-to-video/model-a",
+			"metadata":"{\"region\":\"us-west\"}",
+			"price_info":{"price":7,"currency":"wei","unit":"seconds"}
+		}]
+	}]`))
+	require.Len(t, entries, 1)
+	require.Len(t, entries[0].Runners, 1)
+	require.Equal(t, `{"region":"us-west"}`, entries[0].Runners[0].Metadata)
+
+	body, err := json.Marshal(discoveryResponse{Runners: entries[0].Runners})
+	require.NoError(t, err)
+	var response discoveryResponse
+	require.NoError(t, json.Unmarshal(body, &response))
+	require.Len(t, response.Runners, 1)
+	require.Equal(t, `{"region":"us-west"}`, response.Runners[0].Metadata)
+}
+
+func TestRemoteDiscoveryFiltersInvalidRunnerMetadata(t *testing.T) {
+	orchURL, err := url.Parse("https://orch.example.com:8935")
+	require.NoError(t, err)
+	entry := &remoteDiscoveryMergeEntry{
+		orch:    remoteDiscoveryOrchestrator{URL: orchURL},
+		runners: make(map[string]runner.LiveRunnerDiscoveryRunner),
+	}
+	base := runner.LiveRunnerDiscoveryRunner{
+		URL:      "https://orch.example.com:8935/apps/valid/session",
+		App:      "live-video-to-video/model-a",
+		Metadata: "valid metadata",
+		PriceInfo: &runner.LiveRunnerPriceInfo{
+			Price:    json.Number("7"),
+			Currency: "wei",
+			Unit:     "seconds",
+		},
+	}
+	oversized := base
+	oversized.URL = "https://orch.example.com:8935/apps/oversized/session"
+	oversized.Metadata = strings.Repeat("a", 1025)
+	replacement := base
+	replacement.URL = "https://orch.example.com:8935/apps/replacement/session"
+	replacement.Metadata = "\uFFFD"
+
+	mergeDiscoveryRunners(entry, remoteDiscoveryEntry{Runners: []runner.LiveRunnerDiscoveryRunner{
+		base,
+		oversized,
+		replacement,
+	}})
+
+	require.Equal(t, []string{base.URL}, entry.runnerURLs)
+	require.Equal(t, base, entry.runners[base.URL])
+}
+
+func TestRemoteSigner_Discovery_RunnersDoNotRequireTopLevelAdvertisedPrice(t *testing.T) {
+	require := require.New(t)
+
+	capability := core.Capability_LiveVideoToVideo
+	modelPriced := "model-priced"
+	modelUnpriced := "model-unpriced"
+	BroadcastCfg.SetMaxPrice(nil)
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelPriced, nil)
+	BroadcastCfg.SetCapabilityMaxPrice(capability, modelUnpriced, nil)
+
+	caps := core.NewCapabilities([]core.Capability{capability}, nil)
+	caps.SetPerCapabilityConstraints(core.PerCapabilityConstraints{
+		capability: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				modelPriced:   {},
+				modelUnpriced: {},
+			},
+		},
+	})
+
+	node := &core.LivepeerNode{}
+	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
+		{
+			OrchURI:      "https://priced.example.com:8935",
+			Capabilities: caps.ToNetCapabilities(),
+			CapabilitiesPrices: []*net.PriceInfo{
+				{
+					PricePerUnit:  7,
+					PixelsPerUnit: 1,
+					Capability:    uint32(capability),
+					Constraint:    modelPriced,
+				},
+			},
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://priced.example.com:8935",
+				"runners": [
+					{"url":"https://priced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price":7,"currency":"wei","unit":"seconds"}},
+					{"url":"https://priced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price":7,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
+		},
+		{
+			OrchURI:      "https://unpriced.example.com:8935",
+			Capabilities: caps.ToNetCapabilities(),
+			Discovery: discoveryRaw(t, `[{
+				"address": "https://unpriced.example.com:8935",
+				"runners": [
+					{"url":"https://unpriced.example.com:8935/priced","app":"live-video-to-video/model-priced","price_info":{"price":7,"currency":"wei","unit":"seconds"}},
+					{"url":"https://unpriced.example.com:8935/unpriced","app":"live-video-to-video/model-unpriced","price_info":{"price":7,"currency":"wei","unit":"seconds"}}
+				]
+			}]`),
+		},
+	}))
+
+	rdp := &remoteDiscoveryPool{
+		node:         node,
+		refreshEvery: time.Hour,
+	}
+	ls := &LivepeerServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil)
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var resp []discoveryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp, 2)
+	pricedResp := discoveryResponseByAddress(t, resp, "https://priced.example.com:8935")
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, pricedResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, discoveryRunnerApps(t, pricedResp))
+	unpricedNodeResp := discoveryResponseByAddress(t, resp, "https://unpriced.example.com:8935")
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, unpricedNodeResp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-priced", "live-video-to-video/model-unpriced"}, discoveryRunnerApps(t, unpricedNodeResp))
+
+	capsReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-priced", nil)
+	capsRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, capsRR, capsReq)
+	require.Equal(http.StatusOK, capsRR.Code)
+	var capsResp []discoveryResponse
+	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
+	require.Len(capsResp, 2)
+	discoveryResponseByAddress(t, capsResp, "https://priced.example.com:8935")
+	discoveryResponseByAddress(t, capsResp, "https://unpriced.example.com:8935")
+
+	unpricedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-unpriced", nil)
+	unpricedRR := httptest.NewRecorder()
+	ls.GetOrchestrators(rdp, unpricedRR, unpricedReq)
+	require.Equal(http.StatusOK, unpricedRR.Code)
+	var unpricedCapsResp []discoveryResponse
+	require.NoError(json.NewDecoder(unpricedRR.Body).Decode(&unpricedCapsResp))
+	require.Len(unpricedCapsResp, 2)
+	discoveryResponseByAddress(t, unpricedCapsResp, "https://priced.example.com:8935")
+	discoveryResponseByAddress(t, unpricedCapsResp, "https://unpriced.example.com:8935")
 }
 
 func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
@@ -955,4 +1992,30 @@ func TestRemoteSigner_Discovery_RefreshesAfterInterval(t *testing.T) {
 		require.Equal("https://orch-b.example.com:8935", resp[0].Address)
 		require.Equal([]string{"live-video-to-video/model-b"}, resp[0].Capabilities)
 	})
+}
+
+func TestGetOrchInfoSig_SendsConfiguredHeaders(t *testing.T) {
+	require := require.New(t)
+
+	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(http.MethodPost, r.Method)
+		require.Equal("/sign-orchestrator-info", r.URL.Path)
+		require.Equal("application/json", r.Header.Get("Content-Type"))
+		require.Equal("Bearer gateway-token", r.Header.Get("Authorization"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"address":   "0x1234",
+			"signature": "0xabcd",
+		})
+	}))
+	defer remoteTS.Close()
+
+	remoteURL, err := url.Parse(remoteTS.URL)
+	require.NoError(err)
+
+	resp, err := GetOrchInfoSig(remoteURL, map[string]string{"Authorization": "Bearer gateway-token"})
+	require.NoError(err)
+	require.Equal([]byte{0x12, 0x34}, []byte(resp.Address))
+	require.Equal([]byte{0xab, 0xcd}, []byte(resp.Signature))
 }

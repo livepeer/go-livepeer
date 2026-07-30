@@ -26,6 +26,10 @@ type TrickleSubscriberConfig struct {
 	// Trickle URL to subscribe to (required).
 	URL string
 
+	// InsecureSkipVerify skips TLS certificate validation when true.
+	// Defaults to false.
+	InsecureSkipVerify bool
+
 	// Pass in a context for custom cancellation of
 	// the entire subscription.
 	//
@@ -56,14 +60,15 @@ var preconnectTimeoutErr = errors.New("preconnect timed out")
 
 // TrickleSubscriber represents a trickle streaming reader that always fetches from index -1
 type TrickleSubscriber struct {
-	client     *http.Client
-	url        string
-	mu         sync.Mutex      // Mutex to manage concurrent access
-	pendingGet *http.Response  // Pre-initialized GET request
-	baseCtx    context.Context // base context to use for the next context
-	ctx        context.Context // Parent context to use for pending GETs. This is bad
-	cancelCtx  func()          // cancel the pending GET
-	idx        int             // Segment index to request
+	client             *http.Client
+	url                string
+	mu                 sync.Mutex      // Mutex to manage concurrent access
+	pendingGet         *http.Response  // Pre-initialized GET request
+	baseCtx            context.Context // base context to use for the next context
+	ctx                context.Context // Parent context to use for pending GETs. This is bad
+	cancelCtx          func()          // cancel the pending GET
+	idx                int             // Segment index to request
+	insecureSkipVerify bool
 
 	// Number of errors from preconnect
 	preconnectErrorCount int
@@ -90,12 +95,13 @@ func NewTrickleSubscriber(config TrickleSubscriberConfig) (*TrickleSubscriber, e
 	}
 
 	return &TrickleSubscriber{
-		client:    httpClient(),
-		url:       config.URL,
-		baseCtx:   baseCtx,
-		ctx:       ctx,
-		cancelCtx: cancel,
-		idx:       idx,
+		client:             httpClient(config.InsecureSkipVerify),
+		url:                config.URL,
+		baseCtx:            baseCtx,
+		ctx:                ctx,
+		cancelCtx:          cancel,
+		idx:                idx,
+		insecureSkipVerify: config.InsecureSkipVerify,
 	}, nil
 }
 
@@ -136,7 +142,7 @@ func (c *TrickleSubscriber) SetSeq(seq int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Reset client in case SetSeq is called due to slow reads falling too far behind
-	c.client = httpClient()
+	c.client = httpClient(c.insecureSkipVerify)
 	c.idx = seq
 	c.ctx, c.cancelCtx = context.WithCancel(c.baseCtx)
 	c.pendingGet = nil

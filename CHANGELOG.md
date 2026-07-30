@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.9.0
+
+### Breaking Changes 🚨🚨
+
+* [#3959](https://github.com/livepeer/go-livepeer/pull/3959) remote-signer: Refuse to start when `/generate-live-payment` would be unauthenticated (`-remoteSignerWebhookUrl` unset) on a publicly-accessible `-httpAddr`; pass `-remoteSignerAllowNoAuth` to override (@rickstaa)
+
+### Features ⚒
+
+#### General
+
+- [#3938](https://github.com/livepeer/go-livepeer/pull/3938) Add Live Runner
+- [#3989](https://github.com/livepeer/go-livepeer/pull/3989) Scope runtime
+- [#3944](https://github.com/livepeer/go-livepeer/pull/3944) Bridge slog level to the glog `-v` flag so `-v` controls newer subsystem logging (@rickstaa)
+
+#### Broadcaster
+
+#### Orchestrator
+
+- [#3964](https://github.com/livepeer/go-livepeer/pull/3964) trickle: Enforce TLS if Live Runner is enabled
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### General
+
+* [#3962](https://github.com/livepeer/go-livepeer/pull/3962) remote-signer: Default `-cliAddr` to a loopback address in remote signer mode so the node no longer fails to start by binding the CLI server to `:80` (@rickstaa)
+
+#### Broadcaster
+
+* [a6c4b1e](https://github.com/livepeer/go-livepeer/commit/a6c4b1ef70d8f4d3da0e7d8164ac8d1faf80ad0e) pm: Reject ticket params with a zero expiration block so they are subjected to the economic caps (@rickstaa)
+
+#### CLI
+
+## v0.8.11
+
+### Features ⚒
+
+#### General
+
+* [#3889](https://github.com/livepeer/go-livepeer/pull/3889) Remove x11 from MacOS builds (@j0sh)
+* [#3925](https://github.com/livepeer/go-livepeer/pull/3925) trickle: Add a /<channel>/next endpoint (@rickstaa)
+* [#3882](https://github.com/livepeer/go-livepeer/pull/3882) box: add webcam input and fix bash conditionals (@rickstaa)
+
+#### AI – LV2V
+
+* [#3946](https://github.com/livepeer/go-livepeer/pull/3946) ai/live: Make RTMP output optional in AI media server (@eliteprox)
+* [#3897](https://github.com/livepeer/go-livepeer/pull/3897) signer: Add auth webhook callback (@j0sh)
+* [#3877](https://github.com/livepeer/go-livepeer/pull/3877) ai/live: Send Kafka event for tracking payments (@j0sh)
+
+#### AI – BYOC
+
+* [#3878](https://github.com/livepeer/go-livepeer/pull/3878) byoc: add auth token to byoc worker registration (@ad-astra-video)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+* [a6c4b1e](https://github.com/livepeer/go-livepeer/commit/a6c4b1ef70d8f4d3da0e7d8164ac8d1faf80ad0e) pm: Reject ticket params with a zero expiration block so they are subjected to the economic caps (@rickstaa)
+
 ## v0.8.10
 
 #### General

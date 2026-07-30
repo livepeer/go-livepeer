@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
@@ -75,6 +76,7 @@ const (
 	OrchestratorCliPort = "7935"
 	TranscoderCliPort   = "6935"
 	AIWorkerCliPort     = "4935"
+	RemoteSignerCliPort = "3935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
@@ -96,6 +98,10 @@ type LivepeerConfig struct {
 	Transcoder                 *bool
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
+	AIServerless               *bool
+	UseLiveRunners             *bool
+	LiveRunnerConfig           *string
+	LiveRunnerProxyURL         *string
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -163,12 +169,17 @@ type LivepeerConfig struct {
 	AuthWebhookURL             *string
 	LiveAIAuthWebhookURL       *string
 	LiveAITrickleHostForRunner *string
+	LiveRunnerAddr             *string
 	OrchWebhookURL             *string
 	OrchBlacklist              *string
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
 	RemoteSigner               *bool
 	RemoteSignerUrl            *string
+	RemoteSignerHeaders        *string
+	RemoteSignerWebhookURL     *string
+	RemoteSignerWebhookHeaders *string
+	RemoteSignerAllowNoAuth    *bool
 	RemoteDiscovery            *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
@@ -232,6 +243,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// AI:
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
+	defaultAIServerless := false
+	defaultUseLiveRunners := false
+	defaultLiveRunnerConfig := ""
+	defaultLiveRunnerProxyURL := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -241,6 +256,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLiveRunnerAddr := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
@@ -307,6 +323,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestOrchAvail := true
 	defaultRemoteSigner := false
 	defaultRemoteSignerUrl := ""
+	defaultRemoteSignerHeaders := ""
+	defaultRemoteSignerWebhookURL := ""
+	defaultRemoteSignerWebhookHeaders := ""
+	defaultRemoteSignerAllowNoAuth := false
 	defaultRemoteDiscovery := false
 
 	// Gateway logs
@@ -354,6 +374,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// AI:
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
+		AIServerless:             &defaultAIServerless,
+		UseLiveRunners:           &defaultUseLiveRunners,
+		LiveRunnerConfig:         &defaultLiveRunnerConfig,
+		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -363,6 +387,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LiveRunnerAddr:           &defaultLiveRunnerAddr,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
@@ -428,10 +453,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
-		TestOrchAvail:   &defaultTestOrchAvail,
-		RemoteSigner:    &defaultRemoteSigner,
-		RemoteSignerUrl: &defaultRemoteSignerUrl,
-		RemoteDiscovery: &defaultRemoteDiscovery,
+		TestOrchAvail:              &defaultTestOrchAvail,
+		RemoteSigner:               &defaultRemoteSigner,
+		RemoteSignerUrl:            &defaultRemoteSignerUrl,
+		RemoteSignerHeaders:        &defaultRemoteSignerHeaders,
+		RemoteSignerWebhookURL:     &defaultRemoteSignerWebhookURL,
+		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
+		RemoteSignerAllowNoAuth:    &defaultRemoteSignerAllowNoAuth,
+		RemoteDiscovery:            &defaultRemoteDiscovery,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -451,12 +480,14 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 
 	// Define sensitive field names that should be redacted
 	sensitiveFields := map[string]bool{
-		"EthPassword":         true,
-		"OrchSecret":          true,
-		"KafkaPassword":       true,
-		"MediaMTXApiPassword": true,
-		"LiveAIAuthApiKey":    true,
-		"FVfailGsKey":         true,
+		"EthPassword":                true,
+		"OrchSecret":                 true,
+		"KafkaPassword":              true,
+		"MediaMTXApiPassword":        true,
+		"LiveAIAuthApiKey":           true,
+		"FVfailGsKey":                true,
+		"RemoteSignerHeaders":        true,
+		"RemoteSignerWebhookHeaders": true,
 	}
 
 	for i := 0; i < cfgType.NumField(); i++ {
@@ -607,6 +638,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.TrickleInsecureSkipVerify = !((cfg.UseLiveRunners != nil && *cfg.UseLiveRunners) ||
+		(cfg.LiveRunnerConfig != nil && *cfg.LiveRunnerConfig != ""))
 	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
@@ -1304,6 +1337,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	var aiCaps []core.Capability
 	capabilityConstraints := make(core.PerCapabilityConstraints)
+	var aiModelConfigs []core.AIModelConfig
+
+	if *cfg.AIModels != "" {
+		aiModelConfigs, err = core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+	}
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1363,10 +1405,28 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
-		if err != nil {
-			glog.Errorf("Error starting AI worker: %v", err)
-			return
+		if *cfg.AIServerless {
+			if len(aiModelConfigs) != 1 {
+				glog.Errorf("Serverless requires exactly one AI model config, got %d", len(aiModelConfigs))
+				return
+			}
+			config := aiModelConfigs[0]
+			if config.Pipeline != "live-video-to-video" || config.ModelID != "scope" {
+				glog.Errorf("Serverless only supports live-video-to-video/scope, got %s/%s", config.Pipeline, config.ModelID)
+				return
+			}
+
+			n.AIWorker, err = worker.NewServerlessWorker(strings.TrimSpace(config.URL), config.Capacity)
+			if err != nil {
+				glog.Errorf("Error starting Serverless AI worker: %v", err)
+				return
+			}
+		} else {
+			n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
+			if err != nil {
+				glog.Errorf("Error starting AI worker: %v", err)
+				return
+			}
 		}
 
 		defer func() {
@@ -1382,13 +1442,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	if *cfg.AIModels != "" {
-		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
-		if err != nil {
-			glog.Errorf("Error parsing -aiModels: %v", err)
-			return
-		}
-
-		for _, config := range configs {
+		for _, config := range aiModelConfigs {
 			pipelineCap, err := core.PipelineToCapability(config.Pipeline)
 			if err != nil {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
@@ -1396,6 +1450,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
 				modelsCount := 1
+
 				if config.Capacity != 0 {
 					if config.URL == "" {
 						// Use multiple same configs if External Container is not used and capacity is set
@@ -1570,6 +1625,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
 		n.LiveAIAuthWebhookURL = parsedUrl
 	}
+	if *cfg.RemoteSignerWebhookURL != "" {
+		parsedURL, err := validateURL(*cfg.RemoteSignerWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting remote signer webhook URL ", err)
+		}
+		glog.Info("Using remote signer webhook URL ", parsedURL.Redacted())
+		n.RemoteSignerWebhookURL = parsedURL
+		if cfg.RemoteSignerWebhookHeaders != nil {
+			n.RemoteSignerWebhookHeaders = parseHeaderMap(*cfg.RemoteSignerWebhookHeaders)
+		}
+	}
 
 	httpIngest := true
 
@@ -1601,8 +1667,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 
+			if cfg.RemoteSignerHeaders != nil {
+				n.RemoteSignerHeaders = parseHeaderMap(*cfg.RemoteSignerHeaders)
+			}
+
 			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
-			fields, err := server.GetOrchInfoSig(url)
+			fields, err := server.GetOrchInfoSig(url, n.RemoteSignerHeaders)
 			if err != nil {
 				glog.Exit("Unable to query remote signer: ", err)
 			}
@@ -1635,13 +1705,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
+			// IMPORTANT: Do not forward RemoteSignerHeaders here. These headers may
+			// contain secrets intended only for the configured remote signer, and a
+			// separate orchestrator discovery webhook must never receive them.
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		} else if n.RemoteSignerUrl != nil {
 			orchDiscoveryURL := n.RemoteSignerUrl.ResolveReference(&url.URL{Path: "/discover-orchestrators"})
 			glog.Info("Using remote signer orchestrator discovery endpoint ", orchDiscoveryURL)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, orchDiscoveryURL, *cfg.DiscoveryTimeout)
+			n.OrchestratorPool = discovery.WebhookPoolConfig{
+				Broadcaster:      bcast,
+				Callback:         orchDiscoveryURL,
+				Headers:          n.RemoteSignerHeaders,
+				DiscoveryTimeout: *cfg.DiscoveryTimeout,
+			}.New()
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
@@ -1744,6 +1822,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	} else if n.NodeType == core.AIWorkerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
+	} else if n.NodeType == core.RemoteSignerNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
 	}
 
 	// Apply default capabilities if not running as a transcoder.
@@ -1807,19 +1887,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.RemoteDiscovery = *cfg.RemoteDiscovery
 	}
 	if cfg.LiveAIHeartbeatHeaders != nil {
-		n.LiveAIHeartbeatHeaders = make(map[string]string)
-		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
-		for _, header := range headers {
-			parts := strings.SplitN(header, ":", 2)
-			if len(parts) == 2 {
-				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
-			}
-		}
+		n.LiveAIHeartbeatHeaders = parseHeaderMap(*cfg.LiveAIHeartbeatHeaders)
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
+	}
+	if cfg.LiveRunnerAddr != nil && *cfg.LiveRunnerAddr != "" {
+		n.LiveRunnerAddr, err = parseLiveRunnerAddr(*cfg.LiveRunnerAddr)
+		if err != nil {
+			glog.Exitf("invalid -liveRunnerAddr: %v", err)
+		}
 	}
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
@@ -1902,6 +1981,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				DiscoveryTimeout:        *cfg.DiscoveryTimeout,
 				LiveAICapReportInterval: *cfg.LiveAICapReportInterval,
 				IgnoreCapacityCheck:     true,
+				UseDiscoveryEndpoint:    true,
 			}.New()
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
@@ -1920,9 +2000,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// Start remote signer server
 		go func() {
 			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
+
+			// Refuse to start a public signer with no webhook auth. It would sign payments
+			// from this node's deposit for any caller (override with -remoteSignerAllowNoAuth).
+			if n.RemoteSignerWebhookURL == nil {
+				isLocalHTTP, err := isLocalURL("https://" + *cfg.HttpAddr)
+				if err != nil {
+					exit("Error checking for local -httpAddr: %v", err)
+				}
+				if !isLocalHTTP && !*cfg.RemoteSignerAllowNoAuth {
+					exit("Refusing to start: remote signer on public -httpAddr %s with no "+
+						"-remoteSignerWebhookUrl signs payments from this node's deposit for any caller. "+
+						"Set the webhook, or pass -remoteSignerAllowNoAuth to override.", *cfg.HttpAddr)
+				}
+				glog.Warning("WARNING: remote signer has no webhook auth. /generate-live-payment is " +
+					"UNAUTHENTICATED and signs payments from this node's deposit. Set -remoteSignerWebhookUrl.")
+			}
+
 			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
-			err := server.StartRemoteSignerServer(s, *cfg.HttpAddr)
-			if err != nil {
+			if err := server.StartRemoteSignerServer(s, *cfg.HttpAddr); err != nil {
 				exit("Error starting remote signer server: err=%q", err)
 			}
 		}()
@@ -1934,6 +2030,36 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
+
+		if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+			if n.OrchSecret == "" && *cfg.LiveRunnerConfig == "" {
+				glog.Exit("running with -useLiveRunners requires -orchSecret")
+			}
+			if cfg.LiveRunnerProxyURL != nil && *cfg.LiveRunnerProxyURL != "" {
+				if err := runner.ValidateProxyURLTemplate(*cfg.LiveRunnerProxyURL, orch.ServiceURI()); err != nil {
+					glog.Exitf("invalid -liveRunnerProxyUrl: %v", err)
+				}
+			}
+			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+				Host:             liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Onchain:          *cfg.Network != "offchain",
+				ProxyURLTemplate: *cfg.LiveRunnerProxyURL,
+			})
+			if n.OrchSecret == "" {
+				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")
+			}
+			if *cfg.LiveRunnerConfig != "" {
+				configJSON, err := os.ReadFile(*cfg.LiveRunnerConfig)
+				if err != nil {
+					glog.Exitf("error reading -liveRunnerConfig: %v", err)
+				}
+				registration, err := n.LiveRunnerManager.(*runner.LiveRunnerRegistry).RegisterStaticRunnersJSON(configJSON)
+				if err != nil {
+					glog.Exitf("error registering -liveRunnerConfig: %v", err)
+				}
+				glog.Infof("Registered %d static live runners from %s", len(registration.Runners), *cfg.LiveRunnerConfig)
+			}
+		}
 
 		go func() {
 			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
@@ -1948,10 +2074,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// check whether or not the orchestrator is available
 		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
-			orchAvail := server.CheckOrchestratorAvailability(orch)
+			var (
+				checkName string
+				orchAvail bool
+			)
+			if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+				checkName = "discovery"
+				orchAvail = server.CheckOrchestratorDiscoveryAvailability(orch)
+			} else {
+				checkName = "grpc ping"
+				orchAvail = server.CheckOrchestratorAvailability(orch)
+			}
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
+				glog.Infof("Orchestrator not available at %v (%v) via %s check; shutting down", orch.ServiceURI(), *cfg.HttpAddr, checkName)
 				tc <- struct{}{}
 			}
 		}
@@ -2089,6 +2225,21 @@ func validateURL(u string) (*url.URL, error) {
 	return p, nil
 }
 
+func parseHeaderMap(raw string) map[string]string {
+	headers := make(map[string]string)
+	for _, header := range strings.Split(raw, ",") {
+		parts := strings.SplitN(header, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				headers[key] = value
+			}
+		}
+	}
+	return headers
+}
+
 func isLocalURL(u string) (bool, error) {
 	uri, err := url.ParseRequestURI(u)
 	if err != nil {
@@ -2117,7 +2268,10 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 			// special value to signal this node is not to be used for work
 			return url.Parse("")
 		}
-		return url.ParseRequestURI("https://" + serviceAddr)
+		if !strings.HasPrefix(serviceAddr, "http://") && !strings.HasPrefix(serviceAddr, "https://") {
+			serviceAddr = "https://" + serviceAddr
+		}
+		return url.ParseRequestURI(serviceAddr)
 	}
 
 	// Infer address
@@ -2443,4 +2597,31 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 func exit(msg string, args ...any) {
 	glog.Errorf(msg, args...)
 	os.Exit(2)
+}
+
+type liveRunnerHost struct {
+	runner.RunnerHost
+	*core.LivepeerNode
+}
+
+func (h liveRunnerHost) LiveRunnerURI() *url.URL {
+	if h.LivepeerNode != nil && h.LivepeerNode.LiveRunnerAddr != nil {
+		v := *h.LivepeerNode.LiveRunnerAddr
+		return &v
+	}
+	return h.RunnerHost.ServiceURI()
+}
+
+func parseLiveRunnerAddr(addr string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return nil, err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return nil, fmt.Errorf("must be an absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https")
+	}
+	return parsed, nil
 }

@@ -56,7 +56,7 @@ CUSTOM_DATADIR="$TMPDIR"/customDatadir2
 [ ! -d "$CUSTOM_DATADIR" ]
 
 # check invalid service address via inserting control character
-$TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr "hibye" 2>&1 | grep "Error getting service URI"
+$TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr $'hi\b\bbye' 2>&1 | grep "Error getting service URI"
 [ ${PIPESTATUS[0]} -ne 0 ]
 
 # check missing service address via failed availability check

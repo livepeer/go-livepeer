@@ -185,7 +185,7 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	}
 
 	if ticketParams.ExpirationBlock.Int64() == 0 {
-		return nil
+		return fmt.Errorf("ticketParams expiration block is 0")
 	}
 
 	latestL1Block := s.timeManager.LastSeenL1Block()

@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
@@ -52,6 +53,12 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
+
+	// Bridge slog (used by newer subsystems) to the glog -v level until we
+	// migrate off glog; without this, slog.Debug is dropped regardless of -v.
+	if glog.V(6) {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
 
 	if *mistJSON {
 		mistconnector.PrintMistConfigJson(

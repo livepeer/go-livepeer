@@ -567,9 +567,9 @@ func (bsg *BYOCGatewayServer) setupStream(ctx context.Context, r *http.Request, 
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
 	clog.Infof(ctx, "Received live video AI request")
 
-	// collect all RTMP outputs
+	// collect all RTMP outputs (optional; WHEP uses the ring buffer instead)
 	var rtmpOutputs []string
-	if job.Job.Params.EnableVideoEgress {
+	if job.Job.Params.EnableVideoEgress && !media.LiveAIDisableRTMPOutput() {
 		if outputURL != "" {
 			rtmpOutputs = append(rtmpOutputs, outputURL)
 		}
@@ -578,7 +578,7 @@ func (bsg *BYOCGatewayServer) setupStream(ctx context.Context, r *http.Request, 
 		}
 	}
 
-	clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+	clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs, "disabled", media.LiveAIDisableRTMPOutput())
 
 	// Clear any previous gateway status
 	bsg.statusStore.Clear(streamID)

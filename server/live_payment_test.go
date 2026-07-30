@@ -153,7 +153,7 @@ func TestAccountPayment(t *testing.T) {
 			segmentInfo := &SegmentInfoReceiver{
 				sender:    sender,
 				sessionID: sessionID,
-				inPixels:  1000000,
+				units:     1000000,
 				priceInfo: &net.PriceInfo{
 					PricePerUnit:  1,
 					PixelsPerUnit: 1,
@@ -254,6 +254,7 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 	remoteTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal("/generate-live-payment", r.URL.Path)
 		require.Equal("application/json", r.Header.Get("Content-Type"))
+		require.Equal("Bearer gateway-token", r.Header.Get("Authorization"))
 
 		require.NoError(json.NewDecoder(r.Body).Decode(&gotReq))
 
@@ -278,6 +279,7 @@ func TestRemotePaymentSender_RequestPayment_Success_CachesStateAndSendsExpectedP
 	sess := StubBroadcastSession("http://orch.example")
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.RemoteSignerUrl = remoteURL
+	node.RemoteSignerHeaders = map[string]string{"Authorization": "Bearer gateway-token"}
 
 	r := NewRemotePaymentSender(node)
 	r.state = RemotePaymentStateSig{State: []byte{0x01}, Sig: []byte{0x02}}
