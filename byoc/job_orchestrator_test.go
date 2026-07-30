@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -21,10 +22,13 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockJobOrchestrator struct {
@@ -56,6 +60,40 @@ type mockJobOrchestrator struct {
 	ticketParams                    func(ethcommon.Address, *net.PriceInfo) (*net.TicketParams, error)
 
 	mock.Mock
+}
+
+type testPriceFeedWatcher struct {
+	mu      sync.Mutex
+	current eth.PriceData
+	sinks   []chan<- eth.PriceData
+}
+
+func (w *testPriceFeedWatcher) Currencies() (string, string, error) {
+	return "ETH", "USD", nil
+}
+
+func (w *testPriceFeedWatcher) Current() (eth.PriceData, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.current, nil
+}
+
+func (w *testPriceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceData) {
+	w.mu.Lock()
+	w.sinks = append(w.sinks, sink)
+	w.mu.Unlock()
+}
+
+func (w *testPriceFeedWatcher) update(price *big.Rat) {
+	data := eth.PriceData{Price: price}
+	w.mu.Lock()
+	w.current = data
+	sinks := append([]chan<- eth.PriceData(nil), w.sinks...)
+	w.mu.Unlock()
+
+	for _, sink := range sinks {
+		sink <- data
+	}
 }
 
 func (r *mockJobOrchestrator) ServiceURI() *url.URL {
@@ -766,6 +804,92 @@ func TestGetJobToken_Success(t *testing.T) {
 
 	assert.NotNil(t, token.TicketParams)
 	assert.Equal(t, int64(1000), token.Balance)
+}
+
+func TestGetToken_GatewaySeesDistinctDynamicBYOCPrices(t *testing.T) {
+	watcher := &testPriceFeedWatcher{current: eth.PriceData{Price: big.NewRat(100, 1)}}
+	oldWatcher := core.PriceFeedWatcher
+	core.PriceFeedWatcher = watcher
+	t.Cleanup(func() { core.PriceFeedWatcher = oldWatcher })
+
+	n, err := core.NewLivepeerNode(nil, "", nil)
+	require.NoError(t, err)
+	n.NodeType = core.OrchestratorNode
+	n.AutoAdjustPrice = false
+	n.SetBasePrice("default", core.NewFixedPrice(big.NewRat(1, 1)))
+
+	recipient := new(pm.MockRecipient)
+	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(&pm.TicketParams{
+		Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111"),
+		FaceValue:         big.NewInt(1000),
+		WinProb:           big.NewInt(1),
+		RecipientRandHash: ethcommon.HexToHash("0x01"),
+		Seed:              big.NewInt(1234),
+		ExpirationBlock:   big.NewInt(100000),
+		ExpirationParams:  &pm.TicketExpirationParams{},
+	}, nil)
+	n.Recipient = recipient
+
+	orch := core.NewOrchestrator(n, nil)
+	for _, settings := range []string{
+		`{"name":"byoc-cap-a","description":"test A","url":"http://worker-a","capacity":1,"price_per_unit":1,"price_scaling":1,"currency":"USD"}`,
+		`{"name":"byoc-cap-b","description":"test B","url":"http://worker-b","capacity":1,"price_per_unit":2,"price_scaling":1,"currency":"USD"}`,
+	} {
+		_, err := orch.RegisterExternalCapability(settings)
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() {
+		n.SetAutoPriceForExternalCapability("default", "byoc-cap-a", nil)
+		n.SetAutoPriceForExternalCapability("default", "byoc-cap-b", nil)
+	})
+
+	mux := http.NewServeMux()
+	NewBYOCOrchestratorServer(n, orch, nil, "", mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	sender := "0x1000000000000000000000000000000000000000"
+	sig := fmt.Sprintf("%0128d", 0)
+	priceFor := func(capability string) *net.PriceInfo {
+		jobSender := JobSender{Addr: sender, Sig: sig}
+		reqSenderStr, err := json.Marshal(jobSender)
+		require.NoError(t, err)
+
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/process/token", nil)
+		require.NoError(t, err)
+		req.Header.Set(jobEthAddressHdr, base64.StdEncoding.EncodeToString(reqSenderStr))
+		req.Header.Set(jobCapabilityHdr, capability)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", body)
+
+		var token JobToken
+		require.NoError(t, json.Unmarshal(body, &token))
+		require.Equal(t, int64(1), token.AvailableCapacity)
+		require.NotNil(t, token.Price)
+		return token.Price
+	}
+
+	capA := priceFor("byoc-cap-a")
+	require.Equal(t, int64(10000000000000000), capA.PricePerUnit)
+	require.Equal(t, int64(1), capA.PixelsPerUnit)
+
+	capB := priceFor("byoc-cap-b")
+	require.Equal(t, int64(20000000000000000), capB.PricePerUnit)
+	require.Equal(t, int64(1), capB.PixelsPerUnit)
+
+	watcher.update(big.NewRat(200, 1))
+
+	require.Eventually(t, func() bool {
+		capA = priceFor("byoc-cap-a")
+		capB = priceFor("byoc-cap-b")
+		return capA.PricePerUnit == 5000000000000000 &&
+			capB.PricePerUnit == 10000000000000000
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestProcessJob_MethodNotAllowed(t *testing.T) {
