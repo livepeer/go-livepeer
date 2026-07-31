@@ -150,6 +150,7 @@ type RemotePaymentState struct {
 	PMSessionID          string
 	LastUpdate           time.Time
 	OrchestratorAddress  ethcommon.Address
+	App                  string
 	AuthExpiry           int64
 	SenderNonce          uint32
 	Balance              string
@@ -176,6 +177,9 @@ type RemotePaymentRequest struct {
 
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
 	ManifestID string
+
+	// Application associated with the payment. Optional.
+	App string `json:"app,omitempty"`
 
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
@@ -364,6 +368,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
+		if state.App != req.App {
+			err := fmt.Errorf("app mismatch")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
 		if state.Type != "" && state.Type != req.Type {
 			err := fmt.Errorf("job type mismatch")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -375,6 +384,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		state = &RemotePaymentState{
 			StateID:              string(core.RandomManifestID()),
 			OrchestratorAddress:  orchAddr,
+			App:                  req.App,
 			InitialPricePerUnit:  priceInfo.PricePerUnit,
 			InitialPixelsPerUnit: priceInfo.PixelsPerUnit,
 			Type:                 req.Type,
@@ -646,6 +656,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
+			"app":                state.App,
 			"pipeline":           pipeline,
 			"request_id":         requestID,
 			"orch_address":       orchAddr.Hex(),

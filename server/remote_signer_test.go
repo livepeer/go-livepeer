@@ -74,6 +74,21 @@ func (c *testEthClient) SignTypedData(apitypes.TypedData) ([]byte, error) {
 	return []byte("stub"), nil
 }
 
+func TestRemotePaymentRequest_AppJSON(t *testing.T) {
+	requestBody, err := json.Marshal(RemotePaymentRequest{App: "live-video-to-video/scope"})
+	require.NoError(t, err)
+
+	var requestJSON map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(requestBody, &requestJSON))
+	require.JSONEq(t, `"live-video-to-video/scope"`, string(requestJSON["app"]))
+
+	emptyBody, err := json.Marshal(RemotePaymentRequest{})
+	require.NoError(t, err)
+	requestJSON = nil
+	require.NoError(t, json.Unmarshal(emptyBody, &requestJSON))
+	require.NotContains(t, requestJSON, "app")
+}
+
 func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	require := require.New(t)
 
@@ -390,6 +405,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		stateBytes     []byte
 		stateSig       []byte
 		orchInfo       *net.OrchestratorInfo
+		reqApp         string
 		reqType        string
 		omitManifestID bool
 		wantStatus     int
@@ -423,6 +439,23 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			stateBytes: []byte("not-json"),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "invalid state",
+		},
+		{
+			name: "app mismatch",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					App:                  "live-video-to-video/app-a",
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			reqApp:     "live-video-to-video/app-b",
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "app mismatch",
 		},
 		{
 			name: "job type mismatch",
@@ -511,6 +544,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			reqBody, err := json.Marshal(RemotePaymentRequest{
 				Orchestrator: orchBlob,
 				ManifestID:   manifestID,
+				App:          tt.reqApp,
 				InPixels:     1,
 				Type:         tt.reqType,
 				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: stateSig},
@@ -895,32 +929,32 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
 
-	doPaymentWithStateAndAuthID := func(requestHeader string, authID string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+	type paymentRequestOptions struct {
+		authID string
+		app    string
+		state  RemotePaymentStateSig
+	}
+	doPaymentWithOpts := func(requestHeader string, opts paymentRequestOptions) *httptest.ResponseRecorder {
 		reqBody, err := json.Marshal(RemotePaymentRequest{
 			Orchestrator: orchBlob,
 			ManifestID:   "manifest",
+			App:          opts.app,
 			InPixels:     1,
-			State:        state,
+			State:        opts.state,
 		})
 		require.NoError(err)
 
 		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
 		req.Header.Set("X-Request-ID", requestHeader)
-		if authID != "" {
-			req.Header.Set(remoteSignerAuthIDHeader, authID)
+		if opts.authID != "" {
+			req.Header.Set(remoteSignerAuthIDHeader, opts.authID)
 		}
 		rr := httptest.NewRecorder()
 		ls.GenerateLivePayment(rr, req)
 		return rr
 	}
-	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
-		return doPaymentWithStateAndAuthID(requestHeader, "", state)
-	}
-	doPaymentWithAuthID := func(requestHeader string, authID string) *httptest.ResponseRecorder {
-		return doPaymentWithStateAndAuthID(requestHeader, authID, RemotePaymentStateSig{})
-	}
 	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
-		return doPaymentWithState(requestHeader, RemotePaymentStateSig{})
+		return doPaymentWithOpts(requestHeader, paymentRequestOptions{})
 	}
 	parseResponseState := func(rr *httptest.ResponseRecorder) RemotePaymentState {
 		var resp RemotePaymentResponse
@@ -960,12 +994,13 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 			"X-API-Key":     "secret",
 		}
 
-		rr := doPayment("req-123")
+		rr := doPaymentWithOpts("req-123", paymentRequestOptions{app: "live-video-to-video/scope"})
 		require.Equal(http.StatusOK, rr.Code)
 		require.True(callbackCalled)
 		require.Equal([]string{"req-123"}, payload.Headers["X-Request-Id"])
 		require.NotNil(payload.State)
 		require.Equal("pmSession", payload.State.PMSessionID)
+		require.Equal("live-video-to-video/scope", payload.State.App)
 	})
 
 	t.Run("callback 200 with status 200 succeeds", func(t *testing.T) {
@@ -1033,7 +1068,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
-		rr := doPaymentWithAuthID("req-auth-id-fallback", "header-auth-id")
+		rr := doPaymentWithOpts("req-auth-id-fallback", paymentRequestOptions{authID: "header-auth-id"})
 		require.Equal(http.StatusOK, rr.Code)
 		state := parseResponseState(rr)
 		require.Equal("header-auth-id", state.AuthID)
@@ -1051,7 +1086,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
-		rr := doPaymentWithAuthID("req-auth-id-priority", "header-auth-id")
+		rr := doPaymentWithOpts("req-auth-id-priority", paymentRequestOptions{authID: "header-auth-id"})
 		require.Equal(http.StatusOK, rr.Code)
 		state := parseResponseState(rr)
 		require.Equal("webhook-auth-id", state.AuthID)
@@ -1081,7 +1116,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
 		require.Equal("cached-auth-id", firstState.AuthID)
 
-		second := doPaymentWithState("req-skip-second", firstResp.State)
+		second := doPaymentWithOpts("req-skip-second", paymentRequestOptions{state: firstResp.State})
 		require.Equal(http.StatusOK, second.Code)
 		var secondResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
@@ -1090,7 +1125,10 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal("cached-auth-id", secondState.AuthID)
 		require.Equal(1, callbackCalls)
 
-		third := doPaymentWithStateAndAuthID("req-skip-third", "new-header-auth-id", secondResp.State)
+		third := doPaymentWithOpts("req-skip-third", paymentRequestOptions{
+			authID: "new-header-auth-id",
+			state:  secondResp.State,
+		})
 		require.Equal(http.StatusInternalServerError, third.Code)
 		var apiErr apiErrorResponse
 		require.NoError(json.NewDecoder(third.Body).Decode(&apiErr))
@@ -1118,7 +1156,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		var firstResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
-		second := doPaymentWithState("req-expired-second", firstResp.State)
+		second := doPaymentWithOpts("req-expired-second", paymentRequestOptions{state: firstResp.State})
 		require.Equal(http.StatusOK, second.Code)
 		require.Equal(2, callbackCalls)
 	})
@@ -1147,7 +1185,9 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		stateSig, err := signState(ls, stateBytes)
 		require.NoError(err)
 
-		rr := doPaymentWithState("req-auth-id-replaced", RemotePaymentStateSig{State: stateBytes, Sig: stateSig})
+		rr := doPaymentWithOpts("req-auth-id-replaced", paymentRequestOptions{
+			state: RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
+		})
 		require.Equal(http.StatusInternalServerError, rr.Code)
 		var apiErr apiErrorResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
