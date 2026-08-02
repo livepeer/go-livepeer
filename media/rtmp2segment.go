@@ -95,7 +95,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		cmd.WaitDelay = 5 * time.Second
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
+			if ctx.Err() != nil {
+				clog.V(common.DEBUG).Infof(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
+			} else {
+				clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
+			}
 			break
 		}
 		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)

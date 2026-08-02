@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"math/big"
+	"sync"
 	"testing"
 
 	"github.com/livepeer/go-livepeer/eth"
@@ -320,4 +321,41 @@ func TestExternalCapabilities_Concurrency(t *testing.T) {
 		// No assertions needed - if there are no race conditions during build with -race flag,
 		// then the test passes
 	})
+}
+
+func TestOrchestrator_ReserveExternalCapabilityCapacityIsAtomic(t *testing.T) {
+	extCaps := NewExternalCapabilities()
+	extCap := &ExternalCapability{Name: "test-cap", Capacity: 1}
+	extCaps.Capabilities[extCap.Name] = extCap
+	orch := &orchestrator{node: &LivepeerNode{ExternalCapabilities: extCaps}}
+
+	const requests = 32
+	start := make(chan struct{})
+	results := make(chan error, requests)
+	var wg sync.WaitGroup
+	for i := 0; i < requests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			results <- orch.ReserveExternalCapabilityCapacity(extCap.Name)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	reserved := 0
+	for err := range results {
+		if err == nil {
+			reserved++
+		}
+	}
+
+	assert.Equal(t, 1, reserved)
+	extCap.Mu.RLock()
+	load := extCap.Load
+	extCap.Mu.RUnlock()
+	assert.Equal(t, 1, load)
+	assert.Zero(t, orch.CheckExternalCapabilityCapacity(extCap.Name))
 }

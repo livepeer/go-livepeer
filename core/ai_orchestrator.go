@@ -1171,6 +1171,9 @@ func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string
 
 	cap.Mu.Lock()
 	defer cap.Mu.Unlock()
+	if cap.Load >= cap.Capacity {
+		return errors.New("external capability capacity exhausted")
+	}
 	cap.Load++
 	return nil
 }
