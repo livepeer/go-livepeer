@@ -274,7 +274,11 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 		defer c.mu.Unlock()
 		nextConn, err := c.preconnect()
 		if err != nil {
-			slog.Error("failed to preconnect next segment", "url", c.url, "idx", c.idx, "err", err)
+			if errors.Is(err, context.Canceled) || c.baseCtx.Err() != nil {
+				slog.Debug("failed to preconnect next segment", "url", c.url, "idx", c.idx, "err", err)
+			} else {
+				slog.Error("failed to preconnect next segment", "url", c.url, "idx", c.idx, "err", err)
+			}
 			c.preconnectErrorCount++
 			return
 		}

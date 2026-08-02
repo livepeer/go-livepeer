@@ -450,7 +450,11 @@ func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBu
 		cmd.WaitDelay = 5 * time.Second
 		cmd.Stdin = outWriter.MakeReader() // start at leading edge of output for each retry
 		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process err=%v output: %s", err, output)
+		if ctx.Err() != nil {
+			clog.V(common.DEBUG).Infof(ctx, "Process err=%v output: %s", err, output)
+		} else {
+			clog.Infof(ctx, "Process err=%v output: %s", err, output)
+		}
 
 		select {
 		case <-ctx.Done():

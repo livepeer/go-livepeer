@@ -20,6 +20,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"golang.org/x/sys/unix"
 )
 
@@ -69,7 +70,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			return nil
 		}, backoff.WithMaxRetries(newExponentialBackOff(), 3))
 		if err != nil {
-			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
+			if ctx.Err() != nil {
+				clog.V(common.DEBUG).Infof(ctx, "Stopping segmentation in=%s err=%s", in, err)
+			} else {
+				clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
+			}
 			break
 		}
 		if retryCount > 0 {

@@ -220,6 +220,17 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 	})
 }
 
+func TestExternalCapabilities_GetCapability(t *testing.T) {
+	extCaps := NewExternalCapabilities()
+	capability := &ExternalCapability{Name: "test-cap"}
+	extCaps.Capabilities[capability.Name] = capability
+
+	got, ok := extCaps.GetCapability(capability.Name)
+	assert.True(t, ok)
+	assert.Same(t, capability, got)
+	assert.Equal(t, []string{capability.Name}, extCaps.GetCapabilityNames())
+}
+
 func TestExternalCapabilities_MarshalJSON(t *testing.T) {
 	extCaps := NewExternalCapabilities()
 
@@ -293,7 +304,16 @@ func TestExternalCapabilities_Concurrency(t *testing.T) {
 			done <- true
 		}()
 
+		go func() {
+			for i := 0; i < 100; i++ {
+				extCaps.GetCapability("concurrent-test-" + string(rune('A'+i%26)))
+				extCaps.GetCapabilityNames()
+			}
+			done <- true
+		}()
+
 		// Wait for both goroutines to finish
+		<-done
 		<-done
 		<-done
 
