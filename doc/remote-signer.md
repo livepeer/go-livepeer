@@ -229,6 +229,7 @@ Example body:
     "PMSessionID": "session-1",
     "LastUpdate": "2026-04-07T20:00:00Z",
     "OrchestratorAddress": "0x1234...",
+    "App": "live-video-to-video/scope",
     "AuthExpiry": 0,
     "SenderNonce": 7,
     "Balance": "500/1",
