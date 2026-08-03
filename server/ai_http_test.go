@@ -664,6 +664,7 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.NotEmpty(t, challenge.PaymentParams)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
 	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, lp.orchestrator.ServiceURI().JoinPath("apps", "runner-1", "session", challenge.ManifestID, "payment").String(), challenge.PaymentURL)
 	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
 	require.NotNil(t, oInfo.GetTicketParams())
 	require.NotNil(t, oInfo.GetPriceInfo())
@@ -1042,6 +1043,7 @@ func TestLiveRunnerReserveSessionOnchainUsesPublicServiceURIForPaymentChallenge(
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
 	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
 	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
+	require.Equal(t, "https://public.example.com/apps/runner-1/session/"+challenge.ManifestID+"/payment", challenge.PaymentURL)
 	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
 }
 
@@ -2054,7 +2056,9 @@ func requestScopePaymentChallenge(t *testing.T, lp *lphttp) (liveRunnerPaymentCh
 	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
-	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.Equal(t, lp.orchestrator.ServiceURI().JoinPath("payment").String(), challenge.PaymentURL)
+	return challenge, oInfo
 }
 
 func closeScopeEvents(t *testing.T, lp *lphttp, manifestID string) {

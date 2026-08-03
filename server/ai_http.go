@@ -185,6 +185,7 @@ type liveRunnerPaymentChallengeResponse struct {
 	// Keep the URL in top-level JSON so clients do not need to parse the protobuf just to route payment.
 	Orchestrator string `json:"orchestrator"`
 	ManifestID   string `json:"manifest_id"`
+	PaymentURL   string `json:"payment_url"`
 }
 
 type liveRunnerTrickleChannelRequest struct {
@@ -402,7 +403,8 @@ func (h *lphttp) runnerChallenge(w http.ResponseWriter, r *http.Request, priceIn
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	paymentURL := h.orchestrator.ServiceURI().JoinPath("apps", r.PathValue("runner_id"), "session", oInfo.GetAuthToken().GetSessionId(), "payment").String()
+	data, err := marshalLivePaymentChallengeResponse(oInfo, paymentURL)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -427,7 +429,8 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return false, err
 	}
-	data, err := marshalLivePaymentChallengeResponse(oInfo)
+	paymentURL := h.orchestrator.ServiceURI().JoinPath("payment").String()
+	data, err := marshalLivePaymentChallengeResponse(oInfo, paymentURL)
 	if err != nil {
 		return false, err
 	}
@@ -437,7 +440,7 @@ func (h *lphttp) scopePaymentChallenge(w http.ResponseWriter, r *http.Request) (
 	return true, nil
 }
 
-func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte, error) {
+func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo, paymentURL string) ([]byte, error) {
 	buf, err := proto.Marshal(oInfo)
 	if err != nil {
 		return nil, err
@@ -446,6 +449,7 @@ func marshalLivePaymentChallengeResponse(oInfo *lpnet.OrchestratorInfo) ([]byte,
 		PaymentParams: base64.StdEncoding.EncodeToString(buf),
 		Orchestrator:  oInfo.GetTranscoder(),
 		ManifestID:    oInfo.GetAuthToken().GetSessionId(),
+		PaymentURL:    paymentURL,
 	})
 }
 
