@@ -291,3 +291,5 @@ When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth w
 For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service. If a proxy sits in front of the signer, configure it to scrub all incoming `Signer-` headers from untrusted clients before applying trusted internal headers.
 
 Remote signers are stateless, so signer nodes can operate in a redundant configuration (eg, round-robin DNS, anycasting) with no special gateway-side configuration.
+
+To remove the Ethereum hot key from the signer host entirely (delegating signing to a KMS/HSM via Web3Signer, or to an enclave/MPC provider such as Turnkey), see the [external signer](./external-signer.md) (`-ethExternalSigner`).
