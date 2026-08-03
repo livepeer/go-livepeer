@@ -491,6 +491,10 @@ func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender et
 		orchBal, pmtErr := bso.processPayment(ctx, sender, capability, paymentHdr)
 		if pmtErr != nil {
 			//log if there are payment errors but continue, balance will runout and clean up
+			if paymentHdr != "" {
+				clog.Errorf(ctx, "rejecting request: payment header present but invalid: %v", pmtErr)
+				return errPaymentError
+			}
 			clog.Infof(ctx, "job payment error: %v", pmtErr)
 		}
 
@@ -502,25 +506,22 @@ func (bso *BYOCOrchestratorServer) confirmPayment(ctx context.Context, sender et
 	return nil
 }
 
-// process payment and return balance
+// processPayment decodes and applies the payment header if present.
+// Always returns a non-nil balance so callers can safely compare.
 func (bso *BYOCOrchestratorServer) processPayment(ctx context.Context, sender ethcommon.Address, capability string, paymentHdr string) (*big.Rat, error) {
 	if paymentHdr != "" {
 		payment, err := getPayment(paymentHdr)
 		if err != nil {
 			clog.Errorf(ctx, "job payment invalid: %v", err)
-			return nil, errPaymentError
+			return bso.getPaymentBalance(sender, capability), errPaymentError
 		}
 
 		if err := bso.orch.ProcessPayment(ctx, payment, core.ManifestID(capability)); err != nil {
-			bso.orch.FreeExternalCapabilityCapacity(capability)
 			clog.Errorf(ctx, "Error processing payment: %v", err)
-			return nil, errPaymentError
+			return bso.getPaymentBalance(sender, capability), errPaymentError
 		}
 	}
-	orchBal := bso.getPaymentBalance(sender, capability)
-
-	return orchBal, nil
-
+	return bso.getPaymentBalance(sender, capability), nil
 }
 
 func (bso *BYOCOrchestratorServer) chargeForCompute(start time.Time, price *net.PriceInfo, sender ethcommon.Address, jobId string) {
@@ -566,18 +567,26 @@ func (bso *BYOCOrchestratorServer) verifyJobCreds(ctx context.Context, jobCreds 
 		return nil, errSegSig
 	}
 
-	if !bso.orch.VerifySig(ethcommon.HexToAddress(jobData.Sender), jobData.Request+jobData.Parameters, sigByte) {
-		clog.Errorf(ctx, "Sig check failed sender=%v", jobData.Sender)
-		return nil, errSegSig
+	sender := ethcommon.HexToAddress(jobData.Sender)
+
+	// Verify V1 structured binary format
+	v1Payload := FlattenBYOCJob(&BYOCJobSigningInput{
+		ID:             jobData.ID,
+		Capability:     jobData.Capability,
+		Request:        jobData.Request,
+		Parameters:     jobData.Parameters,
+		TimeoutSeconds: jobData.Timeout,
+	})
+	if bso.orch.VerifySig(sender, string(v1Payload), sigByte) {
+		if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
+			return nil, errZeroCapacity
+		}
+		jobData.CapabilityUrl = bso.orch.GetUrlForCapability(jobData.Capability)
+		return jobData, nil
 	}
 
-	if reserveCapacity && bso.orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
-		return nil, errZeroCapacity
-	}
-
-	jobData.CapabilityUrl = bso.orch.GetUrlForCapability(jobData.Capability)
-
-	return jobData, nil
+	clog.Errorf(ctx, "Sig check failed sender=%v", jobData.Sender)
+	return nil, errSegSig
 }
 
 func (bso *BYOCOrchestratorServer) verifyTokenCreds(ctx context.Context, tokenCreds string) (*JobSender, error) {
