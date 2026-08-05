@@ -359,6 +359,16 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 		return nil, err
 	}
 
+	// The broker requires the sender's deposit and reserve to cover the full face value,
+	// otherwise the redemption reverts without consuming the ticket. Check that here,
+	// before spending any RPC round-trips: for an underfunded sender this is the steady
+	// state, and the ticket queue re-evaluates it on every L1 block. availableFunds is
+	// served from the sender watcher's cache, which the block watcher keeps current, so
+	// a top-up is picked up on the next block without a doomed transaction in between.
+	if availableFunds.Cmp(ticket.FaceValue) < 0 {
+		return nil, errInsufficientSenderFunds
+	}
+
 	// Fail early if ticket is used
 	used, err := sm.broker.IsUsedTicket(ticket.Ticket)
 	if err != nil {
@@ -426,6 +436,13 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	if err := sm.broker.CheckTx(tx); err != nil {
 		if monitor.Enabled {
 			monitor.TicketRedemptionError(ticket.Sender.Hex())
+		}
+		// CheckTx only reports that the transaction failed, without a revert reason, so
+		// ask the broker whether the ticket was actually consumed rather than assuming
+		// it was. Since livepeer/protocol#657 a redemption that reverts leaves the
+		// ticket unused and still redeemable, and dropping it here would forfeit it.
+		if used, usedErr := sm.broker.IsUsedTicket(ticket.Ticket); usedErr == nil && !used {
+			return tx, unconsumedRedemptionErr{err}
 		}
 		// Return tx so caller can utilize the tx if it fails
 		return tx, err

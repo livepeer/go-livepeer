@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -364,4 +365,53 @@ func TestIsRecipientActive(t *testing.T) {
 	// db error
 	ts.err = errors.New("some error")
 	assert.True(q.isRecipientActive(addr))
+}
+
+// A retryable failure leaves the ticket at the head of the queue, and every iteration
+// re-selects the earliest ticket. Without stopping, one block event would re-attempt the
+// same ticket once per queued ticket.
+func TestTicketQueue_RetryableErrorDoesNotSpinOnHeadOfQueue(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
+
+	q := newTicketQueue(sender, sm)
+
+	numTickets := 10
+	for i := 0; i < numTickets; i++ {
+		assert.Nil(q.Add(defaultSignedTicket(sender, uint32(i))))
+	}
+
+	var attempts int32
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case red := <-q.Redeemable():
+				atomic.AddInt32(&attempts, 1)
+				red.resCh <- struct {
+					txHash ethcommon.Hash
+					err    error
+				}{ethcommon.Hash{}, errInsufficientSenderFunds}
+			case <-stop:
+				return
+			}
+		}
+	}()
+	defer close(stop)
+
+	q.handleBlockEvent(big.NewInt(1))
+
+	assert.Equal(int32(1), atomic.LoadInt32(&attempts), "expected a single attempt per block while the head of the queue is blocked")
+
+	// Nothing may be dropped: the tickets stay queued for a later block.
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(numTickets, qlen)
 }

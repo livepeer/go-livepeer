@@ -16,7 +16,24 @@ var (
 	errInvalidCreationRound          = errors.New("invalid ticket creation round")
 	errInvalidCreationRoundBlockHash = errors.New("invalid ticket creation round block hash")
 	errIsUsedTicket                  = errors.New("ticket already used")
+
+	// errInsufficientSenderFunds mirrors the TicketBroker precondition introduced in
+	// livepeer/protocol#657: a redemption only succeeds if the sender's deposit and
+	// reserve cover the full ticket face value. This is an expected, self-resolving
+	// state for an underfunded sender rather than a failure, so it is retryable.
+	errInsufficientSenderFunds = errors.New("sender deposit and reserve insufficient to cover ticket face value")
 )
+
+// unconsumedRedemptionErr wraps a redemption failure for which the broker reports that
+// the ticket was not consumed on-chain. Since livepeer/protocol#657 a reverted redemption
+// leaves the ticket unused and still redeemable, so it must not be dropped locally.
+type unconsumedRedemptionErr struct {
+	err error
+}
+
+func (e unconsumedRedemptionErr) Error() string { return e.err.Error() }
+
+func (e unconsumedRedemptionErr) Unwrap() error { return e.err }
 
 // Validator is an interface which describes an object capable
 // of validating tickets

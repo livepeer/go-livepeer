@@ -972,3 +972,155 @@ func stubLocalSenderMonitorCfg() *LocalSenderMonitorConfig {
 		RPCTimeout: 5 * time.Minute,
 	}
 }
+
+// The broker requires deposit + reserve to cover the full ticket face value
+// (livepeer/protocol#657). The check must happen before any RPC round-trip, because an
+// underfunded sender is a steady state that the queue re-evaluates on every L1 block.
+func TestRedeemWinningTicket_InsufficientFundsForFaceValue(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cfg, b, smgr, tm := localSenderMonitorFixture()
+	addr := ethcommon.BytesToAddress([]byte("foo"))
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(100),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(0),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+	smgr.claimedReserve[addr] = big.NewInt(0)
+
+	// Any RPC reached past the gate turns into a distinguishable error, so seeing
+	// errInsufficientSenderFunds proves none of them were called.
+	b.isUsedErr = errors.New("IsUsedTicket should not be called")
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) {
+		return nil, errors.New("SuggestGasPrice should not be called")
+	}
+
+	sm := NewSenderMonitor(cfg, b, smgr, tm, newStubTicketStore())
+
+	funds, err := sm.availableFunds(addr)
+	require.Nil(err)
+	require.Equal(int64(100), funds.Int64())
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+	signedT.FaceValue = new(big.Int).Add(funds, big.NewInt(1))
+
+	_, err = sm.redeemWinningTicket(signedT)
+	assert.ErrorIs(err, errInsufficientSenderFunds)
+	// Deferring must never drop the ticket.
+	assert.False(isNonRetryableTicketErr(err))
+
+	// Exactly covering the face value is enough, so the redemption proceeds.
+	b.isUsedErr = nil
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return big.NewInt(0), nil }
+	signedT.FaceValue = funds
+
+	tx, err := sm.redeemWinningTicket(signedT)
+	assert.Nil(err)
+	assert.NotNil(tx)
+}
+
+// CheckTx reports a failed transaction without a revert reason. Since a reverted
+// redemption now leaves the ticket unused, the broker must be consulted rather than
+// assuming the ticket was burned.
+func TestRedeemWinningTicket_RevertedRedemptionKeepsTicket(t *testing.T) {
+	newFixture := func() (*LocalSenderMonitorConfig, *stubBroker, *stubSenderManager, *stubTimeManager, ethcommon.Address) {
+		cfg, b, smgr, tm := localSenderMonitorFixture()
+		addr := RandAddress()
+		smgr.info[addr] = &SenderInfo{
+			Deposit:       big.NewInt(500),
+			WithdrawRound: big.NewInt(0),
+			Reserve: &ReserveInfo{
+				FundsRemaining:        big.NewInt(1000),
+				ClaimedInCurrentRound: big.NewInt(0),
+			},
+		}
+		smgr.claimedReserve[addr] = big.NewInt(0)
+		b.checkTxErr = errors.New("transaction failed txHash=0xdeadbeef")
+		return cfg, b, smgr, tm, addr
+	}
+
+	t.Run("ticket not consumed on-chain is retryable", func(t *testing.T) {
+		assert := assert.New(t)
+		cfg, b, smgr, tm, addr := newFixture()
+		b.redeemDoesNotConsume = true
+
+		sm := NewSenderMonitor(cfg, b, smgr, tm, newStubTicketStore())
+		_, err := sm.redeemWinningTicket(defaultSignedTicket(addr, uint32(0)))
+
+		assert.Error(err)
+		assert.False(isNonRetryableTicketErr(err), "a ticket left unused on-chain must be retried, not dropped")
+	})
+
+	t.Run("ticket consumed on-chain is not retryable", func(t *testing.T) {
+		assert := assert.New(t)
+		cfg, b, smgr, tm, addr := newFixture()
+		b.redeemDoesNotConsume = false
+
+		sm := NewSenderMonitor(cfg, b, smgr, tm, newStubTicketStore())
+		_, err := sm.redeemWinningTicket(defaultSignedTicket(addr, uint32(0)))
+
+		assert.Error(err)
+		assert.True(isNonRetryableTicketErr(err), "a consumed ticket must not be retried")
+	})
+}
+
+func TestIsNonRetryableTicketErr(t *testing.T) {
+	txFailed := errors.New("transaction failed txHash=0xdeadbeef")
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"used ticket", errIsUsedTicket, true},
+		{"plain transaction failure", txFailed, true},
+		{"missing creation round block hash", errors.New("ticket creationRound does not have a block hash"), true},
+		{"insufficient sender funds", errInsufficientSenderFunds, false},
+		{"wrapped insufficient sender funds", fmt.Errorf("redeem: %w", errInsufficientSenderFunds), false},
+		{"reverted without consuming the ticket", unconsumedRedemptionErr{txFailed}, false},
+		{"unrelated transient error", errors.New("connection reset by peer"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isNonRetryableTicketErr(tt.err))
+		})
+	}
+}
+
+// A ticket deferred for insufficient funds must redeem as soon as the sender tops up,
+// with no trigger beyond the next block. availableFunds is served from the sender watcher
+// cache, which DepositFunded/ReserveFunded keep current, so no extra wiring is needed.
+func TestRedeemWinningTicket_RedeemsAfterSenderTopsUp(t *testing.T) {
+	assert := assert.New(t)
+
+	cfg, b, smgr, tm := localSenderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(10),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(0),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+	smgr.claimedReserve[addr] = big.NewInt(0)
+
+	sm := NewSenderMonitor(cfg, b, smgr, tm, newStubTicketStore())
+	signedT := defaultSignedTicket(addr, uint32(0)) // FaceValue 50 > deposit 10
+
+	_, err := sm.redeemWinningTicket(signedT)
+	assert.ErrorIs(err, errInsufficientSenderFunds)
+	assert.False(isNonRetryableTicketErr(err))
+
+	// The sender funds their deposit; the watcher cache picks it up.
+	smgr.info[addr].Deposit = big.NewInt(1000)
+
+	tx, err := sm.redeemWinningTicket(signedT)
+	assert.Nil(err)
+	assert.NotNil(tx)
+}

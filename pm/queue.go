@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 	"sync"
@@ -121,6 +122,10 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 		glog.Errorf("Error getting queue length err=%q", err)
 		return
 	}
+	// Each iteration re-selects the *earliest* unredeemed ticket, so the loop only makes
+	// progress when a ticket is marked redeemed. Any outcome that leaves the head of the
+	// queue in place would otherwise re-select the same ticket on every remaining
+	// iteration, so we stop and wait for the next block instead of spinning.
 	for i := 0; i < int(numTickets); i++ {
 		nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
 		if err != nil {
@@ -132,7 +137,7 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 		}
 		if !q.isRecipientActive(nextTicket.Recipient) {
 			glog.V(5).Infof("Ticket recipient is not active in this round, cannot redeem ticket recipient=%v", nextTicket.Recipient.Hex())
-			continue
+			return
 		}
 		if nextTicket.ParamsExpirationBlock.Cmp(latestL1Block) <= 0 {
 			resCh := make(chan struct {
@@ -146,15 +151,22 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 				// after receiving the response we can close the channel so it can be GC'd
 				close(resCh)
 				if res.err != nil {
-					glog.Errorf("Error redeeming err=%q", res.err)
+					if errors.Is(res.err, errInsufficientSenderFunds) {
+						// Expected while a sender is underfunded, not a failure: the
+						// ticket stays queued and is redeemed on the first block after
+						// the sender tops up, for as long as it remains valid.
+						glog.V(5).Infof("Deferring redemption until sender has sufficient funds sender=%v faceValue=%v", q.sender.Hex(), nextTicket.FaceValue)
+					} else {
+						glog.Errorf("Error redeeming err=%q", res.err)
+					}
 					// If the error is non-retryable then we mark the ticket as redeemed
 					if !isNonRetryableTicketErr(res.err) {
-						continue
+						return
 					}
 				}
 				if err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash); err != nil {
 					glog.Error(err)
-					continue
+					return
 				}
 			case <-q.quit:
 				return
@@ -164,6 +176,15 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 }
 
 func isNonRetryableTicketErr(err error) bool {
+	// A redemption that reverted without consuming the ticket stays redeemable, even
+	// though CheckTx reports it as a plain transaction failure below.
+	var unconsumed unconsumedRedemptionErr
+	if errors.As(err, &unconsumed) {
+		return false
+	}
+	if errors.Is(err, errInsufficientSenderFunds) {
+		return false
+	}
 	return err == errIsUsedTicket ||
 		// Depends on logic in eth.client.CheckTx()
 		strings.Contains(err.Error(), "transaction failed") ||

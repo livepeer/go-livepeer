@@ -144,6 +144,10 @@ type stubBroker struct {
 	redeemShouldFail           bool
 	getSenderInfoShouldFail    bool
 	claimableReserveShouldFail bool
+	// redeemDoesNotConsume models a redemption that reverts on-chain: a transaction is
+	// submitted but the ticket is left unused, as the broker does since
+	// livepeer/protocol#657 when the sender cannot cover the full face value.
+	redeemDoesNotConsume bool
 
 	checkTxErr error
 	isUsedErr  error
@@ -188,7 +192,9 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, _ []byte, _ *big.Int) (
 		return nil, fmt.Errorf("stub broker redeem error")
 	}
 
-	b.usedTickets[ticket.Hash()] = true
+	if !b.redeemDoesNotConsume {
+		b.usedTickets[ticket.Hash()] = true
+	}
 
 	return types.NewTx(&types.DynamicFeeTx{}), nil
 }
