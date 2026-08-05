@@ -97,6 +97,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"reward\"", invoke: w.callReward, orchestrator: true},
 		{desc: "Invoke multi-step \"become an orchestrator\"", invoke: w.activateOrchestrator, orchestrator: true},
 		{desc: "Set orchestrator config", invoke: w.setOrchestratorConfig, orchestrator: true},
+		{desc: "Set reward caller", invoke: w.setRewardCaller, orchestrator: true},
 		{desc: "Invoke \"deposit broadcasting funds\" (ETH)", invoke: w.deposit, notOrchestrator: true},
 		{desc: "Invoke \"unlock broadcasting funds\"", invoke: w.unlock, notOrchestrator: true},
 		{desc: "Invoke \"cancel unlock of broadcasting funds\"", invoke: w.cancelUnlock, notOrchestrator: true},

@@ -228,6 +228,67 @@ func (w *wizard) callReward() {
 	httpGet(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
 }
 
+// setRewardCaller authorizes another address to call reward on this orchestrator's behalf
+// (LIP-118), so the orchestrator's own wallet can be kept offline. The authorization is
+// keyed on msg.sender, so this must be run against a node holding the orchestrator's key.
+func (w *wizard) setRewardCaller() {
+	if w.offchain {
+		fmt.Println("Cannot set a reward caller in off-chain mode")
+		return
+	}
+
+	current := strings.TrimSpace(httpGet(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort)))
+
+	var rewardCaller string
+	if current != "" && current != "0x0000000000000000000000000000000000000000" {
+		fmt.Printf("Current reward caller: %v\n", current)
+		fmt.Print("Unset the current reward caller? (y/n) - ")
+		if w.readStringYesOrNo() == "y" {
+			fmt.Printf("Unsetting the reward caller. %v will no longer be able to call reward.\n", current)
+		} else {
+			rewardCaller = w.promptRewardCaller()
+		}
+	} else {
+		fmt.Println("No reward caller is currently set")
+		rewardCaller = w.promptRewardCaller()
+	}
+
+	val := url.Values{"rewardCaller": {rewardCaller}}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setRewardCaller", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error setting reward caller: %s\n", result)
+		return
+	}
+
+	if rewardCaller == "" {
+		fmt.Println("\nTransaction sent. Once confirmed, no address can call reward on your behalf.")
+		return
+	}
+	fmt.Printf("\nTransaction sent. Once confirmed, run the node with %v's keystore and -ethOrchAddr %v to call reward from it.\n",
+		rewardCaller, w.getOrchestratorAddr())
+}
+
+func (w *wizard) promptRewardCaller() string {
+	fmt.Print("Enter the address that should be allowed to call reward - ")
+	return w.readStringAndValidate(func(in string) (string, error) {
+		if !ethcommon.IsHexAddress(in) {
+			return "", fmt.Errorf("invalid hex address address=%v", in)
+		}
+		if ethcommon.HexToAddress(in) == (ethcommon.Address{}) {
+			return "", fmt.Errorf("cannot set the zero address; answer y to the unset prompt instead")
+		}
+		return in, nil
+	})
+}
+
+func (w *wizard) getOrchestratorAddr() string {
+	t, _, err := w.getOrchestratorInfo()
+	if err != nil || t == nil {
+		return "<your orchestrator address>"
+	}
+	return t.Address.Hex()
+}
+
 func (w *wizard) vote() {
 	if w.offchain {
 		glog.Error("Can not vote in 'offchain' mode")

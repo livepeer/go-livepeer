@@ -2,10 +2,12 @@ package eth
 
 import (
 	"context"
-	ethcommon "github.com/ethereum/go-ethereum/common"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -126,4 +128,152 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	infoLogsAfter = glog.Stats.Info.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 	assert.Equal(int64(0), infoLogsAfter-infoLogsBefore)
+}
+
+func TestRewardService_TryReward_RewardCaller(t *testing.T) {
+	var (
+		account = ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+		orch    = ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+		other   = ethcommon.HexToAddress("0x3333333333333333333333333333333333333333")
+
+		eligible   = &lpTypes.Transcoder{LastRewardRound: big.NewInt(1), Active: true}
+		rewarded   = &lpTypes.Transcoder{LastRewardRound: big.NewInt(100), Active: true}
+		inactive   = &lpTypes.Transcoder{LastRewardRound: big.NewInt(1), Active: false}
+		currentRnd = big.NewInt(100)
+	)
+
+	tests := []struct {
+		name string
+		// orchAddr configured on the service
+		orchAddr ethcommon.Address
+		// transcoder records keyed by address
+		accountRecord *lpTypes.Transcoder
+		orchRecord    *lpTypes.Transcoder
+		// on-chain reward caller for orch
+		rewardCaller ethcommon.Address
+
+		wantReward              bool
+		wantRewardForTranscoder bool
+		wantErr                 string
+	}{
+		{
+			name:          "not delegated, zero orchAddr, calls reward directly",
+			orchAddr:      ethcommon.Address{},
+			accountRecord: eligible,
+			wantReward:    true,
+		},
+		{
+			name:          "not delegated, orchAddr equals account, calls reward directly",
+			orchAddr:      account,
+			accountRecord: eligible,
+			wantReward:    true,
+		},
+		{
+			name:                    "delegated and authorized, calls rewardForTranscoder",
+			orchAddr:                orch,
+			orchRecord:              eligible,
+			rewardCaller:            account,
+			wantRewardForTranscoder: true,
+		},
+		{
+			name:         "delegated but not authorized, errors without sending a tx",
+			orchAddr:     orch,
+			orchRecord:   eligible,
+			rewardCaller: other,
+			wantErr:      "is not the reward caller",
+		},
+		{
+			name:         "delegated and revoked, errors without sending a tx",
+			orchAddr:     orch,
+			orchRecord:   eligible,
+			rewardCaller: ethcommon.Address{},
+			wantErr:      "is not the reward caller",
+		},
+		{
+			// The caller's own record is eligible; the orchestrator's is not. Eligibility
+			// must be read from the orchestrator or the node would reward twice a round.
+			name:          "delegated, eligibility read from orchestrator not caller",
+			orchAddr:      orch,
+			accountRecord: eligible,
+			orchRecord:    rewarded,
+			rewardCaller:  account,
+		},
+		{
+			name:          "delegated, orchestrator inactive",
+			orchAddr:      orch,
+			accountRecord: eligible,
+			orchRecord:    inactive,
+			rewardCaller:  account,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			client := &MockClient{}
+			rs := RewardService{
+				client:   client,
+				tw:       &stubTimeWatcher{lastInitializedRound: currentRnd},
+				orchAddr: tt.orchAddr,
+			}
+
+			client.On("Account").Return(accounts.Account{Address: account})
+			if tt.accountRecord != nil {
+				client.On("GetTranscoder", account).Return(tt.accountRecord, nil)
+			}
+			if tt.orchRecord != nil {
+				client.On("GetTranscoder", orch).Return(tt.orchRecord, nil)
+			}
+			client.On("GetRewardCaller", orch).Return(tt.rewardCaller, nil)
+			client.On("Reward").Return(&types.Transaction{}, nil)
+			client.On("RewardForTranscoder", orch).Return(&types.Transaction{}, nil)
+			client.On("CheckTx").Return(nil)
+			client.On("GetTranscoderEarningsPoolForRound").Return(&lpTypes.TokenPools{}, nil)
+
+			err := rs.tryReward()
+
+			if tt.wantErr != "" {
+				assert.ErrorContains(err, tt.wantErr)
+			} else {
+				assert.NoError(err)
+			}
+
+			if tt.wantReward {
+				client.AssertNumberOfCalls(t, "Reward", 1)
+			} else {
+				client.AssertNumberOfCalls(t, "Reward", 0)
+			}
+			if tt.wantRewardForTranscoder {
+				client.AssertCalled(t, "RewardForTranscoder", orch)
+			} else {
+				client.AssertNumberOfCalls(t, "RewardForTranscoder", 0)
+			}
+		})
+	}
+}
+
+func TestRewardService_TryReward_RewardCallerLookupError(t *testing.T) {
+	assert := assert.New(t)
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	client := &MockClient{}
+	rs := RewardService{
+		client:   client,
+		tw:       &stubTimeWatcher{lastInitializedRound: big.NewInt(100)},
+		orchAddr: orch,
+	}
+
+	client.On("Account").Return(accounts.Account{Address: account})
+	client.On("GetTranscoder", orch).Return(&lpTypes.Transcoder{LastRewardRound: big.NewInt(1), Active: true}, nil)
+	client.On("GetRewardCaller", orch).Return(ethcommon.Address{}, errors.New("rpc boom"))
+	client.On("Reward").Return(&types.Transaction{}, nil)
+	client.On("RewardForTranscoder", orch).Return(&types.Transaction{}, nil)
+
+	err := rs.tryReward()
+
+	assert.ErrorContains(err, "could not look up reward caller")
+	assert.ErrorContains(err, "rpc boom")
+	client.AssertNumberOfCalls(t, "Reward", 0)
+	client.AssertNumberOfCalls(t, "RewardForTranscoder", 0)
 }

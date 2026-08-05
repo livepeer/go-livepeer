@@ -100,6 +100,21 @@ func (m *MockClient) Reward() (*types.Transaction, error) {
 	return mockTransaction(args, 0), args.Error(1)
 }
 
+func (m *MockClient) RewardForTranscoder(transcoder common.Address) (*types.Transaction, error) {
+	args := m.Called(transcoder)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) SetRewardCaller(rewardCaller common.Address) (*types.Transaction, error) {
+	args := m.Called(rewardCaller)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) GetRewardCaller(transcoder common.Address) (common.Address, error) {
+	args := m.Called(transcoder)
+	return args.Get(0).(common.Address), args.Error(1)
+}
+
 func (m *MockClient) GetTranscoderEarningsPoolForRound(address common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	args := m.Called()
 	return args.Get(0).(*lpTypes.TokenPools), args.Error(1)
@@ -266,6 +281,17 @@ type StubClient struct {
 	RoundLocked                  bool
 	RoundLockedErr               error
 	Errors                       map[string]error
+
+	// OrchByAddr lets a test distinguish the transcoder record of the node's own
+	// account from that of a separate orchestrator, which is required to exercise
+	// the reward caller paths. GetTranscoder falls back to Orch when unset.
+	OrchByAddr map[common.Address]*lpTypes.Transcoder
+	// RewardCallers maps a transcoder to the address it authorized to call reward.
+	RewardCallers map[common.Address]common.Address
+	// RewardedTranscoder records the argument of the last RewardForTranscoder call.
+	RewardedTranscoder common.Address
+	// LastSetRewardCaller records the argument of the last SetRewardCaller call.
+	LastSetRewardCaller common.Address
 }
 
 type stubTranscoder struct {
@@ -324,7 +350,21 @@ func (e *StubClient) GetServiceURI(addr common.Address) (string, error) {
 func (e *StubClient) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) Reward() (*types.Transaction, error) { return nil, e.Errors["Reward"] }
+func (e *StubClient) RewardForTranscoder(transcoder common.Address) (*types.Transaction, error) {
+	e.RewardedTranscoder = transcoder
+	return nil, e.Errors["RewardForTranscoder"]
+}
+func (e *StubClient) SetRewardCaller(rewardCaller common.Address) (*types.Transaction, error) {
+	e.LastSetRewardCaller = rewardCaller
+	return nil, e.Errors["SetRewardCaller"]
+}
+func (e *StubClient) GetRewardCaller(transcoder common.Address) (common.Address, error) {
+	if err := e.Errors["GetRewardCaller"]; err != nil {
+		return common.Address{}, err
+	}
+	return e.RewardCallers[transcoder], nil
+}
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
@@ -350,6 +390,9 @@ func (e *StubClient) ClaimEarnings(endRound *big.Int) (*types.Transaction, error
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) {
 	if e.Err != nil {
 		return nil, e.Err
+	}
+	if t, ok := e.OrchByAddr[addr]; ok {
+		return t, nil
 	}
 	return e.Orch, nil
 }
