@@ -166,12 +166,27 @@ Example:
 
 When running a gateway in offchain mode (ie, with `-remoteSignerUrl` and no Ethereum flags), the gateway does not check orchestrator pricing. Instead, price checks happen in the remote signer during payment generation.
 
+The price can be limited three ways: by the signer's configuration, by the
+client in the payment request, and by the signer auth webhook. All are compared
+if present, effectively the taking the minimum.
+
+Any max price must be positive and explicitly denominated in `wei`. Its unit
+must match the payment type: `seconds` for `live`, `720p-pixel-seconds` for `lv2v`,
+or `fixed` for `fixed`. Invalid request ceilings return HTTP 400.
+
+The first payment becomes a ceiling for subsequent requests in the session. If
+refreshed payment parameters exceed the initial price, the signer rejects with
+a HTTP 481.
+
 - **Remote signer configuration**: configure the signer with the same pricing and PM knobs you would normally configure on a gateway, e.g.:
   - `-maxPricePerUnit`, `-pixelsPerUnit`
   - `-maxPricePerCapability` (optional, capability/model pricing config)
   - `-maxTicketEV`, `-maxTotalEV`, etc.
+- **Request maximum** A client requesting a payment can also specify a `maxPrice` taken from the discovery pricing, or put in their own max (in wei). This ensures that the discovery price and actual price do not drift too much. It is recommended that clients add a ~1.2% buffer to the discovery price which should cover roughly 95% of hourly ETH-USD price moves. The format follows that of the discovery pricing scheme.
+- **Auth webhook** The auth webhook can also return a `maxPrice` in the same format as the discovery price.
 - **Selection behavior**: if an orchestrator’s price is above the signer’s configured limits, the signer rejects the payment request (HTTP 481) and the gateway will retry with a different orchestrator session.
 - **LV2V session price is fixed**: Live Video-to-Video (LV2V) jobs treat price as fixed for the lifetime of the session, captured at session initialization time.
+
 
 ### Tuning ticket EV to avoid “too many tickets” errors
 
@@ -229,7 +244,7 @@ Example body:
     "PMSessionID": "session-1",
     "LastUpdate": "2026-04-07T20:00:00Z",
     "OrchestratorAddress": "0x1234...",
-    "App": "live-video-to-video/scope",
+    "App": "livepeer-echo-stream",
     "AuthExpiry": 0,
     "SenderNonce": 7,
     "Balance": "500/1",
@@ -251,11 +266,12 @@ The webhook itself must return **HTTP 200** and include a JSON body with:
 | `reason` | `string`| No       | Error message returned to the gateway caller when `status` is not `200` |
 | `expiry` | `int64` | No       | Unix timestamp in seconds until which the authorization can be reused |
 | `auth_id` | `string` | No     | Opaque authorization identifier (optional) |
+| `maxPrice` | `object` | No    | Positive `wei` price ceiling whose unit must match the payment type |
 
 Example success response:
 
 ```json
-{"status": 200, "expiry": 1775574245, "auth_id": "auth-456"}
+{"status": 200, "expiry": 1775574245, "auth_id": "auth-456", "maxPrice": {"price": 1300, "currency": "wei", "unit": "seconds"}}
 ```
 
 Example rejection response:
@@ -268,6 +284,7 @@ Example rejection response:
 - **HTTP 200 with `status != 200`**: the signer aborts and returns that `status` to the gateway caller, wrapped in the standard API error JSON envelope. If `reason` is present it is used as the error message. This can be used by implementers to steer downstream caller behavior.
 - **Any non-200 webhook HTTP response**: the signer treats this as an internal webhook failure (eg, webhook service error or signer misconfiguration) and returns HTTP 500.
 - **Missing, zero, malformed, or otherwise invalid `status`**: the signer returns HTTP 500.
+- ***maxPrice**: Malformed `maxPrice` is treated as webhook misconfiguration and returns HTTP 500. If the orchestrator's price is higher than the webhook maxPrice, the response returns HTTP 481.
 - If `auth_id` is omitted, the signer falls back to the incoming request's `Signer-Auth-Id` header. If both are present, the webhook `auth_id` takes precedence.
 - Once an auth ID is persisted in signed payment state, a different webhook `auth_id` or fallback `Signer-Auth-Id` on a later request is treated as an internal error and returns HTTP 500.
 

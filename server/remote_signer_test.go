@@ -277,6 +277,67 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "orchestrator price",
 		},
 		{
+			name: "orchestrator price exceeds request max price",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					Type:         RemoteType_Fixed,
+					MaxPrice: &runner.LiveRunnerPriceInfo{
+						Price:    json.Number("9"),
+						Currency: "wei",
+						Unit:     "fixed",
+					},
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "request maxPrice",
+		},
+		{
+			name: "request max price requires typed payment",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice requires payment type",
+		},
+		{
+			name: "request max price requires wei",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Fixed
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "usd", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.currency must be wei",
+		},
+		{
+			name: "request max price unit must match type",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Live
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.unit must be seconds",
+		},
+		{
+			name: "request max price must be positive",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Fixed
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("0"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.price must be a positive decimal",
+		},
+		{
 			name: "fixed orchestrator price uses existing max price check",
 			req: func() RemotePaymentRequest {
 				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
@@ -342,6 +403,65 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			if tt.wantHeader != "" {
 				require.Equal(tt.wantHeader, rr.Header().Get(RefreshSessionOrchestratorURLHeader))
 			}
+		})
+	}
+}
+
+func TestParseRemotePaymentMaxPrice(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxPrice    *runner.LiveRunnerPriceInfo
+		paymentType string
+		want        *big.Rat
+		wantError   string
+	}{
+		{
+			name:        "live decimal",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("101.2"), Currency: "wei", Unit: "seconds"},
+			paymentType: RemoteType_Live,
+			want:        big.NewRat(506, 5),
+		},
+		{
+			name:        "lv2v",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("7"), Currency: "wei", Unit: "720p-pixel-seconds"},
+			paymentType: RemoteType_LiveVideoToVideo,
+			want:        big.NewRat(7, 1),
+		},
+		{
+			name:        "fixed",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("3"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			want:        big.NewRat(3, 1),
+		},
+		{
+			name:        "malformed price",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("wat"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "positive decimal",
+		},
+		{
+			name:        "negative price",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("-1"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "positive decimal",
+		},
+		{
+			name:        "missing currency",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "currency must be wei",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRemotePaymentMaxPrice(tt.maxPrice, tt.paymentType)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Zero(t, got.Cmp(tt.want))
 		})
 	}
 }
@@ -479,15 +599,15 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			wantMsg:    "orchestratorAddress mismatch",
 		},
 		{
-			name:       "orchestrator price increased more than 2x",
+			name:       "orchestrator price exceeds initial session price",
 			stateBytes: priceIncreaseStateBytes,
 			orchInfo: func() *net.OrchestratorInfo {
 				oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
-				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 250, PixelsPerUnit: 1}
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 150, PixelsPerUnit: 1}
 				return oInfo
 			}(),
 			wantStatus: HTTPStatusPriceExceeded,
-			wantMsg:    "Orchestrator price has more than doubled",
+			wantMsg:    "initial session price ceiling",
 		},
 		{
 			name: "zero tickets returns 482",
@@ -655,7 +775,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	_, err = base64.StdEncoding.DecodeString(resp.SegCreds)
 	require.NoError(err)
 
-	// Check that the initial price is still used even after a 1.5x increase
+	// Check that the initial price is still used even after a challenge price decrease.
 	var state1 RemotePaymentState
 	require.NoError(json.Unmarshal(resp.State.State, &state1))
 	oldBal := new(big.Rat)
@@ -671,7 +791,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 
 	updatedInfo := proto.Clone(oInfo).(*net.OrchestratorInfo)
 	updatedInfo.PriceInfo = &net.PriceInfo{
-		PricePerUnit:  oInfo.PriceInfo.PricePerUnit * 3 / 2, // 1.5x increase
+		PricePerUnit:  oInfo.PriceInfo.PricePerUnit * 3 / 4,
 		PixelsPerUnit: oInfo.PriceInfo.PixelsPerUnit,
 	}
 	orchBlob, err = proto.Marshal(updatedInfo)
@@ -684,6 +804,8 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		InPixels:     inPixelsUpdated,
 		State:        resp.State,
 	})
+	require.Equal(updatedInfo.PriceInfo.PricePerUnit, payment2.ExpectedPrice.PricePerUnit)
+	require.Equal(updatedInfo.PriceInfo.PixelsPerUnit, payment2.ExpectedPrice.PixelsPerUnit)
 
 	var stateFee2 RemotePaymentState
 	require.NoError(json.Unmarshal(resp2.State.State, &stateFee2))
@@ -859,7 +981,12 @@ func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
 			ManifestID:   manifestID,
 			InPixels:     1_000_000,
 			Type:         RemoteType_Fixed,
-			State:        state,
+			MaxPrice: &runner.LiveRunnerPriceInfo{
+				Price:    json.Number("4"),
+				Currency: "wei",
+				Unit:     "fixed",
+			},
+			State: state,
 		})
 		require.NoError(err)
 		rr := httptest.NewRecorder()
@@ -878,6 +1005,8 @@ func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
 	// Like other payment types, an initial request may omit the manifest ID.
 	first, firstPayment := doPayment("", RemotePaymentStateSig{})
 	require.Len(firstPayment.TicketSenderParams, 1)
+	require.EqualValues(3, firstPayment.ExpectedPrice.PricePerUnit)
+	require.EqualValues(1, firstPayment.ExpectedPrice.PixelsPerUnit)
 	var firstState RemotePaymentState
 	require.NoError(json.Unmarshal(first.State.State, &firstState))
 	require.Equal(RemoteType_Fixed, firstState.Type)
@@ -915,9 +1044,12 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	require.NoError(err)
 
 	type paymentRequestOptions struct {
-		authID string
-		app    string
-		state  RemotePaymentStateSig
+		authID    string
+		app       string
+		typeID    string
+		priceInfo *net.PriceInfo
+		maxPrice  *runner.LiveRunnerPriceInfo
+		state     RemotePaymentStateSig
 	}
 	doPayment := func(requestHeader string, options ...paymentRequestOptions) *httptest.ResponseRecorder {
 		require.LessOrEqual(len(options), 1)
@@ -925,11 +1057,20 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		if len(options) == 1 {
 			opts = options[0]
 		}
+		requestOrchBlob := orchBlob
+		if opts.priceInfo != nil {
+			requestOInfo := proto.Clone(oInfo).(*net.OrchestratorInfo)
+			requestOInfo.PriceInfo = opts.priceInfo
+			requestOrchBlob, err = proto.Marshal(requestOInfo)
+			require.NoError(err)
+		}
 		reqBody, err := json.Marshal(RemotePaymentRequest{
-			Orchestrator: orchBlob,
+			Orchestrator: requestOrchBlob,
 			ManifestID:   "manifest",
 			App:          opts.app,
 			InPixels:     1,
+			Type:         opts.typeID,
+			MaxPrice:     opts.maxPrice,
 			State:        opts.state,
 		})
 		require.NoError(err)
@@ -957,6 +1098,128 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		rr := doPayment("no-callback")
 		require.Equal(http.StatusOK, rr.Code)
+	})
+
+	t.Run("callback max price rejects challenged price", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":0.5,"currency":"wei","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("max-price-rejected", paymentRequestOptions{typeID: RemoteType_Fixed})
+		require.Equal(HTTPStatusPriceExceeded, rr.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "auth webhook maxPrice")
+	})
+
+	t.Run("invalid callback max price returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":2,"currency":"usd","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("invalid-max-price", paymentRequestOptions{typeID: RemoteType_Fixed})
+		require.Equal(http.StatusInternalServerError, rr.Code)
+	})
+
+	t.Run("most restrictive price ceiling wins", func(t *testing.T) {
+		callbackCalls := 0
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			w.WriteHeader(http.StatusOK)
+			if callbackCalls == 1 {
+				_, _ = w.Write([]byte(`{"status":200}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":0.5,"currency":"wei","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 1)))
+		defer BroadcastCfg.SetMaxPrice(nil)
+
+		// Equality is accepted: the challenge and request ceiling are both 2 wei.
+		first := doPayment("price-ceiling-equality", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 2, PixelsPerUnit: 1},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2"), Currency: "wei", Unit: "fixed"},
+		})
+		require.Equal(http.StatusOK, first.Code, first.Body.String())
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		require.Equal(1, callbackCalls)
+
+		// Request maxPrice is lower than the configured and initial ceilings.
+		requestLimited := doPayment("request-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("1.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, requestLimited.Code)
+		var requestErr apiErrorResponse
+		require.NoError(json.NewDecoder(requestLimited.Body).Decode(&requestErr))
+		require.Contains(requestErr.Error.Message, "request maxPrice")
+		require.Equal(1, callbackCalls)
+
+		// The initial price is lower than the configured and request ceilings.
+		initialLimited := doPayment("initial-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 9, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, initialLimited.Code)
+		var initialErr apiErrorResponse
+		require.NoError(json.NewDecoder(initialLimited.Body).Decode(&initialErr))
+		require.Contains(initialErr.Error.Message, "initial session price")
+		require.Equal(1, callbackCalls)
+
+		// A lowered signer configuration is more restrictive than request and initial ceilings.
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 2)))
+		configuredLimited := doPayment("configured-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, configuredLimited.Code)
+		var configuredErr apiErrorResponse
+		require.NoError(json.NewDecoder(configuredLimited.Body).Decode(&configuredErr))
+		require.Contains(configuredErr.Error.Message, "configured maximum price")
+		require.Equal(1, callbackCalls)
+
+		// The request passes all pre-callback ceilings, then the webhook ceiling rejects it.
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 1)))
+		webhookLimited := doPayment("webhook-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("1.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, webhookLimited.Code)
+		var webhookErr apiErrorResponse
+		require.NoError(json.NewDecoder(webhookLimited.Body).Decode(&webhookErr))
+		require.Contains(webhookErr.Error.Message, "auth webhook maxPrice")
+		require.Equal(2, callbackCalls)
 	})
 
 	t.Run("callback receives request headers and outbound auth headers", func(t *testing.T) {
@@ -1097,7 +1360,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			callbackCalls++
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id"}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id","maxPrice":{"price":2,"currency":"wei","unit":"fixed"}}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -1106,7 +1369,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
-		first := doPayment("req-skip-first")
+		first := doPayment("req-skip-first", paymentRequestOptions{typeID: RemoteType_Fixed})
 		require.Equal(http.StatusOK, first.Code)
 
 		var firstResp RemotePaymentResponse
@@ -1115,7 +1378,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
 		require.Equal("cached-auth-id", firstState.AuthID)
 
-		second := doPayment("req-skip-second", paymentRequestOptions{state: firstResp.State})
+		second := doPayment("req-skip-second", paymentRequestOptions{typeID: RemoteType_Fixed, state: firstResp.State})
 		require.Equal(http.StatusOK, second.Code)
 		var secondResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
@@ -1126,6 +1389,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		third := doPayment("req-skip-third", paymentRequestOptions{
 			authID: "new-header-auth-id",
+			typeID: RemoteType_Fixed,
 			state:  secondResp.State,
 		})
 		require.Equal(http.StatusInternalServerError, third.Code)
