@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -408,10 +409,14 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	if m.verboseLogs {
 		envVars = append(envVars, "VERBOSE_LOGGING=1")
 	}
+	if token, ok := os.LookupEnv("HF_TOKEN"); ok {
+		envVars = append(envVars, token)
+	}
 
 	containerConfig := &container.Config{
-		Image: containerImage,
-		Env:   envVars,
+		Hostname: containerName,
+		Image:    containerImage,
+		Env:      envVars,
 		Volumes: map[string]struct{}{
 			containerModelDir: {},
 		},
