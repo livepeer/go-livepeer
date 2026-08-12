@@ -183,7 +183,7 @@ a HTTP 481.
   - `-maxPricePerCapability` (optional, capability/model pricing config)
   - `-maxTicketEV`, `-maxTotalEV`, etc.
 - **Request maximum** A client requesting a payment can also specify a `maxPrice` taken from the discovery pricing, or put in their own max (in wei). This ensures that the discovery price and actual price do not drift too much. It is recommended that clients add a ~1.2% buffer to the discovery price which should cover roughly 95% of hourly ETH-USD price moves. The format follows that of the discovery pricing scheme.
-- **Auth webhook** The auth webhook can also return a `maxPrice` in the same format as the discovery price.
+- **Auth webhook** The auth webhook can also return a `maxPrice` in the same format as the discovery price. It is checked only when the webhook actually fires (see [Auth webhook expiry caching](#auth-webhook-expiry-caching)) and is not retained across cached requests.
 - **Selection behavior**: if an orchestrator’s price is above the signer’s configured limits, the signer rejects the payment request (HTTP 481) and the gateway will retry with a different orchestrator session.
 - **LV2V session price is fixed**: Live Video-to-Video (LV2V) jobs treat price as fixed for the lifetime of the session, captured at session initialization time.
 
