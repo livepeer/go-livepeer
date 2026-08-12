@@ -272,6 +272,29 @@ func (r *RedeemerClient) MaxFloat(sender ethcommon.Address) (*big.Int, error) {
 	return mf, nil
 }
 
+// SenderFunds retrieves the sender's spendable balance directly from the local sender manager cache
+func (r *RedeemerClient) SenderFunds(sender ethcommon.Address) (*big.Int, error) {
+	info, err := r.sm.GetSenderInfo(sender)
+	if err != nil {
+		return nil, err
+	}
+
+	totalReserve := new(big.Int).Set(info.Reserve.FundsRemaining)
+	if info.Reserve.ClaimedInCurrentRound != nil {
+		totalReserve.Add(totalReserve, info.Reserve.ClaimedInCurrentRound)
+	}
+
+	available := new(big.Int).Set(totalReserve)
+	if info.Deposit != nil {
+		available.Add(available, info.Deposit)
+	}
+
+	if available.Sign() < 0 {
+		available = big.NewInt(0)
+	}
+	return available, nil
+}
+
 // ValidateSender checks whether a sender has not recently unlocked its deposit and reserve
 func (r *RedeemerClient) ValidateSender(sender ethcommon.Address) error {
 	info, err := r.sm.GetSenderInfo(sender)
