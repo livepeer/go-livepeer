@@ -682,7 +682,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		if callbackResp.MaxPrice != nil {
 			authMaxPrice, err := parseRemotePaymentMaxPrice(callbackResp.MaxPrice, req.Type)
 			if err != nil {
-				respondJsonError(ctx, w, fmt.Errorf("signer auth invalid maxPrice: %w", err), http.StatusInternalServerError)
+				respondJsonError(ctx, w, fmt.Errorf("signer auth invalid maxPrice: %w", err), http.StatusBadGateway)
 				return
 			}
 			if err := checkRemotePaymentPrice(orchPrice, remotePaymentPriceCeiling{source: "auth webhook maxPrice", price: authMaxPrice}); err != nil {

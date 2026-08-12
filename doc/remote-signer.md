@@ -250,6 +250,7 @@ Example body:
     "Balance": "500/1",
     "InitialPricePerUnit": 1200,
     "InitialPixelsPerUnit": 1,
+    "Type": "live",
     "SequenceNumber": 3,
     "AuthID": "auth-456"
   }
@@ -309,3 +310,8 @@ When `-remoteSignerWebhookUrl` is configured, the remote signer calls the auth w
 For the moment, remote signers are intended to sit behind infrastructure controls rather than being exposed directly to end-users. For example, run the remote signer on a private network or behind an authenticated proxy. Do not expose the remote signer to unauthenticated end-users. Run the remote signer close to gateways on a private network; protect it like you would an internal wallet service. If a proxy sits in front of the signer, configure it to scrub all incoming `Signer-` headers from untrusted clients before applying trusted internal headers.
 
 Remote signers are stateless, so signer nodes can operate in a redundant configuration (eg, round-robin DNS, anycasting) with no special gateway-side configuration.
+
+## Request Fields
+
+For the latest documentation on each `/generate-live-payment` request field,
+see [`RemotePaymentRequest`](../server/remote_signer.go).
