@@ -1132,7 +1132,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
 		rr := doPayment("invalid-max-price", paymentRequestOptions{typeID: RemoteType_Fixed})
-		require.Equal(http.StatusInternalServerError, rr.Code)
+		require.Equal(http.StatusBadGateway, rr.Code)
 	})
 
 	t.Run("most restrictive price ceiling wins", func(t *testing.T) {
