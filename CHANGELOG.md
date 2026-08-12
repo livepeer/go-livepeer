@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.1
+
+* [#4008](https://github.com/livepeer/go-livepeer/pull/4008) runner: Add a session-scoped payment URL to the runner challenge.
+* [#4009](https://github.com/livepeer/go-livepeer/pull/4009) signer: Add app field
+* [#4014](https://github.com/livepeer/go-livepeer/pull/4014) signer: Add price ceilings
+* [#3902](https://github.com/livepeer/go-livepeer/pull/3902) ai/live: Terminate streams from heartbeat response (@gioelecerati)
+
 ## v0.9.0
 
 ### Breaking Changes 🚨🚨
