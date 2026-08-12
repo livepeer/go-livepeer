@@ -42,9 +42,9 @@ RUN curl -o /nasm-3.01.tar.gz "https://www.nasm.us/pub/nasm/releasebuilds/3.01/n
 	&& make \
 	&& make install
 
-RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git /ffmpeg \
-	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
-	&& git checkout ${FFMPEG_SHA} \
+# ffmpeg n8.1.2 == commit 38b88335f99e
+RUN	git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git /ffmpeg \
+	&& cd /ffmpeg \
 	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
 
 ENV	GOPATH=/go \
