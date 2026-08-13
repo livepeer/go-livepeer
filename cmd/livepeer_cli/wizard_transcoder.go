@@ -165,6 +165,10 @@ func (w *wizard) activateOrchestrator() {
 		}
 	}
 
+	if !w.confirmTx("activateOrchestrator", "Activate orchestrator") {
+		return
+	}
+
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
 	if !ok {
 		fmt.Printf("Error activating orchestrator: %v\n", result)

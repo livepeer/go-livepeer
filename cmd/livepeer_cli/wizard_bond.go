@@ -183,6 +183,10 @@ func (w *wizard) bond() {
 		"toAddr": {fmt.Sprintf("%v", tAddr.Hex())},
 	}
 
+	if !w.confirmTx("bond", fmt.Sprintf("Bond %s tokens to %s", eth.FormatUnits(amount, "LPT"), tAddr.Hex())) {
+		return
+	}
+
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), val)
 }
 
@@ -243,6 +247,10 @@ func (w *wizard) rebond() {
 		val["toAddr"] = []string{fmt.Sprintf("%v", toAddr.Hex())}
 	}
 
+	if !w.confirmTx("rebond", fmt.Sprintf("Rebond tokens with lock ID %d", unbondingLockID)) {
+		return
+	}
+
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/rebond", w.host, w.httpPort), val)
 }
 
@@ -290,6 +298,10 @@ func (w *wizard) unbond() {
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
+	if !w.confirmTx("unbond", fmt.Sprintf("Unbond %s tokens", eth.FormatUnits(amount, "LPT"))) {
+		return
+	}
+
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort), val)
 }
 
@@ -327,6 +339,10 @@ func (w *wizard) withdrawStake() {
 		"unbondingLockId": {fmt.Sprintf("%v", strconv.FormatInt(unbondingLockID, 10))},
 	}
 
+	if !w.confirmTx("withdrawStake", fmt.Sprintf("Withdraw stake with lock ID %d", unbondingLockID)) {
+		return
+	}
+
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawStake", w.host, w.httpPort), val)
 }
 
@@ -339,6 +355,10 @@ func (w *wizard) withdrawFees() {
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", dInfo.PendingFees.String())},
+	}
+
+	if !w.confirmTx("withdrawFees", fmt.Sprintf("Withdraw %s fees", eth.FormatUnits(dInfo.PendingFees, "LPT"))) {
+		return
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort), val)

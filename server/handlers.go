@@ -1487,6 +1487,63 @@ func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	}))
 }
 
+// estimateTxCostHandler returns estimated gas cost for a given transaction type
+// Query params: txType (e.g., "bond", "unbond", "rebond", "transferTokens", etc.)
+func estimateTxCostHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		txType := r.URL.Query().Get("txType")
+		if txType == "" {
+			respond400(w, "missing txType parameter")
+			return
+		}
+
+		gasPrice, err := client.Backend().SuggestGasPrice(r.Context())
+		if err != nil {
+			respond500(w, fmt.Sprintf("could not get gas price: %v", err))
+			return
+		}
+
+		// Estimate gas based on transaction type
+		// These are typical gas limits for each transaction type
+		var gasLimit uint64
+		switch txType {
+		case "bond":
+			gasLimit = 150000 // typical bond tx gas
+		case "unbond":
+			gasLimit = 100000
+		case "rebond":
+			gasLimit = 120000
+		case "transferTokens":
+			gasLimit = 65000
+		case "initializeRound":
+			gasLimit = 200000
+		case "activateOrchestrator":
+			gasLimit = 500000
+		case "withdrawStake":
+			gasLimit = 150000
+		case "withdrawFees":
+			gasLimit = 100000
+		case "fundDepositAndReserve":
+			gasLimit = 200000
+		case "unlock":
+			gasLimit = 100000
+		case "withdraw":
+			gasLimit = 150000
+		case "reward":
+			gasLimit = 300000
+		case "claimEarnings":
+			gasLimit = 500000
+		default:
+			gasLimit = 200000 // conservative default
+		}
+
+		gasCost := new(big.Int).Mul(new(big.Int).SetUint64(gasLimit), gasPrice)
+
+		respondOk(w, []byte(fmt.Sprintf("%s ETH (gas limit: %d, gas price: %s wei)",
+			eth.FormatUnits(gasCost, "ETH"), gasLimit, gasPrice.String())))
+	}))
+}
+
 // Tickets
 func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

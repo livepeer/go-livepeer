@@ -32,5 +32,8 @@ func (w *wizard) currentRound() (*big.Int, error) {
 }
 
 func (w *wizard) initializeRound() {
+	if !w.confirmTx("initializeRound", "Initialize round") {
+		return
+	}
 	httpPost(fmt.Sprintf("http://%v:%v/initializeRound", w.host, w.httpPort))
 }
