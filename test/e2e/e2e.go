@@ -78,10 +78,21 @@ var (
 	mu       sync.Mutex
 )
 
+// Keep the randomized initialization path enabled while making its lifetime
+// short enough for each test to drain before tearing down the node.
+const (
+	e2eBlockPollingInterval     = time.Second
+	e2eInitializeRoundMaxDelay  = time.Second
+	e2eRoundInitializerQuietFor = e2eInitializeRoundMaxDelay + 2*e2eBlockPollingInterval
+)
+
 type livepeer struct {
-	dev   *devtool.Devtool
-	cfg   *starter.LivepeerConfig
-	ready chan struct{}
+	t      *testing.T
+	dev    *devtool.Devtool
+	cfg    *starter.LivepeerConfig
+	ready  chan struct{}
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 type orchestratorConfig struct {
@@ -121,9 +132,10 @@ func lpCfg() starter.LivepeerConfig {
 
 	ethPassword := ""
 	network := "devnet"
-	blockPollingInterval := 1
+	blockPollingInterval := int(e2eBlockPollingInterval / time.Second)
 	pricePerUnit := "1"
 	initializeRound := true
+	initializeRoundMaxDelay := e2eInitializeRoundMaxDelay
 
 	cfg := starter.DefaultLivepeerConfig()
 	cfg.ServiceAddr = &serviceAddr
@@ -135,6 +147,7 @@ func lpCfg() starter.LivepeerConfig {
 	cfg.BlockPollingInterval = &blockPollingInterval
 	cfg.PricePerUnit = &pricePerUnit
 	cfg.InitializeRound = &initializeRound
+	cfg.InitializeRoundMaxDelay = &initializeRoundMaxDelay
 	return cfg
 }
 
@@ -170,8 +183,11 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	lpCfg.EthController = &dev.EthController
 	lpCfg.EthAcctAddr = &devCfg.Account
 
+	nodeCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	go func() {
-		starter.StartLivepeer(ctx, lpCfg)
+		defer close(done)
+		starter.StartLivepeer(nodeCtx, lpCfg)
 	}()
 
 	ready := make(chan struct{})
@@ -188,7 +204,7 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 		ready <- struct{}{}
 	}()
 
-	return &livepeer{dev: &dev, cfg: &lpCfg, ready: ready}
+	return &livepeer{t: t, dev: &dev, cfg: &lpCfg, ready: ready, cancel: cancel, done: done}
 }
 
 func requireOrchestratorRegisteredAndActivated(t *testing.T, o *livepeer) {
@@ -316,7 +332,41 @@ func pushSegmentBroadcaster(b *livepeer, manifestID string, seqNo int) error {
 }
 
 func (l *livepeer) stop() {
+	l.t.Helper()
+
+	// A stable initialized round for the maximum delay plus two polling
+	// intervals gives the delayed attempt time to observe the round event and
+	// exit before cancellation closes the node's transaction manager.
+	quiet := false
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		round, err := l.dev.Client.CurrentRound()
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		initialized, err := l.dev.Client.CurrentRoundInitialized()
+		if err != nil || !initialized {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		time.Sleep(e2eRoundInitializerQuietFor)
+		currentRound, err := l.dev.Client.CurrentRound()
+		if err != nil {
+			continue
+		}
+		initialized, err = l.dev.Client.CurrentRoundInitialized()
+		if err == nil && initialized && currentRound.Cmp(round) == 0 {
+			quiet = true
+			break
+		}
+	}
+
+	l.cancel()
+	<-l.done
 	l.dev.Close()
+	require.True(l.t, quiet, "round initializer did not reach a quiescent state")
 }
 
 // Other helpers
