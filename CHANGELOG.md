@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.9.1
+
+* [#4008](https://github.com/livepeer/go-livepeer/pull/4008) runner: Add a session-scoped payment URL to the runner challenge.
+* [#4009](https://github.com/livepeer/go-livepeer/pull/4009) signer: Add app field
+* [#4014](https://github.com/livepeer/go-livepeer/pull/4014) signer: Add price ceilings
+* [#3902](https://github.com/livepeer/go-livepeer/pull/3902) ai/live: Terminate streams from heartbeat response (@gioelecerati)
+
+## v0.9.0
+
+### Breaking Changes 🚨🚨
+
+* [#3959](https://github.com/livepeer/go-livepeer/pull/3959) remote-signer: Refuse to start when `/generate-live-payment` would be unauthenticated (`-remoteSignerWebhookUrl` unset) on a publicly-accessible `-httpAddr`; pass `-remoteSignerAllowNoAuth` to override (@rickstaa)
+
+### Features ⚒
+
+#### General
+
+- [#3938](https://github.com/livepeer/go-livepeer/pull/3938) Add Live Runner
+- [#3989](https://github.com/livepeer/go-livepeer/pull/3989) Scope runtime
+- [#3944](https://github.com/livepeer/go-livepeer/pull/3944) Bridge slog level to the glog `-v` flag so `-v` controls newer subsystem logging (@rickstaa)
+
+#### Broadcaster
+
+#### Orchestrator
+
+- [#3964](https://github.com/livepeer/go-livepeer/pull/3964) trickle: Enforce TLS if Live Runner is enabled
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### General
+
+* [#3962](https://github.com/livepeer/go-livepeer/pull/3962) remote-signer: Default `-cliAddr` to a loopback address in remote signer mode so the node no longer fails to start by binding the CLI server to `:80` (@rickstaa)
+
+#### Broadcaster
+
+* [a6c4b1e](https://github.com/livepeer/go-livepeer/commit/a6c4b1ef70d8f4d3da0e7d8164ac8d1faf80ad0e) pm: Reject ticket params with a zero expiration block so they are subjected to the economic caps (@rickstaa)
+
+#### CLI
+
 ## v0.8.11
 
 ### Features ⚒

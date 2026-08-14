@@ -277,6 +277,81 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 			wantMsg:    "orchestrator price",
 		},
 		{
+			name: "orchestrator price exceeds request max price",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					Type:         RemoteType_Fixed,
+					MaxPrice: &runner.LiveRunnerPriceInfo{
+						Price:    json.Number("9"),
+						Currency: "wei",
+						Unit:     "fixed",
+					},
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "request maxPrice",
+		},
+		{
+			name: "request max price requires typed payment",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice requires payment type",
+		},
+		{
+			name: "request max price requires wei",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Fixed
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "usd", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.currency must be wei",
+		},
+		{
+			name: "request max price unit must match type",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Live
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.unit must be seconds",
+		},
+		{
+			name: "request max price must be positive",
+			req: func() RemotePaymentRequest {
+				r := baseReq()
+				r.Type = RemoteType_Fixed
+				r.MaxPrice = &runner.LiveRunnerPriceInfo{Price: json.Number("0"), Currency: "wei", Unit: "fixed"}
+				return r
+			}(),
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "maxPrice.price must be a positive decimal",
+		},
+		{
+			name: "fixed orchestrator price uses existing max price check",
+			req: func() RemotePaymentRequest {
+				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 1}
+				return RemotePaymentRequest{
+					Orchestrator: makeOrchBlob(oInfo),
+					ManifestID:   "fixed-manifest",
+					Type:         RemoteType_Fixed,
+				}
+			}(),
+			wantStatus: HTTPStatusPriceExceeded,
+			wantMsg:    "orchestrator price",
+		},
+		{
 			name: "orchestrator price exceeds per-capability max price",
 			req: func() RemotePaymentRequest {
 				oInfo := proto.Clone(baseOrchInfo).(*net.OrchestratorInfo)
@@ -332,6 +407,65 @@ func TestGenerateLivePayment_RequestValidationErrors(t *testing.T) {
 	}
 }
 
+func TestParseRemotePaymentMaxPrice(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxPrice    *runner.LiveRunnerPriceInfo
+		paymentType string
+		want        *big.Rat
+		wantError   string
+	}{
+		{
+			name:        "live decimal",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("101.2"), Currency: "wei", Unit: "seconds"},
+			paymentType: RemoteType_Live,
+			want:        big.NewRat(506, 5),
+		},
+		{
+			name:        "lv2v",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("7"), Currency: "wei", Unit: "720p-pixel-seconds"},
+			paymentType: RemoteType_LiveVideoToVideo,
+			want:        big.NewRat(7, 1),
+		},
+		{
+			name:        "fixed",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("3"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			want:        big.NewRat(3, 1),
+		},
+		{
+			name:        "malformed price",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("wat"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "positive decimal",
+		},
+		{
+			name:        "negative price",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("-1"), Currency: "wei", Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "positive decimal",
+		},
+		{
+			name:        "missing currency",
+			maxPrice:    &runner.LiveRunnerPriceInfo{Price: json.Number("1"), Unit: "fixed"},
+			paymentType: RemoteType_Fixed,
+			wantError:   "currency must be wei",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRemotePaymentMaxPrice(tt.maxPrice, tt.paymentType)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Zero(t, got.Cmp(tt.want))
+		})
+	}
+}
+
 func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 	require := require.New(t)
 
@@ -376,6 +510,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 		stateBytes     []byte
 		stateSig       []byte
 		orchInfo       *net.OrchestratorInfo
+		reqApp         string
 		reqType        string
 		omitManifestID bool
 		wantStatus     int
@@ -409,6 +544,23 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			stateBytes: []byte("not-json"),
 			wantStatus: http.StatusBadRequest,
 			wantMsg:    "invalid state",
+		},
+		{
+			name: "app mismatch",
+			stateBytes: func() []byte {
+				state, err := json.Marshal(RemotePaymentState{
+					StateID:              "state",
+					OrchestratorAddress:  ethcommon.BytesToAddress(orchInfo.Address),
+					App:                  "live-video-to-video/app-a",
+					InitialPricePerUnit:  1,
+					InitialPixelsPerUnit: 1,
+				})
+				require.NoError(err)
+				return state
+			}(),
+			reqApp:     "live-video-to-video/app-b",
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "app mismatch",
 		},
 		{
 			name: "job type mismatch",
@@ -447,15 +599,15 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			wantMsg:    "orchestratorAddress mismatch",
 		},
 		{
-			name:       "orchestrator price increased more than 2x",
+			name:       "orchestrator price exceeds initial session price",
 			stateBytes: priceIncreaseStateBytes,
 			orchInfo: func() *net.OrchestratorInfo {
 				oInfo := proto.Clone(orchInfo).(*net.OrchestratorInfo)
-				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 250, PixelsPerUnit: 1}
+				oInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 150, PixelsPerUnit: 1}
 				return oInfo
 			}(),
 			wantStatus: HTTPStatusPriceExceeded,
-			wantMsg:    "Orchestrator price has more than doubled",
+			wantMsg:    "initial session price ceiling",
 		},
 		{
 			name: "zero tickets returns 482",
@@ -497,6 +649,7 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 			reqBody, err := json.Marshal(RemotePaymentRequest{
 				Orchestrator: orchBlob,
 				ManifestID:   manifestID,
+				App:          tt.reqApp,
 				InPixels:     1,
 				Type:         tt.reqType,
 				State:        RemotePaymentStateSig{State: tt.stateBytes, Sig: stateSig},
@@ -622,7 +775,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	_, err = base64.StdEncoding.DecodeString(resp.SegCreds)
 	require.NoError(err)
 
-	// Check that the initial price is still used even after a 1.5x increase
+	// Check that the initial price is still used even after a challenge price decrease.
 	var state1 RemotePaymentState
 	require.NoError(json.Unmarshal(resp.State.State, &state1))
 	oldBal := new(big.Rat)
@@ -638,7 +791,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 
 	updatedInfo := proto.Clone(oInfo).(*net.OrchestratorInfo)
 	updatedInfo.PriceInfo = &net.PriceInfo{
-		PricePerUnit:  oInfo.PriceInfo.PricePerUnit * 3 / 2, // 1.5x increase
+		PricePerUnit:  oInfo.PriceInfo.PricePerUnit * 3 / 4,
 		PixelsPerUnit: oInfo.PriceInfo.PixelsPerUnit,
 	}
 	orchBlob, err = proto.Marshal(updatedInfo)
@@ -651,6 +804,8 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		InPixels:     inPixelsUpdated,
 		State:        resp.State,
 	})
+	require.Equal(updatedInfo.PriceInfo.PricePerUnit, payment2.ExpectedPrice.PricePerUnit)
+	require.Equal(updatedInfo.PriceInfo.PixelsPerUnit, payment2.ExpectedPrice.PixelsPerUnit)
 
 	var stateFee2 RemotePaymentState
 	require.NoError(json.Unmarshal(resp2.State.State, &stateFee2))
@@ -787,6 +942,87 @@ func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
 	})
 }
 
+func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
+	require := require.New(t)
+
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(time.Minute)
+	defer node.Balances.StopCleanup()
+	var ticketNonce uint32
+	node.Sender = newMockSender(mockSenderConfig{
+		ev: big.NewRat(3, 1),
+		createTicketBatchFn: func(args mock.Arguments, batch *pm.TicketBatch) {
+			require.Equal(1, args.Int(1))
+			*batch = *defaultTicketBatch()
+			ticketNonce++
+			batch.SenderParams = []*pm.TicketSenderParams{{
+				SenderNonce: ticketNonce,
+				Sig:         pm.RandBytes(42),
+			}}
+		},
+	})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	oInfo := &net.OrchestratorInfo{
+		Address:   ethClient.addr.Bytes(),
+		PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient: pm.RandAddress().Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(oInfo)
+	require.NoError(err)
+
+	doPayment := func(manifestID string, state RemotePaymentStateSig) (RemotePaymentResponse, net.Payment) {
+		body, err := json.Marshal(RemotePaymentRequest{
+			Orchestrator: orchBlob,
+			ManifestID:   manifestID,
+			InPixels:     1_000_000,
+			Type:         RemoteType_Fixed,
+			MaxPrice: &runner.LiveRunnerPriceInfo{
+				Price:    json.Number("4"),
+				Currency: "wei",
+				Unit:     "fixed",
+			},
+			State: state,
+		})
+		require.NoError(err)
+		rr := httptest.NewRecorder()
+		ls.GenerateLivePayment(rr, httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(body)))
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+		var resp RemotePaymentResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		paymentBytes, err := base64.StdEncoding.DecodeString(resp.Payment)
+		require.NoError(err)
+		var payment net.Payment
+		require.NoError(proto.Unmarshal(paymentBytes, &payment))
+		return resp, payment
+	}
+
+	// Like other payment types, an initial request may omit the manifest ID.
+	first, firstPayment := doPayment("", RemotePaymentStateSig{})
+	require.Len(firstPayment.TicketSenderParams, 1)
+	require.EqualValues(3, firstPayment.ExpectedPrice.PricePerUnit)
+	require.EqualValues(1, firstPayment.ExpectedPrice.PixelsPerUnit)
+	var firstState RemotePaymentState
+	require.NoError(json.Unmarshal(first.State.State, &firstState))
+	require.Equal(RemoteType_Fixed, firstState.Type)
+	require.EqualValues(0, firstState.SequenceNumber)
+	require.Equal("0", firstState.Balance)
+
+	second, secondPayment := doPayment("fixed-manifest", first.State)
+	require.Len(secondPayment.TicketSenderParams, 1)
+	require.NotEqual(firstPayment.TicketSenderParams[0].SenderNonce, secondPayment.TicketSenderParams[0].SenderNonce)
+	var secondState RemotePaymentState
+	require.NoError(json.Unmarshal(second.State.State, &secondState))
+	require.Equal(RemoteType_Fixed, secondState.Type)
+	require.EqualValues(1, secondState.SequenceNumber)
+	require.Equal("0", secondState.Balance)
+}
+
 func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	require := require.New(t)
 
@@ -807,32 +1043,46 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 	orchBlob, err := proto.Marshal(oInfo)
 	require.NoError(err)
 
-	doPaymentWithStateAndAuthID := func(requestHeader string, authID string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
+	type paymentRequestOptions struct {
+		authID    string
+		app       string
+		typeID    string
+		priceInfo *net.PriceInfo
+		maxPrice  *runner.LiveRunnerPriceInfo
+		state     RemotePaymentStateSig
+	}
+	doPayment := func(requestHeader string, options ...paymentRequestOptions) *httptest.ResponseRecorder {
+		require.LessOrEqual(len(options), 1)
+		var opts paymentRequestOptions
+		if len(options) == 1 {
+			opts = options[0]
+		}
+		requestOrchBlob := orchBlob
+		if opts.priceInfo != nil {
+			requestOInfo := proto.Clone(oInfo).(*net.OrchestratorInfo)
+			requestOInfo.PriceInfo = opts.priceInfo
+			requestOrchBlob, err = proto.Marshal(requestOInfo)
+			require.NoError(err)
+		}
 		reqBody, err := json.Marshal(RemotePaymentRequest{
-			Orchestrator: orchBlob,
+			Orchestrator: requestOrchBlob,
 			ManifestID:   "manifest",
+			App:          opts.app,
 			InPixels:     1,
-			State:        state,
+			Type:         opts.typeID,
+			MaxPrice:     opts.maxPrice,
+			State:        opts.state,
 		})
 		require.NoError(err)
 
 		req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
 		req.Header.Set("X-Request-ID", requestHeader)
-		if authID != "" {
-			req.Header.Set(remoteSignerAuthIDHeader, authID)
+		if opts.authID != "" {
+			req.Header.Set(remoteSignerAuthIDHeader, opts.authID)
 		}
 		rr := httptest.NewRecorder()
 		ls.GenerateLivePayment(rr, req)
 		return rr
-	}
-	doPaymentWithState := func(requestHeader string, state RemotePaymentStateSig) *httptest.ResponseRecorder {
-		return doPaymentWithStateAndAuthID(requestHeader, "", state)
-	}
-	doPaymentWithAuthID := func(requestHeader string, authID string) *httptest.ResponseRecorder {
-		return doPaymentWithStateAndAuthID(requestHeader, authID, RemotePaymentStateSig{})
-	}
-	doPayment := func(requestHeader string) *httptest.ResponseRecorder {
-		return doPaymentWithState(requestHeader, RemotePaymentStateSig{})
 	}
 	parseResponseState := func(rr *httptest.ResponseRecorder) RemotePaymentState {
 		var resp RemotePaymentResponse
@@ -848,6 +1098,128 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		rr := doPayment("no-callback")
 		require.Equal(http.StatusOK, rr.Code)
+	})
+
+	t.Run("callback max price rejects challenged price", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":0.5,"currency":"wei","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("max-price-rejected", paymentRequestOptions{typeID: RemoteType_Fixed})
+		require.Equal(HTTPStatusPriceExceeded, rr.Code)
+		var apiErr apiErrorResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+		require.Contains(apiErr.Error.Message, "auth webhook maxPrice")
+	})
+
+	t.Run("invalid callback max price returns 500", func(t *testing.T) {
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":2,"currency":"usd","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		rr := doPayment("invalid-max-price", paymentRequestOptions{typeID: RemoteType_Fixed})
+		require.Equal(http.StatusBadGateway, rr.Code)
+	})
+
+	t.Run("most restrictive price ceiling wins", func(t *testing.T) {
+		callbackCalls := 0
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callbackCalls++
+			w.WriteHeader(http.StatusOK)
+			if callbackCalls == 1 {
+				_, _ = w.Write([]byte(`{"status":200}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":200,"maxPrice":{"price":0.5,"currency":"wei","unit":"fixed"}}`))
+		}))
+		defer webhook.Close()
+
+		webhookURL, err := url.Parse(webhook.URL)
+		require.NoError(err)
+		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 1)))
+		defer BroadcastCfg.SetMaxPrice(nil)
+
+		// Equality is accepted: the challenge and request ceiling are both 2 wei.
+		first := doPayment("price-ceiling-equality", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 2, PixelsPerUnit: 1},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2"), Currency: "wei", Unit: "fixed"},
+		})
+		require.Equal(http.StatusOK, first.Code, first.Body.String())
+		var firstResp RemotePaymentResponse
+		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
+		require.Equal(1, callbackCalls)
+
+		// Request maxPrice is lower than the configured and initial ceilings.
+		requestLimited := doPayment("request-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("1.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, requestLimited.Code)
+		var requestErr apiErrorResponse
+		require.NoError(json.NewDecoder(requestLimited.Body).Decode(&requestErr))
+		require.Contains(requestErr.Error.Message, "request maxPrice")
+		require.Equal(1, callbackCalls)
+
+		// The initial price is lower than the configured and request ceilings.
+		initialLimited := doPayment("initial-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 9, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, initialLimited.Code)
+		var initialErr apiErrorResponse
+		require.NoError(json.NewDecoder(initialLimited.Body).Decode(&initialErr))
+		require.Contains(initialErr.Error.Message, "initial session price")
+		require.Equal(1, callbackCalls)
+
+		// A lowered signer configuration is more restrictive than request and initial ceilings.
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 2)))
+		configuredLimited := doPayment("configured-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 4},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("2.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, configuredLimited.Code)
+		var configuredErr apiErrorResponse
+		require.NoError(json.NewDecoder(configuredLimited.Body).Decode(&configuredErr))
+		require.Contains(configuredErr.Error.Message, "configured maximum price")
+		require.Equal(1, callbackCalls)
+
+		// The request passes all pre-callback ceilings, then the webhook ceiling rejects it.
+		BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(3, 1)))
+		webhookLimited := doPayment("webhook-ceiling-precedence", paymentRequestOptions{
+			typeID:    RemoteType_Fixed,
+			priceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			maxPrice:  &runner.LiveRunnerPriceInfo{Price: json.Number("1.5"), Currency: "wei", Unit: "fixed"},
+			state:     firstResp.State,
+		})
+		require.Equal(HTTPStatusPriceExceeded, webhookLimited.Code)
+		var webhookErr apiErrorResponse
+		require.NoError(json.NewDecoder(webhookLimited.Body).Decode(&webhookErr))
+		require.Contains(webhookErr.Error.Message, "auth webhook maxPrice")
+		require.Equal(2, callbackCalls)
 	})
 
 	t.Run("callback receives request headers and outbound auth headers", func(t *testing.T) {
@@ -872,102 +1244,115 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 			"X-API-Key":     "secret",
 		}
 
-		rr := doPayment("req-123")
+		rr := doPayment("req-123", paymentRequestOptions{app: "live-video-to-video/scope"})
 		require.Equal(http.StatusOK, rr.Code)
 		require.True(callbackCalled)
 		require.Equal([]string{"req-123"}, payload.Headers["X-Request-Id"])
 		require.NotNil(payload.State)
 		require.Equal("pmSession", payload.State.PMSessionID)
+		require.Equal("live-video-to-video/scope", payload.State.App)
 	})
 
-	t.Run("callback 200 with status 200 succeeds", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":200}`))
-		}))
-		defer webhook.Close()
+	expiry := time.Now().Add(5 * time.Minute).Unix()
+	callbackResponseTests := []struct {
+		name           string
+		callbackStatus int
+		callbackBody   string
+		requestOpts    paymentRequestOptions
+		wantStatus     int
+		wantError      string
+		wantAuthExpiry int64
+		wantAuthID     string
+	}{
+		{
+			name:         "callback 200 with status 200 succeeds",
+			callbackBody: `{"status":200}`,
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:           "callback 200 with expiry sets state auth expiry",
+			callbackBody:   fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry),
+			wantStatus:     http.StatusOK,
+			wantAuthExpiry: expiry,
+		},
+		{
+			name:         "callback auth id sets state",
+			callbackBody: `{"status":200,"auth_id":"webhook-auth-id"}`,
+			wantStatus:   http.StatusOK,
+			wantAuthID:   "webhook-auth-id",
+		},
+		{
+			name:         "request auth id header is fallback when callback omits auth id",
+			callbackBody: `{"status":200}`,
+			requestOpts:  paymentRequestOptions{authID: "header-auth-id"},
+			wantStatus:   http.StatusOK,
+			wantAuthID:   "header-auth-id",
+		},
+		{
+			name:         "callback auth id wins over request header",
+			callbackBody: `{"status":200,"auth_id":"webhook-auth-id"}`,
+			requestOpts:  paymentRequestOptions{authID: "header-auth-id"},
+			wantStatus:   http.StatusOK,
+			wantAuthID:   "webhook-auth-id",
+		},
+		{
+			name:         "callback 200 missing status returns 500",
+			callbackBody: `{"expiry":123}`,
+			wantStatus:   http.StatusInternalServerError,
+			wantError:    "Internal Server Error",
+		},
+		{
+			name:         "callback 200 with rejection status returns reason",
+			callbackBody: `{"status":403,"reason":"denied"}`,
+			wantStatus:   http.StatusForbidden,
+			wantError:    "denied",
+		},
+		{
+			name:         "callback 200 with rejection status and no reason uses fallback",
+			callbackBody: `{"status":429}`,
+			wantStatus:   http.StatusTooManyRequests,
+			wantError:    "signer auth rejected request with status 429",
+		},
+		{
+			name:           "callback HTTP non-200 returns 500",
+			callbackStatus: http.StatusUnauthorized,
+			callbackBody:   "denied",
+			wantStatus:     http.StatusInternalServerError,
+			wantError:      "Internal Server Error",
+		},
+	}
+	for _, tt := range callbackResponseTests {
+		t.Run(tt.name, func(t *testing.T) {
+			webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callbackStatus := tt.callbackStatus
+				if callbackStatus == 0 {
+					callbackStatus = http.StatusOK
+				}
+				w.WriteHeader(callbackStatus)
+				_, _ = w.Write([]byte(tt.callbackBody))
+			}))
+			defer webhook.Close()
 
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
+			webhookURL, err := url.Parse(webhook.URL)
+			require.NoError(err)
+			ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
+			ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
-		rr := doPayment("req-status-200")
-		require.Equal(http.StatusOK, rr.Code)
-	})
-
-	t.Run("callback 200 with expiry sets state auth expiry", func(t *testing.T) {
-		expiry := time.Now().Add(5 * time.Minute).Unix()
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d}`, expiry)))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-expiry-set")
-		require.Equal(http.StatusOK, rr.Code)
-		state := parseResponseState(rr)
-		require.Equal(expiry, state.AuthExpiry)
-	})
-
-	t.Run("callback auth id sets state", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-auth-id")
-		require.Equal(http.StatusOK, rr.Code)
-		state := parseResponseState(rr)
-		require.Equal("webhook-auth-id", state.AuthID)
-	})
-
-	t.Run("request auth id header is fallback when callback omits auth id", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":200}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPaymentWithAuthID("req-auth-id-fallback", "header-auth-id")
-		require.Equal(http.StatusOK, rr.Code)
-		state := parseResponseState(rr)
-		require.Equal("header-auth-id", state.AuthID)
-	})
-
-	t.Run("callback auth id wins over request header", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":200,"auth_id":"webhook-auth-id"}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPaymentWithAuthID("req-auth-id-priority", "header-auth-id")
-		require.Equal(http.StatusOK, rr.Code)
-		state := parseResponseState(rr)
-		require.Equal("webhook-auth-id", state.AuthID)
-	})
+			rr := doPayment(tt.name, tt.requestOpts)
+			require.Equal(tt.wantStatus, rr.Code)
+			if tt.wantError != "" {
+				var apiErr apiErrorResponse
+				require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
+				require.Contains(apiErr.Error.Message, tt.wantError)
+				return
+			}
+			if tt.wantAuthExpiry != 0 || tt.wantAuthID != "" {
+				state := parseResponseState(rr)
+				require.Equal(tt.wantAuthExpiry, state.AuthExpiry)
+				require.Equal(tt.wantAuthID, state.AuthID)
+			}
+		})
+	}
 
 	t.Run("sequential requests skip callback while auth expiry still valid", func(t *testing.T) {
 		callbackCalls := 0
@@ -975,7 +1360,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			callbackCalls++
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id"}`, expiry)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"status":200,"expiry":%d,"auth_id":"cached-auth-id","maxPrice":{"price":2,"currency":"wei","unit":"fixed"}}`, expiry)))
 		}))
 		defer webhook.Close()
 
@@ -984,7 +1369,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
 		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
 
-		first := doPayment("req-skip-first")
+		first := doPayment("req-skip-first", paymentRequestOptions{typeID: RemoteType_Fixed})
 		require.Equal(http.StatusOK, first.Code)
 
 		var firstResp RemotePaymentResponse
@@ -993,7 +1378,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.NoError(json.Unmarshal(firstResp.State.State, &firstState))
 		require.Equal("cached-auth-id", firstState.AuthID)
 
-		second := doPaymentWithState("req-skip-second", firstResp.State)
+		second := doPayment("req-skip-second", paymentRequestOptions{typeID: RemoteType_Fixed, state: firstResp.State})
 		require.Equal(http.StatusOK, second.Code)
 		var secondResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(second.Body).Decode(&secondResp))
@@ -1002,7 +1387,11 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		require.Equal("cached-auth-id", secondState.AuthID)
 		require.Equal(1, callbackCalls)
 
-		third := doPaymentWithStateAndAuthID("req-skip-third", "new-header-auth-id", secondResp.State)
+		third := doPayment("req-skip-third", paymentRequestOptions{
+			authID: "new-header-auth-id",
+			typeID: RemoteType_Fixed,
+			state:  secondResp.State,
+		})
 		require.Equal(http.StatusInternalServerError, third.Code)
 		var apiErr apiErrorResponse
 		require.NoError(json.NewDecoder(third.Body).Decode(&apiErr))
@@ -1030,7 +1419,7 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 
 		var firstResp RemotePaymentResponse
 		require.NoError(json.NewDecoder(first.Body).Decode(&firstResp))
-		second := doPaymentWithState("req-expired-second", firstResp.State)
+		second := doPayment("req-expired-second", paymentRequestOptions{state: firstResp.State})
 		require.Equal(http.StatusOK, second.Code)
 		require.Equal(2, callbackCalls)
 	})
@@ -1059,92 +1448,15 @@ func TestGenerateLivePayment_WebhookCallback(t *testing.T) {
 		stateSig, err := signState(ls, stateBytes)
 		require.NoError(err)
 
-		rr := doPaymentWithState("req-auth-id-replaced", RemotePaymentStateSig{State: stateBytes, Sig: stateSig})
+		rr := doPayment("req-auth-id-replaced", paymentRequestOptions{
+			state: RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
+		})
 		require.Equal(http.StatusInternalServerError, rr.Code)
 		var apiErr apiErrorResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
 		require.Equal("Internal Server Error", apiErr.Error.Message)
 	})
 
-	t.Run("callback 200 missing status returns 500", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"expiry":123}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-missing-status")
-		require.Equal(http.StatusInternalServerError, rr.Code)
-
-		var apiErr apiErrorResponse
-		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
-		require.Equal("Internal Server Error", apiErr.Error.Message)
-	})
-
-	t.Run("callback 200 with rejection status returns reason", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":403,"reason":"denied"}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-rejected")
-		require.Equal(http.StatusForbidden, rr.Code)
-
-		var apiErr apiErrorResponse
-		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
-		require.Contains(apiErr.Error.Message, "denied")
-	})
-
-	t.Run("callback 200 with rejection status and no reason uses fallback", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":429}`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-no-reason")
-		require.Equal(http.StatusTooManyRequests, rr.Code)
-
-		var apiErr apiErrorResponse
-		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
-		require.Contains(apiErr.Error.Message, "signer auth rejected request with status 429")
-	})
-
-	t.Run("callback HTTP non-200 returns 500", func(t *testing.T) {
-		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`denied`))
-		}))
-		defer webhook.Close()
-
-		webhookURL, err := url.Parse(webhook.URL)
-		require.NoError(err)
-		ls.LivepeerNode.RemoteSignerWebhookURL = webhookURL
-		ls.LivepeerNode.RemoteSignerWebhookHeaders = nil
-
-		rr := doPayment("req-401")
-		require.Equal(http.StatusInternalServerError, rr.Code)
-
-		var apiErr apiErrorResponse
-		require.NoError(json.NewDecoder(rr.Body).Decode(&apiErr))
-		require.Equal("Internal Server Error", apiErr.Error.Message)
-	})
 }
 
 func TestRemoteSigner_Discovery(t *testing.T) {
@@ -1602,6 +1914,16 @@ func discoveryRaw(t *testing.T, data string) json.RawMessage {
 	t.Helper()
 	require.True(t, json.Valid([]byte(data)))
 	return json.RawMessage(data)
+}
+
+func TestValidateRunnerPriceAcceptsFixedUnit(t *testing.T) {
+	price, err := validateRunnerPrice(&runner.LiveRunnerPriceInfo{
+		Price:    json.Number("7"),
+		Currency: "wei",
+		Unit:     "fixed",
+	})
+	require.NoError(t, err)
+	require.Zero(t, price.Cmp(big.NewRat(7, 1)))
 }
 
 func discoveryRunnerApps(t *testing.T, resp discoveryResponse) []string {

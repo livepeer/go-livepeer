@@ -322,7 +322,7 @@ func validateRunnerPrice(priceInfo *runner.LiveRunnerPriceInfo) (*big.Rat, error
 		return nil, errors.New("unsupported currency")
 	}
 	unit := strings.ToLower(strings.TrimSpace(priceInfo.Unit))
-	if unit != "seconds" && unit != "720p-pixel-seconds" {
+	if unit != "seconds" && unit != "720p-pixel-seconds" && unit != "fixed" {
 		return nil, errors.New("unsupported unit")
 	}
 	return price, nil

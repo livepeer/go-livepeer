@@ -1339,6 +1339,188 @@ func TestWebhookPoolConfig_ForwardsHeaders(t *testing.T) {
 	}
 }
 
+func TestWebhookPool_UsesCachedInfosOnRefreshError(t *testing.T) {
+	type webhookReply struct {
+		status int
+		body   string
+	}
+
+	newPool := func(t *testing.T, initial webhookReply) (*webhookPool, func(webhookReply)) {
+		t.Helper()
+
+		var replyMu sync.RWMutex
+		reply := initial
+		webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			replyMu.RLock()
+			current := reply
+			replyMu.RUnlock()
+
+			w.WriteHeader(current.status)
+			_, _ = w.Write([]byte(current.body))
+		}))
+		t.Cleanup(webhook.Close)
+
+		whURL, err := url.ParseRequestURI(webhook.URL)
+		require.NoError(t, err)
+		pool := &webhookPool{
+			callback:         whURL,
+			mu:               &sync.RWMutex{},
+			bcast:            &stubBroadcaster{},
+			discoveryTimeout: 500 * time.Millisecond,
+			getOrchInfo: func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+				return &net.OrchestratorInfo{Transcoder: orchestratorServer.String()}, nil
+			},
+		}
+
+		setReply := func(next webhookReply) {
+			replyMu.Lock()
+			reply = next
+			replyMu.Unlock()
+		}
+		return pool, setReply
+	}
+
+	const cachedURL = "https://127.0.0.1:8936"
+	goodReply := webhookReply{
+		status: http.StatusOK,
+		body:   `[{"address":"` + cachedURL + `"}]`,
+	}
+
+	t.Run("timeout", func(t *testing.T) {
+		pool, _ := newPool(t, goodReply)
+		infos, err := pool.getInfos()
+		require.NoError(t, err)
+		require.Len(t, infos, 1)
+		require.Equal(t, cachedURL, infos[0].URL.String())
+
+		synctest.Test(t, func(t *testing.T) {
+			staleRequest := time.Now().Add(-2 * common.WebhookDiscoveryRefreshInterval)
+			pool.mu.Lock()
+			pool.lastRequest = staleRequest
+			pool.mu.Unlock()
+			time.Sleep(3 * time.Second)
+
+			infos, err = pool.cachedInfosOnError(context.DeadlineExceeded)
+			require.NoError(t, err)
+			require.Len(t, infos, 1)
+			require.Equal(t, cachedURL, infos[0].URL.String())
+			require.Equal(t, staleRequest, pool.lastRequest, "failed refresh must remain eligible for retry")
+		})
+	})
+
+	tests := []struct {
+		name    string
+		failure webhookReply
+	}{
+		{
+			name: "non-2xx response",
+			failure: webhookReply{
+				status: http.StatusBadGateway,
+				body:   `[]`,
+			},
+		},
+		{
+			name: "malformed JSON",
+			failure: webhookReply{
+				status: http.StatusOK,
+				body:   `{not-json`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pool, setReply := newPool(t, goodReply)
+			infos, err := pool.getInfos()
+			require.NoError(t, err)
+			require.Len(t, infos, 1)
+			require.Equal(t, cachedURL, infos[0].URL.String())
+
+			setReply(test.failure)
+			staleRequest := time.Now().Add(-2 * common.WebhookDiscoveryRefreshInterval)
+			pool.mu.Lock()
+			pool.lastRequest = staleRequest
+			pool.mu.Unlock()
+
+			infos, err = pool.getInfos()
+			require.NoError(t, err)
+			require.Len(t, infos, 1)
+			require.Equal(t, cachedURL, infos[0].URL.String())
+			require.Equal(t, staleRequest, pool.lastRequest, "failed refresh must remain eligible for retry")
+
+			if test.name == "non-2xx response" {
+				require.Equal(t, 1, pool.Size())
+				orchestrators, err := pool.GetOrchestrators(context.Background(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+				require.NoError(t, err)
+				require.Len(t, orchestrators, 1)
+			}
+		})
+	}
+}
+
+func TestWebhookPool_RefreshErrorWithoutCache(t *testing.T) {
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer webhook.Close()
+
+	whURL, err := url.ParseRequestURI(webhook.URL)
+	require.NoError(t, err)
+	pool := &webhookPool{
+		callback: whURL,
+		mu:       &sync.RWMutex{},
+		bcast:    &stubBroadcaster{},
+	}
+
+	infos, err := pool.getInfos()
+	require.Error(t, err)
+	require.Nil(t, infos)
+	require.Nil(t, pool.pool)
+	require.True(t, pool.lastRequest.IsZero())
+	require.Zero(t, pool.Size())
+}
+
+func TestWebhookPool_SuccessfulEmptyRefreshClearsCache(t *testing.T) {
+	var replyMu sync.RWMutex
+	body := `[{"address":"https://127.0.0.1:8936"}]`
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		replyMu.RLock()
+		currentBody := body
+		replyMu.RUnlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(currentBody))
+	}))
+	defer webhook.Close()
+
+	whURL, err := url.ParseRequestURI(webhook.URL)
+	require.NoError(t, err)
+	pool := &webhookPool{
+		callback: whURL,
+		mu:       &sync.RWMutex{},
+		bcast:    &stubBroadcaster{},
+	}
+
+	infos, err := pool.getInfos()
+	require.NoError(t, err)
+	require.Len(t, infos, 1)
+
+	replyMu.Lock()
+	body = `[]`
+	replyMu.Unlock()
+	staleRequest := time.Now().Add(-2 * common.WebhookDiscoveryRefreshInterval)
+	pool.mu.Lock()
+	pool.lastRequest = staleRequest
+	pool.mu.Unlock()
+
+	infos, err = pool.getInfos()
+	require.NoError(t, err)
+	require.Empty(t, infos)
+	require.NotNil(t, pool.pool)
+	require.Zero(t, pool.Size())
+	require.True(t, pool.lastRequest.After(staleRequest))
+}
+
 func TestDeserializeWebhookJSON(t *testing.T) {
 	assert := assert.New(t)
 

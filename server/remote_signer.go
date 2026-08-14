@@ -34,6 +34,7 @@ const HTTPStatusNoTickets = 482
 const RefreshSessionOrchestratorURLHeader = "Livepeer-Orchestrator-URL"
 const RemoteType_Live = "live"
 const RemoteType_LiveVideoToVideo = "lv2v"
+const RemoteType_Fixed = "fixed"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
 
@@ -149,6 +150,7 @@ type RemotePaymentState struct {
 	PMSessionID          string
 	LastUpdate           time.Time
 	OrchestratorAddress  ethcommon.Address
+	App                  string
 	AuthExpiry           int64
 	SenderNonce          uint32
 	Balance              string
@@ -176,11 +178,17 @@ type RemotePaymentRequest struct {
 	// Set if an ID is needed to tie into orch accounting for a session. Optional
 	ManifestID string
 
+	// Application associated with the payment. Optional.
+	App string `json:"app,omitempty"`
+
 	// Number of pixels to generate a ticket for. Required if `type` is not set.
 	InPixels int64 `json:"inPixels"`
 
-	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`. Optional.
+	// Job type to automatically calculate payments. Valid values: `live`, `lv2v`, `fixed`. Optional.
 	Type string `json:"type"`
+
+	// Maximum acceptable price for this request. Optional.
+	MaxPrice *runner.LiveRunnerPriceInfo `json:"maxPrice,omitempty"`
 
 	// Capabilities to include in the ticket. Optional; may be set for the lv2v job type.
 	Capabilities []byte `json:"capabilities"`
@@ -208,6 +216,60 @@ type authResponse struct {
 	Expiry int64 `json:"expiry,omitempty"`
 	// Optional opaque identifier.
 	AuthID string `json:"auth_id,omitempty"`
+	// Optional maximum acceptable challenge price.
+	MaxPrice *runner.LiveRunnerPriceInfo `json:"maxPrice,omitempty"`
+}
+
+type remotePaymentPriceCeiling struct {
+	source string
+	price  *big.Rat
+}
+
+func parseRemotePaymentMaxPrice(maxPrice *runner.LiveRunnerPriceInfo, paymentType string) (*big.Rat, error) {
+	if maxPrice == nil {
+		return nil, nil
+	}
+
+	price, ok := new(big.Rat).SetString(strings.TrimSpace(maxPrice.Price.String()))
+	if !ok || price.Sign() <= 0 {
+		return nil, errors.New("maxPrice.price must be a positive decimal")
+	}
+	if strings.ToLower(strings.TrimSpace(maxPrice.Currency)) != "wei" {
+		return nil, errors.New("maxPrice.currency must be wei")
+	}
+
+	var expectedUnit string
+	switch paymentType {
+	case RemoteType_Live:
+		expectedUnit = "seconds"
+	case RemoteType_LiveVideoToVideo:
+		expectedUnit = "720p-pixel-seconds"
+	case RemoteType_Fixed:
+		expectedUnit = "fixed"
+	default:
+		return nil, errors.New("maxPrice requires payment type live, lv2v, or fixed")
+	}
+	if unit := strings.ToLower(strings.TrimSpace(maxPrice.Unit)); unit != expectedUnit {
+		return nil, fmt.Errorf("maxPrice.unit must be %s for payment type %s", expectedUnit, paymentType)
+	}
+
+	return price, nil
+}
+
+func checkRemotePaymentPrice(orchPrice *big.Rat, ceilings ...remotePaymentPriceCeiling) error {
+	var effective remotePaymentPriceCeiling
+	for _, ceiling := range ceilings {
+		if ceiling.price == nil {
+			continue
+		}
+		if effective.price == nil || ceiling.price.Cmp(effective.price) < 0 {
+			effective = ceiling
+		}
+	}
+	if effective.price != nil && orchPrice.Cmp(effective.price) > 0 {
+		return fmt.Errorf("orchestrator price %v exceeds %s ceiling %v", orchPrice.FloatString(3), effective.source, effective.price.FloatString(3))
+	}
+	return nil
 }
 
 // Signs the serialized state with the remote signer's Ethereum key.
@@ -363,6 +425,11 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
+		if state.App != req.App {
+			err := fmt.Errorf("app mismatch")
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
 		if state.Type != "" && state.Type != req.Type {
 			err := fmt.Errorf("job type mismatch")
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -374,6 +441,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		state = &RemotePaymentState{
 			StateID:              string(core.RandomManifestID()),
 			OrchestratorAddress:  orchAddr,
+			App:                  req.App,
 			InitialPricePerUnit:  priceInfo.PricePerUnit,
 			InitialPixelsPerUnit: priceInfo.PixelsPerUnit,
 			Type:                 req.Type,
@@ -487,6 +555,8 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			billableSecs = (10 * time.Second).Seconds()
 		}
 		billableUnits = int64(math.Ceil(billableSecs)) // seconds to charge for
+	} else if req.Type == RemoteType_Fixed {
+		billableUnits = 1
 	} else if req.Type != "" {
 		err = errors.New("invalid job type")
 		respondJsonError(ctx, w, err, http.StatusBadRequest)
@@ -498,11 +568,26 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Validate orchestrator price against configured max price
+	// Validate orchestrator price against all ceilings available before the auth callback.
 	orchPrice := new(big.Rat).SetFrac64(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
-	maxPrice := BroadcastCfg.GetCapabilitiesMaxPrice(streamParams.Capabilities)
-	if maxPrice != nil && orchPrice.Cmp(maxPrice) > 0 {
-		err := fmt.Errorf("orchestrator price %v exceeds maximum price %v", orchPrice.FloatString(3), maxPrice.FloatString(3))
+	requestMaxPrice, err := parseRemotePaymentMaxPrice(req.MaxPrice, req.Type)
+	if err != nil {
+		respondJsonError(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+	var initialMaxPrice *big.Rat
+	if hasState {
+		if state.InitialPricePerUnit <= 0 || state.InitialPixelsPerUnit <= 0 {
+			respondJsonError(ctx, w, errors.New("invalid initial price in state"), http.StatusBadRequest)
+			return
+		}
+		initialMaxPrice = new(big.Rat).SetFrac64(state.InitialPricePerUnit, state.InitialPixelsPerUnit)
+	}
+	if err := checkRemotePaymentPrice(orchPrice,
+		remotePaymentPriceCeiling{source: "configured maximum price", price: BroadcastCfg.GetCapabilitiesMaxPrice(streamParams.Capabilities)},
+		remotePaymentPriceCeiling{source: "request maxPrice", price: requestMaxPrice},
+		remotePaymentPriceCeiling{source: "initial session price", price: initialMaxPrice},
+	); err != nil {
 		clog.Warningf(ctx, "Rejecting payment request: %v", err)
 		respondJsonError(ctx, w, err, HTTPStatusPriceExceeded)
 		return
@@ -594,6 +679,18 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	}
 	if callbackResp != nil {
 		state.AuthExpiry = callbackResp.Expiry
+		if callbackResp.MaxPrice != nil {
+			authMaxPrice, err := parseRemotePaymentMaxPrice(callbackResp.MaxPrice, req.Type)
+			if err != nil {
+				respondJsonError(ctx, w, fmt.Errorf("signer auth invalid maxPrice: %w", err), http.StatusBadGateway)
+				return
+			}
+			if err := checkRemotePaymentPrice(orchPrice, remotePaymentPriceCeiling{source: "auth webhook maxPrice", price: authMaxPrice}); err != nil {
+				clog.Warningf(ctx, "Rejecting payment request: %v", err)
+				respondJsonError(ctx, w, err, HTTPStatusPriceExceeded)
+				return
+			}
+		}
 	}
 	authID := r.Header.Get(remoteSignerAuthIDHeader)
 	if callbackResp != nil && callbackResp.AuthID != "" {
@@ -636,11 +733,14 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			pipeline = PipelineLiveVideoToVideo
 		} else if req.Type == RemoteType_Live {
 			pipeline = RemoteType_Live
+		} else if req.Type == RemoteType_Fixed {
+			pipeline = RemoteType_Fixed
 		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
+			"app":                state.App,
 			"pipeline":           pipeline,
 			"request_id":         requestID,
 			"orch_address":       orchAddr.Hex(),
