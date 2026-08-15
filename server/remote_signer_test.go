@@ -2243,3 +2243,20 @@ func TestGetOrchInfoSig_SendsConfiguredHeaders(t *testing.T) {
 	require.Equal([]byte{0x12, 0x34}, []byte(resp.Address))
 	require.Equal([]byte{0xab, 0xcd}, []byte(resp.Signature))
 }
+
+func TestEncodeMeterPipeline(t *testing.T) {
+	require := require.New(t)
+
+	require.Equal("", encodeMeterPipeline("", "comfyui"))
+	require.Equal("live-video-to-video", encodeMeterPipeline("live-video-to-video", ""))
+	require.Equal(
+		"live-video-to-video:comfyui",
+		encodeMeterPipeline("live-video-to-video", "comfyui"),
+	)
+	require.Equal(
+		"live-video-to-video:stabilityai/sd-turbo",
+		encodeMeterPipeline("live-video-to-video", "stabilityai/sd-turbo"),
+	)
+	require.Equal("live", encodeMeterPipeline("live", ""))
+	require.Equal("fixed:noop", encodeMeterPipeline("fixed", "noop"))
+}
