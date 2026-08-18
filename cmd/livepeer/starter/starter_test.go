@@ -91,23 +91,23 @@ func TestIsLocalURL(t *testing.T) {
 }
 
 func TestGetServiceURIServiceAddrScheme(t *testing.T) {
-	uri, err := getServiceURI(nil, "127.0.0.1:8935")
+	uri, err := getServiceURI(nil, "127.0.0.1:8935", ethcommon.Address{})
 	require.NoError(t, err)
 	require.Equal(t, "https://127.0.0.1:8935", uri.String())
 
-	uri, err = getServiceURI(nil, "http://127.0.0.1:8935")
+	uri, err = getServiceURI(nil, "http://127.0.0.1:8935", ethcommon.Address{})
 	require.NoError(t, err)
 	require.Equal(t, "http://127.0.0.1:8935", uri.String())
 
-	uri, err = getServiceURI(nil, "https://orch.example.com:443")
+	uri, err = getServiceURI(nil, "https://orch.example.com:443", ethcommon.Address{})
 	require.NoError(t, err)
 	require.Equal(t, "https://orch.example.com:443", uri.String())
 
-	uri, err = getServiceURI(nil, "gopher://orch.example.com:443")
+	uri, err = getServiceURI(nil, "gopher://orch.example.com:443", ethcommon.Address{})
 	require.NoError(t, err)
 	require.Equal(t, "https://gopher://orch.example.com:443", uri.String())
 
-	uri, err = getServiceURI(nil, "none")
+	uri, err = getServiceURI(nil, "none", ethcommon.Address{})
 	require.NoError(t, err)
 	require.Equal(t, "", uri.String())
 }

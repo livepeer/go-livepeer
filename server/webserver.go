@@ -80,7 +80,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/delegatorInfo", delegatorInfoHandler(client))
 	mux.Handle("/orchestratorEarningPoolsForRound", orchestratorEarningPoolsForRoundHandler(client))
 	mux.Handle("/registeredOrchestrators", registeredOrchestratorsHandler(client, db))
-	mux.Handle("/reward", rewardHandler(client))
+	mux.Handle("/reward", s.rewardHandler(client))
+	mux.Handle("/setRewardCaller", mustHaveFormParams(s.setRewardCallerHandler(client)))
+	mux.Handle("/rewardCaller", s.rewardCallerHandler(client))
 
 	// Protocol parameters
 	mux.Handle("/protocolParameters", protocolParametersHandler(client, db))

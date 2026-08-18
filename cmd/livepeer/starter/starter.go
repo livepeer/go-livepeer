@@ -1262,27 +1262,64 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Infof("Redeemer started on %v", *cfg.HttpAddr)
 		}
 
+		// Reward is called for recipientAddr, which is the node's own account unless
+		// -ethOrchAddr points at a separately registered orchestrator. Authorization is
+		// only ever checked when reward is actually going to run: -ethOrchAddr is also
+		// used for ticket recipients by gateways, redeemers and orchestrators that never
+		// call reward, and those must not pay for an extra lookup or inherit a new
+		// failure mode.
 		var reward bool
-		if cfg.Reward == nil {
-			// If the node address is an on-chain registered address, start the reward service
-			t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
-			if err != nil {
-				glog.Error(err)
-				return
+		if cfg.Reward == nil || *cfg.Reward {
+			explicit := cfg.Reward != nil
+
+			// A node running on the orchestrator's own wallet calls reward directly.
+			// Otherwise it must be the reward caller the orchestrator authorized
+			// on-chain, or every reward transaction would revert. Check up front so the
+			// operator finds out at startup rather than a round later.
+			authorized := true
+			if recipientAddr != n.Eth.Account().Address {
+				rewardCaller, err := n.Eth.GetRewardCaller(recipientAddr)
+				if err != nil {
+					glog.Errorf("Could not look up reward caller for orchestrator %v err=%q", recipientAddr.Hex(), err)
+					return
+				}
+				authorized = rewardCaller == n.Eth.Account().Address
+				if !authorized {
+					msg := fmt.Sprintf(
+						"node account %v is not the reward caller for orchestrator %v (on-chain reward caller is %v); "+
+							"set it with livepeer_cli from the orchestrator's wallet",
+						n.Eth.Account().Address.Hex(), recipientAddr.Hex(), rewardCaller.Hex(),
+					)
+					if explicit {
+						exit("-reward was set but %s", msg)
+					}
+					glog.Warningf("Not starting reward service; %s", msg)
+				}
 			}
-			if t.Status == "Registered" {
-				reward = true
-			} else {
+
+			switch {
+			case !authorized:
 				reward = false
+			case explicit:
+				// Deliberately not gated on registration status. The orchestrator may
+				// still be registering, possibly via livepeer_cli against this very
+				// node, and the reward service is a no-op until it is active.
+				reward = true
+			default:
+				// Auto-enable only when there is a registered orchestrator to reward.
+				t, err := n.Eth.GetTranscoder(recipientAddr)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+				reward = t.Status == "Registered"
 			}
-		} else {
-			reward = *cfg.Reward
 		}
 
 		if reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eth.NewRewardService(n.Eth, timeWatcher)
+			rs := eth.NewRewardService(n.Eth, timeWatcher, recipientAddr)
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
@@ -1792,7 +1829,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if n.NodeType == core.OrchestratorNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", OrchestratorCliPort)
 
-		suri, err := getServiceURI(n, *cfg.ServiceAddr)
+		var ethOrchAddr ethcommon.Address
+		if *cfg.EthOrchAddr != "" {
+			ethOrchAddr = ethcommon.HexToAddress(*cfg.EthOrchAddr)
+		}
+
+		suri, err := getServiceURI(n, *cfg.ServiceAddr, ethOrchAddr)
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
@@ -2261,7 +2303,9 @@ func isLocalURL(u string) (bool, error) {
 // Else: get on-chain sURI
 // If on-chain sURI mismatches inferred address: print warning
 // Return on-chain sURI
-func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
+// ethOrchAddr is the on-chain registered orchestrator whose service URI should be looked
+// up. It is the zero address when the node's own account is the orchestrator.
+func getServiceURI(n *core.LivepeerNode, serviceAddr string, ethOrchAddr ethcommon.Address) (*url.URL, error) {
 	// Passed in via CLI
 	if serviceAddr != "" {
 		if serviceAddr == "none" {
@@ -2298,8 +2342,14 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		return inferredUri, err
 	}
 
-	// On-chain lookup and matching with inferred public address
-	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
+	// On-chain lookup and matching with inferred public address.
+	// The service URI is registered against the orchestrator, so a node running on a
+	// reward caller wallet must not look it up under its own account.
+	uriAddr := n.Eth.Account().Address
+	if ethOrchAddr != (ethcommon.Address{}) {
+		uriAddr = ethOrchAddr
+	}
+	addr, err = n.Eth.GetServiceURI(uriAddr)
 	if err != nil {
 		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%q", err)
 		return nil, err

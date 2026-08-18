@@ -103,7 +103,13 @@ type orchInfo struct {
 
 func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addr := client.Account().Address
+		// Report the orchestrator's record, not the node account's. On a delegated
+		// wallet the account is not a transcoder, so reading it would return an empty
+		// record and make the CLI show a stale status, stake and LastRewardRound.
+		addr, delegated := s.delegatedOrchestrator(client)
+		if !delegated {
+			addr = client.Account().Address
+		}
 		t, err := client.GetTranscoder(addr)
 		if err != nil {
 			respond500(w, "could not get transcoder")
@@ -451,8 +457,46 @@ func roundInitializedHandler(client eth.LivepeerEthClient) http.Handler {
 }
 
 // Orchestrator registration/activation
+// delegatedOrchestrator returns the on-chain orchestrator this node acts for and true when
+// that differs from the node's own account, i.e. the node runs on a delegated wallet such
+// as a LIP-118 reward caller. It returns false for the common case where the node's own
+// account is the orchestrator.
+func (s *LivepeerServer) delegatedOrchestrator(client eth.LivepeerEthClient) (ethcommon.Address, bool) {
+	if s.LivepeerNode == nil || s.LivepeerNode.RecipientAddr == "" {
+		return ethcommon.Address{}, false
+	}
+	orch := ethcommon.HexToAddress(s.LivepeerNode.RecipientAddr)
+	if orch == client.Account().Address {
+		return ethcommon.Address{}, false
+	}
+	return orch, true
+}
+
+// rejectIfDelegatedWallet blocks actions that the contracts key on msg.sender and that
+// therefore only make sense from the orchestrator's own wallet. Without this guard a node
+// running on a reward caller wallet would send setServiceURI transactions that succeed but
+// write to the caller's key -- the ServiceRegistry has no caller check of its own -- and
+// reward cut / fee share transactions that revert. Returns true when the request was
+// answered and the caller should stop.
+func (s *LivepeerServer) rejectIfDelegatedWallet(w http.ResponseWriter, client eth.LivepeerEthClient) bool {
+	orch, delegated := s.delegatedOrchestrator(client)
+	if !delegated {
+		return false
+	}
+	respond400(w, fmt.Sprintf(
+		"this node runs on wallet %v, which is not orchestrator %v; "+
+			"orchestrator configuration must be sent from the orchestrator's own wallet",
+		client.Account().Address.Hex(), orch.Hex(),
+	))
+	return true
+}
+
 func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.rejectIfDelegatedWallet(w, client) {
+			return
+		}
+
 		t, err := client.GetTranscoder(client.Account().Address)
 		if err != nil {
 			glog.Error(err)
@@ -583,6 +627,10 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 
 func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.rejectIfDelegatedWallet(w, client) {
+			return
+		}
+
 		pixels := r.FormValue("pixelsPerUnit")
 		price := r.FormValue("pricePerUnit")
 		currency := r.FormValue("currency")
@@ -1101,10 +1149,21 @@ func registeredOrchestratorsHandler(client eth.LivepeerEthClient, db *common.DB)
 	})))
 }
 
-func rewardHandler(client eth.LivepeerEthClient) http.Handler {
+func (s *LivepeerServer) rewardHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		glog.Infof("Calling reward")
-		tx, err := client.Reward()
+		orch, delegated := s.delegatedOrchestrator(client)
+
+		var (
+			tx  *ethtypes.Transaction
+			err error
+		)
+		if delegated {
+			glog.Infof("Calling reward for orchestrator %v", orch.Hex())
+			tx, err = client.RewardForTranscoder(orch)
+		} else {
+			glog.Infof("Calling reward")
+			tx, err = client.Reward()
+		}
 		if err != nil {
 			respond500(w, fmt.Sprintf("Error calling reward: %v", err))
 			return
@@ -1115,6 +1174,66 @@ func rewardHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 		glog.Infof("Call to reward successful")
 		respondOk(w, nil)
+	}))
+}
+
+// setRewardCallerHandler authorizes an address to call reward on behalf of this node's
+// account (LIP-118). An empty rewardCaller param unsets any existing authorization.
+func (s *LivepeerServer) setRewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The contract keys the mapping on msg.sender, so this only ever authorizes a
+		// caller for the wallet the node is running on.
+		if s.rejectIfDelegatedWallet(w, client) {
+			return
+		}
+
+		var rewardCaller ethcommon.Address
+		if v := strings.TrimSpace(r.FormValue("rewardCaller")); v != "" {
+			if !ethcommon.IsHexAddress(v) {
+				respond400(w, fmt.Sprintf("invalid reward caller address %v", v))
+				return
+			}
+			rewardCaller = ethcommon.HexToAddress(v)
+		}
+
+		if rewardCaller == (ethcommon.Address{}) {
+			glog.Infof("Unsetting reward caller for %v", client.Account().Address.Hex())
+		} else {
+			glog.Infof("Setting reward caller %v for %v", rewardCaller.Hex(), client.Account().Address.Hex())
+		}
+
+		tx, err := client.SetRewardCaller(rewardCaller)
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		glog.Infof("Reward caller updated")
+		respondOk(w, nil)
+	}))
+}
+
+// rewardCallerHandler returns the address currently authorized to call reward for the
+// orchestrator this node acts for, or the empty string when none is set.
+func (s *LivepeerServer) rewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch, delegated := s.delegatedOrchestrator(client)
+		if !delegated {
+			orch = client.Account().Address
+		}
+		rewardCaller, err := client.GetRewardCaller(orch)
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error getting reward caller: %v", err))
+			return
+		}
+		if rewardCaller == (ethcommon.Address{}) {
+			respondOk(w, []byte(""))
+			return
+		}
+		respondOk(w, []byte(rewardCaller.Hex()))
 	}))
 }
 

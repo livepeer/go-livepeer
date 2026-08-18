@@ -70,6 +70,12 @@ type LivepeerEthClient interface {
 	// Staking
 	Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
+	// Reward caller (LIP-118). RewardForTranscoder is called by an address the
+	// transcoder authorized via SetRewardCaller, so the transcoder's own wallet
+	// can stay offline. Passing the zero address to SetRewardCaller unsets it.
+	SetRewardCaller(rewardCaller ethcommon.Address) (*types.Transaction, error)
+	GetRewardCaller(transcoder ethcommon.Address) (ethcommon.Address, error)
+	RewardForTranscoder(transcoder ethcommon.Address) (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
 	Rebond(unbondingLockID *big.Int) (*types.Transaction, error)
 	RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error)
@@ -1021,7 +1027,23 @@ func (c *client) ProposalVoteWithReason(proposalId *big.Int, support uint8, reas
 }
 
 func (c *client) Reward() (*types.Transaction, error) {
-	addr := c.accountManager.Account().Address
+	return c.rewardFor(c.accountManager.Account().Address, false)
+}
+
+// RewardForTranscoder calls reward on behalf of `transcoder`. The node's account must
+// have been authorized by `transcoder` via SetRewardCaller, otherwise the transaction
+// reverts with "caller must be a reward caller set by the transcoder".
+func (c *client) RewardForTranscoder(transcoder ethcommon.Address) (*types.Transaction, error) {
+	return c.rewardFor(transcoder, true)
+}
+
+// rewardFor computes the transcoder pool position hints for `transcoder` and submits the
+// reward transaction. The hint math is identical for both paths and must always be based
+// on the transcoder's stake, never the caller's. When `delegated` is set the transaction
+// is submitted through rewardForTranscoderWithHint, which resolves the authorized caller
+// on-chain; otherwise the caller is the transcoder itself.
+func (c *client) rewardFor(transcoder ethcommon.Address, delegated bool) (*types.Transaction, error) {
+	addr := transcoder
 
 	tr, err := c.GetTranscoder(addr)
 	if err != nil {
@@ -1065,7 +1087,24 @@ func (c *client) Reward() (*types.Transaction, error) {
 
 	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64()))
 
+	if delegated {
+		return c.bondingManager.RewardForTranscoderWithHint(c.transactOpts(), addr, hints.PosPrev, hints.PosNext)
+	}
+
 	return c.bondingManager.RewardWithHint(c.transactOpts(), hints.PosPrev, hints.PosNext)
+}
+
+// SetRewardCaller authorizes `rewardCaller` to call reward on behalf of the node's
+// account. Passing the zero address unsets any existing authorization. This must be sent
+// from the transcoder's own wallet; the contract keys the mapping on msg.sender.
+func (c *client) SetRewardCaller(rewardCaller ethcommon.Address) (*types.Transaction, error) {
+	return c.bondingManager.SetRewardCaller(c.transactOpts(), rewardCaller)
+}
+
+// GetRewardCaller returns the address `transcoder` authorized to call reward on its
+// behalf, or the zero address if none is set.
+func (c *client) GetRewardCaller(transcoder ethcommon.Address) (ethcommon.Address, error) {
+	return c.bondingManager.TranscoderToRewardCaller(c.callOpts(), transcoder)
 }
 
 func (c *client) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
