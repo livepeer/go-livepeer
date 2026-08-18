@@ -528,7 +528,8 @@ func TestTicketParams(t *testing.T) {
 	// Test insufficient sender reserve error due to maxFloat < EV
 	sm.maxFloat = new(big.Int).Sub(cfg.EV, big.NewInt(1))
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
-	assert.EqualError(err, errInsufficientSenderReserve.Error())
+	assert.ErrorIs(err, errInsufficientSenderReserve)
+	assert.ErrorContains(err, "less than ticketEV")
 
 	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue > txCostWithGasPrice(avg gasPrice)
 	// Set current gasPrice higher than avg gasPrice
@@ -553,7 +554,8 @@ func TestTicketParams(t *testing.T) {
 	require.True(sm.maxFloat.Cmp(txCost) < 0)
 	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) < 0)
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
-	assert.EqualError(err, errInsufficientSenderReserve.Error())
+	assert.ErrorIs(err, errInsufficientSenderReserve)
+	assert.ErrorContains(err, "cannot cover the ticket redemption tx cost")
 
 	// Test lazy evaluation when faceValue > txCostWithGasPrice(current gasPrice)
 	// Set current gasPrice lower than avg gasPrice
@@ -587,7 +589,7 @@ func TestTicketParams(t *testing.T) {
 	sm.maxFloat = big.NewInt(0) // Set maxFloat to some value less than EV
 
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
-	assert.EqualError(err, errInsufficientSenderReserve.Error())
+	assert.ErrorIs(err, errInsufficientSenderReserve)
 }
 
 func TestTxCostMultiplier_UsingFaceValue_ReturnsDefaultMultiplier(t *testing.T) {
@@ -638,7 +640,7 @@ func TestTxCostMultiplier_InsufficientReserve_ReturnsError(t *testing.T) {
 
 	mul, err := r.TxCostMultiplier(sender)
 	assert.Nil(t, mul)
-	assert.EqualError(t, err, errInsufficientSenderReserve.Error())
+	assert.ErrorIs(t, err, errInsufficientSenderReserve)
 }
 
 func TestTxCostMultiplier_ZeroTxCost_Returns_Zero(t *testing.T) {
