@@ -201,6 +201,11 @@ type LivepeerConfig struct {
 	LiveAICapReportInterval    *time.Duration
 	LiveAICapRefreshModels     *string
 	LiveAISaveNSegments        *int
+
+	// Hardware-based selection (gateway-side filtering)
+	HwMinVRAMGB    *int
+	HwIncludeGPUs  *string
+	HwExcludeGPUs  *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -262,6 +267,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultGatewayHost := ""
 	defaultLiveAIHeartbeatInterval := 5 * time.Second
 	defaultLiveAICapReportInterval := 25 * time.Minute
+
+	// Hardware-based selection:
+	defaultHwMinVRAMGB := 0
+	defaultHwIncludeGPUs := ""
+	defaultHwExcludeGPUs := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -461,6 +471,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
 		RemoteSignerAllowNoAuth:    &defaultRemoteSignerAllowNoAuth,
 		RemoteDiscovery:            &defaultRemoteDiscovery,
+
+		// Hardware-based selection:
+		HwMinVRAMGB:   &defaultHwMinVRAMGB,
+		HwIncludeGPUs: &defaultHwIncludeGPUs,
+		HwExcludeGPUs: &defaultHwExcludeGPUs,
 
 		// Gateway logs
 		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
@@ -1226,6 +1241,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
 				}
+			}
+
+			// Set hardware-based selection requirements.
+			hwReqs := server.ParseHardwareRequirements(*cfg.HwMinVRAMGB, *cfg.HwIncludeGPUs, *cfg.HwExcludeGPUs)
+			if hwReqs != nil {
+				server.BroadcastCfg.SetHardwareRequirements(hwReqs)
+				glog.Infof("Hardware selection filter enabled: minVRAM=%dGB includeGPUs=%q excludeGPUs=%q",
+					*cfg.HwMinVRAMGB, *cfg.HwIncludeGPUs, *cfg.HwExcludeGPUs)
 			}
 		}
 
