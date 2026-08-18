@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"encoding/json"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -14,8 +15,7 @@ import (
 	"strings"
 
 	"github.com/livepeer/go-livepeer/build"
-
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 )
@@ -25,7 +25,7 @@ func (w *wizard) read() string {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
 	if err != nil {
-		log.Crit("Failed to read user input", "err", err)
+		glog.Errorf("Failed to read user input: %v", err)
 	}
 	return strings.TrimSpace(text)
 }
@@ -37,7 +37,7 @@ func (w *wizard) readString() string {
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		if text = strings.TrimSpace(text); text != "" {
 			return text
@@ -64,7 +64,7 @@ func (w *wizard) readStringAndValidate(validate func(in string) (string, error))
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		text = strings.TrimSpace(text)
 		validText, err := validate(text)
@@ -94,7 +94,7 @@ func (w *wizard) readDefaultString(def string) string {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
 	if err != nil {
-		log.Crit("Failed to read user input", "err", err)
+		glog.Errorf("Failed to read user input: %v", err)
 	}
 	if text = strings.TrimSpace(text); text != "" {
 		return text
@@ -135,7 +135,7 @@ func (w *wizard) readInt() int {
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		if text = strings.TrimSpace(text); text == "" {
 			continue
@@ -153,7 +153,7 @@ func (w *wizard) readDefaultInt(def int) int {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
 	if err != nil {
-		log.Crit("Failed to read user input", "err", err)
+		glog.Errorf("Failed to read user input: %v", err)
 	}
 	val, err := strconv.Atoi(strings.TrimSpace(text))
 	if err == nil {
@@ -167,7 +167,7 @@ func (w *wizard) readBigInt(prompt string) *big.Int {
 		fmt.Print(fmt.Sprintf("%s - > ", prompt))
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
 		if err != nil {
@@ -182,7 +182,7 @@ func (w *wizard) readDefaultBigInt(def *big.Int) *big.Int {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
 	if err != nil {
-		log.Crit("Failed to read user input", "err", err)
+		glog.Errorf("Failed to read user input: %v", err)
 	}
 	val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
 	if err == nil {
@@ -196,7 +196,7 @@ func (w *wizard) readFloat() float64 {
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		if text = strings.TrimSpace(text); text == "" {
 			continue
@@ -215,7 +215,7 @@ func (w *wizard) readFloatAndValidate(validate func(in float64) (float64, error)
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
 		if err != nil {
-			log.Crit("Failed to read user input", "err", err)
+			glog.Errorf("Failed to read user input: %v", err)
 		}
 		if text = strings.TrimSpace(text); text == "" {
 			continue
@@ -257,7 +257,7 @@ func (w *wizard) readDefaultFloat(def float64) float64 {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
 	if err != nil {
-		log.Crit("Failed to read user input", "err", err)
+		glog.Errorf("Failed to read user input: %v", err)
 	}
 	val, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	if err == nil {
@@ -305,6 +305,27 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 		return "", false
 	}
 
+func (w *wizard) confirm(prompt string) bool {
+	fmt.Printf("%s [Y/n] ", prompt)
+	text := w.read()
+	if text != "Y" {
+		fmt.Println("Aborting.")
+		return false
+	}
+	return true
+}
+
+func (w *wizard) printGasInfo(gasLimit *big.Int, gasPrice *big.Int) {
+	var cost *big.Float
+	if gasPrice != nil {
+		cost = new(big.Float).SetInt(new(big.Int).Mul(gasLimit, gasPrice))
+	} else {
+		cost = new(big.Float).SetInt(new(big.Int).Mul(gasLimit, w.eth.GasPrice()))
+	}
+	fmt.Printf("Estimated TX cost: %v ETH\n", eth.ToETH(cost, big.NewInt(1)))
+}
+
+
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -329,3 +350,42 @@ func httpPost(url string) string {
 
 	return string(result)
 }
+
+type GasEstimationResponse struct {
+	GasLimit *big.Int
+	GasPrice *big.Int
+	Cost     *big.Int
+	Err      string
+}
+
+func (w *wizard) estimateGas(path string, val url.Values) *GasEstimationResponse {
+	var gas *GasEstimationResponse
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v%v", w.host, w.httpPort, path), val)
+	if !ok {
+		glog.Errorf("Error estimating gas: %s", result)
+		return nil
+	}
+	err := json.Unmarshal([]byte(result), &gas)
+	if err != nil {
+		glog.Errorf("Error unmarshaling gas estimation response: %v", err)
+		return nil
+	}
+	if gas.Err != "" {
+		glog.Errorf("Error estimating gas: %v", gas.Err)
+		return nil
+	}
+	return gas
+}
+
+func (w *wizard) confirm(prompt string) bool {
+	fmt.Printf("%s (Y/n)? ", prompt)
+	response := w.read()
+	return strings.ToLower(response) == "y" || response == ""
+}
+
+func (w *wizard) printGasInfo(gas *GasEstimationResponse) {
+	fmt.Printf("Gas Limit: %v\n", gas.GasLimit)
+	fmt.Printf("Gas Price: %v\n", eth.ToETH(new(big.Float).SetInt(gas.GasPrice), big.NewInt(1)))
+	fmt.Printf("Total estimated cost: %v ETH\n", eth.ToETH(new(big.Float).SetInt(new(big.Int).Mul(gas.GasLimit, gas.GasPrice)), big.NewInt(1)))
+}
+
