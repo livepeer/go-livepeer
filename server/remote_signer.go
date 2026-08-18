@@ -38,6 +38,19 @@ const RemoteType_Fixed = "fixed"
 const PipelineLiveVideoToVideo = "live-video-to-video"
 const remoteSignerAuthIDHeader = "Signer-Auth-Id"
 
+// encodeMeterPipeline joins a base pipeline slug with a constrained model ID as
+// "base:model" for Kafka metering. Returns base unchanged when modelID is empty.
+// The OpenMeter collector splits on the first ':' back into pipeline + model_id.
+func encodeMeterPipeline(
+	base string,
+	modelID string,
+) string {
+	if base == "" || modelID == "" {
+		return base
+	}
+	return base + ":" + modelID
+}
+
 // SignOrchestratorInfo handles signing GetOrchestratorInfo requests for multiple orchestrators
 func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
@@ -214,7 +227,7 @@ type authResponse struct {
 	// Unix timestamp (seconds) until which auth is considered valid.
 	// Allows for skipping webhook callbacks until this time is exceeded.
 	Expiry int64 `json:"expiry,omitempty"`
-	// Optional opaque identifier.
+	// Optional opaque identifier for metering attribution.
 	AuthID string `json:"auth_id,omitempty"`
 	// Optional maximum acceptable challenge price.
 	MaxPrice *runner.LiveRunnerPriceInfo `json:"maxPrice,omitempty"`
@@ -736,7 +749,10 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		} else if req.Type == RemoteType_Fixed {
 			pipeline = RemoteType_Fixed
 		}
-		// NB: This could could drop events if tha Kafka queue is full!
+		// Encode constrained model into pipeline as base:model for metering
+		// attribution (OpenMeter collector splits on the first ':').
+		pipeline = encodeMeterPipeline(pipeline, streamParams.Capabilities.ConstrainedModelID())
+		// NB: This could drop events if the Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
 			"session_status":     sessionStatus,
