@@ -103,7 +103,7 @@ func (sd *StreamInfo) cleanup() {
 }
 
 type ExternalCapabilities struct {
-	capm         sync.Mutex
+	capm         sync.RWMutex
 	Capabilities map[string]*ExternalCapability
 	Streams      map[string]*StreamInfo
 }
@@ -189,6 +189,25 @@ func (extCaps *ExternalCapabilities) StreamExists(streamID string) bool {
 	return ok
 }
 
+func (extCaps *ExternalCapabilities) GetCapability(name string) (*ExternalCapability, bool) {
+	extCaps.capm.RLock()
+	defer extCaps.capm.RUnlock()
+
+	capability, ok := extCaps.Capabilities[name]
+	return capability, ok
+}
+
+func (extCaps *ExternalCapabilities) GetCapabilityNames() []string {
+	extCaps.capm.RLock()
+	defer extCaps.capm.RUnlock()
+
+	names := make([]string, 0, len(extCaps.Capabilities))
+	for name := range extCaps.Capabilities {
+		names = append(names, name)
+	}
+	return names
+}
+
 func (extCaps *ExternalCapabilities) RemoveCapability(extCap string) {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
@@ -220,10 +239,12 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 		panic(fmt.Errorf("error converting price: %v", err))
 	}
 	if cap, ok := extCaps.Capabilities[extCap.Name]; ok {
+		cap.Mu.Lock()
 		cap.Url = extCap.Url
 		cap.Capacity = extCap.Capacity
 		cap.price = extCap.price
 		cap.AuthToken = extCap.AuthToken
+		cap.Mu.Unlock()
 	}
 
 	extCaps.Capabilities[extCap.Name] = &extCap
