@@ -305,6 +305,27 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 		return "", false
 	}
 
+func (w *wizard) confirm(prompt string) bool {
+	fmt.Printf("%s [Y/n] ", prompt)
+	text := w.read()
+	if text != "Y" {
+		fmt.Println("Aborting.")
+		return false
+	}
+	return true
+}
+
+func (w *wizard) printGasInfo(gasLimit *big.Int, gasPrice *big.Int) {
+	var cost *big.Float
+	if gasPrice != nil {
+		cost = new(big.Float).SetInt(new(big.Int).Mul(gasLimit, gasPrice))
+	} else {
+		cost = new(big.Float).SetInt(new(big.Int).Mul(gasLimit, w.eth.GasPrice()))
+	}
+	fmt.Printf("Estimated TX cost: %v ETH\n", eth.ToETH(cost, big.NewInt(1)))
+}
+
+
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

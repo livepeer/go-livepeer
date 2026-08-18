@@ -205,6 +205,12 @@ func (w *wizard) getOrchestratorConfigFormValues() url.Values {
 		"currency":       {fmt.Sprintf("%v", currency)},
 		"pixelsPerUnit":  {fmt.Sprintf("%v", pixelsPerUnit)},
 		"serviceURI":     {fmt.Sprintf("%v", serviceURI)},
+		w.printGasInfo(big.NewInt(eth.BondGas), nil)
+		if !w.confirm("Are you sure you want to activate an orchestrator?") {
+			return
+		}
+
+
 	}
 }
 
@@ -221,6 +227,12 @@ func (w *wizard) callReward() {
 
 	if c.Cmp(t.LastRewardRound) == 0 {
 		fmt.Printf("Reward for current round %v already called\n", c)
+		w.printGasInfo(big.NewInt(eth.SetOrchestratorConfigGas), nil)
+		if !w.confirm("Are you sure you want to set the orchestrator config?") {
+			return
+		}
+
+
 		return
 	}
 
@@ -241,6 +253,12 @@ func (w *wizard) vote() {
 		}
 		return in, nil
 	})
+		w.printGasInfo(big.NewInt(eth.RewardGas), nil)
+		if !w.confirm("Are you sure you want to call reward?") {
+			return
+		}
+
+
 
 	var (
 		confirm = "n"
