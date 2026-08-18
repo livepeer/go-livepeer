@@ -768,10 +768,15 @@ func TestLiveRunnerSessionPaymentAcceptsPayment(t *testing.T) {
 	lp.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	var paymentResult lpnet.PaymentResult
-	require.NoError(t, proto.Unmarshal(w.Body.Bytes(), &paymentResult))
-	require.NotNil(t, paymentResult.GetInfo())
-	require.Equal(t, challenge.ManifestID, paymentResult.GetInfo().GetAuthToken().GetSessionId())
+	require.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	paymentResponse, refreshedInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.Equal(t, orch.ServiceURI().String(), paymentResponse.Orchestrator)
+	require.Equal(t, challenge.ManifestID, paymentResponse.ManifestID)
+	require.Equal(t, orch.ServiceURI().JoinPath("apps", "runner-1", "session", challenge.ManifestID, "payment").String(), paymentResponse.PaymentURL)
+	require.Equal(t, challenge.ManifestID, refreshedInfo.GetAuthToken().GetSessionId())
+	require.True(t, proto.Equal(orch.ticketParams, refreshedInfo.GetTicketParams()))
+	require.Equal(t, int64(4), refreshedInfo.GetPriceInfo().GetPricePerUnit())
+	require.Equal(t, int64(1), refreshedInfo.GetPriceInfo().GetPixelsPerUnit())
 
 	balance := orch.Balance(orch.Address(), core.ManifestID(challenge.ManifestID))
 	require.NotNil(t, balance)
