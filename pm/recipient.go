@@ -30,9 +30,9 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 3 gwei
+// Hardcode to 10 gwei for Arbitrum Nitro
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(3), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(10), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
@@ -74,6 +74,7 @@ type TicketParamsConfig struct {
 // GasPriceMonitor defines methods for monitoring gas prices
 type GasPriceMonitor interface {
 	GasPrice() *big.Int
+	MaxGasPrice() *big.Int
 }
 
 // recipient is an implementation of the Recipient interface that
@@ -254,6 +255,12 @@ func (r *recipient) txCost() *big.Int {
 	if gp := r.gpm.GasPrice(); gp != nil {
 		gasPrice = gp
 	}
+
+	// Cap gasPrice at MaxGasPrice if MaxGasPrice is set, is non-zero, and current gas price exceeds it
+	if maxGP := r.gpm.MaxGasPrice(); maxGP != nil && maxGP.Sign() > 0 && gasPrice.Cmp(maxGP) > 0 {
+		gasPrice = maxGP
+	}
+
 	return r.txCostWithGasPrice(gasPrice)
 }
 
