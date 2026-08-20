@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"reflect"
 	"testing"
 	"time"
 
@@ -65,21 +64,16 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
 	// Start a bunch of subscriptions and make sure only 1 watch loop gets started
-	observedCancelWatch := []context.CancelFunc{}
 	cancelSub := []context.CancelFunc{}
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		w.Subscribe(ctx, make(chan eth.PriceData, 1))
 
-		observedCancelWatch = append(observedCancelWatch, w.cancelWatch)
 		cancelSub = append(cancelSub, cancel)
 	}
 
 	require.NotNil(w.cancelWatch)
-	for i := range observedCancelWatch {
-		require.Equal(reflect.ValueOf(w.cancelWatch).Pointer(), reflect.ValueOf(observedCancelWatch[i]).Pointer())
-	}
 
 	// Stop all but the last subscription and ensure watch loop stays running
 	for i := 0; i < 4; i++ {

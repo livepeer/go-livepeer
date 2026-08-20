@@ -435,9 +435,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	hostConfig := &container.HostConfig{
-		Resources: container.Resources{
-			DeviceRequests: gpuOpts.Value(),
-		},
+		DeviceRequests: gpuOpts.Value(),
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
