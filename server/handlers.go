@@ -525,6 +525,23 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			}
 		}
 
+		// Check if already bonded to a different address before attempting to bond
+		delegator, err := client.GetDelegator(client.Account().Address)
+		if err != nil {
+			glog.Error(err)
+			respond500(w, err.Error())
+			return
+		}
+		if delegator != nil && delegator.BondedAmount != nil && delegator.BondedAmount.Cmp(big.NewInt(0)) > 0 {
+			selfAddr := client.Account().Address
+			zeroAddr := ethcommon.Address{}
+			if delegator.DelegateAddress != zeroAddr && delegator.DelegateAddress != selfAddr {
+				msg := fmt.Sprintf("Your wallet is already bonded to %v with %v LPT. You must unbond first before becoming a new orchestrator.", delegator.DelegateAddress.Hex(), delegator.BondedAmount)
+				respond400(w, msg)
+				return
+			}
+		}
+
 		amountStr := r.FormValue("amount")
 		if amountStr != "" {
 			amount, err := common.ParseBigInt(amountStr)
