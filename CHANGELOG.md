@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.2
+
+### Breaking Changes 🚨🚨
+
+* CLI: Privileged HTTP endpoints on port 7935 now require `POST`.
+* CLI: Routes on port 7935 that submit Ethereum transactions, sign messages, or change gas controls are disabled by default unless the node is started with `-enableCliTxRoutes`
+
 ## v0.9.1
 
 * [#4008](https://github.com/livepeer/go-livepeer/pull/4008) runner: Add a session-scoped payment URL to the runner challenge.
