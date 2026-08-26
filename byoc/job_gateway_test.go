@@ -426,3 +426,15 @@ func TestSetupGatewayJob(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, gatewayJob)
 }
+
+func TestEncodeJobSig(t *testing.T) {
+	// Empty signatures occur in offchain mode (broadcaster has no Eth keystore).
+	// The encoded form must be empty so the orchestrator's hex.DecodeString
+	// succeeds and VerifySig short-circuits to true.
+	assert.Equal(t, "", encodeJobSig(nil))
+	assert.Equal(t, "", encodeJobSig([]byte{}))
+
+	// Non-empty signatures get the "0x" prefix.
+	sig := []byte{0xde, 0xad, 0xbe, 0xef}
+	assert.Equal(t, "0xdeadbeef", encodeJobSig(sig))
+}
