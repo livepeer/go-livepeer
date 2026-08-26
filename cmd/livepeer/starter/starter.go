@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	Network                    *string
 	RtmpAddr                   *string
 	CliAddr                    *string
+	CliTxRoutes                *bool
 	HttpAddr                   *string
 	ServiceAddr                *string
 	Nodes                      *string
@@ -209,6 +210,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetwork := "offchain"
 	defaultRtmpAddr := ""
 	defaultCliAddr := ""
+	defaultCliTxRoutes := false
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
 	defaultNodes := ""
@@ -340,6 +342,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Network:      &defaultNetwork,
 		RtmpAddr:     &defaultRtmpAddr,
 		CliAddr:      &defaultCliAddr,
+		CliTxRoutes:  &defaultCliTxRoutes,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
 		Nodes:        &defaultNodes,
@@ -1825,6 +1828,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if n.NodeType == core.RemoteSignerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
 	}
+	if isWildcardIPAddr(*cfg.CliAddr) {
+		glog.Warningf("Binding -cliAddr to a wildcard address (%s) exposes the CLI server on all network interfaces; use a loopback address or restrict access with a firewall", *cfg.CliAddr)
+	}
 
 	// Apply default capabilities if not running as a transcoder.
 	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
@@ -1923,6 +1929,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Current ManifestID will be available over ", *cfg.HttpAddr)
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
+	s.CliTxRoutes = *cfg.CliTxRoutes
 	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
 		s.StartCliWebserver(srv)
@@ -2345,12 +2352,30 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 		return defaultHost + ":" + defaultPort
 	}
 
+	if ip := net.ParseIP(trimIPv6Brackets(addr)); ip != nil {
+		return net.JoinHostPort(ip.String(), defaultPort)
+	}
 	if addr[0] == ':' {
 		return defaultHost + addr
 	}
-	// not IPv6 safe
 	if !strings.Contains(addr, ":") {
 		return addr + ":" + defaultPort
+	}
+	return addr
+}
+
+func isWildcardIPAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = trimIPv6Brackets(addr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
+}
+
+func trimIPv6Brackets(addr string) string {
+	if len(addr) >= 2 && addr[0] == '[' && addr[len(addr)-1] == ']' {
+		return addr[1 : len(addr)-1]
 	}
 	return addr
 }

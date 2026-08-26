@@ -22,7 +22,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
-	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
+	github.com/livepeer/go-tools v0.3.6-0.20260826170350-a5f4061b169f
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
 	github.com/livepeer/lpms v0.0.0-20260310011836-c44af7253bc9
 	github.com/livepeer/m3u8 v0.11.1
@@ -122,6 +122,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.2.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/gorilla/websocket v1.4.2
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect

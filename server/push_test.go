@@ -14,8 +14,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,13 +38,145 @@ import (
 	"github.com/livepeer/lpms/vidplayer"
 )
 
+func validPushSegment(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile("./test.flv")
+	require.NoError(t, err)
+	return data
+}
+
 func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.ResponseRecorder) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.HandlePush(w, r)
 	})
-	reader := strings.NewReader("")
+	data, err := os.ReadFile("./test.flv")
+	if err != nil {
+		panic(err)
+	}
+	reader := strings.NewReader(string(data))
 	writer := httptest.NewRecorder()
 	return handler, reader, writer
+}
+
+func TestPush_InvalidMediaAndLoopbackObjectStoreAreRejected(t *testing.T) {
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+
+	var requests atomic.Int32
+	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer store.Close()
+
+	config, err := json.Marshal(authWebhookResponse{
+		ManifestID:  "protected-stream",
+		Profiles:    []ffmpeg.JsonProfile{},
+		ObjectStore: "s3+http://access:secret@" + strings.TrimPrefix(store.URL, "http://") + "/bucket",
+	})
+	require.NoError(t, err)
+
+	push := func(seq string, body io.Reader, withConfig bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/live/protected-stream/"+seq+".ts", body)
+		if withConfig {
+			req.Header.Set(LIVERPEER_TRANSCODE_CONFIG_HEADER, string(config))
+		}
+		w := httptest.NewRecorder()
+		s.HandlePush(w, req)
+		return w
+	}
+
+	w := push("1", strings.NewReader(`{"not":"media"}`), true)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid input media")
+	assert.Zero(t, requests.Load())
+	assert.Empty(t, s.rtmpConnections)
+
+	w = push("2", bytes.NewReader(validPushSegment(t)), true)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "localhost downloads are blocked")
+	assert.Zero(t, requests.Load())
+
+	w = push("3", strings.NewReader(`{"not":"media"}`), false)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid input media")
+	assert.Zero(t, requests.Load())
+}
+
+func TestPush_HeaderRecordObjectStoreRejectsLoopback(t *testing.T) {
+	s, cancel := setupServerWithCancel()
+	oldJsonPlaylistQuitTimeout := core.JsonPlaylistQuitTimeout
+	core.JsonPlaylistQuitTimeout = 0
+	defer func() { core.JsonPlaylistQuitTimeout = oldJsonPlaylistQuitTimeout }()
+	defer serverCleanup(s)
+	defer cancel()
+
+	oldRecordSegmentsMaxTimeout := recordSegmentsMaxTimeout
+	recordSegmentsMaxTimeout = 50 * time.Millisecond
+	defer func() { recordSegmentsMaxTimeout = oldRecordSegmentsMaxTimeout }()
+
+	var requests atomic.Int32
+	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer store.Close()
+
+	config, err := json.Marshal(authWebhookResponse{
+		ManifestID:        "protected-recording",
+		Profiles:          []ffmpeg.JsonProfile{},
+		RecordObjectStore: "s3+http://access:secret@" + strings.TrimPrefix(store.URL, "http://") + "/bucket",
+	})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/live/protected-recording/1.ts", bytes.NewReader(validPushSegment(t)))
+	req.Header.Set(LIVERPEER_TRANSCODE_CONFIG_HEADER, string(config))
+	w := httptest.NewRecorder()
+	s.HandlePush(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Never(t, func() bool { return requests.Load() > 0 }, 100*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestPush_HeaderObjectStoreRejectsUnsafeDriversBeforeCreatingStream(t *testing.T) {
+	for _, field := range []string{"objectStore", "recordObjectStore"} {
+		for _, scheme := range []string{"path", "file", "gs"} {
+			t.Run(field+"/"+scheme, func(t *testing.T) {
+				s, cancel := setupServerWithCancel()
+				defer serverCleanup(s)
+				defer cancel()
+
+				storePath := filepath.Join(t.TempDir(), "store")
+				storeURL := storePath
+				if scheme == "file" {
+					storeURL = (&url.URL{Scheme: "file", Path: storePath}).String()
+				} else if scheme == "gs" {
+					storeURL = "gs://credentials@bucket"
+				}
+				config, err := json.Marshal(map[string]interface{}{
+					"manifestID": "local-store",
+					"profiles":   []ffmpeg.JsonProfile{},
+					field:        storeURL,
+				})
+				require.NoError(t, err)
+
+				req := httptest.NewRequest(http.MethodPost, "/live/local-store/1.ts", bytes.NewReader(validPushSegment(t)))
+				req.Header.Set(LIVERPEER_TRANSCODE_CONFIG_HEADER, string(config))
+				w := httptest.NewRecorder()
+				s.HandlePush(w, req)
+
+				require.Equal(t, http.StatusInternalServerError, w.Code)
+				assert.Contains(t, w.Body.String(), "Could not create stream ID")
+				assert.Empty(t, s.rtmpConnections)
+				_, err = os.Stat(storePath)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
+	}
 }
 
 func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
@@ -155,12 +289,13 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
+	segmentSize := uint64(len(validPushSegment(t)))
 	// wait for any earlier tests to complete
 	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
-	reader := strings.NewReader("InsteadOf.TS")
+	reader := bytes.NewReader(validPushSegment(t))
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
 
@@ -176,7 +311,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	}
 
 	// Create stub server
-	ts, mux := stubTLSServer()
+	ts, mux := stubNonLoopbackTLSServer(t)
 	defer ts.Close()
 
 	segPath := "/transcoded/segment.ts"
@@ -255,7 +390,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
-	assert.Equal(uint64(12), cxn.sourceBytes)
+	assert.Equal(segmentSize, cxn.sourceBytes)
 	assert.Equal(uint64(0), cxn.transcodedBytes)
 
 	bsm.trustedPool.sel.Clear()
@@ -279,7 +414,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	bsm.trustedPool.sel.Add([]*BroadcastSession{sess})
 
 	reader.Seek(0, 0)
-	reader = strings.NewReader("InsteadOf.TS")
+	reader = bytes.NewReader(validPushSegment(t))
 	req = httptest.NewRequest("POST", "/live/mani/12.ts", reader)
 	w = httptest.NewRecorder()
 	req.Header.Set("Accept", "multipart/mixed")
@@ -314,7 +449,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
-	assert.Equal(uint64(36), cxn.sourceBytes)
+	assert.Equal(3*segmentSize, cxn.sourceBytes)
 	assert.Equal(uint64(44), cxn.transcodedBytes)
 
 	// No sessions error
@@ -402,13 +537,13 @@ func TestPush_ShouldUpdateLastUsed(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
+	req := httptest.NewRequest("POST", "/live/mani1/1.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp := w.Result()
 	resp.Body.Close()
 	lu := s.rtmpConnections["mani1"].lastUsed
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
+	req = httptest.NewRequest("POST", "/live/mani1/1.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp = w.Result()
 	resp.Body.Close()
@@ -421,7 +556,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.BroadcasterNode
-	reader := strings.NewReader("")
+	reader := bytes.NewReader(validPushSegment(t))
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -474,7 +609,7 @@ func TestPush_MP4(t *testing.T) {
 	s.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	defer func() { s.rtmpConnections = map[core.ManifestID]*rtmpConnection{} }()
 	segHandler := getHLSSegmentHandler(s)
-	ts, mux := stubTLSServer()
+	ts, mux := stubNonLoopbackTLSServer(t)
 	defer ts.Close()
 
 	// sometimes LivepeerServer needs time  to start
@@ -511,7 +646,6 @@ func TestPush_MP4(t *testing.T) {
 
 	// Check default response: should be empty, with OS populated
 	handler, reader, writer := requestSetup(s)
-	reader = strings.NewReader("a video file goes here")
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 	handler.ServeHTTP(writer, req)
 	resp := writer.Result()
@@ -525,7 +659,7 @@ func TestPush_MP4(t *testing.T) {
 	assert.Nil(err)
 	body, err = segHandler(vpath)
 	assert.Nil(err)
-	assert.Equal("a video file goes here", string(body))
+	assert.Equal(validPushSegment(t), body)
 	// Check OS for transcoded rendition
 	vpath, err = url.Parse("/stream/name/P720p25fps16x9/1.mp4")
 	assert.Nil(err)
@@ -547,7 +681,7 @@ func TestPush_MP4(t *testing.T) {
 	// (That is handled within LPMS, so assume it's fine from here.)
 
 	// Check multipart response for MP4s
-	reader = strings.NewReader("a new video goes here")
+	reader.Seek(0, 0)
 	writer = httptest.NewRecorder()
 	req = httptest.NewRequest("POST", "/live/name/2.mp4", reader)
 	req.Header.Set("Accept", "multipart/mixed")
@@ -751,7 +885,7 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	AuthWebhookURL = mustParseUrl(t, ts.URL)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/extmid1/1.ts", nil)
+	req := httptest.NewRequest("POST", "/live/extmid1/1.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp := w.Result()
 	resp.Body.Close()
@@ -787,7 +921,7 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 
 	s, cancel := setupServerWithCancel()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani3/1.ts", nil)
+	req := httptest.NewRequest("POST", "/live/mani3/1.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp := w.Result()
 	resp.Body.Close()
@@ -816,7 +950,7 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani2/1.ts", nil)
+	req := httptest.NewRequest("POST", "/live/mani2/1.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp := w.Result()
 	resp.Body.Close()
@@ -843,6 +977,7 @@ func TestPush_ResetWatchdog(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
+	validMedia := validPushSegment(t)
 
 	waitBarrier := func(ch chan struct{}) bool {
 		select {
@@ -876,7 +1011,7 @@ func TestPush_ResetWatchdog(t *testing.T) {
 
 	// sanity check : normal flow should result in a single cancel
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/name/0.ts", nil)
+	req := httptest.NewRequest("POST", "/live/name/0.ts", bytes.NewReader(validMedia))
 	s.HandlePush(w, req)
 	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
 	assert.True(wgWait(&wg), "watchdog did not exit")
@@ -901,7 +1036,12 @@ func TestPush_ResetWatchdog(t *testing.T) {
 	cancelCount = 0
 	resetCount = 0
 	pushFuncBarrier := make(chan struct{})
-	go func() { s.HandlePush(w, req); pushFuncBarrier <- struct{}{} }()
+	go func() {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/live/name/0.ts", bytes.NewReader(validMedia))
+		s.HandlePush(w, req)
+		pushFuncBarrier <- struct{}{}
+	}()
 
 	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
 	assert.Equal(0, cancelCount)
@@ -927,7 +1067,12 @@ func TestPush_ResetWatchdog(t *testing.T) {
 	// check lastUsed is not reset if session disappears
 	cancelCount = 0
 	resetCount = 0
-	go func() { s.HandlePush(w, req); pushFuncBarrier <- struct{}{} }()
+	go func() {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/live/name/0.ts", bytes.NewReader(validMedia))
+		s.HandlePush(w, req)
+		pushFuncBarrier <- struct{}{}
+	}()
 	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
 	assert.Equal(0, cancelCount)
 	assert.Equal(1, resetCount)
@@ -1129,7 +1274,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = mustParseUrl(t, whts.URL)
 
-	ts, mux := stubTLSServer()
+	ts, mux := stubNonLoopbackTLSServer(t)
 	defer ts.Close()
 
 	// sometimes LivepeerServer needs time  to start
@@ -1169,7 +1314,6 @@ func TestPush_OSPerStream(t *testing.T) {
 	})
 
 	handler, reader, w := requestSetup(s)
-	reader = strings.NewReader("segmentbody")
 	req := httptest.NewRequest("POST", "/live/sess1/1.ts", reader)
 	req.Header.Set("Accept", "multipart/mixed")
 	handler.ServeHTTP(w, req)
@@ -1186,7 +1330,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(fi)
 	body, _ := ioutil.ReadAll(fi.Body)
-	assert.Equal("segmentbody", string(body))
+	assert.Equal(validPushSegment(t), body)
 	assert.Equal("OSTEST01/source/1.ts", fi.Name)
 
 	fi, err = sess1.ReadData(ctx, "OSTEST01/P720p25fps16x9/1.ts")
@@ -1205,7 +1349,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(fi)
 	body, _ = ioutil.ReadAll(fi.Body)
-	assert.Equal("segmentbody", string(body))
+	assert.Equal(validPushSegment(t), body)
 
 	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/P720p25fps16x9/1.ts", lpmon.NodeID))
 	assert.Nil(err)
@@ -1283,7 +1427,7 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	sendSeg := func(url string) {
-		reader := strings.NewReader("")
+		reader := bytes.NewReader(validPushSegment(t))
 		req := httptest.NewRequest("POST", url, reader)
 		h, pattern := s.HTTPMux.Handler(req)
 		assert.Equal("/live/", pattern)
@@ -1318,7 +1462,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	core.JsonPlaylistQuitTimeout = 0 * time.Second
 
-	reader := strings.NewReader("InsteadOf.TS")
+	reader := bytes.NewReader(validPushSegment(t))
 	oldRI := httpPushTimeout
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
@@ -1359,7 +1503,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	time.Sleep(4 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/extmid2/0.ts", reader)
+	req = httptest.NewRequest("POST", "/live/extmid2/0.ts", bytes.NewReader(validPushSegment(t)))
 	s.HandlePush(w, req)
 	resp = w.Result()
 	assert.Equal(503, resp.StatusCode)
@@ -1393,6 +1537,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	// need real video data for fast verification
 	transcodeddata, err := ioutil.ReadFile("../core/test.ts")
 	assert.NoError(err)
+	segmentSize := uint64(len(transcodeddata))
 	goodHash, err := ioutil.ReadFile("../core/test.phash")
 	assert.NoError(err)
 
@@ -1402,7 +1547,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
-	reader := strings.NewReader("InsteadOf.TS")
+	reader := bytes.NewReader(transcodeddata)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
 
@@ -1418,7 +1563,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	}
 
 	// Create stub server
-	ts, mux := stubTLSServer()
+	ts, mux := stubNonLoopbackTLSServer(t)
 	defer ts.Close()
 
 	segPath := "/transcoded/segment.ts"
@@ -1440,7 +1585,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		w.Write(goodHash)
 	})
 
-	ts2, mux2 := stubTLSServer()
+	ts2, mux2 := stubNonLoopbackTLSServer(t)
 	defer ts2.Close()
 	tSegData2 := []*net.TranscodedSegmentData{{Url: ts2.URL + segPath, Pixels: 100, PerceptualHashUrl: ts2.URL + segPath + ".phash"}}
 	tr2 := dummyRes(tSegData2)
@@ -1462,7 +1607,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		unverifiedHashCalled++
 	})
 
-	ts3, mux3 := stubTLSServer()
+	ts3, mux3 := stubNonLoopbackTLSServer(t)
 	defer ts3.Close()
 	tSegData3 := []*net.TranscodedSegmentData{{Url: ts3.URL + segPath, Pixels: 100, PerceptualHashUrl: ts3.URL + segPath + ".phash"}}
 	tr3 := dummyRes(tSegData3)
@@ -1556,11 +1701,11 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
-	assert.Equal(uint64(12), cxn.sourceBytes)
+	assert.Equal(segmentSize, cxn.sourceBytes)
 
 	// now make unverified to respond with bad hash
 	unverifiedHash = []byte{0}
-	reader = strings.NewReader("InsteadOf.TS")
+	reader = bytes.NewReader(transcodeddata)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
 
@@ -1593,15 +1738,15 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
-	assert.Equal(uint64(12*2), cxn.sourceBytes)
+	assert.Equal(2*segmentSize, cxn.sourceBytes)
 	assert.Equal(2, unverifiedHashCalled)
 	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
 	assert.Equal(0, bsm.untrustedPool.sus.count)
 }
 
-func createStubTranscoder(transcodedSegData []byte, transcodedSegPhash []byte, tCallback func()) *httptest.Server {
+func createStubTranscoder(t *testing.T, transcodedSegData []byte, transcodedSegPhash []byte, tCallback func()) *httptest.Server {
 	// Create stub server
-	ts, mux := stubTLSServer()
+	ts, mux := stubNonLoopbackTLSServer(t)
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
 		return &net.TranscodeResult{
@@ -1687,16 +1832,16 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 
 	lastUsedT := ""
 
-	trustedT := createStubTranscoder(segmentgooddata, goodHash, func() { lastUsedT = "trusted" })
+	trustedT := createStubTranscoder(t, segmentgooddata, goodHash, func() { lastUsedT = "trusted" })
 	defer trustedT.Close()
 
-	untrustedTBadSegment := createStubTranscoder(segmentbaddata, goodHash, func() { lastUsedT = "untrustedBadSegment" })
+	untrustedTBadSegment := createStubTranscoder(t, segmentbaddata, goodHash, func() { lastUsedT = "untrustedBadSegment" })
 	defer untrustedTBadSegment.Close()
 
-	untrustedTBadHash := createStubTranscoder(segmentgooddata, []byte{1, 2, 3}, func() { lastUsedT = "untrustedBadHash" })
+	untrustedTBadHash := createStubTranscoder(t, segmentgooddata, []byte{1, 2, 3}, func() { lastUsedT = "untrustedBadHash" })
 	defer untrustedTBadHash.Close()
 
-	untrustedTGood := createStubTranscoder(segmentgooddata, goodHash, func() { lastUsedT = "untrustedGood" })
+	untrustedTGood := createStubTranscoder(t, segmentgooddata, goodHash, func() { lastUsedT = "untrustedGood" })
 	defer untrustedTGood.Close()
 
 	trustedSess := StubBroadcastSession(trustedT.URL)
@@ -1726,12 +1871,10 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 		core.JsonPlaylistQuitTimeout = oldjpqt
 	}()
 	core.JsonPlaylistQuitTimeout = 0 * time.Second
-	reader := strings.NewReader("InsteadOf.TS")
-
 	// pass sessions in reverse order because LIFO selector will pick up in reverse order
 	bsm := initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessGood, untrustedSessBadSegment}, 1)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
+	req := httptest.NewRequest("POST", "/live/mani/17.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp := w.Result()
@@ -1743,7 +1886,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 
 	// check that untrusted good session is used for next segment
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1754,7 +1897,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 	// reinit and check that 'bad hash' session causes suspension as well
 	bsm = initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessGood, untrustedSessBadHash}, 1)
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1765,7 +1908,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 	// check that trusted session is used, when both untrusted sessions are bad
 	bsm = initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessBadSegment, untrustedSessBadHash}, 1)
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1776,7 +1919,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 
 	// check that trusted session is used for next segment in the above case
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/19.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/19.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1789,7 +1932,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 		untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood,
 		untrustedSessGood, untrustedSessGood, untrustedSessGood}, math.MaxUint)
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1798,7 +1941,7 @@ func TestPush_FastVerificationFlow(t *testing.T) {
 	assert.NotEqual("trusted", lastUsedT)
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/live/mani/19.ts", reader)
+	req = httptest.NewRequest("POST", "/live/mani/19.ts", bytes.NewReader(segmentgooddata))
 	req.Header.Set("Accept", "multipart/mixed")
 	srv.HandlePush(w, req)
 	resp = w.Result()
@@ -1907,7 +2050,7 @@ func TestPush_SlicePass(t *testing.T) {
 	s.rtmpConnections["mani"] = cxn
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani/18.ts", nil)
+	req := httptest.NewRequest("POST", "/live/mani/18.ts", bytes.NewReader(validPushSegment(t)))
 	req.Header.Set("Accept", "multipart/mixed")
 	req.Header.Set("Content-Slice-From", "100")
 	req.Header.Set("Content-Slice-To", "200")
