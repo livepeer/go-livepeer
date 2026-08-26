@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -210,6 +211,11 @@ func (w *wizard) orchestratorStats() {
 		glog.Errorf("Error getting broadcaster prices: %v", err)
 	}
 
+	rewardCaller := strings.TrimSpace(httpGet(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort)))
+	if rewardCaller == "" {
+		rewardCaller = "none"
+	}
+
 	fmt.Println("+------------------+")
 	fmt.Println("|ORCHESTRATOR STATS|")
 	fmt.Println("+------------------+")
@@ -223,6 +229,7 @@ func (w *wizard) orchestratorStats() {
 		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		{"Fee Cut (%)", eth.FormatPerc(flipPerc(t.FeeShare))},
 		{"Last Reward Round", t.LastRewardRound.String()},
+		{"Reward Caller", rewardCaller},
 		{"Base price per pixel", formatPricePerPixel(priceInfo)},
 		{"Base price for broadcasters", b_prices},
 	}

@@ -103,8 +103,8 @@ type orchInfo struct {
 
 func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addr := client.Account().Address
-		t, err := client.GetTranscoder(addr)
+		// Report the orchestrator's record; a reward caller account's is empty.
+		t, err := client.GetTranscoder(s.orchestratorAddr(client))
 		if err != nil {
 			respond500(w, "could not get transcoder")
 			return
@@ -451,6 +451,39 @@ func roundInitializedHandler(client eth.LivepeerEthClient) http.Handler {
 }
 
 // Orchestrator registration/activation
+
+// orchestratorAddr returns the on-chain orchestrator this node acts for: -ethOrchAddr when
+// set, otherwise the node's own account.
+func (s *LivepeerServer) orchestratorAddr(client eth.LivepeerEthClient) ethcommon.Address {
+	if s.LivepeerNode != nil && s.LivepeerNode.RecipientAddr != "" {
+		return ethcommon.HexToAddress(s.LivepeerNode.RecipientAddr)
+	}
+	return client.Account().Address
+}
+
+// isOrchestratorAccount reports whether the node's account is the orchestrator itself, i.e.
+// -ethOrchAddr is unset or equals the account.
+func (s *LivepeerServer) isOrchestratorAccount(client eth.LivepeerEthClient) bool {
+	return s.orchestratorAddr(client) == client.Account().Address
+}
+
+// mustBeOrchestratorAccount rejects requests unless the node's account is the orchestrator.
+// The wrapped handlers send transactions the contracts key on msg.sender; setServiceURI and
+// setRewardCaller have no caller check and would silently write to the wrong key.
+func (s *LivepeerServer) mustBeOrchestratorAccount(client eth.LivepeerEthClient, h http.Handler) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.isOrchestratorAccount(client) {
+			respond400(w, fmt.Sprintf(
+				"node account %v is not orchestrator %v; "+
+					"orchestrator configuration must be sent from the orchestrator's own account",
+				client.Account().Address.Hex(), s.orchestratorAddr(client).Hex(),
+			))
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+}
+
 func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t, err := client.GetTranscoder(client.Account().Address)
@@ -1101,10 +1134,20 @@ func registeredOrchestratorsHandler(client eth.LivepeerEthClient, db *common.DB)
 	})))
 }
 
-func rewardHandler(client eth.LivepeerEthClient) http.Handler {
+func (s *LivepeerServer) rewardHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		glog.Infof("Calling reward")
-		tx, err := client.Reward()
+		var (
+			tx  *ethtypes.Transaction
+			err error
+		)
+		if !s.isOrchestratorAccount(client) {
+			orch := s.orchestratorAddr(client)
+			glog.Infof("Calling reward for orchestrator %v", orch.Hex())
+			tx, err = client.RewardForTranscoder(orch)
+		} else {
+			glog.Infof("Calling reward")
+			tx, err = client.Reward()
+		}
 		if err != nil {
 			respond500(w, fmt.Sprintf("Error calling reward: %v", err))
 			return
@@ -1115,6 +1158,56 @@ func rewardHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 		glog.Infof("Call to reward successful")
 		respondOk(w, nil)
+	}))
+}
+
+// setRewardCallerHandler authorizes an address to call reward on behalf of this node's
+// account (LIP-118). An empty rewardCaller param unsets any existing authorization.
+func (s *LivepeerServer) setRewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rewardCaller ethcommon.Address
+		if v := strings.TrimSpace(r.PostFormValue("rewardCaller")); v != "" {
+			if !ethcommon.IsHexAddress(v) {
+				respond400(w, fmt.Sprintf("invalid reward caller address %v", v))
+				return
+			}
+			rewardCaller = ethcommon.HexToAddress(v)
+		}
+
+		if rewardCaller == (ethcommon.Address{}) {
+			glog.Infof("Unsetting reward caller for %v", client.Account().Address.Hex())
+		} else {
+			glog.Infof("Setting reward caller %v for %v", rewardCaller.Hex(), client.Account().Address.Hex())
+		}
+
+		tx, err := client.SetRewardCaller(rewardCaller)
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		glog.Infof("Reward caller updated")
+		respondOk(w, nil)
+	}))
+}
+
+// rewardCallerHandler returns the address currently authorized to call reward for the
+// orchestrator this node acts for, or the empty string when none is set.
+func (s *LivepeerServer) rewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rewardCaller, err := client.GetRewardCaller(s.orchestratorAddr(client))
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error getting reward caller: %v", err))
+			return
+		}
+		if rewardCaller == (ethcommon.Address{}) {
+			respondOk(w, []byte(""))
+			return
+		}
+		respondOk(w, []byte(rewardCaller.Hex()))
 	}))
 }
 

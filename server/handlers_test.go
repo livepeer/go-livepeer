@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // Status
@@ -1068,17 +1069,27 @@ func TestDelegatorInfoHandler(t *testing.T) {
 	assert.Contains(body, `"StartRound":4`)
 }
 
+// On the orchestrator's own account RecipientAddr equals the account, so /reward must
+// keep calling reward() rather than the rewardForTranscoder path.
 func TestRewardHandler(t *testing.T) {
 	assert := assert.New(t)
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+
+	n, err := core.NewLivepeerNode(nil, "", nil)
+	require.NoError(t, err)
+	n.RecipientAddr = account.Hex()
 
 	client := &eth.MockClient{}
-	handler := rewardHandler(client)
+	client.On("Account").Return(accounts.Account{Address: account})
 	client.On("Reward").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	status, _ := post(handler)
+	s := &LivepeerServer{LivepeerNode: n}
+	status, _ := post(s.rewardHandler(client))
 
 	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "Reward")
+	client.AssertNotCalled(t, "RewardForTranscoder", mock.Anything)
 }
 
 // Eth
@@ -1976,4 +1987,130 @@ func mockBigInt(args mock.Arguments) (*big.Int, error) {
 
 func trim(str []byte) string {
 	return strings.TrimSpace(string(str))
+}
+
+func TestSetRewardCallerHandler(t *testing.T) {
+	caller := ethcommon.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	tests := []struct {
+		name       string
+		form       url.Values
+		wantStatus int
+		wantSet    *ethcommon.Address
+	}{
+		{
+			name:       "sets the reward caller",
+			form:       url.Values{"rewardCaller": {caller.Hex()}},
+			wantStatus: http.StatusOK,
+			wantSet:    &caller,
+		},
+		{
+			name:       "empty value unsets via the zero address",
+			form:       url.Values{"rewardCaller": {""}},
+			wantStatus: http.StatusOK,
+			wantSet:    &ethcommon.Address{},
+		},
+		{
+			name:       "missing param unsets via the zero address",
+			form:       url.Values{},
+			wantStatus: http.StatusOK,
+			wantSet:    &ethcommon.Address{},
+		},
+		{
+			name:       "rejects a malformed address",
+			form:       url.Values{"rewardCaller": {"not-an-address"}},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			client := &eth.MockClient{}
+			s := &LivepeerServer{}
+			handler := s.setRewardCallerHandler(client)
+
+			client.On("Account").Return(accounts.Account{})
+			client.On("SetRewardCaller", mock.Anything).Return(nil, nil)
+			client.On("CheckTx", mock.Anything).Return(nil)
+
+			status, _ := postForm(handler, tt.form)
+			assert.Equal(tt.wantStatus, status)
+
+			if tt.wantSet != nil {
+				client.AssertCalled(t, "SetRewardCaller", *tt.wantSet)
+			} else {
+				client.AssertNumberOfCalls(t, "SetRewardCaller", 0)
+			}
+		})
+	}
+}
+
+// A node running on a reward caller account must not send orchestrator configuration
+// transactions. setServiceURI and setRewardCaller have no on-chain caller check, so they
+// would silently succeed against the wrong key.
+func TestMustBeOrchestratorAccount(t *testing.T) {
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	tests := []struct {
+		name          string
+		recipientAddr ethcommon.Address
+		wantStatus    int
+		wantWrapped   bool
+	}{
+		{"orchestrator account passes through", account, http.StatusOK, true},
+		{"reward caller account is rejected", orch, http.StatusBadRequest, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			n, err := core.NewLivepeerNode(nil, "", nil)
+			require.NoError(t, err)
+			n.RecipientAddr = tt.recipientAddr.Hex()
+			s := &LivepeerServer{LivepeerNode: n}
+
+			client := &eth.MockClient{}
+			client.On("Account").Return(accounts.Account{Address: account})
+
+			wrapped := false
+			h := s.mustBeOrchestratorAccount(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				wrapped = true
+			}))
+
+			status, body := postForm(h, url.Values{})
+
+			assert.Equal(tt.wantStatus, status)
+			assert.Equal(tt.wantWrapped, wrapped)
+			if !tt.wantWrapped {
+				assert.Contains(body, orch.Hex())
+			}
+		})
+	}
+}
+
+// On a reward caller account /reward must call rewardForTranscoder for the orchestrator
+// rather than reward() for the node's own account, which is not a transcoder.
+func TestRewardHandler_RewardCallerAccount(t *testing.T) {
+	assert := assert.New(t)
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	n, err := core.NewLivepeerNode(nil, "", nil)
+	require.NoError(t, err)
+	n.RecipientAddr = orch.Hex()
+
+	client := &eth.MockClient{}
+	client.On("Account").Return(accounts.Account{Address: account})
+	client.On("RewardForTranscoder", orch).Return(nil, nil)
+	client.On("Reward").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	s := &LivepeerServer{LivepeerNode: n}
+	status, _ := post(s.rewardHandler(client))
+
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "RewardForTranscoder", orch)
+	client.AssertNumberOfCalls(t, "Reward", 0)
 }
