@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"reflect"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/livepeer/go-livepeer/eth"
@@ -64,22 +64,18 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 
 	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
-	// Start a bunch of subscriptions and make sure only 1 watch loop gets started
-	observedCancelWatch := []context.CancelFunc{}
+	// Start a bunch of subscriptions and make sure the watch loop gets started.
+	// TestPriceFeedWatcher_SingleWatchLoop covers that only 1 loop is started.
 	cancelSub := []context.CancelFunc{}
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		w.Subscribe(ctx, make(chan eth.PriceData, 1))
 
-		observedCancelWatch = append(observedCancelWatch, w.cancelWatch)
 		cancelSub = append(cancelSub, cancel)
 	}
 
 	require.NotNil(w.cancelWatch)
-	for i := range observedCancelWatch {
-		require.Equal(reflect.ValueOf(w.cancelWatch).Pointer(), reflect.ValueOf(observedCancelWatch[i]).Pointer())
-	}
 
 	// Stop all but the last subscription and ensure watch loop stays running
 	for i := 0; i < 4; i++ {
@@ -97,6 +93,34 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 	defer cancel()
 	w.Subscribe(ctx, make(chan eth.PriceData, 1))
 	require.NotNil(w.cancelWatch)
+}
+
+// TestPriceFeedWatcher_SingleWatchLoop makes sure that multiple subscriptions
+// share a single watch loop. Each loop polls the price feed once per period, so
+// an extra loop shows up as an extra FetchPriceData call.
+func TestPriceFeedWatcher_SingleWatchLoop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		priceFeedMock := new(mockPriceFeedEthClient)
+		priceFeedMock.On("FetchPriceData").Return(eth.PriceData{
+			RoundID:   10,
+			Price:     big.NewRat(3, 2),
+			UpdatedAt: time.Now(),
+		}, nil)
+
+		w := &priceFeedWatcher{priceFeed: priceFeedMock}
+
+		for i := 0; i < 5; i++ {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w.Subscribe(ctx, make(chan eth.PriceData, 1))
+		}
+
+		// Let exactly one tick of the watch loop fire.
+		synctest.Sleep(priceUpdatePeriod + time.Second)
+		synctest.Wait()
+
+		priceFeedMock.AssertNumberOfCalls(t, "FetchPriceData", 1)
+	})
 }
 
 func TestPriceFeedWatcher_Watch(t *testing.T) {

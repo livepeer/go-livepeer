@@ -14,7 +14,7 @@ ENV	GOARCH="$TARGETARCH" \
 RUN	apt update \
 	&& apt install -yqq ca-certificates curl lsb-release \
 	&& install -d -m 0755 /usr/share/keyrings \
-	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 https://dl.google.com/go/go1.27.0.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o /usr/share/keyrings/docker.asc https://download.docker.com/linux/ubuntu/gpg \
 	&& printf '%s\n' "deb [arch=${BUILDARCH} signed-by=/usr/share/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
 	&& curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o /usr/share/keyrings/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key \
