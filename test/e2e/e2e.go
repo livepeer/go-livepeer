@@ -148,6 +148,7 @@ func lpCfg() starter.LivepeerConfig {
 	cfg.PricePerUnit = &pricePerUnit
 	cfg.InitializeRound = &initializeRound
 	cfg.InitializeRoundMaxDelay = &initializeRoundMaxDelay
+	cfg.CliTxRoutes = boolPointer(true)
 	return cfg
 }
 
