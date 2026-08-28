@@ -22,16 +22,15 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 )
 
-// DownloadData downloads data while refusing connections to non-public
-// addresses (loopback, private, link-local, multicast, …) and rejecting
-// URLs with unsafe schemes, embedded credentials, or path-traversal
-// sequences. These checks run both on the original URL and after DNS
-// resolution or any HTTP redirect.
+// DownloadData downloads data while refusing connections to addresses that
+// reach the local host, including after DNS resolution or an HTTP redirect.
+// It also rejects URLs with unsafe schemes, embedded credentials, or
+// path-traversal sequences, both on the original URL and on every redirect.
 func DownloadData(ctx context.Context, uri string) ([]byte, error) {
 	if err := validateDownloadURL(uri); err != nil {
 		return nil, err
 	}
-	return downloadDataHTTP(ctx, uri, ssrfBlockedHTTPClient)
+	return downloadDataHTTP(ctx, uri, localhostBlockedHTTPClient)
 }
 
 // DownloadDataAllowLocalhost downloads data without blocking local host
@@ -43,7 +42,6 @@ func DownloadDataAllowLocalhost(ctx context.Context, uri string) ([]byte, error)
 
 var (
 	errLocalhostDownload = errors.New("localhost downloads are blocked")
-	errPrivateDownload   = errors.New("private/internal address downloads are blocked")
 	errUnsafeURL         = errors.New("unsafe download URL")
 )
 
@@ -75,11 +73,7 @@ func validateDownloadURL(rawURL string) error {
 	return nil
 }
 
-// rejectNonPublicDial blocks connections to any resolved address that is not
-// a global-unicast, routable address. This covers loopback, private (RFC 1918),
-// link-local, multicast, and unspecified addresses — catching DNS-rebinding
-// and redirect-based SSRF bypasses at the socket level.
-func rejectNonPublicDial(_ context.Context, _, address string, _ syscall.RawConn) error {
+func rejectLocalhostDial(_ context.Context, _, address string, _ syscall.RawConn) error {
 	host, _, err := gonet.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("invalid resolved download address %q: %w", address, err)
@@ -90,22 +84,11 @@ func rejectNonPublicDial(_ context.Context, _, address string, _ syscall.RawConn
 		return fmt.Errorf("invalid resolved download host %q: %w", host, err)
 	}
 	addr = addr.Unmap()
-
 	if addr.IsLoopback() || addr.IsUnspecified() {
 		return fmt.Errorf("%w: %s", errLocalhostDownload, address)
 	}
-	if addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() {
-		return fmt.Errorf("%w: %s", errPrivateDownload, address)
-	}
-	if !addr.IsGlobalUnicast() {
-		return fmt.Errorf("%w: %s is not a public address", errPrivateDownload, address)
-	}
-	return nil
-}
 
-// Kept for backward compatibility with callers that reference the old name.
-func rejectLocalhostDial(ctx context.Context, network, address string, conn syscall.RawConn) error {
-	return rejectNonPublicDial(ctx, network, address, conn)
+	return nil
 }
 
 var httpc = &http.Client{
@@ -113,9 +96,9 @@ var httpc = &http.Client{
 	Timeout:   common.HTTPTimeout / 2,
 }
 
-var ssrfBlockedHTTPClient = &http.Client{
+var localhostBlockedHTTPClient = &http.Client{
 	Transport: &http.Transport{
-		DialContext:     (&gonet.Dialer{ControlContext: rejectNonPublicDial}).DialContext,
+		DialContext:     (&gonet.Dialer{ControlContext: rejectLocalhostDial}).DialContext,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	},
 	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
@@ -124,13 +107,10 @@ var ssrfBlockedHTTPClient = &http.Client{
 	Timeout: common.HTTPTimeout / 2,
 }
 
-// localhostBlockedHTTPClient is kept as an alias for backward compatibility.
-var localhostBlockedHTTPClient = ssrfBlockedHTTPClient
-
 // LocalhostBlockedHTTPClient returns the shared HTTP client that refuses
-// connections to non-public addresses. Callers must not mutate the client.
+// connections to local host addresses. Callers must not mutate the client.
 func LocalhostBlockedHTTPClient() *http.Client {
-	return ssrfBlockedHTTPClient
+	return localhostBlockedHTTPClient
 }
 
 func FromNetOsInfo(os *net.OSInfo) *drivers.OSInfo {
