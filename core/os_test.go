@@ -46,6 +46,37 @@ func TestRejectLocalhostDial(t *testing.T) {
 	require.Error(t, rejectLocalhostDial(context.Background(), "tcp", "127.0.0.1", nil))
 }
 
+func TestValidateDownloadURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{name: "valid https", url: "https://storage.example.com/seg/0.ts"},
+		{name: "valid http", url: "http://cdn.example.com/seg/0.ts"},
+		{name: "ftp blocked", url: "ftp://evil.com/file", wantErr: true},
+		{name: "file scheme blocked", url: "file:///etc/passwd", wantErr: true},
+		{name: "gopher blocked", url: "gopher://evil.com", wantErr: true},
+		{name: "empty scheme blocked", url: "://foo", wantErr: true},
+		{name: "embedded credentials", url: "http://user:pass@host.com/x", wantErr: true},
+		{name: "path traversal", url: "http://host.com/../../etc/passwd", wantErr: true},
+		{name: "encoded path traversal", url: "http://host.com/a/%2e%2e/b", wantErr: true},
+		{name: "missing host", url: "http:///path", wantErr: true},
+		{name: "data URI", url: "data:text/html,<script>", wantErr: true},
+		{name: "javascript URI", url: "javascript:alert(1)", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDownloadURL(tt.url)
+			if tt.wantErr {
+				require.ErrorIs(t, err, errUnsafeURL)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDownloadDataRejectsLoopback(t *testing.T) {
 	var hits atomic.Int32
 	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -93,6 +124,9 @@ func TestDownloadDataAllowsPrivateAddressAndBlocksRedirectToLoopback(t *testing.
 	mux.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, protected.URL, http.StatusFound)
 	})
+	mux.HandleFunc("/redirect-unsafe", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "file:///etc/passwd", http.StatusFound)
+	})
 	baseURL := newNonLoopbackHTTPServer(t, mux)
 
 	data, err := DownloadData(context.Background(), baseURL+"/data")
@@ -102,6 +136,9 @@ func TestDownloadDataAllowsPrivateAddressAndBlocksRedirectToLoopback(t *testing.
 	_, err = DownloadData(context.Background(), baseURL+"/redirect")
 	require.ErrorIs(t, err, errLocalhostDownload)
 	require.Zero(t, protectedHits.Load())
+
+	_, err = DownloadData(context.Background(), baseURL+"/redirect-unsafe")
+	require.ErrorIs(t, err, errUnsafeURL)
 }
 
 func newNonLoopbackHTTPServer(t *testing.T, handler http.Handler) string {
