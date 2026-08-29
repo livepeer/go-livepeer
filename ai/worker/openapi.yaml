@@ -1,0 +1,381 @@
+# OpenAPI spec for the live AI runner endpoints used by go-livepeer.
+# Trimmed from the deprecated livepeer/ai-runner spec; maintained by hand.
+# Regenerate the Go bindings with `make ai_worker_codegen`.
+components:
+  schemas:
+    APIError:
+      description: API error response model.
+      properties:
+        msg:
+          description: The error message.
+          title: Msg
+          type: string
+      required:
+      - msg
+      title: APIError
+      type: object
+    GPUComputeInfo:
+      description: Model for detailed GPU compute information.
+      properties:
+        id:
+          title: Id
+          type: string
+        major:
+          title: Major
+          type: integer
+        memory_free:
+          title: Memory Free
+          type: integer
+        memory_total:
+          title: Memory Total
+          type: integer
+        minor:
+          title: Minor
+          type: integer
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      - memory_total
+      - memory_free
+      - major
+      - minor
+      title: GPUComputeInfo
+      type: object
+    GPUUtilizationInfo:
+      description: Model for GPU utilization statistics.
+      properties:
+        id:
+          title: Id
+          type: string
+        memory_free:
+          title: Memory Free
+          type: integer
+        memory_total:
+          title: Memory Total
+          type: integer
+        name:
+          title: Name
+          type: string
+        utilization_compute:
+          title: Utilization Compute
+          type: integer
+        utilization_memory:
+          title: Utilization Memory
+          type: integer
+      required:
+      - id
+      - name
+      - memory_total
+      - memory_free
+      - utilization_compute
+      - utilization_memory
+      title: GPUUtilizationInfo
+      type: object
+    HTTPError:
+      description: HTTP error response model.
+      properties:
+        detail:
+          allOf:
+          - $ref: '#/components/schemas/APIError'
+          description: Detailed error information.
+      required:
+      - detail
+      title: HTTPError
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    HardwareInformation:
+      description: Response model for GPU information.
+      properties:
+        gpu_info:
+          additionalProperties:
+            $ref: '#/components/schemas/GPUComputeInfo'
+          title: Gpu Info
+          type: object
+        model_id:
+          title: Model Id
+          type: string
+        pipeline:
+          title: Pipeline
+          type: string
+      required:
+      - pipeline
+      - model_id
+      - gpu_info
+      title: HardwareInformation
+      type: object
+    HardwareStats:
+      description: Response model for real-time GPU statistics.
+      properties:
+        gpu_stats:
+          additionalProperties:
+            $ref: '#/components/schemas/GPUUtilizationInfo'
+          title: Gpu Stats
+          type: object
+        model_id:
+          title: Model Id
+          type: string
+        pipeline:
+          title: Pipeline
+          type: string
+      required:
+      - pipeline
+      - model_id
+      - gpu_stats
+      title: HardwareStats
+      type: object
+    HealthCheck:
+      properties:
+        status:
+          description: The health status of the pipeline
+          enum:
+          - LOADING
+          - OK
+          - ERROR
+          - IDLE
+          title: Status
+          type: string
+      required:
+      - status
+      title: HealthCheck
+      type: object
+    LiveVideoToVideoParams:
+      properties:
+        control_url:
+          default: ''
+          description: URL for subscribing via Trickle protocol for updates in the live video-to-video
+            generation params.
+          title: Control Url
+          type: string
+        events_url:
+          default: ''
+          description: URL for publishing events via Trickle protocol for pipeline status and logs.
+          title: Events Url
+          type: string
+        gateway_request_id:
+          default: ''
+          description: The ID of the Gateway request (for logging purposes).
+          title: Gateway Request Id
+          type: string
+        manifest_id:
+          default: ''
+          description: The manifest ID from the orchestrator (for logging purposes).
+          title: Manifest Id
+          type: string
+        model_id:
+          default: ''
+          description: Name of the pipeline to run in the live video to video job. Notice that this is
+            named model_id for consistency with other routes, but it does not refer to a Hugging Face
+            model ID. The exact model(s) depends on the pipeline implementation and might be configurable
+            via the `params` argument.
+          title: Model Id
+          type: string
+        params:
+          default: {}
+          description: Initial parameters for the pipeline.
+          title: Params
+          type: object
+        publish_url:
+          description: Destination URL of the outgoing stream to publish.
+          title: Publish Url
+          type: string
+        stream_id:
+          default: ''
+          description: The Stream ID (for logging purposes).
+          title: Stream Id
+          type: string
+        subscribe_url:
+          description: Source URL of the incoming stream to subscribe to.
+          title: Subscribe Url
+          type: string
+      required:
+      - subscribe_url
+      - publish_url
+      title: LiveVideoToVideoParams
+      type: object
+    LiveVideoToVideoResponse:
+      description: Response model for live video-to-video generation.
+      properties:
+        control_url:
+          default: ''
+          description: URL for updating the live video-to-video generation
+          title: Control Url
+          type: string
+        events_url:
+          default: ''
+          description: URL for subscribing to events for pipeline status and logs
+          title: Events Url
+          type: string
+        manifest_id:
+          default: ''
+          description: Orchestrator manifest ID for this request
+          title: Manifest Id
+          type: string
+        publish_url:
+          description: Destination URL of the outgoing stream to publish to
+          title: Publish Url
+          type: string
+        request_id:
+          default: ''
+          description: The ID generated for this request
+          title: Request Id
+          type: string
+        subscribe_url:
+          description: Source URL of the incoming stream to subscribe to
+          title: Subscribe Url
+          type: string
+      required:
+      - subscribe_url
+      - publish_url
+      title: LiveVideoToVideoResponse
+      type: object
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+    Version:
+      properties:
+        model_id:
+          title: Model Id
+          type: string
+        pipeline:
+          title: Pipeline
+          type: string
+        version:
+          description: The version of the Runner
+          title: Version
+          type: string
+      required:
+      - pipeline
+      - model_id
+      - version
+      title: Version
+      type: object
+  securitySchemes:
+    HTTPBearer:
+      scheme: bearer
+      type: http
+info:
+  description: The live AI runner API used by go-livepeer for live-video-to-video.
+  title: Livepeer AI Runner
+  version: 0.13.5
+openapi: 3.1.0
+paths:
+  /hardware/info:
+    get:
+      operationId: HardwareInfo
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HardwareInformation'
+          description: Successful Response
+      summary: Hardware Info
+  /hardware/stats:
+    get:
+      operationId: HardwareStats
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HardwareStats'
+          description: Successful Response
+      summary: Hardware Stats
+  /health:
+    get:
+      operationId: Health
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+          description: Successful Response
+      summary: Health
+  /live-video-to-video:
+    post:
+      description: Apply transformations to a live video streamed to the returned endpoints.
+      operationId: GenLiveVideoToVideo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveVideoToVideoParams'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveVideoToVideoResponse'
+          description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPError'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPError'
+          description: Unauthorized
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPError'
+          description: Internal Server Error
+      security:
+      - HTTPBearer: []
+      summary: Live Video To Video
+      tags:
+      - generate
+      x-speakeasy-name-override: liveVideoToVideo
+  /version:
+    get:
+      operationId: Version
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Version'
+          description: Successful Response
+      summary: Version

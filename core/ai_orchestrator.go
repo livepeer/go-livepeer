@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -23,16 +22,7 @@ import (
 
 var ErrNoWorkersAvailable = errors.New("no workers available")
 
-// TODO: consider making this dynamic for each pipeline
 var aiWorkerResultsTimeout = 10 * time.Minute
-var aiWorkerRequestTimeout = 15 * time.Minute
-var aiWorkerTranscodeLoopTimeout = 70 * time.Second
-
-type AIResult struct {
-	Err    error
-	Result *worker.ImageResponse
-	Files  map[string]string
-}
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
@@ -77,56 +67,11 @@ func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 
 func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results interface{}, requestID string, contentType string) (interface{}, error) {
-	ext, _ := common.MimeTypeToExtension(contentType)
-	fileName := string(RandomManifestID()) + ext
-
-	storage, exists := n.StorageConfigs[requestID]
-	if !exists {
+	if _, exists := n.StorageConfigs[requestID]; !exists {
 		return nil, errors.New("no storage available for request")
 	}
 
-	var buf bytes.Buffer
-	switch resp := results.(type) {
-	case worker.ImageResponse:
-		for i, image := range resp.Images {
-			buf.Reset()
-			err := worker.ReadImageB64DataUrl(image.Url, &buf)
-			if err != nil {
-				// try to load local file (image to video returns local file)
-				f, err := os.ReadFile(image.Url)
-				if err != nil {
-					return nil, err
-				}
-				defer os.Remove(image.Url)
-
-				buf = *bytes.NewBuffer(f)
-			}
-
-			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
-			if err != nil {
-				return nil, err
-			}
-
-			resp.Images[i].Url = osUrl
-		}
-
-		results = resp
-	case worker.AudioResponse:
-		err := worker.ReadAudioB64DataUrl(resp.Audio.Url, &buf)
-		if err != nil {
-			return nil, err
-		}
-
-		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
-		if err != nil {
-			return nil, err
-		}
-		resp.Audio.Url = osUrl
-
-		results = resp
-	}
-
-	//no file response to save, response is text
+	// live-video-to-video responses carry no binary payload to persist
 	return results, nil
 }
 
