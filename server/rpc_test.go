@@ -332,8 +332,6 @@ func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
 	return true, nil
 }
-func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-}
 func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
 	r.requestMu.Lock()
 	defer r.requestMu.Unlock()
@@ -345,8 +343,6 @@ func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 }
 func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
-}
-func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func (r *stubOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
 	return nil, nil
@@ -1824,9 +1820,6 @@ func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
 	return true, nil
 }
-func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-
-}
 func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
 	return nil
 }
@@ -1835,8 +1828,6 @@ func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 }
 func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
-}
-func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func (o *mockOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
 	return nil, nil

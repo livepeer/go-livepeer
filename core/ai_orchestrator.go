@@ -5,12 +5,10 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
-	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -23,8 +21,6 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 )
 
-var ErrRemoteWorkerTimeout = errors.New("Remote worker took too long")
-var ErrNoCompatibleWorkersAvailable = errors.New("no workers can process job requested")
 var ErrNoWorkersAvailable = errors.New("no workers available")
 
 // TODO: consider making this dynamic for each pipeline
@@ -32,392 +28,25 @@ var aiWorkerResultsTimeout = 10 * time.Minute
 var aiWorkerRequestTimeout = 15 * time.Minute
 var aiWorkerTranscodeLoopTimeout = 70 * time.Second
 
-type RemoteAIWorker struct {
-	manager      *RemoteAIWorkerManager
-	stream       net.AIWorker_RegisterAIWorkerServer
-	capabilities *Capabilities
-	hardware     []worker.HardwareInformation
-	version      []worker.Version
-	eof          chan struct{}
-	addr         string
-}
-
-func (rw *RemoteAIWorker) done() {
-	// select so we don't block indefinitely if there's no listener
-	select {
-	case rw.eof <- struct{}{}:
-	default:
-	}
-}
-
-type RemoteAIWorkerManager struct {
-	remoteAIWorkers []*RemoteAIWorker
-	liveAIWorkers   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker
-	RWmutex         sync.Mutex
-
-	// For tracking tasks assigned to remote aiworkers
-	taskMutex *sync.RWMutex
-	taskChans map[int64]AIWorkerChan
-	taskCount int64
-
-	// Map for keeping track of sessions and their respective aiworkers
-	requestSessions map[string]*RemoteAIWorker
-}
-
-func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities, hardware []worker.HardwareInformation) *RemoteAIWorker {
-	return &RemoteAIWorker{
-		manager:      m,
-		stream:       stream,
-		eof:          make(chan struct{}, 1),
-		addr:         common.GetConnectionAddr(stream.Context()),
-		capabilities: caps,
-		hardware:     hardware,
-	}
-}
-
-func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
-	return &RemoteAIWorkerManager{
-		remoteAIWorkers: []*RemoteAIWorker{},
-		liveAIWorkers:   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker{},
-		RWmutex:         sync.Mutex{},
-
-		taskMutex: &sync.RWMutex{},
-		taskChans: make(map[int64]AIWorkerChan),
-
-		requestSessions: make(map[string]*RemoteAIWorker),
-	}
-}
-
-func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
-	orch.node.serveAIWorker(stream, capabilities, hardware)
-}
-
-func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
-	from := common.GetConnectionAddr(stream.Context())
-	wkrCaps := CapabilitiesFromNetCapabilities(capabilities)
-	wkrHdw := hardwareInformationFromNetHardware(hardware)
-	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
-		glog.Infof("Worker compatible, connecting worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
-		n.Capabilities.AddCapacity(wkrCaps)
-		n.AddAICapabilities(wkrCaps)
-		defer n.Capabilities.RemoveCapacity(wkrCaps)
-		defer n.RemoveAICapabilities(wkrCaps)
-
-		// Manage blocks while AI worker is connected
-		n.AIWorkerManager.Manage(stream, capabilities, wkrHdw)
-		glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
-	} else {
-		glog.Errorf("worker %s not connected, version not compatible", from)
-	}
-}
-
-// Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
-func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []worker.HardwareInformation) {
-	from := common.GetConnectionAddr(stream.Context())
-
-	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities), hardware)
-	go func() {
-		ctx := stream.Context()
-		<-ctx.Done()
-		err := ctx.Err()
-		glog.Errorf("Stream closed for aiworker=%s, err=%q", from, err)
-		aiworker.done()
-	}()
-
-	rwm.RWmutex.Lock()
-	rwm.liveAIWorkers[aiworker.stream] = aiworker
-	rwm.remoteAIWorkers = append(rwm.remoteAIWorkers, aiworker)
-	rwm.RWmutex.Unlock()
-
-	<-aiworker.eof
-	glog.Infof("Got aiworker=%s eof, removing from live aiworkers map", from)
-
-	rwm.RWmutex.Lock()
-	delete(rwm.liveAIWorkers, aiworker.stream)
-	rwm.RWmutex.Unlock()
-}
-
-// RemoteAIWorkerFatalError wraps error to indicate that error is fatal
-type RemoteAIWorkerFatalError struct {
-	error
-}
-
-// NewRemoteAIWorkerFatalError creates new RemoteAIWorkerFatalError
-// Exported here to be used in other packages
-func NewRemoteAIWorkerFatalError(err error) error {
-	return RemoteAIWorkerFatalError{err}
-}
-
-// Process does actual AI job using remote worker from the pool
-func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
-	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := worker.Process(ctx, pipeline, modelID, fname, req)
-	if err != nil {
-		rwm.completeAIRequest(requestID, pipeline, modelID)
-	}
-	_, fatal := err.(RemoteAIWorkerFatalError)
-	if fatal {
-		// Don't retry if we've timed out; gateway likely to have moved on
-		if err.(RemoteAIWorkerFatalError).error == ErrRemoteWorkerTimeout {
-			return res, err
-		}
-		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
-	}
-
-	rwm.completeAIRequest(requestID, pipeline, modelID)
-	return res, err
-}
-
-func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string, modelID string) (*RemoteAIWorker, error) {
-	rwm.RWmutex.Lock()
-	defer rwm.RWmutex.Unlock()
-
-	checkWorkers := func(rwm *RemoteAIWorkerManager) bool {
-		return len(rwm.remoteAIWorkers) > 0
-	}
-
-	findCompatibleWorker := func(rwm *RemoteAIWorkerManager) int {
-		cap, _ := PipelineToCapability(pipeline)
-		for idx, worker := range rwm.remoteAIWorkers {
-			rwCap, hasCap := worker.capabilities.constraints.perCapability[cap]
-			if hasCap {
-				_, hasModel := rwCap.Models[modelID]
-				if hasModel {
-					if rwCap.Models[modelID].Capacity > 0 {
-						rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
-						return idx
-					}
-				}
-			}
-		}
-		return -1
-	}
-
-	for checkWorkers(rwm) {
-		worker, sessionExists := rwm.requestSessions[requestID]
-		newWorker := findCompatibleWorker(rwm)
-		if newWorker == -1 {
-			return nil, ErrNoCompatibleWorkersAvailable
-		}
-		if !sessionExists {
-			worker = rwm.remoteAIWorkers[newWorker]
-		}
-
-		if _, ok := rwm.liveAIWorkers[worker.stream]; !ok {
-			// Remove the stream session because the worker is no longer live
-			if sessionExists {
-				rwm.completeAIRequest(requestID, pipeline, modelID)
-			}
-			// worker does not exist in table; remove and retry
-			rwm.remoteAIWorkers = removeFromRemoteWorkers(worker, rwm.remoteAIWorkers)
-			continue
-		}
-
-		if !sessionExists {
-			// Assigning worker to session for future use
-			rwm.requestSessions[requestID] = worker
-		}
-		return worker, nil
-	}
-
-	return nil, ErrNoWorkersAvailable
-}
-
-func (rwm *RemoteAIWorkerManager) workerHasCapacity(pipeline, modelID string) bool {
-	cap, err := PipelineToCapability(pipeline)
-	if err != nil {
-		return false
-	}
-	for _, worker := range rwm.remoteAIWorkers {
-		rw, hasCap := worker.capabilities.constraints.perCapability[cap]
-		if hasCap {
-			_, hasModel := rw.Models[modelID]
-			if hasModel {
-				if rw.Models[modelID].Capacity > 0 {
-					return true
-				}
-			}
-		}
-	}
-	// no worker has capacity
-	return false
-}
-
-// completeAIRequest end a AI request session for a remote ai worker
-// caller should hold the mutex lock
-func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID string) {
-	rwm.RWmutex.Lock()
-	defer rwm.RWmutex.Unlock()
-
-	worker, ok := rwm.requestSessions[requestID]
-	if !ok {
-		return
-	}
-
-	for idx, remoteWorker := range rwm.remoteAIWorkers {
-		if worker.addr == remoteWorker.addr {
-			cap, err := PipelineToCapability(pipeline)
-			if err == nil {
-				if _, hasCap := rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap]; hasCap {
-					if _, hasModel := rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID]; hasModel {
-						rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID].Capacity += 1
-					}
-				}
-
-			}
-		}
-	}
-	delete(rwm.requestSessions, requestID)
-}
-
-func removeFromRemoteWorkers(rw *RemoteAIWorker, remoteWorkers []*RemoteAIWorker) []*RemoteAIWorker {
-	if len(remoteWorkers) == 0 {
-		// No workers to remove, return
-		return remoteWorkers
-	}
-
-	newRemoteWs := make([]*RemoteAIWorker, 0)
-	for _, t := range remoteWorkers {
-		if t != rw {
-			newRemoteWs = append(newRemoteWs, t)
-		}
-	}
-	return newRemoteWs
-}
-
-type RemoteAIWorkerResult struct {
-	Results      interface{}
-	Files        map[string][]byte
-	Err          error
-	DownloadTime time.Duration
-}
-
-type AIWorkerChan chan *RemoteAIWorkerResult
-
-func (rwm *RemoteAIWorkerManager) getTaskChan(taskID int64) (AIWorkerChan, error) {
-	rwm.taskMutex.RLock()
-	defer rwm.taskMutex.RUnlock()
-	if tc, ok := rwm.taskChans[taskID]; ok {
-		return tc, nil
-	}
-	return nil, fmt.Errorf("No AI Worker channel")
-}
-
-func (rwm *RemoteAIWorkerManager) addTaskChan() (int64, AIWorkerChan) {
-	rwm.taskMutex.Lock()
-	defer rwm.taskMutex.Unlock()
-	taskID := rwm.taskCount
-	rwm.taskCount++
-	if tc, ok := rwm.taskChans[taskID]; ok {
-		// should really never happen
-		glog.V(common.DEBUG).Info("AI Worker channel already exists for ", taskID)
-		return taskID, tc
-	}
-	rwm.taskChans[taskID] = make(AIWorkerChan, 1)
-	return taskID, rwm.taskChans[taskID]
-}
-
-func (rwm *RemoteAIWorkerManager) removeTaskChan(taskID int64) {
-	rwm.taskMutex.Lock()
-	defer rwm.taskMutex.Unlock()
-	if _, ok := rwm.taskChans[taskID]; !ok {
-		glog.V(common.DEBUG).Info("AI Worker channel nonexistent for job ", taskID)
-		return
-	}
-	delete(rwm.taskChans, taskID)
-}
-
-// Process does actual AI processing by sending work to remote ai worker and waiting for the result
-func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
-	taskID, taskChan := rw.manager.addTaskChan()
-	defer rw.manager.removeTaskChan(taskID)
-
-	signalEOF := func(err error) (*RemoteAIWorkerResult, error) {
-		rw.done()
-		clog.Errorf(logCtx, "Fatal error with remote AI worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID, err)
-		return nil, RemoteAIWorkerFatalError{err}
-	}
-
-	reqParams, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	start := time.Now()
-
-	jobData := &net.AIJobData{
-		Pipeline:    pipeline,
-		RequestData: reqParams,
-	}
-	msg := &net.NotifyAIJob{
-		TaskId:    taskID,
-		AIJobData: jobData,
-	}
-	err = rw.stream.Send(msg)
-
-	if err != nil {
-		return signalEOF(err)
-	}
-
-	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s", rw.addr, taskID, pipeline, modelID)
-	// set a minimum timeout to accommodate transport / processing overhead
-	// TODO: this should be set for each pipeline, using something long for now
-	dur := aiWorkerRequestTimeout
-
-	ctx, cancel := context.WithTimeout(context.Background(), dur)
-	defer cancel()
-	select {
-	case <-ctx.Done():
-		return signalEOF(ErrRemoteWorkerTimeout)
-	case chanData := <-taskChan:
-		clog.InfofErr(logCtx, "Successfully received results from remote worker=%s taskId=%d pipeline=%s model_id=%s dur=%v",
-			rw.addr, taskID, pipeline, modelID, time.Since(start), chanData.Err)
-
-		if monitor.Enabled {
-			monitor.AIResultDownloaded(logCtx, pipeline, modelID, chanData.DownloadTime)
-		}
-
-		return chanData, chanData.Err
-	}
-}
-
 type AIResult struct {
 	Err    error
 	Result *worker.ImageResponse
 	Files  map[string]string
 }
 
-type AIJobRequestData struct {
-	InputUrl string      `json:"input_url"`
-	Request  interface{} `json:"request"`
-}
-
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
-	var hasCapacity bool
-	if orch.node.AIWorker != nil {
-		// confirm local worker has capacity
-		if pipeline == "live-video-to-video" {
-			return orch.node.AIWorker.HasCapacity(pipeline, modelID), nil
-		}
-
-		// batch pipelines manage the capacity at the Orchestrator level to manage local ai-worker capacity
-		err := orch.node.ReserveAICapability(pipeline, modelID)
-		if err == nil {
-			hasCapacity = true
-		}
-	} else {
-		// remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
-		// live-video-to-video is not using remote workers currently
-		if orch.node.AIWorkerManager != nil {
-			hasCapacity = orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
-		}
+	if orch.node.AIWorker == nil {
+		return false, nil
 	}
 
-	if !hasCapacity {
+	// confirm local worker has capacity
+	if pipeline == "live-video-to-video" {
+		return orch.node.AIWorker.HasCapacity(pipeline, modelID), nil
+	}
+
+	// other pipelines manage the capacity at the Orchestrator level to manage local ai-worker capacity
+	if err := orch.node.ReserveAICapability(pipeline, modelID); err != nil {
 		return false, nil
 	}
 
@@ -441,30 +70,10 @@ func (orch *orchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Cap
 }
 
 func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
-	if orch.node.AIWorker != nil {
-		return orch.node.AIWorker.HardwareInformation()
-	} else {
-		// return combined hardware information from all live remote workers from information provided by workers
-		// when connecting to orchestrator. Does not reach out for real-time information.
-		var wkrHdw []worker.HardwareInformation
-		for _, worker := range orch.node.AIWorkerManager.liveAIWorkers {
-			wkrHdw = append(wkrHdw, worker.hardware...)
-		}
-		return wkrHdw
+	if orch.node.AIWorker == nil {
+		return nil
 	}
-}
-
-func (orch *orchestrator) AIResults(tcID int64, res *RemoteAIWorkerResult) {
-	orch.node.AIWorkerManager.aiResults(tcID, res)
-}
-
-func (rwm *RemoteAIWorkerManager) aiResults(tcID int64, res *RemoteAIWorkerResult) {
-	remoteChan, err := rwm.getTaskChan(tcID)
-	if err != nil {
-		return // do we need to return anything?
-	}
-
-	remoteChan <- res
+	return orch.node.AIWorker.HardwareInformation()
 }
 
 func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results interface{}, requestID string, contentType string) (interface{}, error) {
@@ -521,82 +130,21 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 	return results, nil
 }
 
-func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *RemoteAIWorkerResult, requestID string) (*RemoteAIWorkerResult, error) {
-	if drivers.NodeStorage == nil {
-		return nil, fmt.Errorf("Missing local storage")
-	}
-	// save the file data to node and provide url for download
-	storage, exists := n.StorageConfigs[requestID]
-	if !exists {
-		return nil, errors.New("no storage available for request")
-	}
-	// worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
-	// worker.AudioResponse used to text-to-speech also requires saving binary data for download
-	// other pipelines do not require saving data since they are text responses
-	switch resp := results.Results.(type) {
-	case worker.ImageResponse:
-		for idx := range resp.Images {
-			fileName := resp.Images[idx].Url
-			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
-			if err != nil {
-				return nil, err
-			}
-
-			resp.Images[idx].Url = osUrl
-			delete(results.Files, fileName)
-		}
-
-		// update results for url updates
-		results.Results = resp
-	case worker.AudioResponse:
-		fileName := resp.Audio.Url
-		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
-		if err != nil {
-			return nil, err
-		}
-
-		resp.Audio.Url = osUrl
-		delete(results.Files, fileName)
-
-		results.Results = resp
-	}
-
-	// no file response to save, response is text
-	return results, nil
-}
-
 func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
-	// local AIWorker processes job if combined orchestrator/ai worker
-	if orch.node.AIWorker != nil {
-		workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
-
-		if err == nil {
-			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "live-video-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
-		}
+	if orch.node.AIWorker == nil {
+		return nil, ErrNoWorkersAvailable
 	}
 
-	// remote ai worker processes job
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "live-video-to-video", *req.ModelId, "", AIJobRequestData{Request: req})
+	workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
 	if err != nil {
-		return nil, err
-	}
-
-	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
-	if err != nil {
-		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
 		if monitor.Enabled {
 			monitor.AIResultSaveError(ctx, "live-video-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
 		}
 		return nil, err
 	}
 
-	return res.Results, nil
+	return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
 }
 
 // only used for sending work to remote AI worker
@@ -789,21 +337,4 @@ func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobCapability s
 	}
 	return common.FixedToPrice(fixedPrice), nil
 
-}
-
-func hardwareInformationFromNetHardware(hdw []*net.HardwareInformation) []worker.HardwareInformation {
-	var netWorkerHardware []byte
-	netWorkerHardware, err := json.Marshal(hdw)
-	if err != nil {
-		glog.Errorf("Error converting hardware information to json: %v", err)
-		return []worker.HardwareInformation{}
-	}
-	var workerHardware []worker.HardwareInformation
-	err = json.Unmarshal(netWorkerHardware, &workerHardware)
-	if err != nil {
-		glog.Errorf("Error converting hardware information: %v", err)
-		return []worker.HardwareInformation{}
-	}
-
-	return workerHardware
 }

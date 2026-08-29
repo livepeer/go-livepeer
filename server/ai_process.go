@@ -28,6 +28,9 @@ const (
 	maxSameSessTries = 3
 )
 
+// protoVerAIWorker is the Authorization header value gateways send on AI requests.
+const protoVerAIWorker = "Livepeer-AI-Worker-1.0"
+
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
 type ServiceUnavailableError struct {

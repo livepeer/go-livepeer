@@ -3,7 +3,6 @@ package server
 // ai_http.go implements the HTTP server for AI-related requests at the Orchestrator.
 
 import (
-	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,8 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
-	"mime/multipart"
 	"net/http"
 	"net/http/httputil"
 	url2 "net/url"
@@ -119,8 +116,6 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.HandleFunc("POST /apps/{runner_id}/session/{session_id}/payment", lp.PaymentForLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/session/{session_id}/app/{app_path...}", lp.ProxyLiveRunnerSession)
 	lp.transRPC.HandleFunc("/apps/{runner_id}/app/{app_path...}", lp.ProxyLiveRunnerSingleShot)
-
-	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
 }
@@ -1379,182 +1374,3 @@ func overwriteHost(hostOverwrite, url string) string {
 //
 // Orchestrator receiving results from the remote AI worker
 //
-
-func (h *lphttp) AIResults() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		authType := r.Header.Get("Authorization")
-		if protoVerAIWorker != authType {
-			glog.Error("Invalid auth type ", authType)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		creds := r.Header.Get("Credentials")
-
-		if creds != orch.TranscoderSecret() {
-			glog.Error("Invalid shared secret")
-			respondWithError(w, errSecret.Error(), http.StatusUnauthorized)
-		}
-
-		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			glog.Error("Error getting mime type ", err)
-			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
-			return
-		}
-
-		tid, err := strconv.ParseInt(r.Header.Get("TaskId"), 10, 64)
-		if err != nil {
-			glog.Error("Could not parse task ID ", err)
-			http.Error(w, "Invalid Task ID", http.StatusBadRequest)
-			return
-		}
-
-		pipeline := r.Header.Get("Pipeline")
-
-		var workerResult core.RemoteAIWorkerResult
-		workerResult.Files = make(map[string][]byte)
-
-		start := time.Now()
-		dlDur := time.Duration(0) // default to 0 in case of early return
-		resultType := ""
-		switch mediaType {
-		case aiWorkerErrorMimeType:
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				glog.Errorf("Unable to read ai worker error body taskId=%v err=%q", tid, err)
-				workerResult.Err = err
-			} else {
-				workerResult.Err = errors.New(string(body))
-			}
-			glog.Errorf("AI Worker error for taskId=%v err=%q", tid, workerResult.Err)
-			orch.AIResults(tid, &workerResult)
-			w.Write([]byte("OK"))
-			return
-		case "text/event-stream":
-			resultType = "streaming"
-			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
-			resChan := make(chan *worker.LLMResponse, 100)
-			workerResult.Results = (<-chan *worker.LLMResponse)(resChan)
-
-			defer r.Body.Close()
-			defer close(resChan)
-			//set a reasonable timeout to stop waiting for results
-			ctx, _ := context.WithTimeout(r.Context(), HTTPIdleTimeout)
-
-			//pass results and receive from channel as the results are streamed
-			go orch.AIResults(tid, &workerResult)
-			// Read the streamed results from the request body
-			scanner := bufio.NewScanner(r.Body)
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					line := scanner.Text()
-					if strings.HasPrefix(line, "data: ") {
-						data := strings.TrimPrefix(line, "data: ")
-						var chunk worker.LLMResponse
-						if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-							clog.Errorf(ctx, "Error unmarshaling stream data: %v", err)
-							continue
-						}
-						resChan <- &chunk
-					}
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				workerResult.Err = scanner.Err()
-			}
-
-			dlDur = time.Since(start)
-		case "multipart/mixed":
-			resultType = "uploaded"
-			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
-			workerResult := parseMultiPartResult(r.Body, params["boundary"], pipeline)
-
-			//return results
-			dlDur = time.Since(start)
-			workerResult.DownloadTime = dlDur
-			orch.AIResults(tid, &workerResult)
-		}
-
-		glog.V(common.VERBOSE).Infof("Processed %s results from remote worker=%s taskId=%d dur=%s", resultType, r.RemoteAddr, tid, dlDur)
-
-		if workerResult.Err != nil {
-			http.Error(w, workerResult.Err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write([]byte("OK"))
-	})
-}
-
-func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core.RemoteAIWorkerResult {
-	wkrResult := core.RemoteAIWorkerResult{}
-	wkrResult.Files = make(map[string][]byte)
-
-	mr := multipart.NewReader(body, boundary)
-	for {
-		p, err := mr.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			glog.Error("Could not process multipart part ", err)
-			wkrResult.Err = err
-			break
-		}
-		body, err := common.ReadAtMost(p, MaxAIRequestSize)
-		if err != nil {
-			glog.Error("Error reading body ", err)
-			wkrResult.Err = err
-			break
-		}
-
-		// this is where we would include metadata on each result if want to separate
-		// instead the multipart response includes the json and the files separately with the json "url" field matching to part names
-		cDisp := p.Header.Get("Content-Disposition")
-		if p.Header.Get("Content-Type") == "application/json" {
-			var results interface{}
-			switch pipeline {
-			case "text-to-image", "image-to-image", "upscale", "image-to-video":
-				var parsedResp worker.ImageResponse
-
-				err := json.Unmarshal(body, &parsedResp)
-				if err != nil {
-					glog.Error("Error getting results json:", err)
-					wkrResult.Err = err
-					break
-				}
-				results = parsedResp
-			case "audio-to-text", "segment-anything-2", "llm", "image-to-text":
-				err := json.Unmarshal(body, &results)
-				if err != nil {
-					glog.Error("Error getting results json:", err)
-					wkrResult.Err = err
-					break
-				}
-			case "text-to-speech":
-				var parsedResp worker.AudioResponse
-				err := json.Unmarshal(body, &parsedResp)
-				if err != nil {
-					glog.Error("Error getting results json:", err)
-					wkrResult.Err = err
-					break
-				}
-				results = parsedResp
-			}
-
-			wkrResult.Results = results
-		} else if cDisp != "" {
-			//these are the result files binary data
-			resultName := p.FileName()
-			wkrResult.Files[resultName] = body
-		}
-	}
-
-	return wkrResult
-}

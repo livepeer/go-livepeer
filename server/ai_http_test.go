@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -28,7 +27,6 @@ import (
 	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/go-tools/drivers"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,90 +64,6 @@ func (s stubPriceFeedWatcher) Current() (eth.PriceData, error) {
 }
 
 func (s stubPriceFeedWatcher) Subscribe(context.Context, chan<- eth.PriceData) {}
-
-func TestAIWorkerResultsValidation(t *testing.T) {
-	tests := []struct {
-		name         string
-		orchestrator bool
-		mutate       func(http.Header)
-		status       int
-		message      string
-	}{
-		{name: "missing auth", status: http.StatusUnauthorized, message: "Unauthorized"},
-		{name: "invalid credentials", orchestrator: true, mutate: func(headers http.Header) {
-			headers.Set("Credentials", "BAD CREDENTIALS")
-		}, status: http.StatusUnauthorized, message: "invalid secret"},
-		{name: "missing content type", orchestrator: true, mutate: func(headers http.Header) {
-			headers.Del("Content-Type")
-		}, status: http.StatusUnsupportedMediaType, message: "mime: no media type"},
-		{name: "missing task ID", orchestrator: true, mutate: func(headers http.Header) {
-			headers.Del("TaskId")
-		}, status: http.StatusBadRequest, message: "Invalid Task ID"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var l lphttp
-			req := httptest.NewRequest(http.MethodPost, "/aiResults", nil)
-			if test.orchestrator {
-				l.orchestrator = newStubOrchestrator()
-				req.Header.Set("Authorization", protoVerAIWorker)
-				req.Header.Set("Credentials", l.orchestrator.TranscoderSecret())
-				req.Header.Set("Content-Type", aiWorkerErrorMimeType)
-				req.Header.Set("TaskId", "1")
-			}
-			if test.mutate != nil {
-				test.mutate(req.Header)
-			}
-			code, body := aiResultsTest(l, httptest.NewRecorder(), req)
-			require.Equal(t, test.status, code)
-			require.Contains(t, body, test.message)
-		})
-	}
-}
-
-func TestAIWorkerResults_BadRequestType(t *testing.T) {
-	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-
-	assert := assert.New(t)
-	assert.Nil(nil)
-	resultData := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-		w.Write([]byte("result binary data"))
-	}))
-	defer resultData.Close()
-	// sending bad request
-	notify := createAIJob(742, "text-to-image-invalid", "livepeer/model1", "")
-
-	wkr := stubAIWorker{}
-	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
-	node.OrchSecret = "verbigsecret"
-	node.AIWorker = &wkr
-	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("text-to-image", "livepeer/model1")
-
-	var headers http.Header
-	var body []byte
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		out, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-		headers = r.Header
-		body = out
-		w.Write(nil)
-	}))
-	defer ts.Close()
-	parsedURL, _ := url.Parse(ts.URL)
-	// send empty request data
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.NotNil(body)
-	assert.Equal("742", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("AI request validation failed for", string(body)[0:32])
-}
 
 func TestLiveRunnerDiscoveryEndpoint(t *testing.T) {
 	lp := newLiveRunnerHTTP(t, true)
@@ -2259,4 +2173,19 @@ func TestDeprecatedPipelineHandler(t *testing.T) {
 			require.Contains(t, resp["error"], pipeline+" is no longer supported")
 		})
 	}
+}
+
+func createStubAIWorkerCapabilitiesForPipelineModelId(pipeline, modelId string) *core.Capabilities {
+	//create capabilities and constraints the ai worker sends to orch
+	cap, err := core.PipelineToCapability(pipeline)
+	if err != nil {
+		return nil
+	}
+	constraints := make(core.PerCapabilityConstraints)
+	constraints[cap] = &core.CapabilityConstraints{Models: make(core.ModelConstraints)}
+	constraints[cap].Models[modelId] = &core.ModelConstraint{Warm: true, Capacity: 1}
+	caps := core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryOCapabilities())
+	caps.SetPerCapabilityConstraints(constraints)
+
+	return caps
 }

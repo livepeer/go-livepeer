@@ -62,8 +62,6 @@ type Orchestrator interface {
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation)
-	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
@@ -201,7 +199,6 @@ type lphttp struct {
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
-	net.UnimplementedAIWorkerServer
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -230,7 +227,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAIWorkers bool, n *core.LivepeerNode) error {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -250,10 +247,6 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	err := startAIServer(&lp)
 	if err != nil {
 		return err
-	}
-	if acceptRemoteAIWorkers {
-		net.RegisterAIWorkerServer(s, &lp)
-		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
 	//API for dynamic capabilities
 	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)

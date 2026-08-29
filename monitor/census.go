@@ -67,7 +67,6 @@ const (
 	Broadcaster  NodeType = "bctr"
 	Transcoder   NodeType = "trcr"
 	Redeemer     NodeType = "rdmr"
-	AIWorker     NodeType = "aiwk"
 
 	segTypeRegular = "regular"
 	segTypeRec     = "recorded" // segment in the stream for which recording is enabled
