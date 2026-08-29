@@ -2244,3 +2244,19 @@ func setLiveRunnerSessionToken(t *testing.T, lp *lphttp, req *http.Request, runn
 	require.NoError(t, err)
 	req.Header.Set("Livepeer-Session-Token", token)
 }
+
+func TestDeprecatedPipelineHandler(t *testing.T) {
+	for _, pipeline := range deprecatedBatchPipelines {
+		t.Run(pipeline, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/"+pipeline, strings.NewReader("{}"))
+			rr := httptest.NewRecorder()
+			deprecatedPipelineHandler(pipeline).ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusGone, rr.Code)
+			require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+			var resp map[string]string
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+			require.Contains(t, resp["error"], pipeline+" is no longer supported")
+		})
+	}
+}

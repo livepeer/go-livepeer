@@ -45,6 +45,30 @@ const maxLiveRunnerTrickleChannelsPerRequest = 25
 const liveRunnerSenderHeader = "Livepeer-Payer-Address"
 const maxScopeRequestBodySize = 1 << 20 // 1 MB
 
+// deprecatedBatchPipelines are the ai-runner batch pipelines that go-livepeer no longer serves.
+var deprecatedBatchPipelines = []string{
+	"text-to-image",
+	"image-to-image",
+	"image-to-video",
+	"upscale",
+	"audio-to-text",
+	"llm",
+	"segment-anything-2",
+	"image-to-text",
+	"text-to-speech",
+}
+
+// deprecatedPipelineHandler rejects requests for a removed batch pipeline with 410 Gone.
+func deprecatedPipelineHandler(pipeline string) http.Handler {
+	msg := fmt.Sprintf("%s is no longer supported: the ai-runner batch pipelines were removed from go-livepeer, see https://github.com/livepeer/ai-runner", pipeline)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clog.Warningf(r.Context(), "Rejected request for deprecated pipeline=%s remoteAddr=%s", pipeline, r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	})
+}
+
 func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -78,15 +102,9 @@ func startAIServer(lp *lphttp) error {
 		manager.SetTrickleServer(lp.trickleSrv, publicTrickleBaseURL, internalTrickleBaseURL)
 	}
 
-	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
-	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
-	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenLLMJSONRequestBody])))
-	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	for _, pipeline := range deprecatedBatchPipelines {
+		lp.transRPC.Handle("/"+pipeline, deprecatedPipelineHandler(pipeline))
+	}
 	lp.transRPC.Handle("/scope", lp.StartScope())
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Internal runner endpoints

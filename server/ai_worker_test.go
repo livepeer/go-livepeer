@@ -1,18 +1,13 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"io"
-	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -20,24 +15,13 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-tools/drivers"
 	oapitypes "github.com/oapi-codegen/runtime/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRemoteAIWorker_Error(t *testing.T) {
+func TestRemoteAIWorker_DeprecatedPipeline(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-
 	assert := assert.New(t)
-	assert.Nil(nil)
-	var resultRead int
-	resultData := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-		w.Write([]byte("result binary data"))
-		resultRead++
-	}))
-	defer resultData.Close()
 
 	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
@@ -56,296 +40,18 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-	//send empty request data
-	notify := createAIJob(742, "text-to-image-empty", "", "")
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
 
-	assert.NotNil(body)
-	assert.Equal("742", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.NotNil(string(body))
+	for _, pipeline := range []string{"text-to-image", "llm", "unsupported-pipeline"} {
+		notify := createAIJob(743, pipeline, "livepeer/model1", "")
+		runAIJob(node, parsedURL.Host, httpc, notify)
+		time.Sleep(3 * time.Millisecond)
 
-	//error in worker, good request
-	notify = createAIJob(742, "text-to-image", "livepeer/model1", "")
-	errText := "Some error"
-	wkr.Err = errors.New(errText)
-
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.NotNil(body)
-	assert.Equal("742", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal(errText, string(body))
-
-	// unrecoverable error
-	// send the response and panic
-	wkr.Err = core.NewUnrecoverableError(errors.New("some error"))
-	panicked := false
-	defer func() {
-		if r := recover(); r != nil {
-			panicked = true
-		}
-	}()
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.NotNil(body)
-	assert.Equal("some error", string(body))
-	assert.True(panicked)
-
-	//pipeline not compatible
-	wkr.Err = nil
-	notify = createAIJob(743, "unsupported-pipeline", "livepeer/model1", "")
-
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.NotNil(body)
-	assert.Equal("743", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("AI request validation failed for", string(body)[:32])
-
-}
-
-func TestRunAIJob(t *testing.T) {
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/image.png" {
-			data, err := os.ReadFile("../test/ai/image")
-			if err != nil {
-				t.Fatalf("failed to read test image: %v", err)
-			}
-			imgData, err := base64.StdEncoding.DecodeString(string(data))
-			if err != nil {
-				t.Fatalf("failed to decode base64 test image: %v", err)
-			}
-			w.Write(imgData)
-			return
-		} else if r.URL.Path == "/audio.mp3" {
-			data, err := os.ReadFile("../test/ai/audio")
-			if err != nil {
-				t.Fatalf("failed to read test audio: %v", err)
-			}
-			imgData, err := base64.StdEncoding.DecodeString(string(data))
-			if err != nil {
-				t.Fatalf("failed to decode base64 test audio: %v", err)
-			}
-			w.Write(imgData)
-			return
-		}
-	}))
-	defer ts.Close()
-	parsedURL, _ := url.Parse(ts.URL)
-	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	assert := assert.New(t)
-	modelId := "livepeer/model1"
-	tests := []struct {
-		inputFile       oapitypes.File
-		name            string
-		notify          *net.NotifyAIJob
-		pipeline        string
-		expectedErr     string
-		expectedOutputs int
-	}{
-		{
-			name:            "TextToImage_Success",
-			notify:          createAIJob(1, "text-to-image", modelId, ""),
-			pipeline:        "text-to-image",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "ImageToImage_Success",
-			notify:          createAIJob(2, "image-to-image", modelId, parsedURL.String()+"/image.png"),
-			pipeline:        "image-to-image",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "Upscale_Success",
-			notify:          createAIJob(3, "upscale", modelId, parsedURL.String()+"/image.png"),
-			pipeline:        "upscale",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "ImageToVideo_Success",
-			notify:          createAIJob(4, "image-to-video", modelId, parsedURL.String()+"/image.png"),
-			pipeline:        "image-to-video",
-			expectedErr:     "",
-			expectedOutputs: 2,
-		},
-		{
-			name:            "AudioToText_Success",
-			notify:          createAIJob(5, "audio-to-text", modelId, parsedURL.String()+"/audio.mp3"),
-			pipeline:        "audio-to-text",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "SegmentAnything2_Success",
-			notify:          createAIJob(6, "segment-anything-2", modelId, parsedURL.String()+"/image.png"),
-			pipeline:        "segment-anything-2",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "LLM_Success",
-			notify:          createAIJob(7, "llm", modelId, ""),
-			pipeline:        "llm",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "ImageToText_Success",
-			notify:          createAIJob(8, "image-to-text", modelId, parsedURL.String()+"/image.png"),
-			pipeline:        "image-to-text",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "TextToSpeech_Success",
-			notify:          createAIJob(9, "text-to-speech", modelId, ""),
-			pipeline:        "text-to-speech",
-			expectedErr:     "",
-			expectedOutputs: 1,
-		},
-		{
-			name:            "UnsupportedPipeline",
-			notify:          createAIJob(10, "unsupported-pipeline", modelId, ""),
-			pipeline:        "unsupported-pipeline",
-			expectedErr:     "AI request validation failed for",
-			expectedOutputs: 0,
-		},
-		{
-			name:            "InvalidRequestData",
-			notify:          createAIJob(11, "text-to-image-invalid", modelId, ""),
-			pipeline:        "text-to-image",
-			expectedErr:     "AI request validation failed for",
-			expectedOutputs: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			wkr := stubAIWorker{}
-			node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
-
-			node.OrchSecret = "verbigsecret"
-			node.AIWorker = &wkr
-			node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId(tt.pipeline, modelId)
-
-			var headers http.Header
-			var body []byte
-			ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				out, err := io.ReadAll(r.Body)
-				assert.NoError(err)
-				headers = r.Header
-				body = out
-				w.Write(nil)
-			}))
-			defer ts.Close()
-			parsedURL, _ := url.Parse(ts.URL)
-			drivers.NodeStorage = drivers.NewMemoryDriver(parsedURL)
-			runAIJob(node, parsedURL.Host, httpc, tt.notify)
-			time.Sleep(3 * time.Millisecond)
-
-			_, params, _ := mime.ParseMediaType(headers.Get("Content-Type"))
-			//this part tests the multipart response reading in AIResults()
-			results := parseMultiPartResult(bytes.NewBuffer(body), params["boundary"], tt.pipeline)
-			json.Unmarshal(body, &results)
-			if tt.expectedErr != "" {
-				assert.NotNil(body)
-				assert.Contains(string(body), tt.expectedErr)
-				assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-			} else {
-				assert.NotNil(body)
-				assert.NotEqual(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-
-				switch tt.pipeline {
-				case "text-to-image":
-					t2iResp, ok := results.Results.(worker.ImageResponse)
-					assert.True(ok)
-					assert.Equal("1", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 1)
-					expectedResp, _ := wkr.TextToImage(context.Background(), worker.GenTextToImageJSONRequestBody{})
-					assert.Equal(expectedResp.Images[0].Seed, t2iResp.Images[0].Seed)
-				case "image-to-image":
-					i2iResp, ok := results.Results.(worker.ImageResponse)
-					assert.True(ok)
-					assert.Equal("2", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 1)
-					expectedResp, _ := wkr.ImageToImage(context.Background(), worker.GenImageToImageMultipartRequestBody{})
-					assert.Equal(expectedResp.Images[0].Seed, i2iResp.Images[0].Seed)
-				case "upscale":
-					upsResp, ok := results.Results.(worker.ImageResponse)
-					assert.True(ok)
-					assert.Equal("3", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 1)
-					expectedResp, _ := wkr.Upscale(context.Background(), worker.GenUpscaleMultipartRequestBody{})
-					assert.Equal(expectedResp.Images[0].Seed, upsResp.Images[0].Seed)
-				case "image-to-video":
-					vidResp, ok := results.Results.(worker.ImageResponse)
-					assert.True(ok)
-					assert.Equal("4", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 1)
-					expectedResp, _ := wkr.ImageToVideo(context.Background(), worker.GenImageToVideoMultipartRequestBody{})
-					assert.Equal(expectedResp.Frames[0][0].Seed, vidResp.Images[0].Seed)
-				case "audio-to-text":
-					res, _ := json.Marshal(results.Results)
-					var jsonRes worker.TextResponse
-					json.Unmarshal(res, &jsonRes)
-
-					assert.Equal("5", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.AudioToText(context.Background(), worker.GenAudioToTextMultipartRequestBody{})
-					assert.Equal(expectedResp, &jsonRes)
-				case "segment-anything-2":
-					res, _ := json.Marshal(results.Results)
-					var jsonRes worker.MasksResponse
-					json.Unmarshal(res, &jsonRes)
-
-					assert.Equal("6", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.SegmentAnything2(context.Background(), worker.GenSegmentAnything2MultipartRequestBody{})
-					assert.Equal(expectedResp, &jsonRes)
-				case "llm":
-					res, _ := json.Marshal(results.Results)
-					var jsonRes worker.LLMResponse
-					json.Unmarshal(res, &jsonRes)
-
-					assert.Equal("7", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMJSONRequestBody{})
-					assert.Equal(expectedResp, &jsonRes)
-				case "image-to-text":
-					res, _ := json.Marshal(results.Results)
-					var jsonRes worker.ImageToTextResponse
-					json.Unmarshal(res, &jsonRes)
-
-					assert.Equal("8", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.ImageToText(context.Background(), worker.GenImageToTextMultipartRequestBody{})
-					assert.Equal(expectedResp, &jsonRes)
-				case "text-to-speech":
-					audResp, ok := results.Results.(worker.AudioResponse)
-					assert.True(ok)
-					assert.Equal("9", headers.Get("TaskId"))
-					assert.Equal(len(results.Files), 1)
-					expectedResp, _ := wkr.TextToSpeech(context.Background(), worker.GenTextToSpeechJSONRequestBody{})
-					var respFile bytes.Buffer
-					worker.ReadAudioB64DataUrl(expectedResp.Audio.Url, &respFile)
-					assert.Equal(len(results.Files[audResp.Audio.Url]), respFile.Len())
-				}
-			}
-		})
+		assert.Equal("743", headers.Get("TaskId"))
+		assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+		assert.Equal(node.OrchSecret, headers.Get("Credentials"))
+		assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
+		assert.Contains(string(body), "AI request validation failed for "+pipeline)
+		assert.Contains(string(body), "is deprecated")
 	}
 }
 

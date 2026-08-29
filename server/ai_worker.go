@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -166,7 +165,6 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	var resultType string
 	var reqOk bool
 	var modelID string
-	var input []byte
 
 	start := time.Now()
 	var reqData AIJobRequestData
@@ -176,151 +174,8 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		return
 	}
 
-	switch notify.AIJobData.Pipeline {
-	case "text-to-image":
-		var req worker.GenTextToImageJSONRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "image/png"
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.TextToImage(ctx, req)
-		}
-		reqOk = true
-	case "image-to-image":
-		var req worker.GenImageToImageMultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "image/png"
-		req.Image.InitFromBytes(input, "image")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.ImageToImage(ctx, req)
-		}
-		reqOk = true
-	case "upscale":
-		var req worker.GenUpscaleMultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "image/png"
-		req.Image.InitFromBytes(input, "image")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.Upscale(ctx, req)
-		}
-		reqOk = true
-	case "image-to-video":
-		var req worker.GenImageToVideoMultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "video/mp4"
-		req.Image.InitFromBytes(input, "image")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.ImageToVideo(ctx, req)
-		}
-		reqOk = true
-	case "audio-to-text":
-		var req worker.GenAudioToTextMultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "application/json"
-		req.Audio.InitFromBytes(input, "audio")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.AudioToText(ctx, req)
-		}
-		reqOk = true
-	case "segment-anything-2":
-		var req worker.GenSegmentAnything2MultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "application/json"
-		req.Image.InitFromBytes(input, "image")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.SegmentAnything2(ctx, req)
-		}
-		reqOk = true
-	case "llm":
-		var req worker.GenLLMJSONRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.Model == nil {
-			break
-		}
-		modelID = *req.Model
-		resultType = "application/json"
-		if req.Stream != nil && *req.Stream {
-			resultType = "text/event-stream"
-		}
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.LLM(ctx, req)
-		}
-		reqOk = true
-	case "image-to-text":
-		var req worker.GenImageToTextMultipartRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
-		if err != nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "application/json"
-		req.Image.InitFromBytes(input, "image")
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.ImageToText(ctx, req)
-		}
-		reqOk = true
-	case "text-to-speech":
-		var req worker.GenTextToSpeechJSONRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "audio/wav"
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.TextToSpeech(ctx, req)
-		}
-		reqOk = true
-	default:
-		err = errors.New("AI request pipeline type not supported")
-	}
+	// Batch pipelines were removed together with the deprecated ai-runner.
+	err = fmt.Errorf("pipeline %s is deprecated", notify.AIJobData.Pipeline)
 
 	if !reqOk {
 		resp = nil

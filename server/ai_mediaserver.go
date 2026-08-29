@@ -21,14 +21,12 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/cenkalti/backoff"
-	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-tools/drivers"
-	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 )
 
@@ -61,35 +59,10 @@ const (
 // @version 0.0.0
 
 func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
-	swagger, err := worker.GetSwagger()
-	if err != nil {
-		return err
+	for _, pipeline := range deprecatedBatchPipelines {
+		ls.HTTPMux.Handle("/"+pipeline, deprecatedPipelineHandler(pipeline))
 	}
-	swagger.Servers = nil
-
-	opts := &middleware.Options{
-		Options: openapi3filter.Options{
-			ExcludeRequestBody: true,
-			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
-		},
-		ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
-			clog.Errorf(context.Background(), "oapi validation error statusCode=%v message=%v", statusCode, message)
-		},
-	}
-	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
-
-	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
-
-	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
-	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
-	ls.HTTPMux.Handle("/upscale", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
-	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
-	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
-	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
-	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
-	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
-	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
-	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
+	ls.HTTPMux.Handle("/image-to-video/result", deprecatedPipelineHandler("image-to-video"))
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
