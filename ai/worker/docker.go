@@ -48,26 +48,10 @@ var maxHealthCheckFailures = 2
 // This only works right now on a single GPU because if there is another container
 // using the GPU we stop it so we don't have to worry about having enough ports
 var containerHostPorts = map[string]string{
-	"text-to-image":       "8000",
-	"image-to-image":      "8100",
-	"image-to-video":      "8200",
-	"upscale":             "8300",
-	"audio-to-text":       "8400",
-	"llm":                 "8500",
-	"segment-anything-2":  "8600",
-	"image-to-text":       "8700",
-	"text-to-speech":      "8800",
 	"live-video-to-video": "8900",
 }
 
-// Default pipeline container image mapping to use if no overrides are provided.
-var defaultBaseImage = "livepeer/ai-runner:latest"
-var pipelineToImage = map[string]string{
-	"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
-	"text-to-speech":     "livepeer/ai-runner:text-to-speech",
-	"audio-to-text":      "livepeer/ai-runner:audio-to-text",
-	"llm":                "livepeer/ai-runner:llm",
-}
+// Default live pipeline container image mapping to use if no overrides are provided.
 var livePipelineToImage = map[string]string{
 	"streamdiffusion": "livepeer/ai-runner:live-app-streamdiffusion",
 	// streamdiffusion-sd15 is a utility image that uses an SD1.5 model on the default config of the pipeline. Optimizes startup time.
@@ -87,10 +71,9 @@ var livePipelineToImage = map[string]string{
 	"scope": "daydreamlive/scope-runner",
 }
 
+// ImageOverrides maps live pipeline names to the container images to run for them.
 type ImageOverrides struct {
-	Default string            `json:"default"`
-	Batch   map[string]string `json:"batch"`
-	Live    map[string]string `json:"live"`
+	Live map[string]string `json:"live"`
 }
 
 // DockerClient is an interface for the Docker client, allowing for mocking in tests.
@@ -273,26 +256,16 @@ func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 // getContainerImageName returns the image name for the given pipeline and model ID.
 // Returns an error if the image is not found for "live-video-to-video".
 func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string, error) {
-	if pipeline == "live-video-to-video" {
-		// We currently use the model ID as the live pipeline name for legacy reasons.
-		if image, ok := m.overrides.Live[modelID]; ok {
-			return image, nil
-		} else if image, ok := livePipelineToImage[modelID]; ok {
-			return image, nil
-		}
-		return "", fmt.Errorf("no container image found for live pipeline %s", modelID)
+	if pipeline != "live-video-to-video" {
+		return "", fmt.Errorf("no container image found for pipeline %s: batch pipelines are no longer supported", pipeline)
 	}
-
-	if image, ok := m.overrides.Batch[pipeline]; ok {
+	// We currently use the model ID as the live pipeline name for legacy reasons.
+	if image, ok := m.overrides.Live[modelID]; ok {
 		return image, nil
-	} else if image, ok := pipelineToImage[pipeline]; ok {
+	} else if image, ok := livePipelineToImage[modelID]; ok {
 		return image, nil
 	}
-
-	if m.overrides.Default != "" {
-		return m.overrides.Default, nil
-	}
-	return defaultBaseImage, nil
+	return "", fmt.Errorf("no container image found for live pipeline %s", modelID)
 }
 
 // HasCapacity checks if an unused managed container exists or if a GPU is available for a new container.
@@ -305,12 +278,6 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 		if rc.Pipeline == pipeline && rc.ModelID == modelID {
 			return true
 		}
-	}
-
-	// TODO: This can be removed if we optimize the selection algorithm.
-	// Currently, using CreateContainer errors only can cause orchestrator reselection.
-	if pipeline != "live-video-to-video" && !m.isImageAvailable(ctx, pipeline, modelID) {
-		return false
 	}
 
 	// Check for available GPU to allocate for a new container for the requested model.

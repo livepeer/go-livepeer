@@ -168,42 +168,6 @@ func (f *ServerlessWorker) SetTrickleServer(srv *trickle.Server) {
 	f.trickleSrv = srv
 }
 
-func (f *ServerlessWorker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.TextToImage not implemented")
-}
-
-func (f *ServerlessWorker) ImageToImage(ctx context.Context, req GenImageToImageMultipartRequestBody) (*ImageResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.ImageToImage not implemented")
-}
-
-func (f *ServerlessWorker) ImageToVideo(ctx context.Context, req GenImageToVideoMultipartRequestBody) (*VideoResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.ImageToVideo not implemented")
-}
-
-func (f *ServerlessWorker) Upscale(ctx context.Context, req GenUpscaleMultipartRequestBody) (*ImageResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.Upscale not implemented")
-}
-
-func (f *ServerlessWorker) AudioToText(ctx context.Context, req GenAudioToTextMultipartRequestBody) (*TextResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.AudioToText not implemented")
-}
-
-func (f *ServerlessWorker) LLM(ctx context.Context, req GenLLMJSONRequestBody) (interface{}, error) {
-	return nil, fmt.Errorf("ServerlessWorker.LLM not implemented")
-}
-
-func (f *ServerlessWorker) SegmentAnything2(ctx context.Context, req GenSegmentAnything2MultipartRequestBody) (*MasksResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.SegmentAnything2 not implemented")
-}
-
-func (f *ServerlessWorker) ImageToText(ctx context.Context, req GenImageToTextMultipartRequestBody) (*ImageToTextResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.ImageToText not implemented")
-}
-
-func (f *ServerlessWorker) TextToSpeech(ctx context.Context, req GenTextToSpeechJSONRequestBody) (*AudioResponse, error) {
-	return nil, fmt.Errorf("ServerlessWorker.TextToSpeech not implemented")
-}
-
 func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVideoToVideoJSONRequestBody) (*LiveVideoToVideoResponse, error) {
 	manifestID := ""
 	if req.ManifestId != nil {

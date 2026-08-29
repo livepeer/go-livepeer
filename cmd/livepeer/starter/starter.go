@@ -182,7 +182,6 @@ type LivepeerConfig struct {
 	RemoteSignerWebhookHeaders *string
 	RemoteSignerAllowNoAuth    *bool
 	RemoteDiscovery            *bool
-	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
@@ -251,7 +250,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLiveRunnerProxyURL := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
-	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
@@ -383,7 +381,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
-		AIRunnerImage:            &defaultAIRunnerImage,
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
@@ -1397,14 +1394,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err := json.Unmarshal([]byte(*cfg.AIRunnerImageOverrides), &imageOverrides); err != nil {
 				glog.Errorf("Error unmarshaling image overrides: %v", err)
 				return
-			}
-		}
-
-		// Backwards compatibility for deprecated flags.
-		if *cfg.AIRunnerImage != "" {
-			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
-			if imageOverrides.Default == "" {
-				imageOverrides.Default = *cfg.AIRunnerImage
 			}
 		}
 
