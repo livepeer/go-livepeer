@@ -261,11 +261,6 @@ type (
 		removedAt  time.Time
 		tries      map[uint64]tryData // seqNo:try
 	}
-
-	AIJobInfo struct {
-		LatencyScore float64
-		PricePerUnit float64
-	}
 )
 
 // Exporter Prometheus exporter that handles `/metrics` endpoint
@@ -2012,38 +2007,6 @@ func (cen *censusMetricsCounter) recordModelRequested(pipeline, modelName string
 	}
 }
 
-// AIRequestFinished records gateway AI job request metrics.
-func AIRequestFinished(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, orchInfo *lpnet.OrchestratorInfo) {
-	census.recordModelRequested(pipeline, model)
-	census.recordAIRequestLatencyScore(pipeline, model, jobInfo.LatencyScore, orchInfo)
-	census.recordAIRequestPricePerUnit(pipeline, model, jobInfo.PricePerUnit)
-}
-
-// recordAIRequestLatencyScore records the latency score for a AI job request.
-func (cen *censusMetricsCounter) recordAIRequestLatencyScore(pipeline string, Model string, latencyScore float64, orchInfo *lpnet.OrchestratorInfo) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
-
-	tags := []tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model)}
-	tags = append(tags, orchInfoTags(orchInfo)...)
-
-	if err := stats.RecordWithTags(cen.ctx, tags, cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
-}
-
-// recordAIRequestPricePerUnit records the price per unit for a AI job request.
-func (cen *censusMetricsCounter) recordAIRequestPricePerUnit(pipeline string, Model string, pricePerUnit float64) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
-
-	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model)},
-		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
-}
-
 // AIRequestError logs an error in a gateway AI job request.
 func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.OrchestratorInfo) {
 	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)}
@@ -2175,37 +2138,6 @@ func AIWhipTransportBytesReceived(bytes int64) {
 
 func AIWhipTransportBytesSent(bytes int64) {
 	stats.Record(census.ctx, census.mAIWhipTransportBytesSent.M(bytes))
-}
-
-// AIJobProcessed records orchestrator AI job processing metrics.
-func AIJobProcessed(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo) {
-	census.recordModelRequested(pipeline, model)
-	census.recordAIJobLatencyScore(pipeline, model, jobInfo.LatencyScore)
-	census.recordAIJobPricePerUnit(pipeline, model, jobInfo.PricePerUnit)
-}
-
-// recordAIJobLatencyScore records the latency score for a processed AI job.
-func (cen *censusMetricsCounter) recordAIJobLatencyScore(pipeline string, Model string, latencyScore float64) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
-
-	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model)},
-		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
-}
-
-// recordAIJobPricePerUnit logs the cost per unit of a processed AI job.
-func (cen *censusMetricsCounter) recordAIJobPricePerUnit(pipeline string, Model string, pricePerUnit float64) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
-
-	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model)},
-		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
 }
 
 // AIProcessingError logs errors in orchestrator AI job processing.

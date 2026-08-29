@@ -78,15 +78,6 @@ type Orchestrator interface {
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
 	Nodes() []string
-	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
-	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
-	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
-	Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error)
-	AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error)
-	LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error)
-	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
-	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
-	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
 	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
 	RemoveExternalCapability(extCapability string) error

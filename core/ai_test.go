@@ -15,7 +15,6 @@ import (
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-tools/drivers"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -545,46 +544,6 @@ func TestCheckAICapacity(t *testing.T) {
 	assert.False(t, hasCapacity)
 	assert.Nil(t, releaseCapacity)
 }
-func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Capabilities = NewCapabilities(DefaultCapabilities(), nil)
-	n.Capabilities.version = "1.0"
-	n.Capabilities.SetPerCapabilityConstraints(make(PerCapabilityConstraints))
-	n.AIWorkerManager = NewRemoteAIWorkerManager()
-	o := NewOrchestrator(n, nil)
-
-	initAIWorker := func() (*RemoteAIWorker, *StubAIWorkerServer) {
-		strm := &StubAIWorkerServer{manager: o.node.AIWorkerManager}
-		caps := createAIWorkerCapabilities()
-		wkr := NewRemoteAIWorker(o.node.AIWorkerManager, strm, caps, nil)
-		return wkr, strm
-	}
-	//create worker and connect to manager
-	wkr, strm := initAIWorker()
-	go o.node.serveAIWorker(strm, wkr.capabilities.ToNetCapabilities(), nil)
-	time.Sleep(5 * time.Millisecond) // allow the workers to activate
-
-	//check workers connected
-	assert.Equal(t, 1, len(o.node.AIWorkerManager.remoteAIWorkers))
-	assert.NotNil(t, o.node.AIWorkerManager.liveAIWorkers[strm])
-
-	//test text-to-image
-	modelID := "livepeer/model1"
-	req := worker.GenTextToImageJSONRequestBody{}
-	req.Prompt = "a titan carrying steel ball with livepeer logo"
-	req.ModelId = &modelID
-	o.CreateStorageForRequest("request_id1")
-	res, err := o.TextToImage(context.TODO(), "request_id1", req)
-	results, ok := res.(worker.ImageResponse)
-	assert.True(t, ok)
-	assert.Nil(t, err)
-	assert.Equal(t, "/stream/request_id1/image_url", results.Images[0].Url)
-	// remove worker
-	wkr.eof <- struct{}{}
-	time.Sleep(1 * time.Second)
-
-}
 func TestReserveAICapability(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Capabilities = createAIWorkerCapabilities()
@@ -650,68 +609,6 @@ type stubAIWorker struct{}
 
 func (a *stubAIWorker) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
-}
-
-func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
-}
-
-func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
-}
-
-func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
-	return &worker.VideoResponse{
-		Frames: [][]worker.Media{
-			{
-				{Url: "http://example.com/frame1.png", Nsfw: false},
-				{Url: "http://example.com/frame2.png", Nsfw: false},
-			},
-			{
-				{Url: "http://example.com/frame3.png", Nsfw: false},
-				{Url: "http://example.com/frame4.png", Nsfw: false},
-			},
-		},
-	}, nil
-}
-
-func (a *stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
-}
-
-func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	return &worker.TextResponse{Text: "Transcribed text"}, nil
-}
-
-func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
-	return &worker.MasksResponse{Logits: "logits", Masks: "masks", Scores: "scores"}, nil
-}
-
-func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	var choices []worker.LLMChoice
-	choices = append(choices, worker.LLMChoice{Delta: &worker.LLMMessage{Content: "choice1", Role: "assistant"}, Index: 0})
-	tokensUsed := worker.LLMTokenUsage{PromptTokens: 40, CompletionTokens: 10, TotalTokens: 50}
-	return &worker.LLMResponse{Choices: choices, Created: 1, Model: "llm_model", Usage: tokensUsed}, nil
-}
-
-func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
-	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
-}
-
-func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
-	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
 }
 
 func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
