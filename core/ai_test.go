@@ -13,21 +13,18 @@ import (
 )
 
 func TestPipelineToCapability(t *testing.T) {
-	good := "audio-to-text"
-	bad := "i-love-tests"
-	noSpaces := "llm"
-
-	cap, err := PipelineToCapability(good)
+	cap, err := PipelineToCapability("live-video-to-video")
 	assert.Nil(t, err)
-	assert.Equal(t, cap, Capability_AudioToText)
+	assert.Equal(t, cap, Capability_LiveVideoToVideo)
 
-	cap, err = PipelineToCapability(bad)
+	cap, err = PipelineToCapability("i-love-tests")
 	assert.Error(t, err)
 	assert.Equal(t, cap, Capability_Unused)
 
-	cap, err = PipelineToCapability(noSpaces)
-	assert.Nil(t, err)
-	assert.Equal(t, cap, Capability_LLM)
+	// removed batch pipelines no longer resolve to a capability
+	cap, err = PipelineToCapability("text-to-image")
+	assert.Error(t, err)
+	assert.Equal(t, cap, Capability_Unused)
 }
 
 func TestCheckAICapacity(t *testing.T) {
@@ -36,14 +33,14 @@ func TestCheckAICapacity(t *testing.T) {
 	wkr := stubAIWorker{}
 	n.Capabilities = createAIWorkerCapabilities()
 	n.AIWorker = &wkr
-	// Test when local AI worker has capacity
-	hasCapacity, releaseCapacity := o.CheckAICapacity("text-to-image", "livepeer/model1")
+	// Test when local AI worker has capacity: live-video-to-video defers to the worker
+	hasCapacity, releaseCapacity := o.CheckAICapacity("live-video-to-video", "livepeer/model1")
 	assert.True(t, hasCapacity)
-	releaseCapacity <- true
+	assert.Nil(t, releaseCapacity)
 
 	// Test when no local AI worker is configured
 	o.node.AIWorker = nil
-	hasCapacity, releaseCapacity = o.CheckAICapacity("text-to-image", "livepeer/model1")
+	hasCapacity, releaseCapacity = o.CheckAICapacity("live-video-to-video", "livepeer/model1")
 	assert.False(t, hasCapacity)
 	assert.Nil(t, releaseCapacity)
 }
@@ -52,13 +49,13 @@ func TestReserveAICapability(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Capabilities = createAIWorkerCapabilities()
 
-	pipeline := "audio-to-text"
-	modelID := "livepeer/model1"
+	pipeline := "live-video-to-video"
+	modelID := "livepeer/model2"
 
 	// Add AI capability and model
 	caps := NewCapabilities(DefaultCapabilities(), nil)
 	caps.SetPerCapabilityConstraints(PerCapabilityConstraints{
-		Capability_AudioToText: {
+		Capability_LiveVideoToVideo: {
 			Models: ModelConstraints{
 				modelID: {Warm: true, Capacity: 2},
 			},
@@ -71,7 +68,7 @@ func TestReserveAICapability(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Check capacity is reduced
-	cap := n.Capabilities.constraints.perCapability[Capability_AudioToText]
+	cap := n.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo]
 	assert.Equal(t, 1, cap.Models[modelID].Capacity)
 
 	// Reserve AI capability again
@@ -79,7 +76,7 @@ func TestReserveAICapability(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Check capacity is further reduced
-	cap = n.Capabilities.constraints.perCapability[Capability_AudioToText]
+	cap = n.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo]
 	assert.Equal(t, 0, cap.Models[modelID].Capacity)
 
 	// Reserve AI capability when capacity is already zero
@@ -101,8 +98,8 @@ func TestReserveAICapability(t *testing.T) {
 func createAIWorkerCapabilities() *Capabilities {
 	//create capabilities and constraints the ai worker sends to orch
 	constraints := make(PerCapabilityConstraints)
-	constraints[Capability_TextToImage] = &CapabilityConstraints{Models: make(ModelConstraints)}
-	constraints[Capability_TextToImage].Models["livepeer/model1"] = &ModelConstraint{Warm: true, Capacity: 2}
+	constraints[Capability_LiveVideoToVideo] = &CapabilityConstraints{Models: make(ModelConstraints)}
+	constraints[Capability_LiveVideoToVideo].Models["livepeer/model1"] = &ModelConstraint{Warm: true, Capacity: 2}
 	caps := NewCapabilities(DefaultCapabilities(), MandatoryOCapabilities())
 	caps.SetPerCapabilityConstraints(constraints)
 	caps.version = "1.0"

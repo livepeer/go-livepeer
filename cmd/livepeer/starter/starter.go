@@ -2438,7 +2438,7 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 
 	// Format of modelPrices json
 	// Model_id will be set to "default" to price all models in the pipeline if not specified.
-	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
+	// {"capabilities_prices": [ {"pipeline": "live-video-to-video", "model_id": "noop", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "live-video-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
 	var pricesSet struct {
 		CapabilitiesPrices []struct {
 			Pipeline      string       `json:"pipeline"`

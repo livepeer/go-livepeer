@@ -1907,7 +1907,7 @@ func Test_setLiveAICapacity(t *testing.T) {
 			capabilities: &net.Capabilities{
 				Constraints: &net.Capabilities_Constraints{
 					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
-						uint32(core.Capability_ImageToText): {},
+						uint32(core.Capability_BYOC): {},
 					},
 				},
 			},
