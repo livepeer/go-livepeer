@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -30,8 +29,6 @@ const (
 
 // protoVerAIWorker is the Authorization header value gateways send on AI requests.
 const protoVerAIWorker = "Livepeer-AI-Worker-1.0"
-
-var errWrongFormat = fmt.Errorf("result not in correct format")
 
 type ServiceUnavailableError struct {
 	err error
@@ -425,12 +422,6 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 	fee.Mul(fee, priceInfo)
 
 	return fee, nil
-}
-
-// encodeReqMetadata encodes a map of metadata into a JSON string.
-func encodeReqMetadata(metadata map[string]string) string {
-	metadataBytes, _ := json.Marshal(metadata)
-	return string(metadataBytes)
 }
 
 func hasRemoteSigner(params aiRequestParams) bool {

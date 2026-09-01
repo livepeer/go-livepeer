@@ -733,6 +733,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.NodeType = core.RemoteSignerNode
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
+		if *cfg.AIWorker && *cfg.OrchAddr != "" {
+			glog.Warning("-orchAddr is ignored for the AI worker: remote AI workers are not supported for live-video-to-video, the worker runs inside the orchestrator")
+		}
 		if !*cfg.Transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
