@@ -97,14 +97,11 @@ endif
 
 .PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router docker swagger
 
-# Git reference to download the OpenAPI spec from, defaults to `main` branch.
-# It can also be a simple git commit hash. e.g. `make ai_worker_codegen REF=c19289d`
-REF ?= refs/heads/main
 ai_worker_codegen:
 	go run github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@v2.2.0 \
 		-package worker \
 		-generate types,client,chi-server,spec \
-		https://raw.githubusercontent.com/livepeer/ai-worker/$(REF)/runner/openapi.yaml \
+		ai/worker/openapi.yaml \
 		| awk '!/WARNING/' > ai/worker/runner.gen.go
 
 livepeer:
