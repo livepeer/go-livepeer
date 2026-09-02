@@ -3,9 +3,12 @@ package eth
 import (
 	"encoding/json"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/livepeer/go-livepeer/crypto"
 	"github.com/stretchr/testify/assert"
@@ -196,4 +199,18 @@ func tmpKeyStore(t *testing.T, encrypted bool) (string, *keystore.KeyStore) {
 	}
 
 	return d, new(d)
+}
+
+func TestPassphraseFileRoundTrip(t *testing.T) {
+	// -ethPassword may name a file. The account this creates must be openable
+	// with the same value, which is what a node does on its next start.
+	require := require.New(t)
+
+	dir := t.TempDir()
+	pwFile := filepath.Join(dir, "pw.txt")
+	require.NoError(os.WriteFile(pwFile, []byte("correct horse battery staple\n"), 0600))
+
+	am, err := NewAccountManager(ethcommon.Address{}, dir, big.NewInt(1), pwFile)
+	require.NoError(err)
+	require.NoError(am.Unlock(pwFile))
 }
