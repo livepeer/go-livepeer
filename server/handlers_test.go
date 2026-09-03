@@ -2020,6 +2020,11 @@ func TestSetRewardCallerHandler(t *testing.T) {
 			form:       url.Values{"rewardCaller": {"not-an-address"}},
 			wantStatus: http.StatusBadRequest,
 		},
+		{
+			name:       "rejects a broken EIP-55 checksum",
+			form:       url.Values{"rewardCaller": {"0x16a72bdb3017196825bC53809b87F96fbEE31F6C"}},
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {

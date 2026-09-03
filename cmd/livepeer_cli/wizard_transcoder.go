@@ -267,8 +267,8 @@ func (w *wizard) setRewardCaller() {
 func (w *wizard) promptRewardCaller() string {
 	fmt.Print("Enter the address that should be allowed to call reward - ")
 	return w.readStringAndValidate(func(in string) (string, error) {
-		if !ethcommon.IsHexAddress(in) {
-			return "", fmt.Errorf("invalid hex address %v", in)
+		if !lpcommon.ValidChecksumAddress(in) {
+			return "", fmt.Errorf("invalid address %v (bad hex or EIP-55 checksum)", in)
 		}
 		if eth.IsNullAddress(ethcommon.HexToAddress(in)) {
 			return "", fmt.Errorf("cannot set the zero address; answer y to the unset prompt instead")
