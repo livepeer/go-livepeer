@@ -379,6 +379,10 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 	return s.gasPrice
 }
 
+func (s *stubGasPriceMonitor) MaxGasPrice() *big.Int {
+	return nil
+}
+
 type stubSenderMonitor struct {
 	maxFloat          *big.Int
 	redeemable        chan *redemption
