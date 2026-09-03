@@ -21,6 +21,7 @@ type LivePaymentProcessor struct {
 
 	lastProcessedAt time.Time
 	lastProcessedMu sync.RWMutex
+	processMu       sync.Mutex
 	processCh       chan time.Time
 
 	processSegmentFunc func(units int64) error
@@ -68,6 +69,9 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 }
 
 func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Time) {
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+
 	if p.shouldSkip(timestamp) {
 		return
 	}
@@ -90,6 +94,10 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	// included in a later payment instead of being discarded on every callback.
 	processedDuration := time.Duration(float64(processedUnits) / float64(p.units) * float64(time.Second))
 	p.lastProcessedAt = p.lastProcessedAt.Add(processedDuration)
+}
+
+func (p *LivePaymentProcessor) processSync(ctx context.Context) {
+	p.processOne(ctx, time.Now())
 }
 
 func (p *LivePaymentProcessor) process(ctx context.Context) {
