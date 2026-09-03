@@ -398,6 +398,59 @@ func TestRedeemWinningTicket(t *testing.T) {
 	assert.Equal(sm.queued[0].Ticket, ticket)
 }
 
+func TestTickets_LargePayments(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
+	cfg.RedeemGas = 1200000             //matches to redeemGasL2 in starter.go
+	cfg.EV = big.NewInt(16000000000000) //large ticket EV
+	recipient, _ := NewRecipient(RandAddress(), b, v, gm, sm, tm, cfg)
+	sm.maxFloat = big.NewInt(361000000000000000 / 100) //maxFloat is reserve / 100
+
+	//test a really high price
+	price := big.NewRat(16000000000000, 1)
+
+	//test 1 gwei gas price
+	gm.gasPrice = big.NewInt(1000000000)
+	ticketParams, err := recipient.TicketParams(sender, price)
+	assert.Nil(err)
+	assert.NotNil(ticketParams)
+	//test 2 gwei gas price
+	gm.gasPrice = big.NewInt(2000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.Nil(err)
+	assert.NotNil(ticketParams)
+	//test 3 gwei gas price
+	gm.gasPrice = big.NewInt(3000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.Nil(err)
+	assert.NotNil(ticketParams)
+	//test 4 gwei gas price, above avg gas price
+	gm.gasPrice = big.NewInt(4000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.Nil(err)
+	assert.NotNil(ticketParams)
+
+	//now test with a max float that should fail if at avgGasPrice * redeemGasL2
+	sm.maxFloat = big.NewInt(359999999999999999 / 100) //maxFloat is reserve / 100
+
+	//test 2 gwei gas price
+	gm.gasPrice = big.NewInt(2000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.Nil(err)
+	assert.NotNil(ticketParams)
+	//test 3 gwei gas price
+	gm.gasPrice = big.NewInt(3000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.NotNil(err)
+	assert.Nil(ticketParams)
+	//test 4 gwei gas price, above avg gas price
+	gm.gasPrice = big.NewInt(4000000000)
+	ticketParams, err = recipient.TicketParams(sender, price)
+	assert.NotNil(err)
+	assert.Nil(ticketParams)
+
+}
+
 func TestTicketParams(t *testing.T) {
 	sender, b, v, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
