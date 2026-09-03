@@ -228,6 +228,55 @@ func (w *wizard) callReward() {
 	httpPost(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
 }
 
+// setRewardCaller sets the LIP-118 reward caller. The contract keys it on msg.sender, so
+// the node must hold the orchestrator's key.
+func (w *wizard) setRewardCaller() {
+	if w.offchain {
+		fmt.Println("Cannot set a reward caller in off-chain mode")
+		return
+	}
+
+	current := strings.TrimSpace(httpGet(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort)))
+
+	var rewardCaller string
+	if current != "" {
+		fmt.Printf("Current reward caller: %v\n", current)
+		fmt.Print("Unset it (y) or replace it (n)? - ")
+		if w.readStringYesOrNo() != "y" {
+			rewardCaller = w.promptRewardCaller()
+		}
+	} else {
+		fmt.Println("No reward caller is currently set")
+		rewardCaller = w.promptRewardCaller()
+	}
+
+	val := url.Values{"rewardCaller": {rewardCaller}}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setRewardCaller", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error setting reward caller: %s\n", result)
+		return
+	}
+
+	if rewardCaller == "" {
+		fmt.Println("Reward caller unset")
+		return
+	}
+	fmt.Printf("Reward caller set to %v. Run the node with that wallet and -ethOrchAddr set to this orchestrator to call reward from it.\n", rewardCaller)
+}
+
+func (w *wizard) promptRewardCaller() string {
+	fmt.Print("Enter the address that should be allowed to call reward - ")
+	return w.readStringAndValidate(func(in string) (string, error) {
+		if !lpcommon.ValidChecksumAddress(in) {
+			return "", fmt.Errorf("invalid address %v (bad hex or EIP-55 checksum)", in)
+		}
+		if eth.IsNullAddress(ethcommon.HexToAddress(in)) {
+			return "", fmt.Errorf("cannot set the zero address; answer y to the unset prompt instead")
+		}
+		return in, nil
+	})
+}
+
 func (w *wizard) vote() {
 	if w.offchain {
 		glog.Error("Can not vote in 'offchain' mode")
@@ -237,7 +286,7 @@ func (w *wizard) vote() {
 	fmt.Print("Enter the contract address for the poll you want to vote in -")
 	poll := w.readStringAndValidate(func(in string) (string, error) {
 		if !ethcommon.IsHexAddress(in) {
-			return "", fmt.Errorf("invalid hex address address=%v", in)
+			return "", fmt.Errorf("invalid hex address %v", in)
 		}
 		return in, nil
 	})
