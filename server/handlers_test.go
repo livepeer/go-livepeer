@@ -2011,10 +2011,9 @@ func TestSetRewardCallerHandler(t *testing.T) {
 			wantSet:    &ethcommon.Address{},
 		},
 		{
-			name:       "missing param unsets via the zero address",
+			name:       "rejects a missing param",
 			form:       url.Values{},
-			wantStatus: http.StatusOK,
-			wantSet:    &ethcommon.Address{},
+			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "rejects a malformed address",
