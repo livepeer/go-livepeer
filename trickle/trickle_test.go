@@ -1,0 +1,903 @@
+package trickle
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestTrickle_Close(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	//defer goleak.VerifyNone(t)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/testest"
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+	require.Error(StreamNotFoundErr, pub.Write(bytes.NewReader([]byte("first post"))))
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+	sub.SetSeq(0)
+
+	// this is lame but there is a little race condition under the hood
+	// between lp.CreateChannel and the "second post" write since the
+	// pre-connect in the second post does not always latch on in time
+	time.Sleep(1 * time.Millisecond)
+
+	// no autocreate requires creating the channel locally on the server
+	lp := NewLocalPublisher(server, "testest", "text/plain")
+	lp.CreateChannel()
+
+	// pub was created before the channel so this should still fail
+	require.Error(StreamNotFoundErr, pub.Write(bytes.NewReader([]byte("second post"))))
+
+	// now recreate pub, should be ok
+	pub, err = NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+
+	// write two segments
+	segs := []string{"first", "second"}
+	for _, s := range segs {
+		require.Nil(pub.Write(bytes.NewReader([]byte(s))), "failed writing "+s)
+	}
+
+	// now read two segments
+	sub.SetSeq(0)
+	for seq, s := range segs {
+		resp, err := sub.Read()
+		require.Nil(err, "sub.Read")
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.Nil(err, fmt.Sprintf("reading body seq=%d", seq))
+		got := string(data)
+		require.Equal(s, got, fmt.Sprintf("segment read seq=%d", seq))
+		require.Equal(fmt.Sprintf("%d", seq), resp.Header.Get("Lp-Trickle-Seq"), "Lp-Trickle-Seq")
+		require.Equal("2", resp.Header.Get("Lp-Trickle-Latest"), "Lp-Trickle-Latest")
+	}
+
+	// close the stream
+	require.Nil(pub.Close())
+
+	// requesting past the last segment should return EOS
+	_, err = sub.Read()
+	require.Error(err, EOS)
+
+	// and writing past last segment should also return EOS
+	require.Error(EOS, pub.Write(bytes.NewReader([]byte("invalid"))))
+
+	// Spinning up a second subscriber should return 404
+	sub2, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+	_, err = sub2.Read()
+	require.Error(StreamNotFoundErr, err)
+
+	// Spinning up a second publisher should return 404
+	pub2, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub2.Close()
+	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
+}
+
+func TestTrickle_TLSDefaultValidatesCertificates(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/tls-default"
+	lp := NewLocalPublisher(server, "tls-default", "text/plain")
+	lp.CreateChannel()
+	require.NoError(lp.Write(bytes.NewReader([]byte("hello"))))
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.NoError(err)
+	err = pub.Write(bytes.NewReader([]byte("world")))
+	require.Error(err)
+	require.Contains(err.Error(), "certificate")
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.NoError(err)
+	_, err = sub.Read()
+	require.Error(err)
+	require.Contains(err.Error(), "certificate")
+}
+
+func TestTrickle_InsecureSkipVerifyAllowsSelfSignedCertificates(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/tls-insecure"
+	lp := NewLocalPublisher(server, "tls-insecure", "text/plain")
+	lp.CreateChannel()
+
+	pub, err := NewTricklePublisherWithConfig(TricklePublisherConfig{
+		URL:                channelURL,
+		InsecureSkipVerify: true,
+	})
+	require.NoError(err)
+	defer pub.Close()
+	require.NoError(pub.Write(bytes.NewReader([]byte("hello"))))
+
+	sub, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL:                channelURL,
+		Ctx:                t.Context(),
+		InsecureSkipVerify: true,
+	})
+	require.NoError(err)
+	sub.SetSeq(0)
+
+	resp, err := sub.Read()
+	require.NoError(err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+	require.Equal("hello", string(body))
+}
+
+func TestLocalPublisher_CreateContract(t *testing.T) {
+	t.Run("write without autocreate returns stream not found", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: false,
+		})
+		pub := NewLocalPublisher(server, "missing", "text/plain")
+
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.ErrorIs(err, StreamNotFoundErr)
+		_, exists := server.getStream("missing")
+		require.False(exists)
+	})
+
+	t.Run("create channel without autocreate then write succeeds", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: false,
+		})
+		pub := NewLocalPublisher(server, "created", "text/plain")
+
+		pub.CreateChannel()
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.NoError(err)
+		_, exists := server.getStream("created")
+		require.True(exists)
+	})
+
+	t.Run("write with autocreate creates missing channel", func(t *testing.T) {
+		require := require.New(t)
+		server := ConfigureServer(TrickleServerConfig{
+			Mux:        http.NewServeMux(), // unused in practice with local-only publishing
+			Autocreate: true,
+		})
+		pub := NewLocalPublisher(server, "autocreated", "text/plain")
+
+		err := pub.Write(bytes.NewReader([]byte("hello")))
+
+		require.NoError(err)
+		_, exists := server.getStream("autocreated")
+		require.True(exists)
+	})
+}
+
+func TestTrickle_HTTPCreateContract(t *testing.T) {
+	t.Run("create without autocreate returns not found", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: false,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/missing", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("publish without autocreate returns not found", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: false,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/missing/0", "text/plain", bytes.NewReader([]byte("hello")))
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("create with autocreate succeeds", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/created", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("publish with autocreate succeeds", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/published/0", "text/plain", bytes.NewReader([]byte("hello")))
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+}
+
+func TestTrickle_BeforeCreate(t *testing.T) {
+	t.Run("called before creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		var called bool
+		var server *Server
+		server = ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				called = true
+				require.Equal("created", streamName)
+				require.Equal("text/plain", r.Header.Get("Expect-Content"))
+				_, exists := server.getStream(streamName)
+				require.False(exists)
+				return nil
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/created", nil)
+		require.NoError(err)
+		req.Header.Set("Expect-Content", "text/plain")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+		require.True(called)
+		resp, err = http.Get(ts.URL + "/created/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("request error prevents creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				return &RequestError{StatusCode: http.StatusForbidden, Message: "nope"}
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/blocked", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusForbidden, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/blocked/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("generic error prevents creation", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		ConfigureServer(TrickleServerConfig{
+			Mux:        mux,
+			Autocreate: true,
+			BeforeCreate: func(r *http.Request, streamName string) error {
+				return errors.New("boom")
+			},
+		})
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		resp, err := http.Post(ts.URL+"/errored", "text/plain", nil)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusInternalServerError, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/errored/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+}
+
+func TestTrickle_BeforeDelete(t *testing.T) {
+	t.Run("called before deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		var called bool
+		var server *Server
+		server = ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				called = true
+				require.Equal("deleted", streamName)
+				_, exists := server.getStream(streamName)
+				require.True(exists)
+				return nil
+			},
+		})
+		NewLocalPublisher(server, "deleted", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/deleted", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+
+		require.Equal(http.StatusOK, resp.StatusCode)
+		require.True(called)
+		resp, err = http.Get(ts.URL + "/deleted/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("request error prevents deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		server := ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				return &RequestError{StatusCode: http.StatusUnauthorized, Message: "nope"}
+			},
+		})
+		NewLocalPublisher(server, "blocked-delete", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/blocked-delete", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusUnauthorized, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/blocked-delete/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("generic error prevents deletion", func(t *testing.T) {
+		require := require.New(t)
+		mux := http.NewServeMux()
+		server := ConfigureServer(TrickleServerConfig{
+			Mux: mux,
+			BeforeDelete: func(r *http.Request, streamName string) error {
+				return errors.New("boom")
+			},
+		})
+		NewLocalPublisher(server, "errored-delete", "text/plain").CreateChannel()
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+
+		req, err := http.NewRequest(http.MethodDelete, ts.URL+"/errored-delete", nil)
+		require.NoError(err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusInternalServerError, resp.StatusCode)
+
+		resp, err = http.Get(ts.URL + "/errored-delete/next")
+		require.NoError(err)
+		resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+	})
+}
+
+func TestTrickle_Delete(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	ConfigureServer(TrickleServerConfig{
+		Mux:        mux,
+		Autocreate: true,
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/delete-test", "text/plain", nil)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/delete-test", nil)
+	require.NoError(err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func TestTrickle_SetSeq(t *testing.T) {
+	require, channelURL := makeServer(t)
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+
+	// give sub preconnect time to latch on
+
+	segs := []string{"first", "second", "third", "fourth"}
+	for _, s := range segs {
+		require.Nil(pub.Write(bytes.NewReader([]byte(s))), "failed writing "+s)
+	}
+
+	for i := range segs {
+		sub.SetSeq(i)
+		for j := i; j < len(segs); j++ {
+			s := segs[j]
+			resp, err := sub.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(s, string(buf))
+		}
+	}
+
+	// now do it again, backwards
+	for i := range segs {
+		j := len(segs) - i - 1
+		sub.SetSeq(j)
+		s := segs[j]
+		resp, err := sub.Read()
+		require.Nil(err)
+		buf, err := io.ReadAll(resp.Body)
+		require.Nil(err)
+		require.Equal(s, string(buf))
+	}
+}
+
+func TestTrickle_Reset(t *testing.T) {
+	// codifying some awful behavior for now
+	// concurrent writes will stomp over one another
+	// and subscriber has no way to distinguish
+	require, channelURL := makeServer(t)
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+	wg := &sync.WaitGroup{}
+
+	// give preconnects time to latch on
+	time.Sleep(5 * time.Millisecond)
+
+	respCh := make(chan *http.Response)
+	buf := make([]byte, 100)
+	go func() {
+		sub.SetSeq(0)
+		resp, err := sub.Read()
+		require.Nil(err)
+		n, err := io.ReadFull(resp.Body, buf[0:5])
+		require.Nil(err)
+		require.Equal(5, int(n))
+		require.Equal("Hello", string(buf[0:5]))
+		respCh <- resp
+	}()
+
+	t1, err := pub.Next()
+	r1, w1 := io.Pipe()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		n, err := t1.Write(r1)
+		require.Nil(err)
+		require.Equal(5, int(n))
+	}()
+
+	w1.Write([]byte("Hello"))
+
+	resp := <-respCh
+	defer resp.Body.Close()
+
+	readCh := make(chan bool)
+	go func() {
+		defer close(readCh)
+		d := make([]byte, 11)
+		n, err := io.ReadFull(resp.Body, d)
+		require.Nil(err)
+		require.Equal(11, int(n))
+		require.Equal("GoodbyWorld", string(d))
+	}()
+
+	// give the above goroutine time to spin up
+	time.Sleep(5 * time.Millisecond)
+
+	// write again!
+	r2, w2 := io.Pipe()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		n, err := t1.Write(r2)
+		require.Nil(err)
+		require.Equal(11, int(n))
+	}()
+	w2.Write([]byte("GoodbyWorld"))
+
+	<-readCh
+
+	w1.Close()
+	w2.Close()
+
+	// this is horrible because existing read heads
+	// on the server is not reset during segment re-writes
+	// but thats the behavior right now so codify it here
+	require.Equal("Hello\x00\x00\x00\x00\x00", string(buf[0:10]))
+
+	// now check a fresh read
+	sub.SetSeq(0)
+	resp2, err := sub.Read()
+	require.Nil(err)
+	data, err := io.ReadAll(resp2.Body)
+	defer resp2.Body.Close()
+	require.Equal("HelloGoodbyWorld", string(data))
+
+	wg.Wait()
+}
+
+// TestTrickle_PublisherReset verifies reset behavior for publisher restarts:
+// 1) a blocked subscriber on an open segment is unblocked by reset,
+// 2) already-written bytes on that segment remain readable,
+// 3) reset write goes to the current nextWrite index.
+func TestTrickle_PublisherReset(t *testing.T) {
+	require, channelURL, server := makeServerWithServer(t)
+
+	lp := NewLocalPublisher(server, "testest", "text/plain")
+	lp.CreateChannel()
+
+	// Partial write of segment 0 via pipe - do not close pipe yet.
+	r0, w0 := io.Pipe()
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		_ = lp.Write(r0)
+	}()
+	_, err := w0.Write([]byte("Hello"))
+	require.Nil(err)
+
+	// Local subscriber reads first bytes from segment 0, then blocks.
+	sub := NewLocalSubscriber(server, "testest")
+	sub.SetSeq(0)
+	td, err := sub.Read()
+	require.Nil(err)
+
+	buf := make([]byte, 5)
+	_, err = io.ReadFull(td.Reader, buf)
+	require.Nil(err)
+	require.Equal("Hello", string(buf))
+
+	unblocked := make(chan []byte, 1)
+	go func() {
+		rest, _ := io.ReadAll(td.Reader)
+		unblocked <- rest
+	}()
+
+	// HTTP POST reset - closes previous segments and writes next segment.
+	req, err := http.NewRequest("POST", channelURL+"/-1", bytes.NewReader([]byte("after-reset")))
+	require.Nil(err)
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Lp-Trickle-Reset", "true")
+	resp, err := http.DefaultClient.Do(req)
+	require.Nil(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal("1", resp.Header.Get("Lp-Trickle-Seq"), "POST /-1 should echo resolved seq")
+	resp.Body.Close()
+
+	// This receive deadlocks if reset doesn't unblock the reader.
+	<-unblocked
+
+	// Re-read segment 0 - partial data should still be there.
+	sub.SetSeq(0)
+	td, err = sub.Read()
+	require.Nil(err)
+	data, err := io.ReadAll(td.Reader)
+	require.Nil(err)
+	require.Equal("Hello", string(data))
+
+	// Reset write should land at index 1.
+	td, err = sub.Read()
+	require.Nil(err)
+	data, err = io.ReadAll(td.Reader)
+	require.Nil(err)
+	require.Equal("after-reset", string(data))
+
+	// Additional writes to the old segment writer can still succeed until writer close.
+	// This is a bit racy w subscribers but subs will terminate once they catch up.
+	// NB: Fix this someday
+	_, err = w0.Write([]byte("late-bytes"))
+	require.NoError(err)
+
+	require.Nil(w0.Close())
+	<-writeDone
+}
+
+func TestTrickle_EmptySegment(t *testing.T) {
+	require, channelURL := makeServer(t)
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	defer pub.Close()
+
+	pp, err := pub.Next()
+	require.Nil(err)
+
+	n, err := pp.Write(bytes.NewReader(nil))
+	require.Nil(err)
+	require.Equal(int64(0), n)
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+	sub.SetSeq(0)
+
+	resp, err := sub.Read()
+	defer resp.Body.Close()
+
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal("0", resp.Header.Get("Lp-Trickle-Seq"))
+	require.Equal("", resp.Header.Get("Lp-Trickle-Closed"))
+	require.Equal("1", resp.Header.Get("Lp-Trickle-Latest"))
+
+	body, err := io.ReadAll(resp.Body)
+	require.Nil(err)
+	require.Equal("", string(body))
+}
+
+func TestTrickle_IdleSweep(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux:           mux,
+		IdleTimeout:   1 * time.Millisecond,
+		SweepInterval: 10 * time.Millisecond,
+	})
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	//defer goleak.VerifyNone(t)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/testest"
+	lp := NewLocalPublisher(server, channelURL, "text/plain")
+	lp.CreateChannel()
+
+	sub, err := NewTrickleSubscriber(subConfig(t, channelURL))
+	require.Nil(err)
+	_, err = sub.Read()
+	require.ErrorIs(err, StreamNotFoundErr)
+}
+
+func TestTrickle_CancelSub(t *testing.T) {
+	require, url := makeServer(t)
+	ctx, cancel := context.WithCancelCause(t.Context())
+	sub, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL: url,
+		Ctx: ctx,
+	})
+	require.Nil(err)
+	// without the cancel, sub.Read() will hang until the channel idles out
+	customErr := errors.New("zuf")
+	go cancel(customErr)
+	_, err = sub.Read()
+	require.ErrorIs(err, customErr)
+}
+
+func TestTrickle_SetSubStart(t *testing.T) {
+	require, url := makeServer(t)
+	wg := &sync.WaitGroup{}
+
+	// Test:
+	// 1. Subscribe from the beginning
+	// 2. Subscribe from the current seq
+	// 3. Subscribe from the next seq
+	// 4. Subscribe from a specific seq
+
+	// 1. Subscribe from the beginning
+	subBeginning, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL: url,
+		Ctx: t.Context(),
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"zeroth", "first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subBeginning.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond) // give subscriber time to latch on
+
+	pub, err := NewTricklePublisher(url)
+	require.Nil(err)
+	defer pub.Close()
+
+	require.Nil(pub.Write(bytes.NewReader([]byte("zeroth"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("first"))))
+
+	// 2. Subscribe from the current seq
+	seq := Current
+	subCurrent, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subCurrent.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	// 3. Subscribe from the next seq
+	seq = Next
+	subNext, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subNext.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond) // give subscribers time to latch on
+
+	require.Nil(pub.Write(bytes.NewReader([]byte("second"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("third"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("fourth"))))
+
+	// 4. Subscribe from a specific seq
+	seq = 1
+	subSeq, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		Ctx:   t.Context(),
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subSeq.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	wg.Wait()
+	pub.Close()
+}
+
+func makeServer(t *testing.T) (*require.Assertions, string) {
+	require, url, _ := makeServerWithServer(t)
+	return require, url
+}
+
+func makeServerWithServer(t *testing.T) (*require.Assertions, string, *Server) {
+	// use this function if these defaults work, otherwise copy-paste
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux: mux,
+	})
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	t.Cleanup(func() {
+		stop()
+		ts.Close()
+		//goleak.VerifyNone(t)
+	})
+
+	// create the channel locally on the server
+	chanName := "testest"
+	lp := NewLocalPublisher(server, chanName, "text/plain")
+	lp.CreateChannel()
+
+	return require, ts.URL + "/" + chanName, server
+}
+
+func subConfig(t *testing.T, url string) TrickleSubscriberConfig {
+	return TrickleSubscriberConfig{URL: url, Ctx: t.Context()}
+}

@@ -2,8 +2,11 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -21,10 +25,9 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 1 * time.Hour
-var getTicker = func() *time.Ticker {
-	return time.NewTicker(cacheRefreshInterval)
-}
+const orchestratorEndpointDiscoveryMaxBytes = 1 << 20
+
+var orchestratorEndpointDiscoveryTimeout = 2 * time.Second
 
 type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
@@ -37,9 +40,43 @@ type DBOrchestratorPoolCache struct {
 	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
+	discoveryTimeout      time.Duration
+	ignoreCapacityCheck   bool
+	useDiscoveryEndpoint  bool
+	node                  *core.LivepeerNode
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string) (*DBOrchestratorPoolCache, error) {
+type orchPollingInfo struct {
+	level     int
+	orchInfo  *net.OrchestratorInfo
+	dbOrch    *common.DBOrch
+	discovery json.RawMessage
+}
+
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration, liveAICapReportInterval time.Duration) (*DBOrchestratorPoolCache, error) {
+	return DBOrchestratorPoolCacheConfig{
+		Ctx:                     ctx,
+		Node:                    node,
+		RoundsManager:           rm,
+		OrchBlacklist:           orchBlacklist,
+		DiscoveryTimeout:        discoveryTimeout,
+		LiveAICapReportInterval: liveAICapReportInterval,
+	}.New()
+}
+
+type DBOrchestratorPoolCacheConfig struct {
+	Ctx                     context.Context
+	Node                    *core.LivepeerNode
+	RoundsManager           common.RoundsManager
+	OrchBlacklist           []string
+	DiscoveryTimeout        time.Duration
+	LiveAICapReportInterval time.Duration
+	IgnoreCapacityCheck     bool
+	UseDiscoveryEndpoint    bool
+}
+
+func (cfg DBOrchestratorPoolCacheConfig) New() (*DBOrchestratorPoolCache, error) {
+	node := cfg.Node
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -48,21 +85,41 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		store:                 node.Database,
 		lpEth:                 node.Eth,
 		ticketParamsValidator: node.Sender,
-		rm:                    rm,
+		rm:                    cfg.RoundsManager,
 		bcast:                 core.NewBroadcaster(node),
-		orchBlacklist:         orchBlacklist,
+		orchBlacklist:         cfg.OrchBlacklist,
+		discoveryTimeout:      cfg.DiscoveryTimeout,
+		ignoreCapacityCheck:   cfg.IgnoreCapacityCheck,
+		useDiscoveryEndpoint:  cfg.UseDiscoveryEndpoint,
+		node:                  node,
 	}
 
-	if err := dbo.cacheTranscoderPool(); err != nil {
-		return nil, err
+	cacheOrchestrators := func() error {
+		if err := dbo.cacheTranscoderPool(); err != nil {
+			return err
+		}
+
+		if err := dbo.cacheOrchestratorStake(); err != nil {
+			return err
+		}
+
+		if err := dbo.pollOrchestratorInfo(cfg.Ctx, cfg.LiveAICapReportInterval); err != nil {
+			return err
+		}
+		return nil
 	}
 
-	if err := dbo.cacheOrchestratorStake(); err != nil {
-		return nil, err
-	}
-
-	if err := dbo.pollOrchestratorInfo(ctx); err != nil {
-		return nil, err
+	if node.OrchestratorPool != nil {
+		// We already have Orchestrator Pool, so we're fine caching in the background and not delay the startup
+		go func() {
+			err := cacheOrchestrators()
+			if err != nil {
+				clog.Errorf(context.Background(), "Error caching orchestrators: %v", err)
+			}
+		}()
+	} else {
+		// We don't have yet Orchestrator Pool, so we need to fetch it synchronously here
+		return dbo, cacheOrchestrators()
 	}
 
 	return dbo, nil
@@ -71,7 +128,6 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			MaxPrice:       server.BroadcastCfg.MaxPrice(),
 			CurrentRound:   dbo.rm.LastInitializedRound(),
 			UpdatedLastDay: true,
 		},
@@ -120,8 +176,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 			return false
 		}
 
-		// check if O's price is below B's max price
-		maxPrice := server.BroadcastCfg.MaxPrice()
+		// check if O has a valid price
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
 			clog.V(common.DEBUG).Infof(ctx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
@@ -131,18 +186,26 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 			clog.V(common.DEBUG).Infof(ctx, "no price info received for orch=%v", info.GetTranscoder())
 			return false
 		}
-		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
-			clog.V(common.DEBUG).Infof(ctx, "orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
-				info.GetTranscoder(),
-				price.FloatString(3),
-				maxPrice.FloatString(3),
-			)
+		if price.Sign() < 0 {
+			clog.V(common.DEBUG).Infof(ctx, "invalid price received for orch=%v price=%v", info.GetTranscoder(), price.RatString())
 			return false
 		}
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist)
+	orchPool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		Broadcaster:         dbo.bcast,
+		URIs:                uris,
+		Pred:                pred,
+		Score:               common.Score_Untrusted,
+		OrchBlacklist:       dbo.orchBlacklist,
+		DiscoveryTimeout:    dbo.discoveryTimeout,
+		IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
+		ExtraNodes:          dbo.bcast.ExtraNodes(),
+	})
+	if err != nil {
+		return nil, err
+	}
 	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
@@ -154,7 +217,6 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
-			MaxPrice:       server.BroadcastCfg.MaxPrice(),
 			CurrentRound:   dbo.rm.LastInitializedRound(),
 			UpdatedLastDay: true,
 		},
@@ -195,7 +257,8 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	currentRound := dbo.rm.LastInitializedRound()
@@ -238,19 +301,20 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	return nil
 }
 
-func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) error {
-	if err := dbo.cacheDBOrchs(); err != nil {
+func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context, liveAICapReportInterval time.Duration) error {
+	if err := dbo.cacheOrchInfos(); err != nil {
+		glog.Errorf("unable to poll orchestrator info: %v", err)
 		return err
 	}
 
-	ticker := getTicker()
+	ticker := time.NewTicker(liveAICapReportInterval)
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := dbo.cacheDBOrchs(); err != nil {
+				if err := dbo.cacheOrchInfos(); err != nil {
 					glog.Errorf("unable to poll orchestrator info: %v", err)
 				}
 			}
@@ -260,28 +324,76 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 	return nil
 }
 
-func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
-	orchs, err := dbo.store.SelectOrchs(
-		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
+	//get list of orchestrators to poll info for.  If -orchAddr or -orchWebhookUrl is used it will
+	//limit the set of orchestrators polled to those specified.
+	var orchs []common.OrchestratorLocalInfo
+	if dbo.node.OrchestratorPool != nil {
+		orchs = dbo.node.OrchestratorPool.GetInfos()
+		glog.Infof("Using orchestrator pool with %d orchestrators", len(orchs))
+	} else {
+		// Orchestrator pool set to use DBOrchestratorPoolCache after initial polling
+		// of OrchestratorInfo runs.  Fall back to using DB orchestrators from the registered
+		// orchestrators in the DB.
+		dbOrchs, err := dbo.store.SelectOrchs(
+			&common.DBOrchFilter{
+				CurrentRound: dbo.rm.LastInitializedRound(),
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+		}
+
+		for _, o := range dbOrchs {
+			url, err := parseURI(o.ServiceURI)
+			if err != nil {
+				continue
+			}
+			orchs = append(orchs, common.OrchestratorLocalInfo{URL: url})
+		}
+
+		glog.Infof("Using DB orchestrator pool with %d orchestrators", len(orchs))
 	}
 
-	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	nodesPerOrch := dbo.bcast.ExtraNodes()
+	// Each base orchestrator can contribute itself plus up to nodesPerOrch first-level advertised nodes.
+	maxOrchs := len(orchs) * (nodesPerOrch + 1)
+	resc, errc := make(chan orchPollingInfo, maxOrchs), make(chan error, maxOrchs)
+	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	getOrchInfoRPC := serverGetOrchInfo
+	if pool, ok := dbo.node.OrchestratorPool.(*orchestratorPool); ok && pool.getOrchInfo != nil {
+		getOrchInfoRPC = pool.getOrchInfo
+	}
 
-	getOrchInfo := func(dbOrch *common.DBOrch) {
-		uri, err := parseURI(dbOrch.ServiceURI)
+	getOrchInfo := func(orch common.OrchestratorLocalInfo, level int) {
+		uri, err := parseURI(orch.URL.String())
 		if err != nil {
 			errc <- err
 			return
 		}
+		// Do not connect if URI host is not set
+		if uri.Host == "" {
+			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
+			return
+		}
 
-		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri)
+		var discoveryCh chan json.RawMessage
+		if dbo.useDiscoveryEndpoint {
+			discoveryCh = make(chan json.RawMessage, 1)
+			go func() {
+				discovery, err := callOrchestratorDiscovery(ctx, uri)
+				if err != nil {
+					clog.V(common.DEBUG).Infof(ctx, "unable to fetch orchestrator endpoint discovery orch=%v err=%q", uri, err)
+				}
+				discoveryCh <- discovery
+			}()
+		}
+
+		info, err := getOrchInfoRPC(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{
+			IgnoreCapacityCheck: dbo.ignoreCapacityCheck,
+		})
 		if err != nil {
 			errc <- err
 			return
@@ -306,38 +418,153 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			return
 		}
 
-		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
-		if err != nil {
-			errc <- err
+		var dbOrch *common.DBOrch
+		if info.GetTicketParams() != nil {
+			dbOrch = &common.DBOrch{
+				EthereumAddr: ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
+			}
+
+			dbOrch.PricePerPixel, err = common.PriceToFixed(price)
+			if err != nil {
+				errc <- err
+				return
+			}
+		}
+
+		var discovery json.RawMessage
+		if discoveryCh != nil {
+			select {
+			case discovery = <-discoveryCh:
+			case <-ctx.Done():
+				clog.V(common.DEBUG).Infof(ctx, "skipping orchestrator endpoint discovery orch=%v err=%q", uri, ctx.Err())
+			}
+		}
+
+		resc <- orchPollingInfo{
+			level:     level,
+			orchInfo:  info,
+			dbOrch:    dbOrch,
+			discovery: discovery,
+		}
+	}
+
+	seen := make(map[string]bool, maxOrchs)
+	numOrchs := 0
+	startOrchLookup := func(orch common.OrchestratorLocalInfo, level int) {
+		if orch.URL == nil {
 			return
 		}
-		resc <- dbOrch
-	}
-
-	numOrchs := 0
-	for _, orch := range orchs {
-		if orch == nil {
-			continue
+		key := orch.URL.String()
+		if key == "" || seen[key] {
+			return
 		}
+		seen[key] = true
 		numOrchs++
-		go getOrchInfo(orch)
+		go getOrchInfo(orch, level)
 	}
 
+	for _, orch := range orchs {
+		startOrchLookup(orch, 0)
+	}
+
+	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
 	for i := 0; i < numOrchs; i++ {
 		select {
 		case res := <-resc:
-			if err := dbo.store.UpdateOrch(res); err != nil {
-				glog.Error("Error updating Orchestrator in DB: ", err)
+			//add response to network capabilities
+			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res))
+
+			// discover newly advertised nodes. only recurse the first level.
+			if res.level == 0 && len(res.orchInfo.GetNodes()) > 0 {
+				for idx, inst := range res.orchInfo.GetNodes() {
+					if idx >= nodesPerOrch {
+						break
+					}
+					u, err := parseURI(inst)
+					if err != nil {
+						glog.Errorf("Invalid node URL orch=%v node=%v err=%q", res.orchInfo.GetTranscoder(), inst, err)
+						continue
+					}
+					startOrchLookup(common.OrchestratorLocalInfo{URL: u, Score: common.Score_Untrusted}, res.level+1)
+				}
+			}
+
+			//update db with response
+			if res.dbOrch != nil {
+				if err := dbo.store.UpdateOrch(res.dbOrch); err != nil {
+					glog.Error("Error updating Orchestrator in DB: ", err)
+				}
 			}
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
-			glog.Info("Done fetching orch info for orchestrators, context timeout")
-			return nil
+			glog.Infof("Done fetching orch info for orchestrators, context timeout (fetched: %v out of %v)", i, numOrchs)
+			i = numOrchs //exit loop
 		}
 	}
 
+	// Save network capabilities in LivepeerNode
+	dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
+
+	// Report AI container capacity metrics
+	reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities)
+
 	return nil
+}
+
+func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
+	if !monitor.Enabled {
+		return
+	}
+	// Build structured capacity data
+	modelCapacities := make(map[string]*monitor.ModelAICapacities)
+
+	for _, orchCap := range orchNetworkCapabilities {
+		for _, price := range orchCap.CapabilitiesPrices {
+			if price.Capability != uint32(core.Capability_LiveVideoToVideo) {
+				continue
+			}
+			pricePerUnit := price.PricePerUnit
+			pixelsPerUnit := price.PixelsPerUnit
+			pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
+			monitor.LiveAIPricePerPixel(orchCap.OrchURI, pricePerPixel)
+		}
+
+		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
+
+		for modelID, model := range models {
+			if _, exists := modelCapacities[modelID]; !exists {
+				modelCapacities[modelID] = &monitor.ModelAICapacities{
+					ModelID:       modelID,
+					Orchestrators: make(map[string]monitor.AIContainerCapacity),
+				}
+			}
+
+			capacity := monitor.AIContainerCapacity{
+				Idle:  int(model.Capacity),
+				InUse: int(model.CapacityInUse),
+			}
+			modelCapacities[modelID].Orchestrators[orchCap.OrchURI] = capacity
+		}
+	}
+
+	monitor.ReportAIContainerCapacity(modelCapacities)
+}
+
+func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return nil
+	}
+
+	return liveAI.Models
+}
+
+func (dbo *DBOrchestratorPoolCache) Broadcaster() common.Broadcaster {
+	return dbo.bcast
 }
 
 func parseURI(addr string) (*url.URL, error) {
@@ -383,4 +610,68 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 			CreationRoundBlockHash: ethcommon.BytesToHash(params.ExpirationParams.GetCreationRoundBlockHash()),
 		},
 	}
+}
+
+func orchInfoToOrchNetworkCapabilities(res orchPollingInfo) *common.OrchNetworkCapabilities {
+	var orch common.OrchNetworkCapabilities
+
+	// add orch operating information if available
+	info := res.orchInfo
+	if info != nil {
+		orch.LocalAddress = ethcommon.BytesToAddress(info.GetAddress()).Hex()
+		orch.OrchURI = info.GetTranscoder()
+		orch.Capabilities = info.GetCapabilities()
+		orch.PriceInfo = info.GetPriceInfo()
+		orch.Hardware = info.GetHardware()
+		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
+		if info.GetTicketParams() != nil {
+			orch.Address = string(ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex())
+		}
+	}
+	orch.Discovery = res.discovery
+
+	return &orch
+}
+
+func callOrchestratorDiscovery(ctx context.Context, orchURI *url.URL) (json.RawMessage, error) {
+	if orchURI == nil {
+		return nil, fmt.Errorf("missing orchestrator URI")
+	}
+	if orchURI.Host == "" {
+		return nil, fmt.Errorf("missing host in orchestrator URI %q", orchURI.String())
+	}
+
+	discoveryURL := orchURI.JoinPath("discovery")
+	reqCtx, cancel := context.WithTimeout(ctx, orchestratorEndpointDiscoveryTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, discoveryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: orchestratorEndpointDiscoveryTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("endpoint discovery returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, orchestratorEndpointDiscoveryMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > orchestratorEndpointDiscoveryMaxBytes {
+		return nil, fmt.Errorf("endpoint discovery response exceeds %d bytes", orchestratorEndpointDiscoveryMaxBytes)
+	}
+
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("invalid endpoint discovery JSON")
+	}
+
+	return json.RawMessage(body), nil
 }

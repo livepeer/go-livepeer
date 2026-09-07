@@ -12,8 +12,8 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
@@ -44,12 +45,15 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-var errAlreadyExists = errors.New("StreamAlreadyExists")
-var errStorage = errors.New("ErrStorage")
-var errDiscovery = errors.New("ErrDiscovery")
-var errNoOrchs = errors.New("ErrNoOrchs")
-var errUnknownStream = errors.New("ErrUnknownStream")
-var errMismatchedParams = errors.New("Mismatched type for stream params")
+var (
+	errAlreadyExists    = errors.New("StreamAlreadyExists")
+	errStorage          = errors.New("ErrStorage")
+	errDiscovery        = errors.New("ErrDiscovery")
+	errNoOrchs          = errors.New("ErrNoOrchs")
+	errUnknownStream    = errors.New("ErrUnknownStream")
+	errMismatchedParams = errors.New("Mismatched type for stream params")
+	errForbidden        = errors.New("authentication denied")
+)
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -58,6 +62,8 @@ const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
+
+const AISessionManagerTTL = 10 * time.Minute
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
@@ -106,7 +112,10 @@ type LivepeerServer struct {
 	LivepeerNode            *core.LivepeerNode
 	HTTPMux                 *http.ServeMux
 	ExposeCurrentManifest   bool
+	CliTxRoutes             bool
 	recordingsAuthResponses *cache.Cache
+
+	AISessionManager *AISessionManager
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
@@ -117,6 +126,14 @@ type LivepeerServer struct {
 	context           context.Context
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
+
+	mediaMTXApiPassword  string
+	liveAIAuthWebhookURL *url.URL
+	liveAIAuthApiKey     string
+	livePaymentInterval  time.Duration
+	outSegmentTimeout    time.Duration
+
+	byocSrv *byoc.BYOCGatewayServer
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -141,7 +158,7 @@ type authWebhookResponse struct {
 	ForceSessionReinit bool                 `json:"forceSessionReinit"`
 }
 
-func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
+func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr:     rtmpAddr,
 		RtmpDisabled: true,
@@ -181,9 +198,22 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		rtmpConnections:         make(map[core.ManifestID]*rtmpConnection),
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
+		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
+		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
+		liveAIAuthWebhookURL:    lpNode.LiveAIAuthWebhookURL,
+		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
+		livePaymentInterval:     lpNode.LivePaymentInterval,
+		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
+
+		if lpNode.LiveAISaveNSegments != nil {
+			liveAISaveNSegments = *lpNode.LiveAISaveNSegments
+		}
+		if err := startAIMediaServer(ctx, ls); err != nil {
+			return nil, fmt.Errorf("failed to start AI media server: %w", err)
+		}
 	}
 	opts.HttpMux.HandleFunc("/recordings/", ls.HandleRecordings)
 	return ls, nil
@@ -195,6 +225,9 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 
 	// Store ctx to later use as cancel signal for watchdog goroutine
 	s.context = ctx
+
+	// health endpoint
+	s.HTTPMux.Handle("/healthz", s.healthzHandler())
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s, nil), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -216,7 +249,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	}()
 	if s.LivepeerNode.NodeType == core.BroadcasterNode {
 		go func() {
-			glog.V(4).Infof("HTTP Server listening on http://%v", httpAddr)
+			glog.Infof("HTTP Server listening on http://%v", httpAddr)
 			ec <- http.ListenAndServe(httpAddr, s.HTTPMux)
 		}()
 	}
@@ -233,8 +266,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 }
 
 // RTMP Publish Handlers
-func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookResponseOverride *authWebhookResponse) func(url *url.URL) (strmID stream.AppData) {
-	return func(url *url.URL) (strmID stream.AppData) {
+func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookResponseOverride *authWebhookResponse) func(url *url.URL) (strmID stream.AppData, e error) {
+	return func(url *url.URL) (strmID stream.AppData, e error) {
 		//Check HTTP header for ManifestID
 		//If ManifestID is passed in HTTP header, use that one
 		//Else check webhook for ManifestID
@@ -251,13 +284,14 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		var VerificationFreq uint
-		nonce := rand.Uint64()
+		nonce := common.RandomUint64()
+		configFromHeader := webhookResponseOverride != nil
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
 		if resp, err = authenticateStream(AuthWebhookURL, url.String()); err != nil {
-			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
-			return nil
+			clog.Errorf(ctx, fmt.Sprintf("Forbidden: Authentication denied for streamID url=%s err=%q", url.String(), err))
+			return nil, errForbidden
 		}
 
 		// If we've received auth in header AND callback URL forms then for now, we reject cases where they're
@@ -265,7 +299,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		if resp != nil && webhookResponseOverride != nil {
 			if !resp.areProfilesEqual(*webhookResponseOverride) {
 				clog.Errorf(ctx, "Received auth header with profiles that don't match those in callback URL response")
-				return nil
+				return nil, fmt.Errorf("Received auth header with profiles that don't match those in callback URL response")
 			}
 		}
 
@@ -287,8 +321,9 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 
 			parsedProfiles, err := ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 			if err != nil {
-				clog.Errorf(ctx, "Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
-				return nil
+				errMsg := fmt.Sprintf("Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
+				clog.Errorf(ctx, errMsg)
+				return nil, errors.New(errMsg)
 			}
 			profiles = append(profiles, parsedProfiles...)
 
@@ -299,18 +334,30 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 
 			// set OS if it was provided
 			if resp.ObjectStore != "" {
-				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				if configFromHeader {
+					os, err = drivers.ParseOSURLWithHTTPClient(
+						resp.ObjectStore, false, core.LocalhostBlockedHTTPClient())
+				} else {
+					os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				}
 				if err != nil {
-					clog.Errorf(ctx, "Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
-					return nil
+					errMsg := fmt.Sprintf("Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
+					clog.Errorf(ctx, errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 			// set Recording OS if it was provided
 			if resp.RecordObjectStore != "" {
-				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
+				if configFromHeader {
+					ros, err = drivers.ParseOSURLWithHTTPClient(
+						resp.RecordObjectStore, true, core.LocalhostBlockedHTTPClient())
+				} else {
+					ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
+				}
 				if err != nil {
-					clog.Errorf(ctx, "Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
-					return nil
+					errMsg := fmt.Sprintf("Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
+					clog.Errorf(ctx, errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 
@@ -346,8 +393,10 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
-			clog.Errorf(ctx, "Too many connections for streamID url=%s err=%q", url.String(), err)
-			return nil
+			errMsg := fmt.Sprintf("Too many connections for streamID url=%s err=%q", url.String(), err)
+			clog.Errorf(ctx, errMsg)
+			return nil, errors.New(errMsg)
+
 		}
 		return &core.StreamParameters{
 			ManifestID:       mid,
@@ -360,7 +409,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			RecordOS:         ross,
 			VerificationFreq: VerificationFreq,
 			Nonce:            nonce,
-		}
+		}, nil
 	}
 }
 
@@ -433,6 +482,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 		params := streamParams(rtmpStrm.AppData())
+		params.Capabilities.SetMinVersionConstraint(s.LivepeerNode.Capabilities.MinVersionConstraint())
 		if params == nil {
 			return errMismatchedParams
 		}
@@ -512,17 +562,8 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// do not obtain this lock again while initializing channel is open, it will cause deadlock if other goroutine already obtained the lock and called getActiveRtmpConnectionUnsafe()
 	s.connectionLock.Unlock()
 
-	// initialize session manager
-	var stakeRdr stakeReader
-	if s.LivepeerNode.Eth != nil {
-		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
-	}
-	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelector(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, s.LivepeerNode.SelectionAlgorithm, s.LivepeerNode.OrchPerfScore)
-	}
-
 	// safe, because other goroutines should be waiting on initializing channel
-	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params, selFactory)
+	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params)
 
 	// populate fields and signal initializing channel
 	s.serverLock.Lock()
@@ -700,7 +741,8 @@ type BreakOperation bool
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	errorOut := func(status int, s string, params ...interface{}) {
 		httpErr := fmt.Sprintf(s, params...)
-		glog.Error(httpErr)
+		statusErr := fmt.Sprintf(" statusCode=%d", status)
+		glog.Error(httpErr + statusErr)
 		http.Error(w, httpErr, status)
 	}
 
@@ -801,7 +843,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	status, mediaFormat, err := ffmpeg.GetCodecInfoBytes(body)
 	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
-		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
+		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s status=%d format=%q vcodec=%q err=%q",
+			r.URL, status, mediaFormat.Format, mediaFormat.Vcodec, err)
+		return
+	}
+	if (status != ffmpeg.CodecStatusOk && !isZeroFrame) || (isZeroFrame && mediaFormat.Vcodec == "") {
+		errorOut(http.StatusUnprocessableEntity, "Invalid input media url=%s status=%d format=%q vcodec=%q",
+			r.URL, status, mediaFormat.Format, mediaFormat.Vcodec)
 		return
 	}
 
@@ -819,10 +867,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
-		appData := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
-		if appData == nil {
-			errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
-			return
+		appData, err := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
+		if err != nil {
+			if errors.Is(err, errForbidden) {
+				errorOut(http.StatusForbidden, "Could not create stream ID: url=%s", r.URL)
+				return
+			} else {
+				errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
+				return
+			}
 		}
 		params := streamParams(appData)
 		if authHeaderConfig != nil {
@@ -972,7 +1025,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	cxn.mu.Lock()
 	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
 		cxn.mediaFormat = mediaFormat
-	} else if cxn.mediaFormat != mediaFormat {
+	} else if !mediaCompatible(cxn.mediaFormat, mediaFormat) {
 		cxn.mediaFormat = mediaFormat
 		segPar.ForceSessionReinit = true
 	}
@@ -999,7 +1052,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(urls) == 0 {
 		if len(cxn.params.Profiles) > 0 {
-			clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+			clog.Errorf(ctx, "No sessions available name=%s url=%s statusCode=%d", fname, r.URL, http.StatusServiceUnavailable)
 			http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		}
 		return
@@ -1198,7 +1251,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			Profile: ffmpeg.VideoProfile{Format: ffmpeg.FormatNone},
 			Muxer: ffmpeg.ComponentOptions{
 				Name: "mp4",
-				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generatd file)
+				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generated file)
 				// other options is not mandatory but they will slightly improve generated MP4 file
 				Opts: map[string]string{"movflags": "frag_keyframe+negative_cts_offsets+omit_tfhd_offset+disable_chpl+default_base_moof"},
 			},
@@ -1630,5 +1683,26 @@ func getRemoteAddr(r *http.Request) string {
 	if proxiedAddr := r.Header.Get("X-Forwarded-For"); proxiedAddr != "" {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
-	return strings.Split(addr, ":")[0]
+
+	// addr is typically in the format "ip:port"
+	// Need to extract just the IP. Handle IPv6 too.
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		// probably not a real IP
+		return addr
+	}
+
+	return host
+}
+
+func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {
+	return a.Acodec == b.Acodec &&
+		a.Vcodec == b.Vcodec &&
+		a.PixFormat == b.PixFormat &&
+		a.Width == b.Width &&
+		a.Height == b.Height
+
+	// NB: there is also a Format field but that does
+	// not need to match since transcoder will reopen
+	// a new demuxer each time
 }

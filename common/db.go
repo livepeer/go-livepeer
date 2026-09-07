@@ -53,7 +53,7 @@ type DBOrch struct {
 	Stake             int64 // Stored as a fixed point number
 }
 
-// DBOrch is the type binding for a row result from the unbondingLocks table
+// DBUnbondingLock is the type binding for a row result from the unbondingLocks table
 type DBUnbondingLock struct {
 	ID            int64
 	Delegator     ethcommon.Address

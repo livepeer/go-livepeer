@@ -9,15 +9,29 @@ on:
       - master
     tags:
       - "v*"
+    paths-ignore:
+      - 'doc/**'
+      - 'docker/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  block-fixup:
+    if: ${{ github.ref_name != 'master' }}
+    name: Block merge if non-linear git history detected
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Block fixup commit merge
+        uses: 13rac1/block-fixup-merge-action@v2.0.0
+
   test:
     name: Run tests defined for the project
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Setup ubuntu container
@@ -28,7 +42,7 @@ jobs:
           sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g
 
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -43,7 +57,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.20.4
+          go-version-file: './go.mod'
           cache: true
           cache-dependency-path: go.sum
 
@@ -58,7 +72,8 @@ jobs:
 
       - name: Install protobuf
         run: |
-          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
           sudo apt update
           sudo apt install -yqq protobuf-compiler
 
@@ -67,13 +82,15 @@ jobs:
           sudo apt update \
             && sudo apt install -yqq software-properties-common curl apt-transport-https lsb-release \
             && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
-            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
+            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main" \
             && sudo apt update \
-            && sudo apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python
+            && sudo apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3
 
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
             && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
+
+          sudo apt install -yqq libx11-dev libbz2-dev libbzip3-dev
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
@@ -91,11 +108,11 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.52.2
+          version: v2.4.0
           skip-pkg-cache: true
-          args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
+          args: '--output.text.path=stdout --output.text.colors=true --output.text.print-issued-lines=true --default=none --enable=govet --timeout=4m pm verification'
 
       - name: Run Revive Action by building from repository
         uses: docker://morphy/revive-action:v2
@@ -114,20 +131,20 @@ jobs:
           ./test_e2e.sh
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
+          token: ${{ secrets.CI_CODECOV_TOKEN }}
           files: ./cover.out
           name: ${{ github.event.repository.name }}
-          verbose: true
           gcov_ignore: ./eth/stubclient.go
 
   codeql:
     name: Perform CodeQL analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -135,22 +152,22 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: go
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
 
   editorconfig:
     name: Run editorconfig checker
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion

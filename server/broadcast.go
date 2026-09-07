@@ -41,14 +41,14 @@ var maxRefreshSessionsThreshold = 8.0
 var recordSegmentsMaxTimeout = 1 * time.Minute
 
 var Policy *verification.Policy
-var BroadcastCfg = &BroadcastConfig{}
+var BroadcastCfg = NewBroadcastConfig()
 var MaxAttempts = 3
 
 var MetadataQueue event.SimpleProducer
 var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
-var downloadSeg = core.GetSegmentData
+var downloadSeg = core.DownloadData
 var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.SegmentParameters,
 	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
 	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
@@ -56,8 +56,17 @@ var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *
 var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
-	maxPrice *big.Rat
-	mu       sync.RWMutex
+	maxPricePerCapability map[core.Capability]map[string]*core.AutoConvertedPrice
+	mu                    sync.RWMutex
+}
+
+func NewBroadcastConfig() *BroadcastConfig {
+	maxPrices := make(map[core.Capability]map[string]*core.AutoConvertedPrice)
+	models := make(map[string]*core.AutoConvertedPrice)
+	maxPrices[core.Capability_Unused] = models
+	return &BroadcastConfig{
+		maxPricePerCapability: maxPrices,
+	}
 }
 
 type SegFlightMetadata struct {
@@ -68,20 +77,87 @@ type SegFlightMetadata struct {
 func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	return cfg.maxPrice
+	//base price is capability that won't be set with specific price
+	if cfg.maxPricePerCapability[core.Capability_Unused]["default"] == nil {
+		return nil
+	}
+	return cfg.maxPricePerCapability[core.Capability_Unused]["default"].Value()
 }
 
-func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
+func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	cfg.maxPrice = price
-
-	if monitor.Enabled {
-		monitor.MaxTranscodingPrice(price)
+	prevPrice := cfg.maxPricePerCapability[core.Capability_Unused]["default"]
+	cfg.maxPricePerCapability[core.Capability_Unused]["default"] = price
+	if prevPrice != nil {
+		prevPrice.Stop()
 	}
 }
 
+// GetCapabilitiesMaxPrice returns the max price for the given capabilities.
+func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityComparator) *big.Rat {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	if caps == nil {
+		return cfg.MaxPrice()
+	}
+	netCaps := caps.ToNetCapabilities()
+	if netCaps == nil || netCaps.Constraints == nil {
+		return cfg.MaxPrice()
+	}
+	price := big.NewRat(0, 1)
+	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
+		for modelID := range constraints.Models {
+			if capPrice := cfg.getCapabilityMaxPrice(core.Capability(capabilityInt), modelID); capPrice != nil {
+				price = price.Add(price, capPrice)
+			}
+		}
+	}
+
+	// If no prices set per model, return maxPrice
+	if price.Sign() == 0 {
+		return cfg.MaxPrice()
+	}
+
+	return price
+}
+
+func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID string) *big.Rat {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	models, ok := cfg.maxPricePerCapability[cap]
+	if !ok {
+		// No price set for capability
+		return nil
+	}
+	if price, modelOk := models[modelID]; modelOk && price != nil {
+		return price.Value()
+	}
+	if defaultPrice, hasDefault := models["default"]; hasDefault && defaultPrice != nil {
+		return defaultPrice.Value()
+	}
+
+	// No price set for the specific model or default
+	return nil
+}
+
+func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	if _, ok := cfg.maxPricePerCapability[cap]; !ok {
+		cfg.maxPricePerCapability[cap] = make(map[string]*core.AutoConvertedPrice)
+	}
+
+	// Stop previous price subscription if it exists.
+	if prevPrice, exists := cfg.maxPricePerCapability[cap][modelID]; exists && prevPrice != nil {
+		prevPrice.Stop()
+	}
+
+	cfg.maxPricePerCapability[cap][modelID] = newPrice
+}
+
 type sessionsCreator func() ([]*BroadcastSession, error)
+type sessionsCleanup func(sessionId string)
 type SessionPool struct {
 	mid core.ManifestID
 
@@ -98,10 +174,11 @@ type SessionPool struct {
 	finished   bool // set at stream end
 
 	createSessions sessionsCreator
+	cleanupSession sessionsCleanup
 	sus            *suspender
 }
 
-func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator,
+func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator, cleanupSession sessionsCleanup,
 	sel BroadcastSessionsSelector) *SessionPool {
 
 	return &SessionPool{
@@ -111,6 +188,7 @@ func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender,
 		sessMap:        make(map[string]*BroadcastSession),
 		sel:            sel,
 		createSessions: createSession,
+		cleanupSession: cleanupSession,
 		sus:            sus,
 	}
 }
@@ -285,7 +363,9 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 	checkSessions := func(m *SessionPool) bool {
 		numSess := m.sel.Size()
-		if numSess < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0))) {
+		refreshThreshold := int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0)))
+		clog.Infof(ctx, "Checking if the session refresh is needed, numSess=%v, refreshThreshold=%v", numSess, refreshThreshold)
+		if numSess < refreshThreshold {
 			go m.refreshSessions(ctx)
 		}
 		return (numSess > 0 || len(sp.lastSess) > 0)
@@ -373,6 +453,7 @@ func (sp *SessionPool) removeSession(session *BroadcastSession) {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
 
+	sp.cleanupSession(session.PMSessionID)
 	delete(sp.sessMap, session.Transcoder())
 }
 
@@ -444,7 +525,10 @@ func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*Broadcas
 	return common.RandomUintUnder(bsm.VerificationFreq) != 0
 }
 
-func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
+func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters) *BroadcastSessionsManager {
+	if node.Capabilities != nil {
+		params.Capabilities.SetMinVersionConstraint(node.Capabilities.MinVersionConstraint())
+	}
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
 		trustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreAtLeast(common.Score_Trusted)))
@@ -455,11 +539,14 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	untrustedNumOrchs := int(untrustedPoolSize)
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
+	cleanupSession := func(sessionID string) {
+		node.Sender.CleanupSession(sessionID)
+	}
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(ctx, node, params, trustedNumOrchs, susTrusted, common.ScoreAtLeast(common.Score_Trusted))
+		return selectOrchestrator(ctx, node, params, trustedNumOrchs, susTrusted, common.ScoreAtLeast(common.Score_Trusted), cleanupSession)
 	}
 	createSessionsUntrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(ctx, node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted))
+		return selectOrchestrator(ctx, node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted), cleanupSession)
 	}
 	var stakeRdr stakeReader
 	if node.Eth != nil {
@@ -468,8 +555,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)
@@ -505,6 +592,21 @@ func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 			segDur:    time.Duration(seg.Duration * float64(time.Second)),
 		})
 	bs.lock.Unlock()
+}
+
+// Pop a SegFlightMetadata from a session's SegsInFlight
+// Returns the end length of a session's SegsInFlight and the popped SegFlightMetadata
+func (bs *BroadcastSession) popSegInFlight() (int, SegFlightMetadata) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	if len(bs.SegsInFlight) == 0 {
+		return 0, SegFlightMetadata{}
+	}
+
+	sm := bs.SegsInFlight[0]
+	bs.SegsInFlight = bs.SegsInFlight[1:]
+	return len(bs.SegsInFlight), sm
 }
 
 // selects number of sessions to use according to current algorithm
@@ -590,14 +692,14 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	segmToCheckIndex := rand.Intn(segmcount)
 
 	// download trusted hashes
-	trustedHash, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	trustedHash, err := core.DownloadData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 	if err != nil {
 		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		return nil, nil, err
 	}
 	// download trusted video segment
-	trustedSegm, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+	trustedSegm, err := core.DownloadData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 	if err != nil {
 		err = fmt.Errorf("error downloading segment from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -608,7 +710,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
 		ouri := untrustedResult.Session.Transcoder()
-		untrustedHash, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+		untrustedHash, err := core.DownloadData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
 			err = fmt.Errorf("error uri=%s downloading perceptual hash from url=%s err=%w", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -631,7 +733,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		vequal := false
 		if equal {
 			// download untrusted video segment
-			untrustedSegm, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+			untrustedSegm, err := core.DownloadData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -760,7 +862,7 @@ func (bsm *BroadcastSessionsManager) usingVerified() bool {
 }
 
 func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender,
-	scorePred common.ScorePred) ([]*BroadcastSession, error) {
+	scorePred common.ScorePred, cleanupSession sessionsCleanup) ([]*BroadcastSession, error) {
 
 	if n.OrchestratorPool == nil {
 		clog.Infof(ctx, "No orchestrators specified; not transcoding")
@@ -807,7 +909,8 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 		var orchOS drivers.OSSession
 		if len(od.RemoteInfo.Storage) > 0 {
-			orchOS = drivers.NewSession(core.FromNetOsInfo(od.RemoteInfo.Storage[0]))
+			orchOS = drivers.NewSessionWithHTTPClient(
+				core.FromNetOsInfo(od.RemoteInfo.Storage[0]), core.LocalhostBlockedHTTPClient())
 		}
 
 		bcastOS := params.OS
@@ -821,6 +924,10 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 		if od.LocalInfo != nil {
 			oScore = od.LocalInfo.Score
 		}
+		var initialLatency time.Duration
+		if od.LocalInfo != nil && od.LocalInfo.Latency != nil {
+			initialLatency = *od.LocalInfo.Latency
+		}
 		session := &BroadcastSession{
 			Broadcaster:       core.NewBroadcaster(n),
 			Params:            params,
@@ -828,12 +935,14 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			OrchestratorOS:    orchOS,
 			BroadcasterOS:     bcastOS,
 			Sender:            n.Sender,
+			CleanupSession:    cleanupSession,
 			PMSessionID:       sessionID,
 			Balances:          n.Balances,
 			Balance:           balance,
 			lock:              &sync.RWMutex{},
 			OrchestratorScore: oScore,
 			InitialPrice:      od.RemoteInfo.PriceInfo,
+			InitialLatency:    initialLatency,
 		}
 
 		sessions = append(sessions, session)
@@ -879,7 +988,10 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			ctx, cancel := clog.WithTimeout(context.Background(), ctx, recordSegmentsMaxTimeout)
 			defer cancel()
 			now := time.Now()
-			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 3)
+			fields := &drivers.FileProperties{
+				Metadata: map[string]string{"duration": segDurMs},
+			}
+			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, fields, 3)
 			took := time.Since(now)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%q",
@@ -1083,7 +1195,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 				return nil, info, err
 			}
 			segmToCheckIndex := rand.Intn(segmcount)
-			segHash, err := core.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
+			segHash, err := core.DownloadData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
 			if err != nil || len(segHash) <= 0 {
 				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 					res.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -1168,21 +1280,12 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		res.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 
-	refresh, err := shouldRefreshSession(ctx, sess)
-	if err != nil {
-		clog.Errorf(ctx, "Error checking whether to refresh session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
+	if err := refreshSessionIfNeeded(ctx, sess, false); err != nil {
+		clog.Errorf(ctx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
 		cxn.sessManager.suspendAndRemoveOrch(sess)
 		return nil, err
 	}
 
-	if refresh {
-		err := refreshSession(ctx, sess)
-		if err != nil {
-			clog.Errorf(ctx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
-			cxn.sessManager.suspendAndRemoveOrch(sess)
-			return nil, err
-		}
-	}
 	return res, nil
 }
 
@@ -1252,7 +1355,10 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := getSegDurMsString(seg)
 				now := time.Now()
-				uri, err := drivers.SaveRetried(ctx, bros, name, data, map[string]string{"duration": segDurMs}, 3)
+				fields := &drivers.FileProperties{
+					Metadata: map[string]string{"duration": segDurMs},
+				}
+				uri, err := drivers.SaveRetried(ctx, bros, name, data, fields, 3)
 				took := time.Since(now)
 				if err != nil {
 					clog.Errorf(ctx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%q", nonce, cxn.mid, name, err)
@@ -1377,7 +1483,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess.lock.RUnlock()
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
-	// the the segments' OS location will be overwritten.
+	// the segments' OS location will be overwritten.
 	// Cache the segments so we can restore them in OS if necessary.
 	params := &verification.Params{
 		ManifestID:   sess.Params.ManifestID,
@@ -1453,7 +1559,8 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 	sess.OrchestratorInfo = oInfo
 
 	if len(oInfo.Storage) > 0 {
-		sess.OrchestratorOS = drivers.NewSession(core.FromNetOsInfo(oInfo.Storage[0]))
+		sess.OrchestratorOS = drivers.NewSessionWithHTTPClient(
+			core.FromNetOsInfo(oInfo.Storage[0]), core.LocalhostBlockedHTTPClient())
 	}
 
 	if sess.Sender != nil && oInfo.TicketParams != nil {
@@ -1462,7 +1569,9 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 		// and the next time this BroadcastSession is used, the ticket params will be validated
 		// during ticket creation in genPayment(). If ticket params validation during ticket
 		// creation fails, then this BroadcastSession will be removed
+		oldSession := sess.PMSessionID
 		sess.PMSessionID = sess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+		sess.CleanupSession(oldSession)
 
 		// Session ID changed so we need to make sure the balance tracks the new session ID
 		if oldInfo.AuthToken.SessionId != oInfo.AuthToken.SessionId {
@@ -1472,7 +1581,26 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 	}
 }
 
-func refreshSession(ctx context.Context, sess *BroadcastSession) error {
+func clearSessionBalance(sess *BroadcastSession, id core.ManifestID) {
+	sess.lock.Lock()
+	defer sess.lock.Unlock()
+	if sess.Balances != nil && sess.OrchestratorInfo != nil && sess.OrchestratorInfo.TicketParams != nil {
+		sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient), id, sess.Balances)
+	}
+}
+
+func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession, ignoreCapacityCheck bool) error {
+	shouldRefresh, err := shouldRefreshSession(ctx, sess)
+	if err != nil {
+		return err
+	}
+	if shouldRefresh {
+		return refreshSession(ctx, sess, ignoreCapacityCheck)
+	}
+	return nil
+}
+
+func refreshSession(ctx context.Context, sess *BroadcastSession, ignoreCapacityCheck bool) error {
 	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
 		return err
@@ -1480,7 +1608,10 @@ func refreshSession(ctx context.Context, sess *BroadcastSession) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 
-	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri)
+	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri, GetOrchestratorInfoParams{
+		Caps:                sess.Params.Capabilities.ToNetCapabilities(),
+		IgnoreCapacityCheck: ignoreCapacityCheck,
+	})
 	if err != nil {
 		return err
 	}

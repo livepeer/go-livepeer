@@ -1,10 +1,10 @@
 package common
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,45 +17,6 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestTxDataToVideoProfile(t *testing.T) {
-	if res, err := TxDataToVideoProfile(""); err != nil && len(res) != 0 {
-		t.Error("Unexpected return on empty input")
-	}
-	if _, err := TxDataToVideoProfile("abc"); err != ErrProfile {
-		t.Error("Unexpected return on too-short input", err)
-	}
-	if _, err := TxDataToVideoProfile("abcdefghijk"); err != ErrProfile {
-		t.Error("Unexpected return on invalid input", err)
-	}
-	res, err := TxDataToVideoProfile("93c717e7c0a6517a")
-	if err != nil || res[1] != ffmpeg.P240p30fps16x9 || res[0] != ffmpeg.P360p30fps16x9 {
-		t.Error("Unexpected profile! ", err, res)
-	}
-}
-
-func TestVideoProfileBytes(t *testing.T) {
-	if len(VideoProfileByteLookup) != len(VideoProfileNameLookup) {
-		t.Error("Video profile byte map was not created correctly")
-	}
-	if res, err := BytesToVideoProfile(nil); err != nil && len(res) != 0 {
-		t.Error("Unexpected return on empty input")
-	}
-	if res, err := BytesToVideoProfile([]byte{}); err != nil && len(res) != 0 {
-		t.Error("Unexpected return on empty input")
-	}
-	if _, err := BytesToVideoProfile([]byte("abc")); err != ErrProfile {
-		t.Error("Unexpected return on too-short input", err)
-	}
-	if _, err := BytesToVideoProfile([]byte("abcdefghijk")); err != ErrProfile {
-		t.Error("Unexpected return on invalid input", err)
-	}
-	b, _ := hex.DecodeString("93c717e7c0a6517a")
-	res, err := BytesToVideoProfile(b)
-	if err != nil || res[1] != ffmpeg.P240p30fps16x9 || res[0] != ffmpeg.P360p30fps16x9 {
-		t.Error("Unexpected profile! ", err, res)
-	}
-}
 
 func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	assert := assert.New(t)
@@ -155,26 +116,6 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
 	assert.Equal(ErrFormatProto, err)
 	assert.Nil(fullProfiles)
-}
-
-func TestProfilesToHex(t *testing.T) {
-	assert := assert.New(t)
-	// Sanity checking against an existing eth impl that we know works
-	compare := func(profiles []ffmpeg.VideoProfile) {
-		pCopy := make([]ffmpeg.VideoProfile, len(profiles))
-		copy(pCopy, profiles)
-		b1, err := hex.DecodeString(ProfilesToHex(profiles))
-		assert.Nil(err, "Error hex encoding/decoding")
-		b2, err := BytesToVideoProfile(b1)
-		assert.Nil(err, "Error converting back to profile")
-		assert.Equal(pCopy, b2)
-	}
-	// XXX double check which one is wrong! ethcommon method produces "0" zero string
-	// compare(nil)
-	// compare([]ffmpeg.VideoProfile{})
-	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9})
-	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9})
-	compare([]ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9, ffmpeg.P240p30fps16x9})
 }
 
 func TestVideoProfile_FormatMimeType(t *testing.T) {
@@ -482,4 +423,56 @@ func TestParseAccelDevices_CustomSelection(t *testing.T) {
 	assert.Equal(ids[0], "0")
 	assert.Equal(ids[1], "3")
 	assert.Equal(ids[2], "1")
+}
+func TestValidateServiceURI(t *testing.T) {
+	// Valid service URIs
+	validURIs := []string{
+		"https://8.8.8.8:8935",
+		"https://127.0.0.1:8935",
+	}
+
+	for _, uri := range validURIs {
+		serviceURI, err := url.Parse(uri)
+		if err != nil {
+			t.Errorf("Failed to parse valid service URI: %v", err)
+		}
+
+		if !ValidateServiceURI(serviceURI) {
+			t.Errorf("Expected service URI to be valid, but got invalid: %v", uri)
+		}
+	}
+
+	// Invalid service URIs
+	invalidURIs := []string{
+		"http://0.0.0.0",
+		"https://0.0.0.0",
+	}
+
+	for _, uri := range invalidURIs {
+		serviceURI, err := url.Parse(uri)
+		if err != nil {
+			t.Errorf("Failed to parse invalid service URI: %v", err)
+		}
+
+		if ValidateServiceURI(serviceURI) {
+			t.Errorf("Expected service URI to be invalid, but got valid: %v", uri)
+		}
+	}
+}
+func TestMimeTypeToExtension(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test valid content types
+	contentTypes := []string{"image/png", "video/mp4", "video/mp2t"}
+	expectedExtensions := []string{".png", ".mp4", ".ts"}
+	for i, contentType := range contentTypes {
+		ext, err := MimeTypeToExtension(contentType)
+		assert.Nil(err)
+		assert.Equal(expectedExtensions[i], ext)
+	}
+
+	// Test invalid content type
+	invalidContentType := "invalid/type"
+	_, err := MimeTypeToExtension(invalidContentType)
+	assert.Equal(ErrNoExtensionsForType, err)
 }

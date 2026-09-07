@@ -20,7 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 )
 
-// // read reads a single line from stdin, trimming if from spaces.
+// read reads a single line from stdin, trimming if from spaces.
 func (w *wizard) read() string {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
@@ -76,7 +76,7 @@ func (w *wizard) readStringAndValidate(validate func(in string) (string, error))
 	}
 }
 
-// readStringYesOrNot reads a single line from stdin, trims spaces and
+// readStringYesOrNo reads a single line from stdin, trims spaces and
 // checks that the string is either y or n
 func (w *wizard) readStringYesOrNo() string {
 	return w.readStringAndValidate(func(in string) (string, error) {
@@ -164,7 +164,7 @@ func (w *wizard) readDefaultInt(def int) int {
 
 func (w *wizard) readBigInt(prompt string) *big.Int {
 	for {
-		fmt.Printf(fmt.Sprintf("%s - > ", prompt))
+		fmt.Print(fmt.Sprintf("%s - > ", prompt))
 		text, err := w.in.ReadString('\n')
 		if err != nil {
 			log.Crit("Failed to read user input", "err", err)

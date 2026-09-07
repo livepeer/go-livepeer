@@ -1,5 +1,518 @@
 # Changelog
 
+## v0.9.2
+
+### Breaking Changes 🚨🚨
+
+* CLI: Privileged HTTP endpoints on port 7935 now require `POST`.
+* CLI: Routes on port 7935 that submit Ethereum transactions, sign messages, or change gas controls are disabled by default unless the node is started with `-enableCliTxRoutes`
+
+## v0.9.1
+
+* [#4008](https://github.com/livepeer/go-livepeer/pull/4008) runner: Add a session-scoped payment URL to the runner challenge.
+* [#4009](https://github.com/livepeer/go-livepeer/pull/4009) signer: Add app field
+* [#4014](https://github.com/livepeer/go-livepeer/pull/4014) signer: Add price ceilings
+* [#3902](https://github.com/livepeer/go-livepeer/pull/3902) ai/live: Terminate streams from heartbeat response (@gioelecerati)
+
+## v0.9.0
+
+### Breaking Changes 🚨🚨
+
+* [#3959](https://github.com/livepeer/go-livepeer/pull/3959) remote-signer: Refuse to start when `/generate-live-payment` would be unauthenticated (`-remoteSignerWebhookUrl` unset) on a publicly-accessible `-httpAddr`; pass `-remoteSignerAllowNoAuth` to override (@rickstaa)
+
+### Features ⚒
+
+#### General
+
+- [#3938](https://github.com/livepeer/go-livepeer/pull/3938) Add Live Runner
+- [#3989](https://github.com/livepeer/go-livepeer/pull/3989) Scope runtime
+- [#3944](https://github.com/livepeer/go-livepeer/pull/3944) Bridge slog level to the glog `-v` flag so `-v` controls newer subsystem logging (@rickstaa)
+
+#### Broadcaster
+
+#### Orchestrator
+
+- [#3964](https://github.com/livepeer/go-livepeer/pull/3964) trickle: Enforce TLS if Live Runner is enabled
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### General
+
+* [#3962](https://github.com/livepeer/go-livepeer/pull/3962) remote-signer: Default `-cliAddr` to a loopback address in remote signer mode so the node no longer fails to start by binding the CLI server to `:80` (@rickstaa)
+
+#### Broadcaster
+
+* [a6c4b1e](https://github.com/livepeer/go-livepeer/commit/a6c4b1ef70d8f4d3da0e7d8164ac8d1faf80ad0e) pm: Reject ticket params with a zero expiration block so they are subjected to the economic caps (@rickstaa)
+
+#### CLI
+
+## v0.8.11
+
+### Features ⚒
+
+#### General
+
+* [#3889](https://github.com/livepeer/go-livepeer/pull/3889) Remove x11 from MacOS builds (@j0sh)
+* [#3925](https://github.com/livepeer/go-livepeer/pull/3925) trickle: Add a /<channel>/next endpoint (@rickstaa)
+* [#3882](https://github.com/livepeer/go-livepeer/pull/3882) box: add webcam input and fix bash conditionals (@rickstaa)
+
+#### AI – LV2V
+
+* [#3946](https://github.com/livepeer/go-livepeer/pull/3946) ai/live: Make RTMP output optional in AI media server (@eliteprox)
+* [#3897](https://github.com/livepeer/go-livepeer/pull/3897) signer: Add auth webhook callback (@j0sh)
+* [#3877](https://github.com/livepeer/go-livepeer/pull/3877) ai/live: Send Kafka event for tracking payments (@j0sh)
+
+#### AI – BYOC
+
+* [#3878](https://github.com/livepeer/go-livepeer/pull/3878) byoc: add auth token to byoc worker registration (@ad-astra-video)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+* [a6c4b1e](https://github.com/livepeer/go-livepeer/commit/a6c4b1ef70d8f4d3da0e7d8164ac8d1faf80ad0e) pm: Reject ticket params with a zero expiration block so they are subjected to the economic caps (@rickstaa)
+
+## v0.8.10
+
+#### General
+
+* [#3872](https://github.com/livepeer/go-livepeer/pull/3872) build: install XQuartz in macOS CI to fix arm64 builds (@hjpotter92)
+
+#### Broadcaster
+
+* [#3864](https://github.com/livepeer/go-livepeer/pull/3864) Fix crash in broadcaster max price calculation (@j0sh)
+
+#### Orchestrator
+
+* [#3863](https://github.com/livepeer/go-livepeer/pull/3863) Update LPMS to c44af72 (@j0sh)
+
+#### AI – LV2V
+
+* [#3791](https://github.com/livepeer/go-livepeer/pull/3791) ai/live: Remote signer: GetOrchestratorInfo (@j0sh)
+* [#3822](https://github.com/livepeer/go-livepeer/pull/3822) ai/live: Remote signer: tickets (@j0sh)
+* [#3866](https://github.com/livepeer/go-livepeer/pull/3866) ai/live: Remote signer: discovery (@j0sh)
+* [#3870](https://github.com/livepeer/go-livepeer/pull/3870) ai/live: Remote signer: updates (@j0sh)
+
+#### AI – BYOC
+
+* [#3865](https://github.com/livepeer/go-livepeer/pull/3865) byoc: add orch swap reporting same as lv2v (@ad-astra-video)
+* [#3857](https://github.com/livepeer/go-livepeer/pull/3857) byoc: fix orchestrator streaming reserve capacity (@ad-astra-video)
+* [#3871](https://github.com/livepeer/go-livepeer/pull/3871) byoc: Merge BYOC capabilities with existing capabilities and pricing (@eliteprox)
+
+## v0.8.9
+
+### Features ⚒
+
+#### General
+
+* Gateway-native WHEP server for playback of realtime AI video
+* [#3841](https://github.com/livepeer/go-livepeer/pull/3841) byoc/streaming: add streaming workload processing capability to BYOC (@ad-astra-video)
+
+#### Orchestrator
+
+* [#3814](https://github.com/livepeer/go-livepeer/pull/3814) ai/worker: Add scope pipeline support to worker and build scripts (@victorges)
+* [#3823](https://github.com/livepeer/go-livepeer/pull/3823) ai/worker: Add sd15-v2v image support (@victorges)
+* [#3843](https://github.com/livepeer/go-livepeer/pull/3843) ai/worker: Add sdxl-v2v image support (@victorges)
+* [#3849](https://github.com/livepeer/go-livepeer/pull/3849) byoc: fix orchestrator stream setup when fails (@ad-astra-video)
+
+### Bug Fixes 🐞
+
+#### General
+
+* [#3777](https://github.com/livepeer/go-livepeer/pull/3777) docker: Forcefully SIGKILL runners after timeout (@pwilczynskiclearcode)
+* [#3779](https://github.com/livepeer/go-livepeer/pull/3779) worker: Fix orphaned containers on node shutdown (@victorges)
+* [#3781](https://github.com/livepeer/go-livepeer/pull/3781) worker/docker: Destroy containers from watch routines (@victorges)
+
+## v0.8.8
+
+### Features ⚒
+
+#### General
+
+* [#3719](https://github.com/livepeer/go-livepeer/pull/3719) Support multiple instances per orchestrator in discovery (@j0sh)
+
+#### Orchestrator
+
+* [#3749](https://github.com/livepeer/go-livepeer/pull/3749) worker: Overrule resource-hog AI runner containers on startup (@victorges)
+
+## v0.8.7
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#3532](https://github.com/livepeer/go-livepeer/pull/3532) Payment "per time" instead of "pay per pixel" (@leszko)
+- [#3686](https://github.com/livepeer/go-livepeer/pull/3686) Add `comfyui` / `streamdiffusion` pipeline to current-live pipeline (@leszko)
+- [#3705](https://github.com/livepeer/go-livepeer/pull/3705) AI/Live: segmented MediaWriter / MediaReader (@j0sh)
+- [#3641](https://github.com/livepeer/go-livepeer/pull/3641) BYOC: switch billing model to 1 ticket per second of compute (@ad-astra-video)
+- [#3680](https://github.com/livepeer/go-livepeer/pull/3680) AI: allow local Kafka with no auth for local deployment (@ad-astra-video)
+- [#3623](https://github.com/livepeer/go-livepeer/pull/3623) Stop stream if there are no payments from Gateway (@leszko)
+
+#### Broadcaster
+
+- [#3714](https://github.com/livepeer/go-livepeer/pull/3714) Make debug segment count configurable (@mjh1)
+- [#3721](https://github.com/livepeer/go-livepeer/pull/3721) Stream heartbeats (@mjh1)
+- [#3657](https://github.com/livepeer/go-livepeer/pull/3657) Re-encode audio to AAC for non-local (@j0sh)
+- [#3676](https://github.com/livepeer/go-livepeer/pull/3676) Pass full URLs to app for WHEP, status and update (@mjh1)
+- [#3733](https://github.com/livepeer/go-livepeer/pull/3733) Send authorization header to support new API (@mjh1)
+- [#3671](https://github.com/livepeer/go-livepeer/pull/3671) Send trickle errors down to `processStream` (@j0sh)
+- [#3677](https://github.com/livepeer/go-livepeer/pull/3677) Enable Video-to-Video suspension mechanism (penalty = 5) (@leszko)
+- [#3678](https://github.com/livepeer/go-livepeer/pull/3678) Add `LiveSelectionAlgorithm` (@leszko)
+- [#3694](https://github.com/livepeer/go-livepeer/pull/3694) Fix zeroing `ai_container_idle` metric for non-existing Os (@leszko)
+- [#3695](https://github.com/livepeer/go-livepeer/pull/3695) Remove session from pool if selection failed (@leszko)
+- [#3709](https://github.com/livepeer/go-livepeer/pull/3709) Send Kafka event when no orchestrators are available (@mjh1)
+- [#3722](https://github.com/livepeer/go-livepeer/pull/3722) Send Kafka event on orchestrator swaps (@j0sh)
+- [#3634](https://github.com/livepeer/go-livepeer/pull/3634) BYOC: Allow clients to include or exclude specific Orchestrators by serviceAddr in requests (@ad-astra-video)
+- [#3682](https://github.com/livepeer/go-livepeer/pull/3682) AI/Live: store & forward parameter updates (@j0sh)
+- [#3688](https://github.com/livepeer/go-livepeer/pull/3688) AI: options for `/live/video-to-video` update & status routes to support local browser tests (@ad-astra-video)
+
+#### Orchestrator
+
+- [#3665](https://github.com/livepeer/go-livepeer/pull/3665) Box: give GPUs to orchestrator if running GPU pipeline (@victorges)
+- [#3674](https://github.com/livepeer/go-livepeer/pull/3674) AI: fix startup to allow 0 price on AI models (@ad-astra-video)
+
+#### Transcoder
+
+- [#3734](https://github.com/livepeer/go-livepeer/pull/3734) Update LPMS to `a53e20a` (@j0sh)
+
+#### CLI
+
+- [#3700](https://github.com/livepeer/go-livepeer/pull/3700) cmd: move a few things to starter for easy embedding (@iameli)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#3711](https://github.com/livepeer/go-livepeer/pull/3711) AI/Live: watchdog for output segments (@j0sh)
+- [#3670](https://github.com/livepeer/go-livepeer/pull/3670) Set trickle idle timeout (@j0sh)
+- [#3594](https://github.com/livepeer/go-livepeer/pull/3594) Fix multiple issues in trickle, improving reliability and stability (@j0sh)
+- [#3650](https://github.com/livepeer/go-livepeer/pull/3650) BYOC: fix payment ticket count calculation (@ad-astra-video)
+- [#3651](https://github.com/livepeer/go-livepeer/pull/3651) BYOC: fix request timeout when removing capability (@ad-astra-video)
+
+#### Broadcaster
+
+- [#3673](https://github.com/livepeer/go-livepeer/pull/3673) AI/Live: WHIP endpoint updates for stream creation (@ad-astra-video)
+- [#3713](https://github.com/livepeer/go-livepeer/pull/3713) Send param updates to Kafka from control handler (@j0sh)
+- [#3699](https://github.com/livepeer/go-livepeer/pull/3699) Metrics: set correct `pipeline` and `model_name` labels (@pwilczynskiclearcode)
+- [#3702](https://github.com/livepeer/go-livepeer/pull/3702) Metrics: `GetCapacity` supports pipeline/modelID filtering (@pwilczynskiclearcode)
+
+#### Orchestrator
+
+- [#3640](https://github.com/livepeer/go-livepeer/pull/3640) Add lock while removing session during O suspension (@leszko)
+- [#3667](https://github.com/livepeer/go-livepeer/pull/3667) Don't delete stream state if `requestID` doesn't match (@mjh1)
+- [#3708](https://github.com/livepeer/go-livepeer/pull/3708) Retry ffmpeg more often in AI/Live to improve stream resilience (@j0sh)
+
+#### Transcoder
+
+- [#3734](https://github.com/livepeer/go-livepeer/pull/3734) Update LPMS to `a53e20a` (@j0sh)
+
+## v0.8.6
+
+### Features ⚒
+
+#### General
+
+- [#3570](https://github.com/livepeer/go-livepeer/pull/3570) Add Generic Processing Pipeline (aka Bring Your Own Container) (@ad-astra-video)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Gateway
+
+#### Orchestrator
+- [#3505](https://github.com/livepeer/go-livepeer/pull/3505) Introduce min runner version to selection (@leszko)
+
+### Bug Fixes 🐞
+
+#### Orchestrator
+- [#3589](https://github.com/livepeer/go-livepeer/pull/3589) Change binding host for docker containers from 0.0.0.0 to 127.0.0.1 (@leszko)
+- [#3592](https://github.com/livepeer/go-livepeer/pull/3592) ai/worker: Fix version discovery on containers startup (@victorges)
+- [#3595](https://github.com/livepeer/go-livepeer/pull/3595) ai/worker: Fetch hardware info from all containers (@victorges)
+- [#3389](https://github.com/livepeer/go-livepeer/pull/3389) Fix combined orchestrator capacity management for batch pipelines (@ad-astra-video)
+
+#### CLI
+
+## v0.8.5
+
+### Features ⚒
+
+#### General
+
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+- Realtime Video AI in a Box (@leszko, @victorges)
+- [#3246](https://github.com/livepeer/go-livepeer/pull/3246) Add hardware info from Orchestrators and expand network information available (@ad-astra-video)
+
+#### Gateway
+- [#3492](https://github.com/livepeer/go-livepeer/pull/3492) Improve the Gateway startup time (@leszko)
+
+#### Orchestrator
+
+- [#3522](https://github.com/livepeer/go-livepeer/pull/3522) Update install_ffmpeg.sh scripts (@hjpotter92)
+- [#3547](https://github.com/livepeer/go-livepeer/pull/3547) Add a limit of retries on the same session (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
+## v0.8.4
+
+### Features ⚒
+
+#### General
+
+- [#3411](https://github.com/livepeer/go-livepeer/pull/3411) Increase ticket params expiration from 10 (~2 min) to 40 (~8 min) (@leszko)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Broadcaster
+- [#3393](https://github.com/livepeer/go-livepeer/pull/3393) Improve AI Session Selection (@ad-astra-video)
+- [#3402](https://github.com/livepeer/go-livepeer/pull/3402) Add Min Initial Latency Selector (@leszko)
+
+#### Orchestrator
+
+- [#3345](https://github.com/livepeer/go-livepeer/pull/3345) Move `ai-worker` code to a local package
+- [#3399](https://github.com/livepeer/go-livepeer/pull/3399) Restart warm containers when they crash (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
+- [#3275](https://github.com/livepeer/go-livepeer/pull/3275) - Provide AI orchestrators with a way to vote on active proposal through the CLI.
+
+## V0.8.3
+
+### Features ⚒
+
+#### General
+- [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
+#### Orchestrator
+
+- [#3284](https://github.com/livepeer/go-livepeer/pull/3284) deprecate `-aiRunnerImage` flag for `-aiRunnerImageOverrides`.
+
+### Bug Fixes 🐞
+
+#### CLI
+
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
+
+## v0.8.2
+
+### Features ⚒
+
+#### Broadcaster
+
+-   [#3321](https://github.com/livepeer/go-livepeer/pull/3321) Add orchestrator info on live AI monitoring events
+
+#### Orchestrator
+
+-   [#3355](https://github.com/livepeer/go-livepeer/pull/3355) Allow O/T AI orchs to run without `transcoder` flag.
+-   [#2968](https://github.com/livepeer/go-livepeer/pull/2968) Enhance payment processing log line for better processing by Loki.
+
+#### Transcoder
+
+- [#3359](https://github.com/livepeer/go-livepeer/pull/3359) Update LPMS to use ffmpeg H.264 parser
+
+## v0.8.1
+
+- [#3279](https://github.com/livepeer/go-livepeer/pull/3279) Enable automatic worker image pulling.
+- Live Video AI features
+- [#3249](https://github.com/livepeer/go-livepeer/pull/3249) Add Gateway ETH Address to Kafka events
+
+### Features ⚒
+
+#### Broadcaster
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+## v0.8.0
+
+- [#2959](https://github.com/livepeer/go-livepeer/pull/2959) Add Livepeer AI Subnet features
+
+### Features ⚒
+
+#### Broadcaster
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+## v0.7.9
+
+- [#3165](https://github.com/livepeer/go-livepeer/pull/3165) Add node version and orch addr to transcoded metadata
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3158](https://github.com/livepeer/go-livepeer/pull/3158) Add a metric tag for Orchestrator version
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#3164](https://github.com/livepeer/go-livepeer/pull/3164) Fix media compatibility check
+- [#3166](https://github.com/livepeer/go-livepeer/pull/3166) Clean up inactive sessions
+- [#3086](https://github.com/livepeer/go-livepeer/pull/3086) Clear known sessions with inadequate latency scores
+
+## v0.7.8
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3127](https://github.com/livepeer/go-livepeer/pull/3127) Add flag `-ignoreMaxPriceIfNeeded` (@leszko)
+
+## v0.7.7
+
+This release includes a new `-hevcDecoding` flag for transcoders to configure HEVC decoding. If the flag is omitted, the default behavior on GPUs is unchanged, which is to auto-detect HEVC decoding support at transcoder start-up. Transcoders can disable HEVC decoding on GPUs if there is an issue with HEVC jobs via `-hevcDecoding=false`. CPU transcoders now have HEVC decoding disabled by default since processing HEVC jobs is CPU-heavy, but this can be enabled by setting the `-hevcDecoding` flag.
+
+The transcoder now support mid-stream input rotations, rather than crashing or outputting cropped video as it did before.
+
+### Breaking Changes 🚨🚨
+
+- [#3119](https://github.com/livepeer/go-livepeer/pull/3119) CPU transcoders no longer decode HEVC or VP9 by default
+
+#### Transcoder
+
+- [#3119](https://github.com/livepeer/go-livepeer/pull/3119) Add `-hevcDecoding` flag to toggle HEVC decoding
+
+### Bug Fixes 🐞
+
+#### Transcoder
+
+- [#418](https://github.com/livepeer/lpms/pull/418) lpms: Fix CUVID crash on resolution change
+- [#417](https://github.com/livepeer/lpms/pull/417) lpms: Clamp resolutions in filter expression
+- [#416](https://github.com/livepeer/lpms/pull/416) lpms: Rescale DTS better during FPS passthrough
+
+## v0.7.6
+
+-   [#3055](https://github.com/livepeer/go-livepeer/pull/3055) census: Rename broadcaster metrics to gateway metrics
+-   [#3053](https://github.com/livepeer/go-livepeer/pull/3053) cli: add `-gateway` flag and deprecate `-broadcaster` flag.
+-   [#3056](https://github.com/livepeer/go-livepeer/pull/3056) cli: add `-pricePerGateway` flag and deprecate `-pricePerBroadcaster` flag.
+-   [#3060](https://github.com/livepeer/go-livepeer/pull/3060) refactor: rename internal references from Broadcaster to Gateway
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+
+## v0.7.5
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#3050](https://github.com/livepeer/go-livepeer/pull/3050) Create option to filter Os by min livepeer version used (@leszko)
+- [#3029](https://github.com/livepeer/go-livepeer/pull/3029) Initialize round by any B/O who has the initializeRound flag set to true (@leszko)
+- [#3040](https://github.com/livepeer/go-livepeer/pull/3040) Fix function names (@kevincatty)
+
+#### Broadcaster
+
+- [#2995](https://github.com/livepeer/go-livepeer/pull/2995) server: Allow Os price to increase up to 2x mid-session (@victorges)
+- [#2999](https://github.com/livepeer/go-livepeer/pull/2999) server,discovery: Allow B to use any O in case none match maxPrice (@victorges)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#2994](https://github.com/livepeer/go-livepeer/pull/2994) server: Skip redundant maxPrice check in ongoing session (@victorges)
+
+#### Orchestrator
+
+- [#3001](https://github.com/livepeer/go-livepeer/pull/3001) Fix transcoding price metrics (@leszko)
+
+#### Transcoder
+
+- [#3003](https://github.com/livepeer/go-livepeer/pull/3003) Fix issue in the transcoding layer for WebRTC input (@j0sh)
+
+## v0.7.4
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2989](https://github.com/livepeer/go-livepeer/pull/2989) Revert "Update ffmpeg version" (@thomshutt)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+## v0.7.3
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2978](https://github.com/livepeer/go-livepeer/pull/2978) Update CUDA version from 11.x to 12.x (@leszko)
+- [#2973](https://github.com/livepeer/go-livepeer/pull/2973) Update ffmpeg version (@thomshutt)
+- [#2981](https://github.com/livepeer/go-livepeer/pull/2981) Add support for prices in custom currencies like USD (@victorges)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+## v0.7.2
+
+### Breaking Changes 🚨🚨
+
+- None
+
+#### General
+- [#2938](https://github.com/livepeer/go-livepeer/pull/2938) Add `tmp` folder to `.gitignore` (@rickstaa)
+
+#### Broadcaster
+- [#2896](https://github.com/livepeer/go-livepeer/pull/2896) Use FPS of 60, rather than 120 for cost estimation (@thomshutt)
+- [#2948](https://github.com/livepeer/go-livepeer/pull/2948) Remove logging from metrics methods (@thomshutt)
+
+#### Orchestrator
+- [#2911](https://github.com/livepeer/go-livepeer/pull/2911) Set default price with livepeer_cli option 20 (@eliteprox)
+- [#2928](https://github.com/livepeer/go-livepeer/pull/2928) Added `startupAvailabilityCheck` param to skip the availability check on startup (@stronk-dev)
+- [#2905](https://github.com/livepeer/go-livepeer/pull/2905) Add `reward_call_errors` Prometheus metric (@rickstaa)
+- [#2958](https://github.com/livepeer/go-livepeer/pull/2958) Return parsing error when failing to parse B prices (@thomshutt)
+
+#### Transcoder
+
+### Bug Fixes 🐞
+- [#2914](https://github.com/livepeer/go-livepeer/pull/2914) fixes a bug that prevented `pricePerBroadcaster` JSON files with line-breaks from being parsed correctly (@rickstaa).
+
 ## v0.7.1
 
 ### Breaking Changes 🚨🚨
@@ -119,7 +632,7 @@ None
 
 #### Broadcaster
 
-- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Re-use a session as long as it passes the latency score threshold check (@yondonfu)
+- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Reuse a session as long as it passes the latency score threshold check (@yondonfu)
 
 #### Orchestrator
 - [#2639](https://github.com/livepeer/go-livepeer/pull/2639) Increase IdleTimeout for HTTP connections (@leszko)
@@ -538,7 +1051,7 @@ Additional highlights of this release:
 - Support for EIP-1559 (otherwise known as type 2) Ethereum transactions which results in more predictable transaction confirmation times, reduces the chance of stuck pending transactions and avoids overpaying in gas fees. If you are interested in additional details on the implications of EIP-1559 transactions refer to this [resource](https://hackmd.io/@timbeiko/1559-resources).
 - An improvement in ticket parameter generation for orchestrators to prevent short lived gas price spikes on the Ethereum network from disrupting streams.
 - The node will automatically detect if the GPU enters an unrecoverable state and crash. The reason for crashing upon detecting an unrecoverable GPU state is that no transcoding will
-be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
+  be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 
@@ -729,7 +1242,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 - [#1845](https://github.com/livepeer/go-livepeer/pull/1845) Staking actions with hints (@kyriediculous)
 - [#1873](https://github.com/livepeer/go-livepeer/pull/1873) Increase TicketParams expiration to 10 blocks (@kyriediculous)
-- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Re-use remote transcoders for a stream sessions (@reubenr0d)
+- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Reuse remote transcoders for a stream sessions (@reubenr0d)
 
 #### Transcoder
 

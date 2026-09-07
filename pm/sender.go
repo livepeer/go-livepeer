@@ -22,6 +22,12 @@ type Sender interface {
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
 
+	// StartSessionWithNonce is like StartSession with a non-default nonce
+	StartSessionWithNonce(ticketParams TicketParams, nonce uint32) string
+
+	// CleanupSession deletes session from the internal map
+	CleanupSession(sessionID string)
+
 	// CreateTicketBatch returns a ticket batch of the specified size
 	CreateTicketBatch(sessionID string, size int) (*TicketBatch, error)
 
@@ -30,6 +36,9 @@ type Sender interface {
 
 	// EV returns the ticket EV for a session
 	EV(sessionID string) (*big.Rat, error)
+
+	// Nonce returns the current nonce for a session
+	Nonce(sessionID string) (uint32, error)
 }
 
 type session struct {
@@ -72,6 +81,17 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 	return sessionID
 }
 
+func (s *sender) StartSessionWithNonce(ticketParams TicketParams, nonce uint32) string {
+	sessionID := ticketParams.RecipientRandHash.Hex()
+
+	s.sessions.Store(sessionID, &session{
+		ticketParams: ticketParams,
+		senderNonce:  nonce,
+	})
+
+	return sessionID
+}
+
 // EV returns the ticket EV for a session
 func (s *sender) EV(sessionID string) (*big.Rat, error) {
 	session, err := s.loadSession(sessionID)
@@ -80,6 +100,18 @@ func (s *sender) EV(sessionID string) (*big.Rat, error) {
 	}
 
 	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
+}
+
+func (s *sender) Nonce(sessionID string) (uint32, error) {
+	session, err := s.loadSession(sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return session.senderNonce, nil
+}
+
+func (s *sender) CleanupSession(sessionID string) {
+	s.sessions.Delete(sessionID)
 }
 
 func (s *sender) validateSender(info *SenderInfo) error {
@@ -113,7 +145,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 	ticketParams := &session.ticketParams
 
 	expirationParams := ticketParams.ExpirationParams
-	// Ensure backwards compatbility
+	// Ensure backwards compatibility
 	// If no expirationParams are included by O
 	// B sets the values based upon its last seen round
 	if expirationParams == nil || expirationParams.CreationRound == 0 || expirationParams.CreationRoundBlockHash == (ethcommon.Hash{}) {
@@ -153,7 +185,7 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	}
 
 	if ticketParams.ExpirationBlock.Int64() == 0 {
-		return nil
+		return fmt.Errorf("ticketParams expiration block is 0")
 	}
 
 	latestL1Block := s.timeManager.LastSeenL1Block()

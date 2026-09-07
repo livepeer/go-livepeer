@@ -88,7 +88,7 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		// doesn't really starts server at 1938
-		S, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+		S, _ = NewLivepeerServer(ctx, "127.0.0.1:1938", n, true, "")
 		// rtmpurl := fmt.Sprintf("rtmp://127.0.0.1:%d", port)
 		// S, _ = NewLivepeerServer(rtmpurl, n, true, "")
 		// glog.Errorf("++> rtmp server with port %d", port)
@@ -111,31 +111,6 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		if err := waitForTCP(2*time.Second, "http://"+cliUrl); err != nil {
 			panic(err)
 		}
-	}
-	return S, cancel
-}
-
-func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	var S *LivepeerServer
-	if S == nil {
-		httpPushResetTimer = func() (context.Context, context.CancelFunc) {
-			ctx, cancel := context.WithCancel(context.Background())
-			pushResetWg.Add(1)
-			wrapCancel := func() {
-				cancel()
-				pushResetWg.Done()
-			}
-			return ctx, wrapCancel
-		}
-		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
-		go S.StartMediaServer(ctx, "127.0.0.1:9080")
-		go func() {
-			srv := &http.Server{Addr: "127.0.0.1:9938"}
-			S.StartCliWebserver(srv)
-		}()
 	}
 	return S, cancel
 }
@@ -171,6 +146,8 @@ func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 	return nil
 }
 
+var cleanupSessions = func(sessionID string) {}
+
 func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
@@ -193,6 +170,10 @@ func (d *stubDiscovery) Size() int {
 
 func (d *stubDiscovery) SizeWith(scorePred common.ScorePred) int {
 	return len(d.infos)
+}
+
+func (d *stubDiscovery) Broadcaster() common.Broadcaster {
+	return stubBroadcaster2()
 }
 
 type StubSegmenter struct {
@@ -237,14 +218,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
-	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
+	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -255,7 +236,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
-	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -290,7 +271,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
-	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 	assert.Nil(err)
 
 	// B should initialize new OS session using auth token sessionID
@@ -378,7 +359,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 2)
@@ -407,7 +388,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	// Skip orchestrator if missing auth token
 	sd.infos[0].AuthToken = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -417,7 +398,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	sd.infos[0].AuthToken = &net.AuthToken{}
 	sd.infos[0].TicketParams = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -438,7 +419,9 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
 	// happy case
-	sid := createSid(u).(*core.StreamParameters)
+	id, err := createSid(u)
+	require.NoError(t, err)
+	sid := id.(*core.StreamParameters)
 	mid := sid.ManifestID
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
@@ -448,7 +431,8 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	}
 	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
-	params := createSid(u)
+	params, err := createSid(u)
+	require.Error(t, err)
 	if params != nil {
 		t.Error("Stream should be denied because of capacity cap")
 	}
@@ -460,7 +444,7 @@ type authWebhookReq struct {
 }
 
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
-	assert := assert.New(t)
+	assert := require.New(t)
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -469,7 +453,8 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
-	sid := createSid(u)
+	sid, err := createSid(u)
+	assert.Error(err)
 	assert.Nil(sid, "Webhook auth failed")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -486,7 +471,8 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	}))
 	defer ts.Close()
 	AuthWebhookURL = mustParseUrl(t, ts.URL)
-	sid = createSid(u)
+	sid, err = createSid(u)
+	assert.NoError(err)
 	assert.NotNil(sid, "On empty response with 200 code should pass")
 
 	// local helper to reduce boilerplate
@@ -503,19 +489,23 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// empty manifestID
 	ts2 := makeServer(`{"manifestID":""}`)
 	defer ts2.Close()
-	sid = createSid(u)
+	sid, err = createSid(u)
+	assert.Error(err)
 	assert.Nil(sid, "Should not pass if returned manifest id is empty")
 
 	// invalid json
 	ts3 := makeServer(`{manifestID:"XX"}`)
 	defer ts3.Close()
-	sid = createSid(u)
+	sid, err = createSid(u)
+	assert.Error(err)
 	assert.Nil(sid, "Should not pass if returned json is invalid")
 
 	// set manifestID
 	ts4 := makeServer(`{"manifestID":"xy"}`)
 	defer ts4.Close()
-	params := createSid(u).(*core.StreamParameters)
+	p, err := createSid(u)
+	assert.NoError(err)
+	params := p.(*core.StreamParameters)
 	mid := params.ManifestID
 	assert.Equal(core.ManifestID("xy"), mid, "Should set manifest id to one provided by webhook")
 
@@ -526,7 +516,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set manifestID + streamKey
 	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
-	params = createSid(u).(*core.StreamParameters)
+	id, err := createSid(u)
+	require.NoError(t, err)
+	params = id.(*core.StreamParameters)
 	mid = params.ManifestID
 	assert.Equal(core.ManifestID("xyz"), mid, "Should set manifest to one provided by webhook")
 	assert.Equal("xyz/zyx", params.StreamID(), "Should set streamkey to one provided by webhook")
@@ -535,7 +527,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set presets (with some invalid)
 	ts6 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "unknown", "P720p30fps16x9"]}`)
 	defer ts6.Close()
-	params = createSid(u).(*core.StreamParameters)
+	strmID, err := createSid(u)
+	require.NoError(t, err)
+	params = strmID.(*core.StreamParameters)
 	assert.Len(params.Profiles, 2)
 	assert.Equal(params.Profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
 		ffmpeg.P720p30fps16x9}, "Did not have matching presets")
@@ -547,7 +541,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"},
 		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 	defer ts7.Close()
-	params = createSid(u).(*core.StreamParameters)
+	data, err := createSid(u)
+	require.NoError(t, err)
+	params = data.(*core.StreamParameters)
 	assert.Len(params.Profiles, 4)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
@@ -597,7 +593,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": "hello"}]}`)
 	defer ts8.Close()
-	params, ok := createSid(u).(*core.StreamParameters)
+	appData, err := createSid(u)
+	require.Error(t, err)
+	params, ok := appData.(*core.StreamParameters)
 	assert.False(ok)
 	assert.Nil(params)
 
@@ -609,7 +607,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 
 	defer ts9.Close()
-	params = createSid(u).(*core.StreamParameters)
+	i, err := createSid(u)
+	require.NoError(t, err)
+	params = i.(*core.StreamParameters)
 	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
 
 	assert.Len(params.Profiles, 6)
@@ -618,7 +618,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// all invalid presets in webhook should lead to empty set
 	ts10 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
 	defer ts10.Close()
-	params = createSid(u).(*core.StreamParameters)
+	id2, err := createSid(u)
+	require.NoError(t, err)
+	params = id2.(*core.StreamParameters)
 	assert.Len(params.Profiles, 0, "Unexpected value in presets")
 
 	// invalid gops
@@ -636,25 +638,31 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// intra only gop
 	ts14 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "intra" }]}`)
 	defer ts14.Close()
-	params = createSid(u).(*core.StreamParameters)
+	id3, err := createSid(u)
+	require.NoError(t, err)
+	params = id3.(*core.StreamParameters)
 	assert.Len(params.Profiles, 1)
 	assert.Equal(ffmpeg.GOPIntraOnly, params.Profiles[0].GOP)
 
 	// do not create stream if ObjectStore URL is invalid
 	ts15 := makeServer(`{"manifestID":"a2", "objectStore": "invalid://object.store", "recordObjectStore": ""}`)
 	defer ts15.Close()
-	sid = createSid(u)
+	sid, err = createSid(u)
+	require.Error(t, err)
 	assert.Nil(sid)
 
 	// do not create stream if RecordObjectStore URL is invalid
 	ts16 := makeServer(`{"manifestID":"a2", "objectStore": "", "recordObjectStore": "invalid://object.store"}`)
 	defer ts16.Close()
-	sid = createSid(u)
+	sid, err = createSid(u)
+	require.Error(t, err)
 	assert.Nil(sid)
 
-	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
+	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store/bucket"}`)
 	defer ts17.Close()
-	params = createSid(u).(*core.StreamParameters)
+	id4, err := createSid(u)
+	require.NoError(t, err)
+	params = id4.(*core.StreamParameters)
 	assert.Equal(core.ManifestID("a3"), params.ManifestID)
 	assert.NotNil(params.OS)
 	assert.True(params.OS.IsExternal())
@@ -688,31 +696,42 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	rand.Seed(123)
-	sid := createSid(u)
+	common.PkgRNG = rand.New(rand.NewSource(123))
+	sid, err := createSid(u)
+	require.NoError(t, err)
 	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
+	assert.Equal(t, uint64(0xba68998bed5c40f1), sap.Nonce)
 
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u = mustParseUrl(t, "rtmp://localhost/stream/"+expectedSid.String()) // with stream
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
 	key := common.RandomIDGenerator(StreamKeyBytes)
 	u = mustParseUrl(t, "rtmp://localhost/"+string(expectedMid)) // without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u = mustParseUrl(t, "rtmp://localhost/stream/"+string(expectedMid)) // with stream, without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	// Test normal case
 	u = mustParseUrl(t, "rtmp://localhost")
-	st := stream.NewBasicRTMPVideoStream(createSid(u))
+	id, err := createSid(u)
+	require.NoError(t, err)
+	st := stream.NewBasicRTMPVideoStream(id)
 	if st.GetStreamID() == "" {
 		t.Error("Empty streamid")
 	}
@@ -721,14 +740,18 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Handler failed ", err)
 	}
 	// Test collisions via stream reuse
-	if sid := createSid(u); sid == nil {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid == nil {
 		t.Error("Did not expect a failure due to naming collision")
 	}
 	// Ensure the stream ID is reusable after the stream ends
 	if err := endHandler(u, st); err != nil {
 		t.Error("Could not clean up stream")
 	}
-	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
+	sid, err = createSid(u)
+	require.NoError(t, err)
+	if sid.StreamID() != st.GetStreamID() {
 		t.Error("Mismatched streamid during stream reuse", sid.StreamID(), st.GetStreamID())
 	}
 
@@ -739,7 +762,9 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		// This isn't a great test because if the query param ever changes,
 		// this test will still pass
 		u := mustParseUrl(t, "rtmp://localhost/"+inp)
-		if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
+		sid, err = createSid(u)
+		require.NoError(t, err)
+		if sid.StreamID() != st.GetStreamID() {
 			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
 		}
 	}
@@ -804,7 +829,8 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	sid := createSid(u)
+	sid, err := createSid(u)
+	require.NoError(t, err)
 	require.NotNil(t, sid)
 	require.Equal(t, expectedSid.String(), sid.StreamID())
 
@@ -874,7 +900,8 @@ func TestCreateRTMPStreamHandlerWithAuthHeader_DifferentProfilesToCallbackURL(t 
 	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	sid := createSid(u)
+	sid, err := createSid(u)
+	require.Error(t, err)
 	require.Nil(t, sid)
 }
 
@@ -887,7 +914,8 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
-	sid := createSid(u)
+	sid, err := createSid(u)
+	require.NoError(t, err)
 	st := stream.NewBasicRTMPVideoStream(sid)
 
 	// Nonexistent stream
@@ -994,11 +1022,13 @@ func TestMultiStream(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	u := mustParseUrl(t, "rtmp://localhost")
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
-		st := stream.NewBasicRTMPVideoStream(createSid(u))
+		u := mustParseUrl(t, fmt.Sprintf("rtmp://localhost/%d", i))
+		id, err := createSid(u)
+		require.NoError(t, err)
+		st := stream.NewBasicRTMPVideoStream(id)
 		if err := handler(u, st); err != nil {
 			t.Error("Could not handle stream ", i, err)
 		}
@@ -1229,7 +1259,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 
 	// create BasicRTMPVideoStream and extract ManifestID
 	u := mustParseUrl(t, "rtmp://localhost")
-	sid := createSid(u)
+	sid, err := createSid(u)
+	assert.NoError(err)
 	st := stream.NewBasicRTMPVideoStream(sid)
 	mid := streamParams(st.AppData()).ManifestID
 
@@ -1238,8 +1269,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	assert.Equal(exists, false)
 
 	// assert stream starts successfully
-	err := handler(u, st)
-	assert.Nil(err)
+	err = handler(u, st)
+	assert.NoError(err)
 
 	// assert sessManager is running and has right number of sessions
 	cxn, exists := s.rtmpConnections[mid]
@@ -1444,10 +1475,151 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Equal("unable to parse the H264 encoder profile: unknown VideoProfile profile name", err.Error())
 }
 
+func TestMediaCompatible(t *testing.T) {
+	empty := ffmpeg.MediaFormatInfo{}
+	normal := ffmpeg.MediaFormatInfo{
+		Acodec:       "aac",
+		Vcodec:       "h264",
+		PixFormat:    ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNV12},
+		Format:       "mpegts",
+		Width:        100,
+		Height:       200,
+		AudioBitrate: 300,
+		DurSecs:      5,
+	}
+	tests := []struct {
+		name  string
+		a     ffmpeg.MediaFormatInfo
+		b     ffmpeg.MediaFormatInfo
+		match bool
+	}{{
+		name:  "empty",
+		a:     empty,
+		match: true,
+	}, {
+		name:  "normal",
+		match: true,
+		a:     normal,
+		b: ffmpeg.MediaFormatInfo{
+			Format:       "mp4",
+			DurSecs:      10,
+			AudioBitrate: 400,
+			Acodec:       normal.Acodec,
+			Vcodec:       normal.Vcodec,
+			PixFormat:    normal.PixFormat,
+			Width:        normal.Width,
+			Height:       normal.Height,
+		},
+	}, {
+		name: "w",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "h",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Height:    normal.Height + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+		},
+	}, {
+		name: "pixfmt",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatYUV420P},
+			Height:    normal.Height,
+		},
+	}, {
+		name: "video codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Vcodec:    "flv",
+			Acodec:    normal.Acodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "audio codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Acodec:    "opus",
+			Vcodec:    normal.Vcodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.match, mediaCompatible(tt.a, tt.b))
+		})
+	}
+}
+
 func mustParseUrl(t *testing.T, str string) *url.URL {
 	url, err := url.Parse(str)
 	if err != nil {
 		t.Fatalf(`Bad url "%s": %v`, str, err)
 	}
 	return url
+}
+
+func TestGetRemoteAddr(t *testing.T) {
+	type tc struct {
+		name       string
+		remoteAddr string // r.RemoteAddr
+		xff        string // "" = header not present
+		want       string
+	}
+
+	cases := []tc{
+		// --- No X-Forwarded-For (uses RemoteAddr) ---
+		{"remote IPv4 with port", "203.0.113.9:54321", "", "203.0.113.9"},
+		{"remote hostname with port", "example.com:80", "", "example.com"},
+		{"remote bracketed IPv6 with port", "[2001:db8::1]:443", "", "2001:db8::1"},
+		{"remote IPv6 with zone", "[fe80::1%lo0]:1234", "", "fe80::1%lo0"},
+		{"remote IPv4 no port (SplitHostPort error)", "192.0.2.10", "", "192.0.2.10"},
+		{"remote bare IPv6 no port (SplitHostPort error)", "2001:db8::2", "", "2001:db8::2"},
+		{"remote empty string", "", "", ""},
+		{"remote malformed string", "1.2.3.4, nonsense", "", "1.2.3.4, nonsense"},
+
+		// --- X-Forwarded-For present (takes first comma-delimited token) ---
+		{"xff single IPv4 no port", "203.0.113.9:54321", "198.51.100.7", "198.51.100.7"},
+		{"xff single IPv4 with port", "203.0.113.9:54321", "198.51.100.7:8080", "198.51.100.7"},
+		{"xff single hostname with port", "203.0.113.9:54321", "edge.example.net:8443", "edge.example.net"},
+		{"xff single bracketed IPv6 with port", "203.0.113.9:54321", "[2001:db8::7]:9443", "2001:db8::7"},
+		{"xff IPv4-mapped IPv6 with port", "203.0.113.9:54321", "[::ffff:192.0.2.128]:12345", "::ffff:192.0.2.128"},
+		{"xff multiple entries with port", "203.0.113.9:54321", "198.51.100.7:8080, 10.0.0.1:80", "198.51.100.7"},
+		{"xff multiple entries no port", "203.0.113.9:54321", "198.51.100.7, 10.0.0.1", "198.51.100.7"},
+		{"xff first entry empty", "203.0.113.9:54321", ", 198.51.100.7", ""},
+		{"xff first entry has spaces", "203.0.113.9:54321", " \t\r198.51.100.7:8080 ", "198.51.100.7"},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &http.Request{
+				RemoteAddr: tt.remoteAddr,
+				Header:     make(http.Header),
+			}
+			if tt.xff != "" {
+				r.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			got := getRemoteAddr(r)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

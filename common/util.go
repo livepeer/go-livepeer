@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,20 +12,20 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/glog"
 	"github.com/jaypipes/ghw"
 	"github.com/jaypipes/ghw/pkg/gpu"
 	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/oapi-codegen/runtime/types"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/peer"
 )
@@ -64,7 +65,6 @@ const priceScalingFactor = int64(1000)
 
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
-	ErrProfile     = fmt.Errorf("failed to parse profile")
 
 	ErrChromaFormat = fmt.Errorf("unknown VideoProfile ChromaFormat")
 	ErrFormatProto  = fmt.Errorf("unknown VideoProfile format for protobufs")
@@ -74,15 +74,20 @@ var (
 	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
+	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
+	ErrNoExtensionsForType      = fmt.Errorf("no extensions exist for mime type")
+
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
 		".mp4": "video/mp4",
 	}
+	mime2ext = map[string]string{
+		"video/mp2t": ".ts",
+		"video/mp4":  ".mp4",
+		"image/png":  ".png",
+		"audio/wav":  ".wav",
+	}
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 func ParseBigInt(num string) (*big.Int, error) {
 	bigNum := new(big.Int)
@@ -93,93 +98,6 @@ func ParseBigInt(num string) (*big.Int, error) {
 	} else {
 		return bigNum, nil
 	}
-}
-
-func WaitUntil(waitTime time.Duration, condition func() bool) {
-	start := time.Now()
-	for time.Since(start) < waitTime {
-		if condition() == false {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		break
-	}
-}
-
-func WaitAssert(t *testing.T, waitTime time.Duration, condition func() bool, msg string) {
-	start := time.Now()
-	for time.Since(start) < waitTime {
-		if condition() == false {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		break
-	}
-
-	if condition() == false {
-		t.Errorf(msg)
-	}
-}
-
-func Retry(attempts int, sleep time.Duration, fn func() error) error {
-	if err := fn(); err != nil {
-		if attempts--; attempts > 0 {
-			time.Sleep(sleep)
-			return Retry(attempts, 2*sleep, fn)
-		}
-		return err
-	}
-
-	return nil
-}
-
-func TxDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
-	profiles := make([]ffmpeg.VideoProfile, 0)
-
-	if len(txData) == 0 {
-		return profiles, nil
-	}
-	if len(txData) < VideoProfileIDSize {
-		return nil, ErrProfile
-	}
-
-	for i := 0; i+VideoProfileIDSize <= len(txData); i += VideoProfileIDSize {
-		txp := txData[i : i+VideoProfileIDSize]
-
-		p, ok := ffmpeg.VideoProfileLookup[VideoProfileNameLookup[txp]]
-		if !ok {
-			glog.Errorf("Cannot find video profile for job: %v", txp)
-			return nil, ErrProfile // monitor to see if this is too aggressive
-		}
-		profiles = append(profiles, p)
-	}
-
-	return profiles, nil
-}
-
-func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
-	profiles := make([]ffmpeg.VideoProfile, 0)
-
-	if len(txData) == 0 {
-		return profiles, nil
-	}
-	if len(txData) < VideoProfileIDBytes {
-		return nil, ErrProfile
-	}
-
-	for i := 0; i+VideoProfileIDBytes <= len(txData); i += VideoProfileIDBytes {
-		var txp [VideoProfileIDBytes]byte
-		copy(txp[:], txData[i:i+VideoProfileIDBytes])
-
-		p, ok := ffmpeg.VideoProfileLookup[VideoProfileByteLookup[txp]]
-		if !ok {
-			glog.Errorf("Cannot find video profile for job: %v", txp)
-			return nil, ErrProfile // monitor to see if this is too aggressive
-		}
-		profiles = append(profiles, p)
-	}
-
-	return profiles, nil
 }
 
 func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.VideoProfile, error) {
@@ -351,9 +269,19 @@ func PriceToFixed(price *big.Rat) (int64, error) {
 	return ratToFixed(price, priceScalingFactor)
 }
 
-// FixedToPrice converts an fixed point number with 3 decimal places represented as in int64 into a big.Rat
+// FixedToPrice converts a fixed point number with 3 decimal places represented as in int64 into a big.Rat
 func FixedToPrice(price int64) *big.Rat {
 	return big.NewRat(price, priceScalingFactor)
+}
+
+// PriceToInt64 converts a *big.Rat to an *int64 if possible, otherwise returns an error.
+func PriceToInt64(price *big.Rat) (*big.Rat, error) {
+	fixed := new(big.Int).Div(price.Num(), price.Denom())
+	if !fixed.IsInt64() {
+		return nil, errors.New("price cannot be converted to int64")
+	}
+
+	return big.NewRat(fixed.Int64(), 1), nil
 }
 
 // BaseTokenAmountToFixed converts the base amount of a token (i.e. ETH/LPT) represented as a big.Int into a fixed point number represented
@@ -381,6 +309,9 @@ func ratToFixed(rat *big.Rat, scalingFactor int64) (int64, error) {
 	return fp, nil
 }
 
+// Package-level RNG; tests can override it.
+var PkgRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 // RandomIDGenerator generates random hexadecimal string of specified length
 // defined as variable for unit tests
 var RandomIDGenerator = func(length uint) string {
@@ -389,9 +320,7 @@ var RandomIDGenerator = func(length uint) string {
 
 var RandomBytesGenerator = func(length uint) []byte {
 	x := make([]byte, length, length)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
+	PkgRNG.Read(x)
 	return x
 }
 
@@ -402,6 +331,10 @@ func RandName() string {
 
 var RandomUintUnder = func(max uint) uint {
 	return uint(rand.Uint32()) % max
+}
+
+func RandomUint64() uint64 {
+	return binary.LittleEndian.Uint64(RandomBytesGenerator(8))
 }
 
 func ToInt64(val *big.Int) int64 {
@@ -529,4 +462,64 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 		}
 	}
 	return "", errors.New("Error parsing address from keyfile")
+}
+
+// CalculateAudioDuration calculates audio file duration using the lpms/ffmpeg package.
+func CalculateAudioDuration(audio types.File) (int64, error) {
+	read, err := audio.Reader()
+	if err != nil {
+		return 0, err
+	}
+	defer read.Close()
+
+	bytearr, _ := audio.Bytes()
+	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
+	if err != nil {
+		return 0, errors.New("Error getting codec info")
+	}
+
+	duration := int64(mediaFormat.DurSecs)
+	if duration <= 0 {
+		return 0, ErrAudioDurationCalculation
+	}
+
+	return duration, nil
+}
+
+// ValidateServiceURI checks if the serviceURI is valid.
+func ValidateServiceURI(serviceURI *url.URL) bool {
+	return !strings.Contains(serviceURI.Host, "0.0.0.0")
+}
+
+// MimeTypeToExtension returns the file extension for a given MIME type.
+func MimeTypeToExtension(mimeType string) (string, error) {
+	mimeType = strings.ToLower(mimeType)
+	if ext, ok := mime2ext[mimeType]; ok {
+		return ext, nil
+	}
+	return "", ErrNoExtensionsForType
+}
+
+func AppendHostname(urlPath string, host string) (*url.URL, error) {
+	if urlPath == "" {
+		return nil, fmt.Errorf("invalid url from orch")
+	}
+	pu, err := url.Parse(urlPath)
+	if err != nil {
+		return nil, err
+	}
+	if pu.Hostname() != "" {
+		// url has a hostname already so use it
+		return pu, nil
+	} else {
+		// no hostname, so append one
+		if !strings.HasPrefix(urlPath, "/") {
+			urlPath = "/" + urlPath
+		}
+		u, err := url.Parse(host + urlPath)
+		if err != nil {
+			return nil, err
+		}
+		return u, nil
+	}
 }

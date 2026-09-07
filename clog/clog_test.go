@@ -22,8 +22,9 @@ func TestStdKeys(t *testing.T) {
 	assert.Equal("manifestID=manID sessionID=sessionID nonce=1038 seqNo=9427 orchSessionID=orchID ethaddress=0x0 orchestrator=http://127.0.0.1:8935 customKey=customVal testing message num=452", msg)
 	ctxCloned := Clone(context.Background(), ctx)
 	ctxCloned = AddManifestID(ctxCloned, "newManifest")
+	ctxCloned = AddVal(ctxCloned, "customKey2", "customVal2")
 	msgCloned, _ := formatMessage(ctxCloned, false, false, "testing message num=%d", 4521)
-	assert.Equal("manifestID=newManifest sessionID=sessionID nonce=1038 seqNo=9427 orchSessionID=orchID ethaddress=0x0 orchestrator=http://127.0.0.1:8935 customKey=customVal testing message num=4521", msgCloned)
+	assert.Equal("manifestID=newManifest sessionID=sessionID nonce=1038 seqNo=9427 orchSessionID=orchID ethaddress=0x0 orchestrator=http://127.0.0.1:8935 customKey=customVal customKey2=customVal2 testing message num=4521", msgCloned)
 	// old context shouldn't change
 	msg, _ = formatMessage(ctx, false, false, "testing message num=%d", 452)
 	assert.Equal("manifestID=manID sessionID=sessionID nonce=1038 seqNo=9427 orchSessionID=orchID ethaddress=0x0 orchestrator=http://127.0.0.1:8935 customKey=customVal testing message num=452", msg)

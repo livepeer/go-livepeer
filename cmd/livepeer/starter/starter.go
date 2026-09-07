@@ -14,7 +14,10 @@ import (
 	"net/url"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +28,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -39,6 +44,7 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/olekukonko/tablewriter"
 )
 
 var (
@@ -58,6 +64,8 @@ var (
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
+
+	aiWorkerContainerStopTimeout = 5 * time.Second
 )
 
 const (
@@ -67,80 +75,133 @@ const (
 	OrchestratorRpcPort = "8935"
 	OrchestratorCliPort = "7935"
 	TranscoderCliPort   = "6935"
+	AIWorkerCliPort     = "4935"
+	RemoteSignerCliPort = "3935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
 
 type LivepeerConfig struct {
-	Network                *string
-	RtmpAddr               *string
-	CliAddr                *string
-	HttpAddr               *string
-	ServiceAddr            *string
-	OrchAddr               *string
-	VerifierURL            *string
-	EthController          *string
-	VerifierPath           *string
-	LocalVerify            *bool
-	HttpIngest             *bool
-	Orchestrator           *bool
-	Transcoder             *bool
-	Broadcaster            *bool
-	OrchSecret             *string
-	TranscodingOptions     *string
-	MaxAttempts            *int
-	SelectRandWeight       *float64
-	SelectStakeWeight      *float64
-	SelectPriceWeight      *float64
-	SelectPriceExpFactor   *float64
-	OrchPerfStatsURL       *string
-	Region                 *string
-	MaxPricePerUnit        *int
-	MinPerfScore           *float64
-	MaxSessions            *string
-	CurrentManifest        *bool
-	Nvidia                 *string
-	Netint                 *string
-	TestTranscoder         *bool
-	EthAcctAddr            *string
-	EthPassword            *string
-	EthKeystorePath        *string
-	EthOrchAddr            *string
-	EthUrl                 *string
-	TxTimeout              *time.Duration
-	MaxTxReplacements      *int
-	GasLimit               *int
-	MinGasPrice            *int64
-	MaxGasPrice            *int
-	InitializeRound        *bool
-	TicketEV               *string
-	MaxFaceValue           *string
-	MaxTicketEV            *string
-	MaxTotalEV             *string
-	DepositMultiplier      *int
-	PricePerUnit           *int
-	PixelsPerUnit          *int
-	AutoAdjustPrice        *bool
-	PricePerBroadcaster    *string
-	BlockPollingInterval   *int
-	Redeemer               *bool
-	RedeemerAddr           *string
-	Reward                 *bool
-	Monitor                *bool
-	MetricsPerStream       *bool
-	MetricsExposeClientIP  *bool
-	MetadataQueueUri       *string
-	MetadataAmqpExchange   *string
-	MetadataPublishTimeout *time.Duration
-	Datadir                *string
-	Objectstore            *string
-	Recordstore            *string
-	FVfailGsBucket         *string
-	FVfailGsKey            *string
-	AuthWebhookURL         *string
-	OrchWebhookURL         *string
-	OrchBlacklist          *string
-	TestOrchAvail          *bool
+	Network                    *string
+	RtmpAddr                   *string
+	CliAddr                    *string
+	CliTxRoutes                *bool
+	HttpAddr                   *string
+	ServiceAddr                *string
+	Nodes                      *string
+	OrchAddr                   *string
+	VerifierURL                *string
+	EthController              *string
+	VerifierPath               *string
+	LocalVerify                *bool
+	HttpIngest                 *bool
+	Orchestrator               *bool
+	Transcoder                 *bool
+	AIServiceRegistry          *bool
+	AIWorker                   *bool
+	AIServerless               *bool
+	UseLiveRunners             *bool
+	LiveRunnerConfig           *string
+	LiveRunnerProxyURL         *string
+	Gateway                    *bool
+	Broadcaster                *bool
+	OrchSecret                 *string
+	TranscodingOptions         *string
+	AIModels                   *string
+	MaxAttempts                *int
+	SelectRandWeight           *float64
+	SelectStakeWeight          *float64
+	SelectPriceWeight          *float64
+	SelectPriceExpFactor       *float64
+	OrchPerfStatsURL           *string
+	Region                     *string
+	MaxPricePerUnit            *string
+	MaxPricePerCapability      *string
+	IgnoreMaxPriceIfNeeded     *bool
+	MinPerfScore               *float64
+	DiscoveryTimeout           *time.Duration
+	ExtraNodes                 *int
+	MaxSessions                *string
+	CurrentManifest            *bool
+	Nvidia                     *string
+	Netint                     *string
+	HevcDecoding               *bool
+	TestTranscoder             *bool
+	GatewayHost                *string
+	EthAcctAddr                *string
+	EthPassword                *string
+	EthKeystorePath            *string
+	EthOrchAddr                *string
+	EthUrl                     *string
+	TxTimeout                  *time.Duration
+	MaxTxReplacements          *int
+	GasLimit                   *int
+	MinGasPrice                *int64
+	MaxGasPrice                *int
+	InitializeRound            *bool
+	InitializeRoundMaxDelay    *time.Duration
+	TicketEV                   *string
+	MaxFaceValue               *string
+	MaxTicketEV                *string
+	MaxTotalEV                 *string
+	DepositMultiplier          *int
+	PricePerUnit               *string
+	PixelsPerUnit              *string
+	PriceFeedAddr              *string
+	AutoAdjustPrice            *bool
+	PricePerGateway            *string
+	PricePerBroadcaster        *string
+	BlockPollingInterval       *int
+	Redeemer                   *bool
+	RedeemerAddr               *string
+	Reward                     *bool
+	Monitor                    *bool
+	MetricsPerStream           *bool
+	MetricsExposeClientIP      *bool
+	MetadataQueueUri           *string
+	MetadataAmqpExchange       *string
+	MetadataPublishTimeout     *time.Duration
+	Datadir                    *string
+	AIModelsDir                *string
+	Objectstore                *string
+	Recordstore                *string
+	FVfailGsBucket             *string
+	FVfailGsKey                *string
+	AuthWebhookURL             *string
+	LiveAIAuthWebhookURL       *string
+	LiveAITrickleHostForRunner *string
+	LiveRunnerAddr             *string
+	OrchWebhookURL             *string
+	OrchBlacklist              *string
+	OrchMinLivepeerVersion     *string
+	TestOrchAvail              *bool
+	RemoteSigner               *bool
+	RemoteSignerUrl            *string
+	RemoteSignerHeaders        *string
+	RemoteSignerWebhookURL     *string
+	RemoteSignerWebhookHeaders *string
+	RemoteSignerAllowNoAuth    *bool
+	RemoteDiscovery            *bool
+	AIRunnerImage              *string
+	AIRunnerImageOverrides     *string
+	AIVerboseLogs              *bool
+	AIProcessingRetryTimeout   *time.Duration
+	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersion         *string
+	KafkaBootstrapServers      *string
+	KafkaUsername              *string
+	KafkaPassword              *string
+	KafkaGatewayTopic          *string
+	MediaMTXApiPassword        *string
+	LiveAIAuthApiKey           *string
+	LiveAIHeartbeatURL         *string
+	LiveAIHeartbeatHeaders     *string
+	LiveAIHeartbeatInterval    *time.Duration
+	LivePaymentInterval        *time.Duration
+	LiveOutSegmentTimeout      *time.Duration
+	LiveAICapReportInterval    *time.Duration
+	LiveAICapRefreshModels     *string
+	LiveAISaveNSegments        *int
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -149,8 +210,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetwork := "offchain"
 	defaultRtmpAddr := ""
 	defaultCliAddr := ""
+	defaultCliTxRoutes := false
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
+	defaultNodes := ""
 	defaultOrchAddr := ""
 	defaultVerifierURL := ""
 	defaultVerifierPath := ""
@@ -159,6 +222,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchestrator := false
 	defaultTranscoder := false
 	defaultBroadcaster := false
+	defaultGateway := false
 	defaultOrchSecret := ""
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
@@ -170,10 +234,36 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
+	defaultDiscoveryTimeout := 500 * time.Millisecond
+	defaultExtraNodes := 0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
+
+	// AI:
+	defaultAIServiceRegistry := false
+	defaultAIWorker := false
+	defaultAIServerless := false
+	defaultUseLiveRunners := false
+	defaultLiveRunnerConfig := ""
+	defaultLiveRunnerProxyURL := ""
+	defaultAIModels := ""
+	defaultAIModelsDir := ""
+	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIVerboseLogs := false
+	defaultAIProcessingRetryTimeout := 2 * time.Second
+	defaultAIRunnerContainersPerGPU := 1
+	defaultAIMinRunnerVersion := "[]"
+	defaultAIRunnerImageOverrides := ""
+	defaultLiveAIAuthWebhookURL := ""
+	defaultLiveRunnerAddr := ""
+	defaultLivePaymentInterval := 5 * time.Second
+	defaultLiveOutSegmentTimeout := 0 * time.Second
+	defaultGatewayHost := ""
+	defaultLiveAIHeartbeatInterval := 5 * time.Second
+	defaultLiveAICapReportInterval := 25 * time.Minute
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -187,14 +277,19 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxGasPrice := 0
 	defaultEthController := ""
 	defaultInitializeRound := false
+	defaultInitializeRoundMaxDelay := 30 * time.Second
 	defaultTicketEV := "8000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
-	defaultMaxPricePerUnit := 0
-	defaultPixelsPerUnit := 1
+	defaultMaxPricePerUnit := "0"
+	defaultMaxPricePerCapability := ""
+	defaultIgnoreMaxPriceIfNeeded := false
+	defaultPixelsPerUnit := "1"
+	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
+	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
@@ -224,17 +319,33 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
+	defaultMinLivepeerVersion := ""
 
 	// Flags
 	defaultTestOrchAvail := true
+	defaultRemoteSigner := false
+	defaultRemoteSignerUrl := ""
+	defaultRemoteSignerHeaders := ""
+	defaultRemoteSignerWebhookURL := ""
+	defaultRemoteSignerWebhookHeaders := ""
+	defaultRemoteSignerAllowNoAuth := false
+	defaultRemoteDiscovery := false
+
+	// Gateway logs
+	defaultKafkaBootstrapServers := ""
+	defaultKafkaUsername := ""
+	defaultKafkaPassword := ""
+	defaultKafkaGatewayTopic := ""
 
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
 		RtmpAddr:     &defaultRtmpAddr,
 		CliAddr:      &defaultCliAddr,
+		CliTxRoutes:  &defaultCliTxRoutes,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
+		Nodes:        &defaultNodes,
 		OrchAddr:     &defaultOrchAddr,
 		VerifierURL:  &defaultVerifierURL,
 		VerifierPath: &defaultVerifierPath,
@@ -242,6 +353,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// Transcoding:
 		Orchestrator:         &defaultOrchestrator,
 		Transcoder:           &defaultTranscoder,
+		Gateway:              &defaultGateway,
 		Broadcaster:          &defaultBroadcaster,
 		OrchSecret:           &defaultOrchSecret,
 		TranscodingOptions:   &defaultTranscodingOptions,
@@ -254,41 +366,72 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchPerfStatsURL:     &defaultOrchPerfStatsURL,
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
+		DiscoveryTimeout:     &defaultDiscoveryTimeout,
+		ExtraNodes:           &defaultExtraNodes,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
+		// AI:
+		AIServiceRegistry:        &defaultAIServiceRegistry,
+		AIWorker:                 &defaultAIWorker,
+		AIServerless:             &defaultAIServerless,
+		UseLiveRunners:           &defaultUseLiveRunners,
+		LiveRunnerConfig:         &defaultLiveRunnerConfig,
+		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
+		AIModels:                 &defaultAIModels,
+		AIModelsDir:              &defaultAIModelsDir,
+		AIRunnerImage:            &defaultAIRunnerImage,
+		AIVerboseLogs:            &defaultAIVerboseLogs,
+		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
+		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
+		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
+		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LiveRunnerAddr:           &defaultLiveRunnerAddr,
+		LivePaymentInterval:      &defaultLivePaymentInterval,
+		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
+		GatewayHost:              &defaultGatewayHost,
+		LiveAIHeartbeatInterval:  &defaultLiveAIHeartbeatInterval,
+		LiveAICapReportInterval:  &defaultLiveAICapReportInterval,
+
 		// Onchain:
-		EthAcctAddr:            &defaultEthAcctAddr,
-		EthPassword:            &defaultEthPassword,
-		EthKeystorePath:        &defaultEthKeystorePath,
-		EthOrchAddr:            &defaultEthOrchAddr,
-		EthUrl:                 &defaultEthUrl,
-		TxTimeout:              &defaultTxTimeout,
-		MaxTxReplacements:      &defaultMaxTxReplacements,
-		GasLimit:               &defaultGasLimit,
-		MaxGasPrice:            &defaultMaxGasPrice,
-		EthController:          &defaultEthController,
-		InitializeRound:        &defaultInitializeRound,
-		TicketEV:               &defaultTicketEV,
-		MaxFaceValue:           &defaultMaxFaceValue,
-		MaxTicketEV:            &defaultMaxTicketEV,
-		MaxTotalEV:             &defaultMaxTotalEV,
-		DepositMultiplier:      &defaultDepositMultiplier,
-		MaxPricePerUnit:        &defaultMaxPricePerUnit,
-		PixelsPerUnit:          &defaultPixelsPerUnit,
-		AutoAdjustPrice:        &defaultAutoAdjustPrice,
-		PricePerBroadcaster:    &defaultPricePerBroadcaster,
-		BlockPollingInterval:   &defaultBlockPollingInterval,
-		Redeemer:               &defaultRedeemer,
-		RedeemerAddr:           &defaultRedeemerAddr,
-		Monitor:                &defaultMonitor,
-		MetricsPerStream:       &defaultMetricsPerStream,
-		MetricsExposeClientIP:  &defaultMetricsExposeClientIP,
-		MetadataQueueUri:       &defaultMetadataQueueUri,
-		MetadataAmqpExchange:   &defaultMetadataAmqpExchange,
-		MetadataPublishTimeout: &defaultMetadataPublishTimeout,
+		EthAcctAddr:             &defaultEthAcctAddr,
+		EthPassword:             &defaultEthPassword,
+		EthKeystorePath:         &defaultEthKeystorePath,
+		EthOrchAddr:             &defaultEthOrchAddr,
+		EthUrl:                  &defaultEthUrl,
+		TxTimeout:               &defaultTxTimeout,
+		MaxTxReplacements:       &defaultMaxTxReplacements,
+		GasLimit:                &defaultGasLimit,
+		MaxGasPrice:             &defaultMaxGasPrice,
+		EthController:           &defaultEthController,
+		InitializeRound:         &defaultInitializeRound,
+		InitializeRoundMaxDelay: &defaultInitializeRoundMaxDelay,
+		TicketEV:                &defaultTicketEV,
+		MaxFaceValue:            &defaultMaxFaceValue,
+		MaxTicketEV:             &defaultMaxTicketEV,
+		MaxTotalEV:              &defaultMaxTotalEV,
+		DepositMultiplier:       &defaultDepositMultiplier,
+		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		MaxPricePerCapability:   &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
+		PixelsPerUnit:           &defaultPixelsPerUnit,
+		PriceFeedAddr:           &defaultPriceFeedAddr,
+		AutoAdjustPrice:         &defaultAutoAdjustPrice,
+		PricePerGateway:         &defaultPricePerGateway,
+		PricePerBroadcaster:     &defaultPricePerBroadcaster,
+		BlockPollingInterval:    &defaultBlockPollingInterval,
+		Redeemer:                &defaultRedeemer,
+		RedeemerAddr:            &defaultRedeemerAddr,
+		Monitor:                 &defaultMonitor,
+		MetricsPerStream:        &defaultMetricsPerStream,
+		MetricsExposeClientIP:   &defaultMetricsExposeClientIP,
+		MetadataQueueUri:        &defaultMetadataQueueUri,
+		MetadataAmqpExchange:    &defaultMetadataAmqpExchange,
+		MetadataPublishTimeout:  &defaultMetadataPublishTimeout,
 
 		// Ingest:
 		HttpIngest: &defaultHttpIngest,
@@ -309,9 +452,60 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AuthWebhookURL: &defaultAuthWebhookURL,
 		OrchWebhookURL: &defaultOrchWebhookURL,
 
+		// Versioning constraints
+		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
+
 		// Flags
-		TestOrchAvail: &defaultTestOrchAvail,
+		TestOrchAvail:              &defaultTestOrchAvail,
+		RemoteSigner:               &defaultRemoteSigner,
+		RemoteSignerUrl:            &defaultRemoteSignerUrl,
+		RemoteSignerHeaders:        &defaultRemoteSignerHeaders,
+		RemoteSignerWebhookURL:     &defaultRemoteSignerWebhookURL,
+		RemoteSignerWebhookHeaders: &defaultRemoteSignerWebhookHeaders,
+		RemoteSignerAllowNoAuth:    &defaultRemoteSignerAllowNoAuth,
+		RemoteDiscovery:            &defaultRemoteDiscovery,
+
+		// Gateway logs
+		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
+		KafkaUsername:         &defaultKafkaUsername,
+		KafkaPassword:         &defaultKafkaPassword,
+		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
 	}
+}
+
+func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
+	// compare current settings with default values, and print the difference
+	defCfg := DefaultLivepeerConfig()
+	vDefCfg := reflect.ValueOf(defCfg)
+	vCfg := reflect.ValueOf(cfg)
+	cfgType := vCfg.Type()
+	paramTable := tablewriter.NewWriter(w)
+
+	// Define sensitive field names that should be redacted
+	sensitiveFields := map[string]bool{
+		"EthPassword":                true,
+		"OrchSecret":                 true,
+		"KafkaPassword":              true,
+		"MediaMTXApiPassword":        true,
+		"LiveAIAuthApiKey":           true,
+		"FVfailGsKey":                true,
+		"RemoteSignerHeaders":        true,
+		"RemoteSignerWebhookHeaders": true,
+	}
+
+	for i := 0; i < cfgType.NumField(); i++ {
+		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
+			val := fmt.Sprintf("%v", vCfg.Field(i).Elem())
+			if _, ok := sensitiveFields[cfgType.Field(i).Name]; ok {
+				val = "***"
+			}
+			paramTable.Append([]string{cfgType.Field(i).Name, val})
+		}
+	}
+	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
+	paramTable.SetCenterSeparator("*")
+	paramTable.SetColumnSeparator("|")
+	paramTable.Render()
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
@@ -331,6 +525,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
+	}
+
+	// Identify this instance using service address (preferred) or Ethereum address if available.
+	containerCreatorID := *cfg.ServiceAddr
+	if containerCreatorID == "" && *cfg.EthAcctAddr != "" {
+		containerCreatorID = *cfg.EthAcctAddr
+	}
+
+	if *cfg.AIWorker {
+		// Remove existing worker containers as soon as possible. This needs to be here so it's done before any resources
+		// are allocated by this process. That because we've seen issues where the AI worker containers hoard all the system
+		// resources and the Orchestrator cannot restart because it dies early (e.g. due to no (v)ram available).
+		removed, err := worker.RemoveExistingContainers(context.Background(), nil, containerCreatorID)
+		if err != nil {
+			glog.Errorf("Error removing existing AI worker containers: %v", err)
+		}
+		if removed > 0 {
+			glog.Infof("Removed %d existing AI worker containers", removed)
+		}
 	}
 
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
@@ -428,9 +641,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.TrickleInsecureSkipVerify = !((cfg.UseLiveRunners != nil && *cfg.UseLiveRunners) ||
+		(cfg.LiveRunnerConfig != nil && *cfg.LiveRunnerConfig != ""))
+	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
+	}
+
+	// Parse -instances flag and store parsed canonicalized URLs in the node
+	if cfg.Nodes != nil && *cfg.Nodes != "" {
+		n.Nodes, err = parseNodes(*cfg.Nodes)
+		if err != nil || len(n.Nodes) == 0 {
+			glog.Exit("No valid instance URLs parsed from -nodes: ", err)
+		} else {
+			glog.Infof("Configured nodes: %v", strings.Join(n.Nodes, ","))
+		}
 	}
 
 	var transcoderCaps []core.Capability
@@ -472,26 +698,63 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+		}
+
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
+				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
+			}
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
+		}
+	}
+
+	// Validate remote signer mode
+	if *cfg.RemoteSigner {
+		if *cfg.Network == "offchain" {
+			exit("Remote signer mode requires on-chain network")
 		}
 	}
 
 	if *cfg.Redeemer {
 		n.NodeType = core.RedeemerNode
+	} else if *cfg.RemoteSigner {
+		n.NodeType = core.RemoteSignerNode
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
 		if !*cfg.Transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
 		}
+		if !*cfg.AIWorker {
+			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
+		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
+	} else if *cfg.AIWorker {
+		n.NodeType = core.AIWorkerNode
 	} else if *cfg.Broadcaster {
 		n.NodeType = core.BroadcasterNode
+		glog.Warning("-broadcaster flag is deprecated and will be removed in a future release. Please use -gateway instead")
+	} else if *cfg.Gateway {
+		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -gateway, -transcoder, -aiWorker, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -518,8 +781,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			nodeType = lpmon.Transcoder
 		case core.RedeemerNode:
 			nodeType = lpmon.Redeemer
+		case core.AIWorkerNode:
+			nodeType = lpmon.AIWorker
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
+		}
 	}
 
 	watcherErr := make(chan error)
@@ -532,7 +804,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Error(err)
 			return
 		}
-
 	} else {
 		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
 		if err != nil {
@@ -555,7 +826,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 		} else {
-			glog.Exit(fmt.Errorf(err.Error()))
+			glog.Exit(err)
 		}
 
 		//Get the Eth client connection information
@@ -623,6 +894,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			TransactionManager: tm,
 			Signer:             types.LatestSignerForChainID(chainID),
 			CheckTxTimeout:     time.Duration(int64(*cfg.TxTimeout) * int64(*cfg.MaxTxReplacements+1)),
+		}
+
+		if *cfg.AIServiceRegistry {
+			// For the time-being Livepeer AI Subnet uses its own ServiceRegistry, so we define it here
+			ethCfg.ServiceRegistryAddr = ethcommon.HexToAddress("0x04C0b249740175999E5BF5c9ac1dA92431EF34C5")
 		}
 
 		client, err := eth.NewClient(ethCfg)
@@ -712,6 +988,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
 
+		core.PriceFeedWatcher, err = watchers.NewPriceFeedWatcher(backend, *cfg.PriceFeedAddr)
+		// The price feed watch loop is started on demand on first subscribe.
+		if err != nil {
+			glog.Errorf("Failed to set up price feed watcher: %v", err)
+			return
+		}
+
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
 
@@ -733,27 +1016,53 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if *cfg.Orchestrator {
 			// Set price per pixel base info
-			if *cfg.PixelsPerUnit <= 0 {
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+			}
+			if pixelsPerUnit.Sign() <= 0 {
 				// Can't divide by 0
-				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %d", *cfg.PixelsPerUnit))
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
 			}
-			if cfg.PricePerUnit == nil {
-				// Prevent orchestrators from unknowingly providing free transcoding
+			if cfg.PricePerUnit == nil && !*cfg.AIWorker {
+				// Prevent orchestrators from unknowingly doing free work.
 				panic(fmt.Errorf("-pricePerUnit must be set"))
+			} else if cfg.PricePerUnit != nil {
+				pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+				if err != nil {
+					panic(fmt.Errorf("-pricePerUnit must be a valid integer with an optional currency, provided %v", *cfg.PricePerUnit))
+				} else if pricePerUnit.Sign() < 0 {
+					panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
+				}
+				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					unit := "pixel"
+					if *cfg.AIWorker {
+						unit = "compute unit"
+					}
+					glog.Infof("Price: %v wei per %s\n", price.FloatString(3), unit)
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price: %v", err))
+				}
+				n.SetBasePrice("default", autoPrice)
 			}
-			if *cfg.PricePerUnit < 0 {
-				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
-			}
-			n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
-			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 
 			if *cfg.PricePerBroadcaster != "" {
-				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
-				for _, p := range ppb {
-					price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
-					n.SetBasePrice(p.EthAddress, price)
-					glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
+				glog.Warning("-PricePerBroadcaster flag is deprecated and will be removed in a future release. Please use -PricePerGateway instead")
+				cfg.PricePerGateway = cfg.PricePerBroadcaster
+			}
+			gatewayPrices := getGatewayPrices(*cfg.PricePerGateway)
+			for _, p := range gatewayPrices {
+				p := p
+				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(p.Currency, pricePerPixel, func(price *big.Rat) {
+					glog.Infof("Price: %v wei per pixel for gateway %v", price.FloatString(3), p.EthAddress)
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price for gateway %s: %v", p.EthAddress, err))
 				}
+				n.SetBasePrice(p.EthAddress, autoPrice)
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -774,6 +1083,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
+			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -816,13 +1126,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
 				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
-				return
 			} else {
 				n.SetMaxFaceValue(mfv)
 			}
 
 		}
-		if n.NodeType == core.BroadcasterNode {
+		if n.NodeType == core.BroadcasterNode || n.NodeType == core.RemoteSignerNode {
 			maxEV, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
 			if maxEV == nil {
 				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
@@ -850,15 +1159,76 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
-			if *cfg.PixelsPerUnit <= 0 {
-				// Can't divide by 0
-				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *cfg.PixelsPerUnit))
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
 			}
-			if *cfg.MaxPricePerUnit > 0 {
-				server.BroadcastCfg.SetMaxPrice(big.NewRat(int64(*cfg.MaxPricePerUnit), int64(*cfg.PixelsPerUnit)))
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
+			maxPricePerUnit, currency, err := parsePricePerUnit(*cfg.MaxPricePerUnit)
+			if err != nil {
+				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
+			}
+
+			if maxPricePerUnit.Sign() > 0 {
+				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					if lpmon.Enabled {
+						lpmon.MaxTranscodingPrice(price)
+					}
+					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(3))
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price: %v", err))
+				}
+				server.BroadcastCfg.SetMaxPrice(autoPrice)
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
+
+			if *cfg.MaxPricePerCapability != "" {
+				maxCapabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
+				for _, p := range maxCapabilityPrices {
+					if p.PixelsPerUnit == nil {
+						p.PixelsPerUnit = pixelsPerUnit
+					} else if p.PixelsPerUnit.Sign() <= 0 {
+						glog.Infof("Pixels per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, using default pixelsPerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.PixelsPerUnit)
+						p.PixelsPerUnit = pixelsPerUnit
+					}
+
+					if p.PricePerUnit == nil || p.PricePerUnit.Sign() <= 0 {
+						if maxPricePerUnit.Sign() > 0 {
+							glog.Infof("Maximum price per unit not set for capability=%v model_id=%v in 'maxPricePerCapability' config, using maxPricePerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.MaxPricePerUnit)
+							p.PricePerUnit = maxPricePerUnit
+						} else {
+							glog.Warningf("Maximum price per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, and 'maxPricePerUnit' not set, gateway is currently set to accept ANY price.\n", p.Pipeline, p.ModelID)
+							continue
+						}
+					}
+
+					maxCapabilityPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+
+					cap, err := core.PipelineToCapability(p.Pipeline)
+					if err != nil {
+						panic(fmt.Errorf("Pipeline in 'maxPricePerCapability' config is not valid capability: %v\n", p.Pipeline))
+					}
+					capName := core.CapabilityNameLookup[cap]
+					modelID := p.ModelID
+					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
+						if lpmon.Enabled {
+							lpmon.MaxPriceForCapability(lpmon.ToPipeline(capName), modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
+					})
+					if err != nil {
+						panic(fmt.Errorf("Error converting price: %v", err))
+					}
+
+					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
+				}
 			}
 		}
 
@@ -928,7 +1298,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.InitializeRound {
 			// Start round initializer
 			// The node will only initialize rounds if it in the upcoming active set for the round
-			initializer := eth.NewRoundInitializer(n.Eth, timeWatcher)
+			initializer := eth.NewRoundInitializer(n.Eth, timeWatcher, *cfg.InitializeRoundMaxDelay)
 			go func() {
 				if err := initializer.Start(); err != nil {
 					serviceErr <- err
@@ -966,6 +1336,249 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			watcherErr <- err
 		}()
+	}
+
+	var aiCaps []core.Capability
+	capabilityConstraints := make(core.PerCapabilityConstraints)
+	var aiModelConfigs []core.AIModelConfig
+
+	if *cfg.AIModels != "" {
+		aiModelConfigs, err = core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+	}
+
+	if *cfg.AIWorker {
+		gpus := []string{}
+		if *cfg.Nvidia != "" {
+			var err error
+			gpus, err = common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
+			if err != nil {
+				glog.Errorf("Error parsing -nvidia for devices: %v", err)
+				return
+			}
+		} else {
+			glog.Warningf("!!! No GPU discovered, using CPU for AIWorker !!!")
+			// Create 1 fake GPU instances, intended for the local non-GPU setup
+			gpus = []string{"emulated-0"}
+		}
+
+		if *cfg.AIRunnerContainersPerGPU > 1 {
+			// Transform GPU entries to allow running multiple Runner Containers on the same GPU
+			var colocatedGpus []string
+			for i := range *cfg.AIRunnerContainersPerGPU {
+				for _, g := range gpus {
+					colocatedGpus = append(colocatedGpus, fmt.Sprintf("colocated-%d-%s", i, g))
+				}
+			}
+			gpus = colocatedGpus
+		}
+
+		modelsDir := *cfg.AIModelsDir
+		if modelsDir == "" {
+			var err error
+			modelsDir, err = filepath.Abs(path.Join(*cfg.Datadir, "models"))
+			if err != nil {
+				glog.Error("Error creating absolute path for models dir: %v", modelsDir)
+				return
+			}
+		}
+
+		if err := os.MkdirAll(modelsDir, 0755); err != nil {
+			glog.Error("Error creating models dir %v", modelsDir)
+			return
+		}
+
+		// Retrieve image overrides from the config.
+		var imageOverrides worker.ImageOverrides
+		if *cfg.AIRunnerImageOverrides != "" {
+			if err := json.Unmarshal([]byte(*cfg.AIRunnerImageOverrides), &imageOverrides); err != nil {
+				glog.Errorf("Error unmarshaling image overrides: %v", err)
+				return
+			}
+		}
+
+		// Backwards compatibility for deprecated flags.
+		if *cfg.AIRunnerImage != "" {
+			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
+			if imageOverrides.Default == "" {
+				imageOverrides.Default = *cfg.AIRunnerImage
+			}
+		}
+
+		if *cfg.AIServerless {
+			if len(aiModelConfigs) != 1 {
+				glog.Errorf("Serverless requires exactly one AI model config, got %d", len(aiModelConfigs))
+				return
+			}
+			config := aiModelConfigs[0]
+			if config.Pipeline != "live-video-to-video" || config.ModelID != "scope" {
+				glog.Errorf("Serverless only supports live-video-to-video/scope, got %s/%s", config.Pipeline, config.ModelID)
+				return
+			}
+
+			n.AIWorker, err = worker.NewServerlessWorker(strings.TrimSpace(config.URL), config.Capacity)
+			if err != nil {
+				glog.Errorf("Error starting Serverless AI worker: %v", err)
+				return
+			}
+		} else {
+			n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
+			if err != nil {
+				glog.Errorf("Error starting AI worker: %v", err)
+				return
+			}
+		}
+
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
+			defer cancel()
+			if err := n.AIWorker.Stop(ctx); err != nil {
+				glog.Errorf("Error stopping AI worker containers: %v", err)
+				return
+			}
+
+			glog.Infof("Stopped AI worker containers")
+		}()
+	}
+
+	if *cfg.AIModels != "" {
+		for _, config := range aiModelConfigs {
+			pipelineCap, err := core.PipelineToCapability(config.Pipeline)
+			if err != nil {
+				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
+			}
+			if *cfg.AIWorker {
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
+				modelsCount := 1
+
+				if config.Capacity != 0 {
+					if config.URL == "" {
+						// Use multiple same configs if External Container is not used and capacity is set
+						modelsCount = config.Capacity
+					} else {
+						// External containers do auto-scale; default to 1 or use provided capacity.
+						modelConstraint.Capacity = config.Capacity
+					}
+				}
+
+				// Ensure the AI worker has the image needed to serve the job.
+				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
+				if err != nil {
+					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
+				}
+
+				for i := 0; i < modelsCount; i++ {
+					if config.Warm || config.URL != "" {
+						// Register external container endpoint if URL is provided.
+						endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+
+						// Warm the AI worker container or register the endpoint.
+						if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+							glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+							return
+						}
+					}
+				}
+
+				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
+				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
+
+				// Show warning if people set OptimizationFlags but not Warm.
+				if len(config.OptimizationFlags) > 0 && !config.Warm {
+					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
+				}
+
+				// Add capability and model constraints.
+				if _, hasCap := capabilityConstraints[pipelineCap]; !hasCap {
+					aiCaps = append(aiCaps, pipelineCap)
+					capabilityConstraints[pipelineCap] = &core.CapabilityConstraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				model, exists := capabilityConstraints[pipelineCap].Models[config.ModelID]
+				if !exists {
+					capabilityConstraints[pipelineCap].Models[config.ModelID] = modelConstraint
+				} else if model.Warm == config.Warm {
+					model.Capacity += modelConstraint.Capacity
+				} else {
+					panic(fmt.Errorf("Cannot have same model_id (%v) as cold and warm in same AI worker, please fix aiModels json config", config.ModelID))
+				}
+
+				glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, pipelineCap, config.ModelID)
+			}
+
+			// Orch and combined Orch/AIWorker set the price. Remote AIWorker is always
+			// offchain and does not set the price.
+			if *cfg.Network != "offchain" {
+				if config.Gateway == "" {
+					config.Gateway = "default"
+				}
+
+				// Get base pixels and price per unit.
+				pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+				if !ok || !pixelsPerUnitBase.IsInt() {
+					panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+				}
+				if !ok || pixelsPerUnitBase.Sign() <= 0 {
+					// Can't divide by 0
+					panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+				}
+				pricePerUnitBase := new(big.Rat)
+				currencyBase := ""
+				if cfg.PricePerUnit != nil {
+					pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+					if err != nil || pricePerUnit.Sign() < 0 {
+						panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
+					}
+					pricePerUnitBase = pricePerUnit
+					currencyBase = currency
+				}
+
+				// Set price for capability.
+				var autoPrice *core.AutoConvertedPrice
+				pixelsPerUnit := config.PixelsPerUnit.Rat
+				if config.PixelsPerUnit.Rat == nil {
+					pixelsPerUnit = pixelsPerUnitBase
+				} else if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+					panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
+				}
+
+				pricePerUnit := config.PricePerUnit.Rat
+				currency := config.Currency
+				if pricePerUnit == nil {
+					if pricePerUnitBase.Sign() == 0 {
+						panic(fmt.Errorf("'pricePerUnit' must be set for model '%v' in pipeline '%v'", config.ModelID, config.Pipeline))
+					}
+					pricePerUnit = pricePerUnitBase
+					currency = currencyBase
+					glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
+				} else if pricePerUnit.Sign() < 0 {
+					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive number, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+				}
+
+				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+
+				pipeline := config.Pipeline
+				modelID := config.ModelID
+				autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					glog.V(6).Infof("Capability %s (ID: %v) with model constraint %s price set to %s wei per compute unit", pipeline, pipelineCap, modelID, price.FloatString(3))
+				})
+				if err != nil {
+					panic(fmt.Errorf("error converting price: %v", err))
+				}
+
+				n.SetBasePriceForCap(config.Gateway, pipelineCap, config.ModelID, autoPrice)
+			}
+		}
+	} else {
+		if n.NodeType == core.AIWorkerNode {
+			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+			return
+		}
 	}
 
 	if *cfg.Objectstore != "" {
@@ -1007,6 +1620,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		server.AuthWebhookURL = parsedUrl
 	}
 
+	if *cfg.LiveAIAuthWebhookURL != "" {
+		parsedUrl, err := validateURL(*cfg.LiveAIAuthWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting live AI auth webhook URL ", err)
+		}
+		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
+		n.LiveAIAuthWebhookURL = parsedUrl
+	}
+	if *cfg.RemoteSignerWebhookURL != "" {
+		parsedURL, err := validateURL(*cfg.RemoteSignerWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting remote signer webhook URL ", err)
+		}
+		glog.Info("Using remote signer webhook URL ", parsedURL.Redacted())
+		n.RemoteSignerWebhookURL = parsedURL
+		if cfg.RemoteSignerWebhookHeaders != nil {
+			n.RemoteSignerWebhookHeaders = parseHeaderMap(*cfg.RemoteSignerWebhookHeaders)
+		}
+	}
+
 	httpIngest := true
 
 	if n.NodeType == core.BroadcasterNode {
@@ -1016,7 +1649,49 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", BroadcasterRpcPort)
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", BroadcasterCliPort)
 
+		if *cfg.GatewayHost != "" {
+			n.GatewayHost = *cfg.GatewayHost
+		}
+
 		bcast := core.NewBroadcaster(n)
+
+		// Populate infoSig with remote signer if configured
+		if *cfg.RemoteSignerUrl != "" {
+			url, err := url.Parse(*cfg.RemoteSignerUrl)
+			if err != nil {
+				glog.Exit("Invalid remote signer URL: ", err)
+			}
+			if url.Scheme == "" || url.Host == "" {
+				// Usually something like `host:port` or just plain `host`
+				// Prepend https:// for convenience
+				url, err = url.Parse("https://" + *cfg.RemoteSignerUrl)
+				if err != nil {
+					glog.Exit("Adding HTTPS to remote signer URL failed: ", err)
+				}
+			}
+
+			if cfg.RemoteSignerHeaders != nil {
+				n.RemoteSignerHeaders = parseHeaderMap(*cfg.RemoteSignerHeaders)
+			}
+
+			glog.Info("Retrieving OrchestratorInfo fields from remote signer: ", url)
+			fields, err := server.GetOrchInfoSig(url, n.RemoteSignerHeaders)
+			if err != nil {
+				glog.Exit("Unable to query remote signer: ", err)
+			}
+			n.RemoteSignerUrl = url
+			n.RemoteEthAddr = ethcommon.BytesToAddress(fields.Address)
+			n.InfoSig = fields.Signature
+			glog.Info("Using Ethereum address from remote signer: ", n.RemoteEthAddr)
+		} else {
+			// Use local signing
+			infoSig, err := bcast.Sign([]byte(fmt.Sprintf("%v", bcast.Address().Hex())))
+			if err != nil {
+				glog.Exit("Unable to generate info sig: ", err)
+			}
+			n.InfoSig = infoSig
+		}
+
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
@@ -1024,19 +1699,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
-		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
-		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
-		// caching/polling from the logic for fetching orchestrators during discovery
-		if *cfg.Network != "offchain" {
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
-			if err != nil {
-				exit("Could not create orchestrator pool with DB cache: %v", err)
-			}
-
-			n.OrchestratorPool = dbOrchPoolCache
-		}
+		n.ExtraNodes = *cfg.ExtraNodes
 
 		// Set up orchestrator discovery
 		if *cfg.OrchWebhookURL != "" {
@@ -1045,9 +1708,38 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
+			// IMPORTANT: Do not forward RemoteSignerHeaders here. These headers may
+			// contain secrets intended only for the configured remote signer, and a
+			// separate orchestrator discovery webhook must never receive them.
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		} else if n.RemoteSignerUrl != nil {
+			orchDiscoveryURL := n.RemoteSignerUrl.ResolveReference(&url.URL{Path: "/discover-orchestrators"})
+			glog.Info("Using remote signer orchestrator discovery endpoint ", orchDiscoveryURL)
+			n.OrchestratorPool = discovery.WebhookPoolConfig{
+				Broadcaster:      bcast,
+				Callback:         orchDiscoveryURL,
+				Headers:          n.RemoteSignerHeaders,
+				DiscoveryTimeout: *cfg.DiscoveryTimeout,
+			}.New()
+		}
+
+		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
+		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
+		// caching/polling from the logic for fetching orchestrators during discovery
+		if *cfg.Network != "offchain" {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout, *cfg.LiveAICapReportInterval)
+			if err != nil {
+				exit("Could not create orchestrator pool with DB cache: %v", err)
+			}
+
+			// If orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache.
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
+			}
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1107,18 +1799,56 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
+
+		if suri.String() == "" && len(n.Nodes) == 0 {
+			glog.Exit("Empty service URI and no additional nodes specified; set -serviceAddr or -nodes")
+		}
+
+		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
+			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
+		}
+
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
-		if !*cfg.Transcoder && n.OrchSecret == "" {
-			glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+		if !*cfg.Transcoder && !*cfg.AIWorker {
+			if n.OrchSecret == "" {
+				if *cfg.AIModels != "" {
+					glog.Info("Running an orchestrator in AI External Container mode")
+				} else {
+					glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+				}
+			}
 		}
 	} else if n.NodeType == core.TranscoderNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
+	} else if n.NodeType == core.AIWorkerNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
+	} else if n.NodeType == core.RemoteSignerNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
+	}
+	if isWildcardIPAddr(*cfg.CliAddr) {
+		glog.Warningf("Binding -cliAddr to a wildcard address (%s) exposes the CLI server on all network interfaces; use a loopback address or restrict access with a firewall", *cfg.CliAddr)
 	}
 
-	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
+	// Apply default capabilities if not running as a transcoder.
+	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
+		aiCaps = append(aiCaps, core.DefaultCapabilities()...)
+	}
+
+	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
+	if cfg.OrchMinLivepeerVersion != nil {
+		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
+	}
+	if cfg.AIMinRunnerVersion != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
+	}
+	if n.AIWorkerManager != nil {
+		// Set min version constraint to prevent incompatible workers.
+		n.Capabilities.SetMinVersionConstraint(core.LivepeerVersion)
+	}
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
@@ -1144,11 +1874,47 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
+	if cfg.MediaMTXApiPassword != nil {
+		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
+	}
+	if cfg.LiveAIAuthApiKey != nil {
+		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
+	}
+	if cfg.LiveAIHeartbeatURL != nil {
+		n.LiveAIHeartbeatURL = *cfg.LiveAIHeartbeatURL
+	}
+	if cfg.LiveAIHeartbeatInterval != nil {
+		n.LiveAIHeartbeatInterval = *cfg.LiveAIHeartbeatInterval
+	}
+	if cfg.LiveAICapReportInterval != nil {
+		n.LiveAICapReportInterval = *cfg.LiveAICapReportInterval
+	}
+	if cfg.RemoteDiscovery != nil {
+		n.RemoteDiscovery = *cfg.RemoteDiscovery
+	}
+	if cfg.LiveAIHeartbeatHeaders != nil {
+		n.LiveAIHeartbeatHeaders = parseHeaderMap(*cfg.LiveAIHeartbeatHeaders)
+	}
+	n.LivePaymentInterval = *cfg.LivePaymentInterval
+	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
+	if cfg.LiveAITrickleHostForRunner != nil {
+		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
+	}
+	if cfg.LiveRunnerAddr != nil && *cfg.LiveRunnerAddr != "" {
+		n.LiveRunnerAddr, err = parseLiveRunnerAddr(*cfg.LiveRunnerAddr)
+		if err != nil {
+			glog.Exitf("invalid -liveRunnerAddr: %v", err)
+		}
+	}
+	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
+		glog.Warningf("The -liveAICapRefreshModels flag is deprecated, capacity is now available for all models, use -liveAICapReportInterval to set the interval for reporting capacity metrics")
+	}
+	n.LiveAISaveNSegments = cfg.LiveAISaveNSegments
 
 	//Create Livepeer Node
 
 	//Set up the media server
-	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
+	s, err := server.NewLivepeerServer(ctx, *cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
 		exit("Error creating Livepeer server: err=%q", err)
 	}
@@ -1163,6 +1929,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Current ManifestID will be available over ", *cfg.HttpAddr)
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
+	s.CliTxRoutes = *cfg.CliTxRoutes
 	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
 		s.StartCliWebserver(srv)
@@ -1174,6 +1941,96 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 	}
 
+	// Set up orchestrator pool for remote signer mode and start server
+	if n.NodeType == core.RemoteSignerNode {
+		bcast := core.NewBroadcaster(n)
+		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
+		n.ExtraNodes = *cfg.ExtraNodes
+
+		// Set up orchestrator discovery - same logic as BroadcasterNode
+		if *cfg.OrchWebhookURL != "" {
+			whurl, err := validateURL(*cfg.OrchWebhookURL)
+			if err != nil {
+				glog.Exit("Error setting orch webhook URL ", err)
+			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
+			n.OrchestratorPool = discovery.WebhookPoolConfig{
+				Broadcaster:         bcast,
+				Callback:            whurl,
+				DiscoveryTimeout:    *cfg.DiscoveryTimeout,
+				IgnoreCapacityCheck: true,
+			}.New()
+		} else if len(orchURLs) > 0 {
+			pool, err := discovery.NewOrchestratorPoolWithConfig(discovery.OrchestratorPoolConfig{
+				Broadcaster:         bcast,
+				URIs:                orchURLs,
+				Score:               common.Score_Trusted,
+				OrchBlacklist:       orchBlacklist,
+				DiscoveryTimeout:    *cfg.DiscoveryTimeout,
+				IgnoreCapacityCheck: true,
+				ExtraNodes:          *cfg.ExtraNodes,
+			})
+			if err != nil {
+				glog.Exit("Error initializing orchestrator pool ", err)
+			}
+			n.OrchestratorPool = pool
+		}
+
+		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
+		if *cfg.Network != "offchain" && *cfg.RemoteDiscovery {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			dbOrchPoolCache, err := discovery.DBOrchestratorPoolCacheConfig{
+				Ctx:                     ctx,
+				Node:                    n,
+				RoundsManager:           timeWatcher,
+				OrchBlacklist:           orchBlacklist,
+				DiscoveryTimeout:        *cfg.DiscoveryTimeout,
+				LiveAICapReportInterval: *cfg.LiveAICapReportInterval,
+				IgnoreCapacityCheck:     true,
+				UseDiscoveryEndpoint:    true,
+			}.New()
+			if err != nil {
+				exit("Could not create orchestrator pool with DB cache: %v", err)
+			}
+
+			// If orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
+			}
+		}
+
+		if n.RemoteDiscovery && n.OrchestratorPool == nil {
+			exit("RemoteDiscovery is set but no orchestrator pool could be configured")
+		}
+
+		// Start remote signer server
+		go func() {
+			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
+
+			// Refuse to start a public signer with no webhook auth. It would sign payments
+			// from this node's deposit for any caller (override with -remoteSignerAllowNoAuth).
+			if n.RemoteSignerWebhookURL == nil {
+				isLocalHTTP, err := isLocalURL("https://" + *cfg.HttpAddr)
+				if err != nil {
+					exit("Error checking for local -httpAddr: %v", err)
+				}
+				if !isLocalHTTP && !*cfg.RemoteSignerAllowNoAuth {
+					exit("Refusing to start: remote signer on public -httpAddr %s with no "+
+						"-remoteSignerWebhookUrl signs payments from this node's deposit for any caller. "+
+						"Set the webhook, or pass -remoteSignerAllowNoAuth to override.", *cfg.HttpAddr)
+				}
+				glog.Warning("WARNING: remote signer has no webhook auth. /generate-live-payment is " +
+					"UNAUTHENTICATED and signs payments from this node's deposit. Set -remoteSignerWebhookUrl.")
+			}
+
+			glog.Info("Starting remote signer server on ", *cfg.HttpAddr)
+			if err := server.StartRemoteSignerServer(s, *cfg.HttpAddr); err != nil {
+				exit("Error starting remote signer server: err=%q", err)
+			}
+		}()
+	}
+
 	go func() {
 		if core.OrchestratorNode != n.NodeType {
 			return
@@ -1181,28 +2038,74 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
+		if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+			if n.OrchSecret == "" && *cfg.LiveRunnerConfig == "" {
+				glog.Exit("running with -useLiveRunners requires -orchSecret")
+			}
+			if cfg.LiveRunnerProxyURL != nil && *cfg.LiveRunnerProxyURL != "" {
+				if err := runner.ValidateProxyURLTemplate(*cfg.LiveRunnerProxyURL, orch.ServiceURI()); err != nil {
+					glog.Exitf("invalid -liveRunnerProxyUrl: %v", err)
+				}
+			}
+			n.LiveRunnerManager = runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+				Host:             liveRunnerHost{RunnerHost: orch, LivepeerNode: n},
+				Onchain:          *cfg.Network != "offchain",
+				ProxyURLTemplate: *cfg.LiveRunnerProxyURL,
+			})
+			if n.OrchSecret == "" {
+				glog.Warning("No -orchSecret configured; dynamic LiveRunner heartbeat registration is disabled")
+			}
+			if *cfg.LiveRunnerConfig != "" {
+				configJSON, err := os.ReadFile(*cfg.LiveRunnerConfig)
+				if err != nil {
+					glog.Exitf("error reading -liveRunnerConfig: %v", err)
+				}
+				registration, err := n.LiveRunnerManager.(*runner.LiveRunnerRegistry).RegisterStaticRunnersJSON(configJSON)
+				if err != nil {
+					glog.Exitf("error registering -liveRunnerConfig: %v", err)
+				}
+				glog.Infof("Registered %d static live runners from %s", len(registration.Runners), *cfg.LiveRunnerConfig)
+			}
+		}
+
 		go func() {
-			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
 			if err != nil {
 				exit("Error starting Transcoder node: err=%q", err)
 			}
 			tc <- struct{}{}
 		}()
 
+		doingWork := orch.ServiceURI().String() != ""
+
 		// check whether or not the orchestrator is available
-		if *cfg.TestOrchAvail {
+		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
-			orchAvail := server.CheckOrchestratorAvailability(orch)
+			var (
+				checkName string
+				orchAvail bool
+			)
+			if *cfg.UseLiveRunners || *cfg.LiveRunnerConfig != "" {
+				checkName = "discovery"
+				orchAvail = server.CheckOrchestratorDiscoveryAvailability(orch)
+			} else {
+				checkName = "grpc ping"
+				orchAvail = server.CheckOrchestratorAvailability(orch)
+			}
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
+				glog.Infof("Orchestrator not available at %v (%v) via %s check; shutting down", orch.ServiceURI(), *cfg.HttpAddr, checkName)
 				tc <- struct{}{}
 			}
 		}
 
+		if !doingWork {
+			glog.Infof("Orchestrator is not performing work")
+		}
+
 	}()
 
-	if n.NodeType == core.TranscoderNode {
+	if n.NodeType == core.TranscoderNode || n.NodeType == core.AIWorkerNode {
 		if n.OrchSecret == "" {
 			glog.Exit("Missing -orchSecret")
 		}
@@ -1210,17 +2113,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+		if n.NodeType == core.TranscoderNode {
+			go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+		}
+
+		if n.NodeType == core.AIWorkerNode {
+			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
+		}
 	}
 
 	switch n.NodeType {
 	case core.OrchestratorNode:
 		glog.Infof("***Livepeer Running in Orchestrator Mode***")
 	case core.BroadcasterNode:
-		glog.Infof("***Livepeer Running in Broadcaster Mode***")
+		glog.Infof("***Livepeer Running in Gateway Mode***")
 		glog.Infof("Video Ingest Endpoint - rtmp://%v", *cfg.RtmpAddr)
 	case core.TranscoderNode:
 		glog.Infof("**Liveepeer Running in Transcoder Mode***")
+	case core.AIWorkerNode:
+		glog.Infof("**Livepeer Running in AI Worker Mode**")
 	case core.RedeemerNode:
 		glog.Infof("**Livepeer Running in Redeemer Mode**")
 	}
@@ -1272,6 +2183,34 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	return res
 }
 
+func parseNodes(addrs string) ([]string, error) {
+	var res []string
+	if len(addrs) == 0 {
+		return res, fmt.Errorf("instances empty")
+	}
+	for _, addr := range strings.Split(addrs, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		// Add https if not provided
+		if !strings.HasPrefix(addr, "https://") {
+			addr = "https://" + addr
+		}
+		parsed, err := url.ParseRequestURI(addr)
+		if err != nil {
+			return nil, fmt.Errorf("Could not parse instance URI '%s': %w", addr, err)
+		}
+		// Ensure scheme starts with https; if http is provided, upgrade to https
+		if parsed.Scheme != "https" {
+			return nil, fmt.Errorf("Node URI must start with https '%s'", addr)
+		}
+		// Use the canonical string form
+		res = append(res, parsed.String())
+	}
+	return res, nil
+}
+
 func parseOrchBlacklist(b *string) []string {
 	if b == nil {
 		return []string{}
@@ -1291,6 +2230,21 @@ func validateURL(u string) (*url.URL, error) {
 		return nil, errors.New("URL should be HTTP or HTTPS")
 	}
 	return p, nil
+}
+
+func parseHeaderMap(raw string) map[string]string {
+	headers := make(map[string]string)
+	for _, header := range strings.Split(raw, ",") {
+		parts := strings.SplitN(header, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				headers[key] = value
+			}
+		}
+	}
+	return headers
 }
 
 func isLocalURL(u string) (bool, error) {
@@ -1317,7 +2271,14 @@ func isLocalURL(u string) (bool, error) {
 func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// Passed in via CLI
 	if serviceAddr != "" {
-		return url.ParseRequestURI("https://" + serviceAddr)
+		if serviceAddr == "none" {
+			// special value to signal this node is not to be used for work
+			return url.Parse("")
+		}
+		if !strings.HasPrefix(serviceAddr, "http://") && !strings.HasPrefix(serviceAddr, "https://") {
+			serviceAddr = "https://" + serviceAddr
+		}
+		return url.ParseRequestURI(serviceAddr)
 	}
 
 	// Infer address
@@ -1391,12 +2352,30 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 		return defaultHost + ":" + defaultPort
 	}
 
+	if ip := net.ParseIP(trimIPv6Brackets(addr)); ip != nil {
+		return net.JoinHostPort(ip.String(), defaultPort)
+	}
 	if addr[0] == ':' {
 		return defaultHost + addr
 	}
-	// not IPv6 safe
 	if !strings.Contains(addr, ":") {
 		return addr + ":" + defaultPort
+	}
+	return addr
+}
+
+func isWildcardIPAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = trimIPv6Brackets(addr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
+}
+
+func trimIPv6Brackets(addr string) string {
+	if len(addr) >= 2 && addr[0] == '[' && addr[len(addr)-1] == ']' {
+		return addr[1 : len(addr)-1]
 	}
 	return addr
 }
@@ -1420,30 +2399,113 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-// Format of broadcasterPrices json
-// {"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
-type BroadcasterPrices struct {
-	Prices []BroadcasterPrice `json:"broadcasters"`
+type GatewayPrice struct {
+	EthAddress    string
+	PricePerUnit  *big.Rat
+	Currency      string
+	PixelsPerUnit *big.Rat
 }
 
-type BroadcasterPrice struct {
-	EthAddress    string `json:"ethaddress"`
-	PricePerUnit  int64  `json:"priceperunit"`
-	PixelsPerUnit int64  `json:"pixelsperunit"`
-}
-
-func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
-	var pricesSet BroadcasterPrices
-	prices, _ := common.ReadFromFile(broadcasterPrices)
-
-	err := json.Unmarshal([]byte(prices), &pricesSet)
-
-	if err != nil {
-		glog.Errorf("broadcaster prices could not be parsed")
+func getGatewayPrices(gatewayPrices string) []GatewayPrice {
+	if gatewayPrices == "" {
 		return nil
 	}
 
-	return pricesSet.Prices
+	// Format of gatewayPrices json
+	// {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
+	var pricesSet struct {
+		Gateways []struct {
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
+		} `json:"gateways"`
+		// TODO: Keep the old name for backwards compatibility, remove in the future
+		Broadcasters []struct {
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
+		} `json:"broadcasters"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("gateway prices could not be parsed: %s", err)
+		return nil
+	}
+
+	// Check if broadcasters field is used and display a warning
+	if len(pricesSet.Broadcasters) > 0 {
+		glog.Warning("The 'broadcaster' property in the 'pricePerGateway' config is deprecated and will be removed in a future release. Please use 'gateways' instead.")
+	}
+
+	// Combine broadcasters and gateways into a single slice
+	allGateways := append(pricesSet.Broadcasters, pricesSet.Gateways...)
+
+	prices := make([]GatewayPrice, len(allGateways))
+	for i, p := range allGateways {
+		prices[i] = GatewayPrice{
+			EthAddress:    p.EthAddress,
+			Currency:      p.Currency,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+		}
+	}
+
+	return prices
+}
+
+type ModelPrice struct {
+	Pipeline      string
+	ModelID       string
+	PricePerUnit  *big.Rat
+	PixelsPerUnit *big.Rat
+	Currency      string
+}
+
+func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
+	if capabilitiesPrices == "" {
+		return nil
+	}
+
+	// Format of modelPrices json
+	// Model_id will be set to "default" to price all models in the pipeline if not specified.
+	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
+	var pricesSet struct {
+		CapabilitiesPrices []struct {
+			Pipeline      string       `json:"pipeline"`
+			ModelID       string       `json:"model_id"`
+			PixelsPerUnit core.JSONRat `json:"pixels_per_unit"`
+			PricePerUnit  core.JSONRat `json:"price_per_unit"`
+			Currency      string       `json:"currency"`
+		} `json:"capabilities_prices"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(capabilitiesPrices)
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("model prices could not be parsed: %s", err)
+		return nil
+	}
+
+	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
+	for i, p := range pricesSet.CapabilitiesPrices {
+		if p.ModelID == "" {
+			p.ModelID = "default"
+		}
+
+		prices[i] = ModelPrice{
+			Pipeline:      p.Pipeline,
+			ModelID:       p.ModelID,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+			Currency:      p.Currency,
+		}
+	}
+
+	return prices
 }
 
 func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
@@ -1454,11 +2516,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 
@@ -1493,6 +2556,22 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
+	pricePerUnitRex := regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
+	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
+	if match == nil {
+		return nil, "", fmt.Errorf("price must be in the format of <price><currency>, provided %v", pricePerUnitStr)
+	}
+	price, currency := match[1], match[3]
+
+	pricePerUnit, ok := new(big.Rat).SetString(price)
+	if !ok {
+		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
+	}
+
+	return pricePerUnit, currency, nil
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {
@@ -1543,4 +2622,31 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 func exit(msg string, args ...any) {
 	glog.Errorf(msg, args...)
 	os.Exit(2)
+}
+
+type liveRunnerHost struct {
+	runner.RunnerHost
+	*core.LivepeerNode
+}
+
+func (h liveRunnerHost) LiveRunnerURI() *url.URL {
+	if h.LivepeerNode != nil && h.LivepeerNode.LiveRunnerAddr != nil {
+		v := *h.LivepeerNode.LiveRunnerAddr
+		return &v
+	}
+	return h.RunnerHost.ServiceURI()
+}
+
+func parseLiveRunnerAddr(addr string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return nil, err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return nil, fmt.Errorf("must be an absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https")
+	}
+	return parsed, nil
 }

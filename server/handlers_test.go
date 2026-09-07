@@ -15,9 +15,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -116,7 +119,7 @@ func TestOrchestratorInfoHandler_Success(t *testing.T) {
 	s := &LivepeerServer{LivepeerNode: n}
 
 	price := big.NewRat(1, 2)
-	s.LivepeerNode.SetBasePrice("default", price)
+	s.LivepeerNode.SetBasePrice("default", core.NewFixedPrice(price))
 
 	trans := &types.Transcoder{
 		ServiceURI: "127.0.0.1:8935",
@@ -196,7 +199,7 @@ func TestSetBroadcastConfigHandler_ConvertPricePerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pricePerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
@@ -209,7 +212,7 @@ func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pixelsPerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_NegativePixelPerUnitError(t *testing.T) {
@@ -240,6 +243,10 @@ func TestSetBroadcastConfigHandler_TranscodingOptionsError(t *testing.T) {
 func TestSetBroadcastConfigHandler_Success(t *testing.T) {
 	assert := assert.New(t)
 
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	defer BroadcastCfg.SetMaxPrice(nil)
+
 	handler := setBroadcastConfigHandler()
 	status, _ := postForm(handler, url.Values{
 		"maxPricePerUnit":    {"1"},
@@ -256,10 +263,207 @@ func TestSetBroadcastConfigHandler_Success(t *testing.T) {
 	assert.Equal(profiles, BroadcastJobVideoProfiles)
 }
 
+func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//set default max price
+	basePrice, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(10, 1), nil)
+	BroadcastCfg.SetMaxPrice(basePrice)
+	defer BroadcastCfg.SetMaxPrice(nil)
+
+	//set price per unit for specific pipeline
+	p1, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(1, 1), nil)
+	p2, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(2, 1), nil)
+	p1_pipeline := "text-to-image"
+	p1_pipeline_cap, _ := core.PipelineToCapability(p1_pipeline)
+	p1_modelID := "default"
+
+	p2_pipeline := "image-to-image"
+	p2_pipeline_cap, _ := core.PipelineToCapability(p2_pipeline)
+	p2_modelID := "default"
+
+	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "default", nil)
+	defer BroadcastCfg.SetCapabilityMaxPrice(p2_pipeline_cap, "default", nil)
+	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "stabilityai/sd-turbo", nil)
+
+	status1, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p1_pipeline},
+		"modelID":         {p1_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status1)
+	assert.Equal(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+
+	status2, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"2"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p2_pipeline},
+		"modelID":         {p2_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status2)
+	assert.Equal(p2.Value(), BroadcastCfg.getCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
+
+	p1_modelID = "stabilityai/sd-turbo"
+	status1, _ = postForm(handler, url.Values{
+		"maxPricePerUnit": {"100"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p1_pipeline},
+		"modelID":         {p1_modelID},
+	})
+	assert.Equal(http.StatusOK, status1)
+	assert.NotEqual(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.Equal(big.NewRat(100, 1), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+}
+
+func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.OrchestratorNode
+
+	handler := s.setMaxPriceForCapability()
+
+	status, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"10"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+}
+
+func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//pricePerUnit is not int
+	status1, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"a"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status1)
+
+	//pixelsPerUnit is not int
+	status2, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"a"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status2)
+
+	//pipeline is not set
+	status4, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {""},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status4)
+
+	//modelID is not set
+	status5, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {""},
+	})
+	assert.Equal(http.StatusBadRequest, status5)
+
+	//pipeline not supported
+	status6, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"cool-new-pipeline"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status6)
+}
+
+func TestGetNetworkCapabilitiesHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	// setup orchestrator remote info to include in db
+	var capPrices []*net.PriceInfo
+	capPrice := &net.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
+	capPrices = append(capPrices, capPrice)
+	wkrHdw := net.HardwareInformation{
+		Pipeline: "32",
+		ModelId:  "livepeer/model1",
+		GpuInfo:  make(map[string]*net.GPUComputeInfo),
+	}
+	wkrHdw.GpuInfo["0"] = &net.GPUComputeInfo{
+		Id:    "gpu-2",
+		Name:  "gpu-name",
+		Major: 8,
+		Minor: 9,
+	}
+	var hdwList []*net.HardwareInformation
+	hdwList = append(hdwList, &wkrHdw)
+	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, &core.Capabilities{})
+	orchAddress := pm.RandAddress()
+	var networkCaps []*common.OrchNetworkCapabilities
+	orchNetworkCaps := &common.OrchNetworkCapabilities{
+		Address:            orchAddress.Hex(),
+		LocalAddress:       orchAddress.Hex(),
+		OrchURI:            "http://transcoder.uri:3333",
+		Capabilities:       caps.ToNetCapabilities(),
+		CapabilitiesPrices: capPrices,
+		Hardware:           hdwList,
+	}
+	networkCaps = append(networkCaps, orchNetworkCaps)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+	//add orchInfo to network capabilities
+	s.LivepeerNode.UpdateNetworkCapabilities(networkCaps)
+
+	handler := s.getNetworkCapabilitiesHandler()
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+	var networkCapsResp networkCapabilitiesResponse
+	err := json.Unmarshal([]byte(body), &networkCapsResp)
+	assert.Nil(err)
+
+	assert.Equal(networkCapsResp.CapabilitiesNames[core.Capability_AudioToText], core.CapabilityNameLookup[core.Capability_AudioToText])
+	assert.Equal(networkCapsResp.Orchestrators[0].Address, orchAddress.Hex())
+	assert.Equal(networkCapsResp.Orchestrators[0].LocalAddress, orchAddress.Hex())
+	assert.Equal(networkCapsResp.Orchestrators[0].CapabilitiesPrices, capPrices)
+	assert.Len(networkCapsResp.Orchestrators[0].Hardware, 1)
+	assert.Equal(networkCapsResp.Orchestrators[0].Hardware[0].Pipeline, wkrHdw.Pipeline)
+	assert.Equal(networkCapsResp.Orchestrators[0].Hardware[0].GpuInfo["0"].Id, wkrHdw.GpuInfo["0"].Id)
+}
+
 func TestGetBroadcastConfigHandler(t *testing.T) {
 	assert := assert.New(t)
 
-	BroadcastCfg.maxPrice = big.NewRat(1, 2)
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	defer BroadcastCfg.SetMaxPrice(nil)
+
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 2)))
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfileLookup["P240p25fps16x9"],
 	}
@@ -419,6 +623,7 @@ func TestActivateOrchestratorHandler_CurrentRoundLockedError(t *testing.T) {
 	assert := assert.New(t)
 
 	server := stubServer()
+
 	client := &eth.MockClient{}
 	handler := server.activateOrchestratorHandler(client)
 
@@ -501,27 +706,32 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	s := stubServer()
 
 	// pricePerUnit is not an integer
-	err := s.setOrchestratorPriceInfo("default", "nil", "1")
+	err := s.setOrchestratorPriceInfo("default", "nil", "1", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pricePerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pricePerUnit value")
 
 	// pixelsPerUnit is not an integer
-	err = s.setOrchestratorPriceInfo("default", "1", "nil")
+	err = s.setOrchestratorPriceInfo("default", "1", "nil", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pixelsPerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pixelsPerUnit value")
 
-	err = s.setOrchestratorPriceInfo("default", "1", "1")
+	// price feed watcher is not initialized and one attempts a custom currency
+	err = s.setOrchestratorPriceInfo("default", "1e12", "0.7", "USD")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "PriceFeedWatcher is not initialized")
+
+	err = s.setOrchestratorPriceInfo("default", "1", "1", "")
 	assert.Nil(t, err)
 	assert.Zero(t, s.LivepeerNode.GetBasePrice("default").Cmp(big.NewRat(1, 1)))
 
-	err = s.setOrchestratorPriceInfo("default", "-5", "1")
-	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than or equal to 0, provided %d\n", -5)
+	err = s.setOrchestratorPriceInfo("default", "-5", "1", "")
+	assert.EqualError(t, err, fmt.Sprintf("price unit must be greater than or equal to 0, provided %d", -5))
 
 	// pixels per unit <= 0
-	err = s.setOrchestratorPriceInfo("default", "1", "0")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", 0)
-	err = s.setOrchestratorPriceInfo("default", "1", "-5")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", -5)
+	err = s.setOrchestratorPriceInfo("default", "1", "0", "")
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", 0))
+	err = s.setOrchestratorPriceInfo("default", "1", "-5", "")
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", -5))
 
 }
 func TestSetPriceForBroadcasterHandler(t *testing.T) {
@@ -1078,8 +1288,93 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"0"},
 	}
 	handler = voteHandler(client)
-	status, body = postForm(handler, form)
+	status, _ = postForm(handler, form)
 	assert.Equal(http.StatusOK, status)
+}
+
+func TestProposalVoteHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{StubClient: &eth.StubClient{}}
+	tx := ethtypes.NewTx(&ethtypes.LegacyTx{})
+
+	// Test missing client
+	handler := proposalVoteHandler(nil)
+	status, body := post(handler)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
+
+	// Test invalid proposal ID
+	form := url.Values{
+		"proposalID": {"foo"},
+		"support":    {"1"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("proposalID is not a valid integer value", body)
+
+	// Test invalid support value (non-integer)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"foo"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("support is not a valid integer value", body)
+
+	// Test invalid support value (out of range)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"3"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("invalid support", body)
+
+	// Test ProposalVote() error
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+	}
+	err := errors.New("voting error")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(nil, err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to submit proposal vote transaction err=%q", err), body)
+
+	// Test CheckTx() error
+	err = errors.New("unable to mine tx")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to mine proposal vote transaction err=%q", err), body)
+
+	// Test ProposalVote() success
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVote", big.NewInt(1), uint8(1))
+
+	// Test ProposalVoteWithReason() success
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+		"reason":     {"Test reason"},
+	}
+	client.On("ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason").Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason")
 }
 
 // Tickets
@@ -1495,6 +1790,18 @@ func TestMustHaveFormParams_SingleParamRequiredAndProvided(t *testing.T) {
 	assert.Equal("success", body)
 }
 
+func TestMustHaveFormParams_QueryParamNotAccepted(t *testing.T) {
+	assert := assert.New(t)
+	handler := mustHaveFormParams(dummyHandler(), "a")
+	req := httptest.NewRequest(http.MethodPost, "/?a=foo", nil)
+	res := httptest.NewRecorder()
+
+	handler.ServeHTTP(res, req)
+
+	assert.Equal(http.StatusBadRequest, res.Code)
+	assert.Equal("missing form param: a\n", res.Body.String())
+}
+
 func TestMustHaveFormParams_MultipleParamsRequiredOneNotProvided(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1566,6 +1873,29 @@ func TestMustHaveDb_Success(t *testing.T) {
 	assert.Equal("success", body)
 }
 
+func TestSetServiceURI(t *testing.T) {
+	s := stubServer()
+	client := &eth.MockClient{}
+	serviceURI := "https://8.8.8.8:8935"
+
+	t.Run("Valid Service URI", func(t *testing.T) {
+		client.On("SetServiceURI", serviceURI).Return(&ethtypes.Transaction{}, nil)
+		client.On("CheckTx", mock.Anything).Return(nil)
+
+		err := s.setServiceURI(client, serviceURI)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid Service URI", func(t *testing.T) {
+		invalidServiceURI := "https://0.0.0.0:8935"
+
+		err := s.setServiceURI(client, invalidServiceURI)
+
+		assert.Error(t, err)
+	})
+
+}
 func dummyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

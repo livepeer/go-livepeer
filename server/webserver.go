@@ -1,13 +1,16 @@
 package server
 
 import (
+	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 
 	// pprof adds handlers to default mux via `init()`
 	_ "net/http/pprof"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/monitor"
 )
 
@@ -33,6 +36,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	client := s.LivepeerNode.Eth
 	db := s.LivepeerNode.Database
+	if s.CliTxRoutes {
+		s.registerCliTxRoutes(mux)
+	}
 
 	// Status
 	mux.Handle("/status", s.statusHandler())
@@ -46,34 +52,28 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
 
 	// Broadcast / Transcoding config
-	mux.Handle("/setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
+	mux.Handle("POST /setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
 	mux.Handle("/getBroadcastConfig", getBroadcastConfigHandler())
 	mux.Handle("/getAvailableTranscodingOptions", getAvailableTranscodingOptionsHandler())
+	mux.Handle("POST /setMaxPriceForCapability", mustHaveFormParams(s.setMaxPriceForCapability(), "maxPricePerUnit", "pixelsPerUnit", "currency", "pipeline", "modelID"))
+	mux.Handle("/getAISessionPoolsInfo", s.getAIPoolsInfoHandler())
+	mux.Handle("/getNetworkCapabilities", s.getNetworkCapabilitiesHandler())
+	mux.Handle("POST /registerLiveRunners", s.registerLiveRunnersHandler())
 
 	// Rounds
 	mux.Handle("/currentRound", currentRoundHandler(client))
-	mux.Handle("/initializeRound", initializeRoundHandler(client))
 	mux.Handle("/roundInitialized", roundInitializedHandler(client))
 
 	// Orchestrator registration/activation
-	mux.Handle("/activateOrchestrator", mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI"))
-	mux.Handle("/setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
-	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
-	mux.Handle("/setPriceForBroadcaster", mustHaveFormParams(s.setPriceForBroadcaster(), "pricePerUnit", "pixelsPerUnit", "broadcasterEthAddr"))
-	mux.Handle("/setMaxSessions", mustHaveFormParams(s.setMaxSessions(), "maxSessions"))
+	mux.Handle("POST /setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
+	mux.Handle("POST /setPriceForBroadcaster", mustHaveFormParams(s.setPriceForBroadcaster(), "pricePerUnit", "pixelsPerUnit", "broadcasterEthAddr"))
+	mux.Handle("POST /setMaxSessions", mustHaveFormParams(s.setMaxSessions(), "maxSessions"))
 
 	// Bond, withdraw, reward
-	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))
-	mux.Handle("/rebond", mustHaveFormParams(rebondHandler(client), "unbondingLockId"))
-	mux.Handle("/unbond", mustHaveFormParams(unbondHandler(client), "amount"))
-	mux.Handle("/withdrawStake", mustHaveFormParams(withdrawStakeHandler(client), "unbondingLockId"))
 	mux.Handle("/unbondingLocks", mustHaveFormParams(unbondingLocksHandler(client, db)))
-	mux.Handle("/withdrawFees", withdrawFeesHandler(client, db))
-	mux.Handle("/claimEarnings", claimEarningsHandler(client))
 	mux.Handle("/delegatorInfo", delegatorInfoHandler(client))
 	mux.Handle("/orchestratorEarningPoolsForRound", orchestratorEarningPoolsForRoundHandler(client))
 	mux.Handle("/registeredOrchestrators", registeredOrchestratorsHandler(client, db))
-	mux.Handle("/reward", rewardHandler(client))
 
 	// Protocol parameters
 	mux.Handle("/protocolParameters", protocolParametersHandler(client, db))
@@ -83,28 +83,17 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/ethAddr", ethAddrHandler(client))
 	mux.Handle("/tokenBalance", tokenBalanceHandler(client))
 	mux.Handle("/ethBalance", ethBalanceHandler(client))
-	mux.Handle("/transferTokens", mustHaveFormParams(transferTokensHandler(client), "to", "amount"))
-	mux.Handle("/requestTokens", requestTokensHandler(client))
-	mux.Handle("/signMessage", mustHaveFormParams(signMessageHandler(client), "message"))
-	mux.Handle("/vote", mustHaveFormParams(voteHandler(client), "poll", "choiceID"))
 
 	// Gas Price
-	mux.Handle("/setMaxGasPrice", mustHaveFormParams(setMaxGasPriceHandler(client), "amount"))
-	mux.Handle("/setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(client), "minGasPrice"))
 	mux.Handle("/maxGasPrice", maxGasPriceHandler(client))
 	mux.Handle("/minGasPrice", minGasPriceHandler(client))
 
 	// Tickets
-	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(client), "depositAmount", "reserveAmount"))
-	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(client), "amount"))
-	mux.Handle("/unlock", unlockHandler(client))
-	mux.Handle("/cancelUnlock", cancelUnlockHandler(client))
-	mux.Handle("/withdraw", withdrawHandler(client))
 	mux.Handle("/senderInfo", senderInfoHandler(client))
 	mux.Handle("/ticketBrokerParams", ticketBrokerParamsHandler(client))
 
 	// Debug, Log Level
-	mux.Handle("/setLogLevel", mustHaveFormParams(setLogLevelHandler(), "loglevel"))
+	mux.Handle("POST /setLogLevel", mustHaveFormParams(setLogLevelHandler(), "loglevel"))
 	mux.Handle("/getLogLevel", getLogLevelHandler())
 	mux.Handle("/debug", s.debugHandler())
 
@@ -114,4 +103,75 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	}
 
 	return mux
+}
+
+func (s *LivepeerServer) registerCliTxRoutes(mux *http.ServeMux) {
+	client := s.LivepeerNode.Eth
+	db := s.LivepeerNode.Database
+
+	// Rounds and orchestrator registration
+	mux.Handle("POST /initializeRound", initializeRoundHandler(client))
+	mux.Handle("POST /activateOrchestrator", mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI"))
+	mux.Handle("POST /setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
+
+	// Bonding, withdrawals, and rewards
+	mux.Handle("POST /bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))
+	mux.Handle("POST /rebond", mustHaveFormParams(rebondHandler(client), "unbondingLockId"))
+	mux.Handle("POST /unbond", mustHaveFormParams(unbondHandler(client), "amount"))
+	mux.Handle("POST /withdrawStake", mustHaveFormParams(withdrawStakeHandler(client), "unbondingLockId"))
+	mux.Handle("POST /withdrawFees", withdrawFeesHandler(client, db))
+	mux.Handle("POST /claimEarnings", claimEarningsHandler(client))
+	mux.Handle("POST /reward", rewardHandler(client))
+
+	// Wallet and governance operations
+	mux.Handle("POST /transferTokens", mustHaveFormParams(transferTokensHandler(client), "to", "amount"))
+	mux.Handle("POST /requestTokens", requestTokensHandler(client))
+	mux.Handle("POST /signMessage", mustHaveFormParams(signMessageHandler(client), "message"))
+	mux.Handle("POST /vote", mustHaveFormParams(voteHandler(client), "poll", "choiceID"))
+	mux.Handle("POST /voteOnProposal", mustHaveFormParams(proposalVoteHandler(client), "proposalID", "support"))
+
+	// Transaction gas controls
+	mux.Handle("POST /setMaxGasPrice", mustHaveFormParams(setMaxGasPriceHandler(client), "amount"))
+	mux.Handle("POST /setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(client), "minGasPrice"))
+
+	// Ticket broker transactions
+	mux.Handle("POST /fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(client), "depositAmount", "reserveAmount"))
+	mux.Handle("POST /fundDeposit", mustHaveFormParams(fundDepositHandler(client), "amount"))
+	mux.Handle("POST /unlock", unlockHandler(client))
+	mux.Handle("POST /cancelUnlock", cancelUnlockHandler(client))
+	mux.Handle("POST /withdraw", withdrawHandler(client))
+}
+
+func (s *LivepeerServer) registerLiveRunnersHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		manager, ok := s.LivepeerNode.LiveRunnerManager.(interface {
+			RegisterStaticRunnersJSON([]byte) (*runner.StaticLiveRunnerRegistrationResponse, error)
+		})
+		if !ok {
+			http.Error(w, "live runners are not supported", http.StatusNotFound)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := manager.RegisterStaticRunnersJSON(body)
+		if err != nil {
+			statusCode := http.StatusBadRequest
+			if runnerErr, ok := err.(*runner.RunnerError); ok {
+				statusCode = runnerErr.StatusCode
+			}
+			http.Error(w, err.Error(), statusCode)
+			return
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	})
 }

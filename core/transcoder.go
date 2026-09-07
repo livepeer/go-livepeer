@@ -47,11 +47,12 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname: md.Fname,
-		Accel: ffmpeg.Software,
+		Fname:   md.Fname,
+		Accel:   ffmpeg.Software,
+		Profile: md.ProfileIn,
 	}
 	profiles := md.Profiles
-	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash, md.SegmentParameters)
+	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, md)
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -100,7 +101,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash, md.SegmentParameters)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, md)
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -129,13 +130,20 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
+	inAccel := ffmpeg.Nvidia
+	if filepath.Ext(md.Fname) == ".png" {
+		// If the input is a PNG file we need to use the software decoder
+		inAccel = ffmpeg.Software
+	}
+
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname:  md.Fname,
-		Accel:  ffmpeg.Nvidia,
-		Device: nv.device,
+		Fname:   md.Fname,
+		Accel:   inAccel,
+		Device:  nv.device,
+		Profile: md.ProfileIn,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash, md.SegmentParameters)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md)
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -172,7 +180,7 @@ type transcodeTestParams struct {
 }
 
 func (params transcodeTestParams) IsRequired() bool {
-	return InArray(params.Cap, DefaultCapabilities())
+	return HasCapability(DefaultCapabilities(), params.Cap)
 }
 
 func (params transcodeTestParams) Kind() string {
@@ -429,17 +437,23 @@ func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts 
 	}, nil
 }
 
-func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool,
-	segPar *SegmentParameters) []ffmpeg.TranscodeOptions {
+func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, md *SegTranscodingMetadata) []ffmpeg.TranscodeOptions {
+	var (
+		profiles  []ffmpeg.VideoProfile = md.Profiles
+		calcPHash bool                  = md.CalcPerceptualHash
+		segPar    *SegmentParameters    = md.SegmentParameters
+		metadata  map[string]string     = md.Metadata
+	)
 
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
-			Oname:        fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName()),
+			Oname:        fmt.Sprintf("%s/out_%s-%d-%s.tempfile", workDir, md.ManifestID, md.Seq, common.RandName()),
 			Profile:      profiles[i],
 			Accel:        accel,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			CalcSign:     calcPHash,
+			Metadata:     metadata,
 		}
 		if segPar != nil && segPar.Clip != nil {
 			o.From = segPar.Clip.From

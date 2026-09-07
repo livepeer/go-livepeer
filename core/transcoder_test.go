@@ -32,10 +32,10 @@ func TestLocalTranscoder(t *testing.T) {
 	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res.Segments[0].Data), 522264) {
+	if Over1Pct(len(res.Segments[0].Data), 585620) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 715528) {
+	if Over1Pct(len(res.Segments[1].Data), 813100) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
@@ -127,7 +127,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.Equal(int64(100), tData.Segments[0].Pixels)
 	assert.True(fileDNE(file2.Name()))
 
-	// Test succes for 2 output files
+	// Test success for 2 output files
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 2)}
 	res.Encoded[0].Pixels = 200
 	res.Encoded[1].Pixels = 300
@@ -178,43 +178,57 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	}
 	defer func() { common.RandomIDGenerator = oldRandIDFunc }()
 
+	makeMeta := func(p []ffmpeg.VideoProfile, c bool) *SegTranscodingMetadata {
+		return &SegTranscodingMetadata{
+			ManifestID:         "baz",
+			Profiles:           p,
+			CalcPerceptualHash: c,
+			Metadata: map[string]string{
+				"meta": "data",
+			},
+		}
+	}
+
 	// Test 0 profiles
 	profiles := []ffmpeg.VideoProfile{}
-	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false, nil)
+	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, makeMeta(profiles, false))
 	assert.Equal(0, len(opts))
 
 	// Test 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false, nil)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, makeMeta(profiles, false))
 	assert.Equal(1, len(opts))
-	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
+	assert.Equal("foo/out_baz-0-bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
 	assert.Equal("copy", opts[0].AudioEncoder.Name)
 
 	// Test > 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false, nil)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, makeMeta(profiles, false))
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
+		assert.Equal(opts[i].Metadata, map[string]string{
+			"meta": "data",
+		})
 	}
 
 	// Test different acceleration value
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, false, nil)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, makeMeta(profiles, false))
 	assert.Equal(2, len(opts))
 
 	// Test signature calculation
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, true, nil)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, makeMeta(profiles, true))
 	assert.True(opts[0].CalcSign)
 	assert.True(opts[1].CalcSign)
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)

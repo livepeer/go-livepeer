@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"math/big"
 	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/clog"
 )
 
 // Balance holds the credit balance for a broadcast session
@@ -29,6 +31,11 @@ func (b *Balance) Credit(amount *big.Rat) {
 	b.balances.Credit(b.addr, b.manifestID, amount)
 }
 
+// Reserve zeroes the balance and returns the current balance
+func (b *Balance) Reserve() *big.Rat {
+	return b.balances.Reserve(b.addr, b.manifestID)
+}
+
 // StageUpdate prepares a balance update by reserving the current balance and returning the number of tickets
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
@@ -41,6 +48,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	}
 
 	creditGap := new(big.Rat).Sub(minCredit, existingCredit)
+	if ev == nil || ev.Cmp(big.NewRat(0, 1)) == 0 {
+		clog.Warningf(context.Background(), "Error calculating tickets: ev is nil or zero")
+		return 0, big.NewRat(0, 1), existingCredit
+	}
 	sizeRat := creditGap.Quo(creditGap, ev)
 	res := sizeRat.Num()
 	if !sizeRat.IsInt() {
@@ -52,6 +63,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	size := res.Int64()
 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
+}
+
+func (b *Balance) Balance() *big.Rat {
+	return b.balances.balancesForAddr(b.addr).Balance(b.manifestID)
 }
 
 // AddressBalances holds credit balances for ETH addresses
@@ -69,7 +84,7 @@ func NewAddressBalances(ttl time.Duration) *AddressBalances {
 	}
 }
 
-// Credit adds an an amount to the balance for an address' ManifestID
+// Credit adds an amount to the balance for an address' ManifestID
 func (a *AddressBalances) Credit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
 	a.balancesForAddr(addr).Credit(id, amount)
 }
@@ -87,6 +102,28 @@ func (a *AddressBalances) Reserve(addr ethcommon.Address, id ManifestID) *big.Ra
 // Balance retrieves the current balance for an address' ManifestID
 func (a *AddressBalances) Balance(addr ethcommon.Address, id ManifestID) *big.Rat {
 	return a.balancesForAddr(addr).Balance(id)
+}
+
+// FixedPrice retrieves the fixed price for an address' ManifestID.
+func (a *AddressBalances) FixedPrice(addr ethcommon.Address, id ManifestID) *big.Rat {
+	a.mtx.Lock()
+	balances := a.balances[addr]
+	a.mtx.Unlock()
+	if balances == nil {
+		return nil
+	}
+	return balances.FixedPrice(id)
+}
+
+// SetFixedPrice sets the fixed price for an address' ManifestID.
+func (a *AddressBalances) SetFixedPrice(addr ethcommon.Address, id ManifestID, fixedPrice *big.Rat) {
+	a.mtx.Lock()
+	balances := a.balances[addr]
+	a.mtx.Unlock()
+	if balances == nil {
+		return
+	}
+	balances.SetFixedPrice(id, fixedPrice)
 }
 
 // StopCleanup stops the cleanup loop for all balances
@@ -136,7 +173,7 @@ func NewBalances(ttl time.Duration) *Balances {
 	}
 }
 
-// Credit adds an an amount to the balance for a ManifestID
+// Credit adds an amount to the balance for a ManifestID
 func (b *Balances) Credit(id ManifestID, amount *big.Rat) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()

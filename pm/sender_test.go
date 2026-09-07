@@ -528,14 +528,30 @@ func TestValidateTicketParams_ExpiredParams_ReturnsError(t *testing.T) {
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.EqualError(t, err, ErrTicketParamsExpired.Error())
 
-	// test nil
+	// test accepted when beyond expiry buffer
 	ticketParams.ExpirationBlock = big.NewInt(105)
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.Nil(t, err)
 
+	// test zero expiration block rejected
 	ticketParams.ExpirationBlock = big.NewInt(0)
 	err = sender.ValidateTicketParams(&ticketParams)
-	assert.Nil(t, err)
+	assert.EqualError(t, err, "ticketParams expiration block is 0")
+}
+
+func TestValidateTicketParams_ZeroExpirationBlock_HighWinProb_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+
+	// Regression test: params with WinProb = maxWinProb advertised together with
+	// ExpirationBlock = 0 must be rejected — they previously returned early and
+	// skipped all economic caps
+	ticketParams := &TicketParams{
+		FaceValue:       big.NewInt(1000),
+		WinProb:         maxWinProb,
+		ExpirationBlock: big.NewInt(0),
+	}
+	err := sender.ValidateTicketParams(ticketParams)
+	assert.EqualError(t, err, "ticketParams expiration block is 0")
 }
 
 func TestValidateTicketParams_GetSenderInfoError(t *testing.T) {
@@ -608,7 +624,7 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func defaultSender(t *testing.T) *sender {
+func defaultSender(_ *testing.T) *sender {
 	account := accounts.Account{
 		Address: RandAddress(),
 	}
@@ -626,7 +642,7 @@ func defaultSender(t *testing.T) *sender {
 	return s.(*sender)
 }
 
-func defaultTicketParams(t *testing.T, recipient ethcommon.Address) TicketParams {
+func defaultTicketParams(_ *testing.T, recipient ethcommon.Address) TicketParams {
 	recipientRandHash := RandHash()
 	return TicketParams{
 		Recipient:         recipient,

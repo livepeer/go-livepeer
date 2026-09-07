@@ -7,9 +7,11 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,18 +63,8 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 		},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
+		CleanupSession:    func(sessionId string) {},
 	}
-}
-
-func StubBroadcastSessionsManager() *BroadcastSessionsManager {
-	sess1 := StubBroadcastSession("transcoder1")
-	sess2 := StubBroadcastSession("transcoder2")
-
-	return bsmWithSessList([]*BroadcastSession{sess1, sess2})
-}
-
-func selFactoryEmpty() BroadcastSessionsSelector {
-	return &LIFOSelector{}
 }
 
 func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
@@ -101,6 +93,8 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 		return cloneSessions(sessList), nil
 	}
 
+	var deleteSessions = func(sessionID string) {}
+
 	untrustedSessMap := make(map[string]*BroadcastSession)
 	for _, sess := range untrustedSessList {
 		untrustedSessMap[sess.OrchestratorInfo.Transcoder] = sess
@@ -118,11 +112,10 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 	if noRefresh {
 		createSessions = createSessionsEmpty
 		createSessionsUntrusted = createSessionsEmpty
-
 	}
-	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
+	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, deleteSessions, sel)
 	trustedPool.sessMap = sessMap
-	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
+	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, deleteSessions, unsel)
 	untrustedPool.sessMap = untrustedSessMap
 
 	return &BroadcastSessionsManager{
@@ -182,7 +175,10 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *stubOSSession) OS() drivers.OSDriver {
+	return nil
+}
+func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta *drivers.FileProperties, timeout time.Duration) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -200,11 +196,17 @@ func (s *stubOSSession) IsOwn(url string) bool {
 func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
+func (os *stubOSSession) DeleteFile(ctx context.Context, name string) error {
+	return nil
+}
 func (s *stubOSSession) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
 	return nil, nil
 }
-func (s *stubOSSession) OS() drivers.OSDriver {
-	return nil
+func (os *stubOSSession) ReadDataRange(ctx context.Context, name, byteRange string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (os *stubOSSession) Presign(name string, expire time.Duration) (string, error) {
+	return "", nil
 }
 
 type stubPlaylistManager struct {
@@ -259,7 +261,7 @@ func (s *stubSelector) Complete(sess *BroadcastSession)          {}
 func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
 func (s *stubSelector) Size() int                                { return s.size }
 func (s *stubSelector) Clear()                                   {}
-func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
+func (s *stubSelector) Remove(session *BroadcastSession)         {}
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -304,7 +306,7 @@ func TestNewSessionManager(t *testing.T) {
 
 	// Check empty pool produces expected numOrchs
 
-	sess := NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+	sess := NewSessionManager(context.TODO(), n, params)
 	assert.Equal(0, sess.trustedPool.numOrchs)
 	assert.Equal(0, sess.untrustedPool.numOrchs)
 
@@ -313,7 +315,7 @@ func TestNewSessionManager(t *testing.T) {
 	n.OrchestratorPool = sd
 	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+		sess = NewSessionManager(context.TODO(), n, params)
 		if i < max {
 			assert.Equal(i, sess.trustedPool.numOrchs)
 		} else {
@@ -385,7 +387,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
 	orchInfoCalled := 0
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		orchInfoCalled++
 		return successOrchInfoUpdate, nil
 	}
@@ -393,6 +395,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	sess := StubBroadcastSession(ts.URL)
 	sender := &pm.MockSender{}
 	sender.On("StartSession", mock.Anything).Return("foo").Times(3)
+	sender.On("StopSession", mock.Anything).Times(3)
 	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
@@ -604,7 +607,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
 
@@ -1122,10 +1125,18 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 
 func TestUpdateSession(t *testing.T) {
 	assert := assert.New(t)
+	var storageRequests atomic.Int32
+	storageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		storageRequests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer storageServer.Close()
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}}
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}, CleanupSession: func(sessionID string) {
+
+	}}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}
@@ -1136,7 +1147,7 @@ func TestUpdateSession(t *testing.T) {
 		Storage: []*net.OSInfo{
 			{
 				StorageType: 1,
-				S3Info:      &net.S3OSInfo{Host: "http://apple.com"},
+				S3Info:      &net.S3OSInfo{Host: storageServer.URL + "/bucket"},
 			},
 		},
 	}
@@ -1149,6 +1160,9 @@ func TestUpdateSession(t *testing.T) {
 	// Check that a new PM session is not created because BroadcastSession.Sender = nil
 	assert.Equal("foo", sess.PMSessionID)
 	assert.Equal(info.Transcoder, sess.Transcoder())
+	_, err := sess.OrchestratorOS.SaveData(context.Background(), "segment.ts", strings.NewReader("segment"), nil, time.Second)
+	require.ErrorContains(t, err, "localhost downloads are blocked")
+	assert.Zero(storageRequests.Load())
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
@@ -1482,6 +1496,35 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
 }
 
+func TestDownloadResultsRejectsLoopbackURL(t *testing.T) {
+	var hits atomic.Int32
+	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("protected"))
+	}))
+	defer protected.Close()
+
+	sess := StubBroadcastSession("https://orchestrator.example")
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	cxn := &rtmpConnection{
+		pl:          &stubPlaylistManager{},
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+	res := &ReceivedTranscodeResult{TranscodeData: &net.TranscodeData{
+		Segments: []*net.TranscodedSegmentData{{Url: protected.URL}},
+	}}
+	verifier := newStubSegmentVerifier(&stubVerifier{retries: 1})
+
+	oldDownloadSeg := downloadSeg
+	downloadSeg = core.DownloadData
+	defer func() { downloadSeg = oldDownloadSeg }()
+
+	_, err := downloadResults(context.Background(), cxn, &stream.HLSSegment{}, sess, res, verifier)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "localhost downloads are blocked")
+	require.Zero(t, hits.Load())
+}
+
 func TestRefreshSession(t *testing.T) {
 	assert := assert.New(t)
 	successOrchInfoUpdate := &net.OrchestratorInfo{
@@ -1498,23 +1541,23 @@ func TestRefreshSession(t *testing.T) {
 
 	// trigger parse URL error
 	sess := StubBroadcastSession(string(rune(0x7f)))
-	err := refreshSession(context.TODO(), sess)
+	err := refreshSession(context.TODO(), sess, false)
 	assert.Error(err)
 	assert.Contains(err.Error(), "invalid control character in URL")
 
 	// trigger getOrchestratorInfo error
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return nil, errors.New("some error")
 	}
 	sess = StubBroadcastSession("foo")
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.EqualError(err, "some error")
 
 	// trigger update
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.Nil(err)
 	assert.Equal(sess.OrchestratorInfo, successOrchInfoUpdate)
 
@@ -1522,7 +1565,7 @@ func TestRefreshSession(t *testing.T) {
 	oldRefreshTimeout := refreshTimeout
 	defer func() { refreshTimeout = oldRefreshTimeout }()
 	refreshTimeout = 10 * time.Millisecond
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		// Wait until the refreshTimeout has elapsed
 		select {
 		case <-ctx.Done():
@@ -1532,7 +1575,7 @@ func TestRefreshSession(t *testing.T) {
 
 		return nil, errors.New("context timeout")
 	}
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.EqualError(err, "context timeout")
 }
 
@@ -1611,7 +1654,7 @@ func TestVerifier_SegDownload(t *testing.T) {
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
-	// When segments are not in the broadcaster's exernal OS, segments should be downloaded
+	// When segments are not in the broadcaster's external OS, segments should be downloaded
 	url = "somewhere4"
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier, nil)
@@ -1820,4 +1863,131 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 
 	require.Greater(t, float32(shouldSkipCount), float32(numTests)*(1-2/float32(verificationFreq)))
 	require.Less(t, float32(shouldSkipCount), float32(numTests)*(1-0.5/float32(verificationFreq)))
+}
+
+func TestMaxPrice(t *testing.T) {
+	cfg := NewBroadcastConfig()
+
+	// Should return nil if max price is not set.
+	assert.Nil(t, cfg.MaxPrice())
+
+	// Should return correct price if max price is set.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.MaxPrice())
+
+	// Should update the max price correctly.
+	newPrice := core.NewFixedPrice(big.NewRat(20, 1))
+	cfg.SetMaxPrice(newPrice)
+	assert.Equal(t, big.NewRat(20, 1), cfg.MaxPrice())
+
+	// Should handle nil value gracefully.
+	cfg.SetMaxPrice(nil)
+	assert.Nil(t, cfg.MaxPrice())
+}
+
+func TestCapabilityMaxPrice(t *testing.T) {
+	cfg := NewBroadcastConfig()
+
+	// Should return nil if no price is set for the capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(core.Capability(1), "model1"))
+
+	// Should set and return the correct price for a capability and model.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	assert.Equal(t, big.NewRat(5, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+	assert.Equal(t, big.NewRat(7, 1), cfg.getCapabilityMaxPrice(capability2, modelID2))
+
+	// Should return default price when no specific model price is set.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	assert.Equal(t, big.NewRat(3, 1), cfg.getCapabilityMaxPrice(capability1, "nonexistentModel"))
+
+	// Should return nil when no model or default price is set for a capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability2, "nonexistentModel"))
+
+	// Should update the price for a capability and model correctly.
+	newPrice1 := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, newPrice1)
+	assert.Equal(t, big.NewRat(10, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+
+	// Should handle nil value gracefully.
+	capability3 := core.Capability(3)
+	modelID23 := "model3"
+	cfg.SetCapabilityMaxPrice(capability3, "model3", nil)
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability3, modelID23))
+}
+
+func TestGetCapabilitiesMaxPrice(t *testing.T) {
+	cfg := NewBroadcastConfig()
+
+	// Should return nil if no max price is set and no capabilities are provided.
+	assert.Nil(t, cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Should return the max price if no capabilities are provided.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Should return the max price if net capabilities are nil.
+	capabilitiesNilNet := &StubCapabilityComparator{NetCaps: nil}
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesNilNet))
+
+	// Should return the max price if constraints are nil.
+	capabilitiesNilConstraints := &StubCapabilityComparator{NetCaps: &net.Capabilities{}}
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesNilConstraints))
+
+	// Create capabilities object.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	netCaps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID1: {},
+					},
+				},
+				uint32(capability2): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID2: {},
+					},
+				},
+			},
+		},
+	}
+	capabilities := &StubCapabilityComparator{NetCaps: netCaps}
+
+	// Should return the sum of prices for the given capabilities.
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	expectedPrice := big.NewRat(12, 1)
+	assert.Equal(t, expectedPrice, cfg.GetCapabilitiesMaxPrice(capabilities))
+
+	// Should test fallback to "default" model price.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	netCapsWithDefault := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"nonexistentModel": {},
+					},
+				},
+			},
+		},
+	}
+	capabilitiesWithDefault := &StubCapabilityComparator{NetCaps: netCapsWithDefault}
+	assert.Equal(t, big.NewRat(3, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesWithDefault))
 }

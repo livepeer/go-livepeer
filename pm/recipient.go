@@ -10,6 +10,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pkg/errors"
 )
 
@@ -22,9 +23,9 @@ var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
 var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
 // max number of sender nonces for a given recipient random hash
-var maxSenderNonces = 150
+var maxSenderNonces = 600
 
-var paramsExpirationBlock = big.NewInt(10)
+var paramsExpirationBlock = big.NewInt(40)
 var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
@@ -43,7 +44,7 @@ type Recipient interface {
 	RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
-	// for a provided sender ETH adddress
+	// for a provided sender ETH address
 	TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error)
 
 	// TxCostMultiplier returns the tx cost multiplier for an address
@@ -286,6 +287,10 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		if r.maxfacevalue.Cmp(faceValue) < 0 {
 			faceValue = r.maxfacevalue
 		}
+	}
+	if monitor.Enabled {
+		monitor.TicketFaceValue(sender.Hex(), faceValue)
+		monitor.MaxFloat(sender.Hex(), maxFloat)
 	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve

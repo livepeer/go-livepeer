@@ -171,14 +171,10 @@ func (w *wizard) broadcastStats() {
 	}
 
 	price, transcodingOptions := w.getBroadcastConfig()
-	priceString := "n/a"
-	if price != nil {
-		priceString = fmt.Sprintf("%v wei / %v pixels", price.Num().Int64(), price.Denom().Int64())
-	}
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		{"Max Price Per Pixel", priceString},
+		{"Max Price Per Pixel", formatPricePerPixel(price)},
 		{"Broadcast Transcoding Options", transcodingOptions},
 		{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
 		{"Reserve", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH")},
@@ -227,7 +223,7 @@ func (w *wizard) orchestratorStats() {
 		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		{"Fee Cut (%)", eth.FormatPerc(flipPerc(t.FeeShare))},
 		{"Last Reward Round", t.LastRewardRound.String()},
-		{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
+		{"Base price per pixel", formatPricePerPixel(priceInfo)},
 		{"Base price for broadcasters", b_prices},
 	}
 
@@ -488,7 +484,9 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 		return "", err
 	}
 
-	var status map[string]interface{}
+	var status struct {
+		BroadcasterPrices map[string]*big.Rat `json:"BroadcasterPrices"`
+	}
 	err = json.Unmarshal(result, &status)
 	if err != nil {
 		return "", err
@@ -496,13 +494,21 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 
 	prices := new(bytes.Buffer)
 
-	if broadcasterPrices, ok := status["BroadcasterPrices"]; ok {
-		for b, p := range broadcasterPrices.(map[string]interface{}) {
-			if b != "default" {
-				fmt.Fprintf(prices, "%s: %s per pixel\n", b, p)
-			}
+	for b, p := range status.BroadcasterPrices {
+		if b != "default" {
+			fmt.Fprintf(prices, "%s: %s\n", b, formatPricePerPixel(p))
 		}
 	}
 
 	return prices.String(), nil
+}
+
+func formatPricePerPixel(price *big.Rat) string {
+	if price == nil {
+		return "n/a"
+	}
+	if price.IsInt() {
+		return fmt.Sprintf("%v wei/pixel", price.RatString())
+	}
+	return fmt.Sprintf("%v wei/pixel (%v/%v)", price.FloatString(3), price.Num(), price.Denom())
 }

@@ -59,6 +59,15 @@ func (t *StubTranscoder) Stop() {
 	t.StoppedCount++
 }
 
+func TestTrickleInsecureSkipVerify(t *testing.T) {
+	n, err := NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	require.True(t, n.TrickleInsecureSkipVerify)
+
+	n.TrickleInsecureSkipVerify = false
+	require.False(t, n.TrickleInsecureSkipVerify)
+}
+
 func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
@@ -162,8 +171,8 @@ func TestSetAndGetBasePrice(t *testing.T) {
 
 	price := big.NewRat(1, 1)
 
-	n.SetBasePrice("default", price)
-	assert.Zero(n.priceInfo["default"].Cmp(price))
+	n.SetBasePrice("default", NewFixedPrice(price))
+	assert.Zero(n.priceInfo["default"].Value().Cmp(price))
 	assert.Zero(n.GetBasePrice("default").Cmp(price))
 	assert.Zero(n.GetBasePrices()["default"].Cmp(price))
 
@@ -172,10 +181,64 @@ func TestSetAndGetBasePrice(t *testing.T) {
 	price1 := big.NewRat(2, 1)
 	price2 := big.NewRat(3, 1)
 
-	n.SetBasePrice(addr1, price1)
-	n.SetBasePrice(addr2, price2)
-	assert.Zero(n.priceInfo[addr1].Cmp(price1))
-	assert.Zero(n.priceInfo[addr2].Cmp(price2))
+	n.SetBasePrice(addr1, NewFixedPrice(price1))
+	n.SetBasePrice(addr2, NewFixedPrice(price2))
+	assert.Zero(n.priceInfo[addr1].Value().Cmp(price1))
+	assert.Zero(n.priceInfo[addr2].Value().Cmp(price2))
 	assert.Zero(n.GetBasePrices()[addr1].Cmp(price1))
 	assert.Zero(n.GetBasePrices()[addr2].Cmp(price2))
+}
+
+func TestSetAndGetCapabilityPrices(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	price := big.NewRat(1, 1)
+
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price))
+	assert.Zero(n.priceInfoForCaps["default"].PriceForModelID(Capability_TextToImage, "default").Value().Cmp(price))
+	assert.Zero(n.GetBasePriceForCap("default", Capability_TextToImage, "default").Cmp(price))
+
+	addr1 := "0x0000000000000000000000000000000000000000"
+	addr2 := "0x1000000000000000000000000000000000000000"
+	price1 := big.NewRat(2, 1)
+	price2 := big.NewRat(3, 1)
+
+	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "default", NewFixedPrice(price2))
+	assert.Zero(n.priceInfoForCaps[addr1].PriceForModelID(Capability_TextToImage, "default").Value().Cmp(price1))
+	assert.Zero(n.priceInfoForCaps[addr2].PriceForModelID(Capability_ImageToImage, "default").Value().Cmp(price2))
+	assert.Zero(n.GetBasePriceForCap(addr1, Capability_TextToImage, "default").Cmp(price1))
+	assert.Zero(n.GetBasePriceForCap(addr2, Capability_ImageToImage, "default").Cmp(price2))
+}
+
+func TestGetAllCapabilityPrices(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	price := big.NewRat(1, 1)
+
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price))
+	assert.Zero(n.priceInfoForCaps["default"].PriceForModelID(Capability_TextToImage, "default").Value().Cmp(price))
+	assert.Zero(n.GetBasePriceForCap("default", Capability_TextToImage, "default").Cmp(price))
+
+	addr1 := "0x0000000000000000000000000000000000000000"
+	price1 := big.NewRat(2, 1)
+	price2 := big.NewRat(3, 1)
+
+	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr1, Capability_ImageToImage, "default", NewFixedPrice(price2))
+
+	prices := n.GetCapsPrices(addr1)
+	modelPrice := prices.PriceForModelID(Capability_TextToImage, "default").Value()
+	modelPrice2 := prices.PriceForModelID(Capability_ImageToImage, "default").Value()
+	assert.Zero(price1.Cmp(modelPrice))
+	assert.Zero(price2.Cmp(modelPrice2))
+
 }

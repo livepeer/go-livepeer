@@ -412,7 +412,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 		}
 	}()
 
-	// Assume that that this call will return immediately if there
+	// Assume that this call will return immediately if there
 	// is an error in transaction submission
 	tx, err := sm.broker.RedeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand)
 	if err != nil {

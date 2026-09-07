@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -16,10 +18,12 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -27,6 +31,12 @@ import (
 
 const MainnetChainId = 1
 const RinkebyChainId = 4
+
+func (s *LivepeerServer) healthzHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, nil)
+	})
+}
 
 // Status
 func (s *LivepeerServer) statusHandler() http.Handler {
@@ -123,9 +133,10 @@ func (s *LivepeerServer) isRedeemerHandler() http.Handler {
 // Broadcast / Transcoding config
 func setBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pricePerUnit := r.FormValue("maxPricePerUnit")
-		pixelsPerUnit := r.FormValue("pixelsPerUnit")
-		transcodingOptions := r.FormValue("transcodingOptions")
+		pricePerUnit := r.PostFormValue("maxPricePerUnit")
+		pixelsPerUnit := r.PostFormValue("pixelsPerUnit")
+		currency := r.PostFormValue("currency")
+		transcodingOptions := r.PostFormValue("transcodingOptions")
 
 		if (pricePerUnit == "" || pixelsPerUnit == "") && transcodingOptions == "" {
 			respond400(w, "missing form params (maxPricePerUnit AND pixelsPerUnit) or transcodingOptions")
@@ -134,28 +145,38 @@ func setBroadcastConfigHandler() http.Handler {
 
 		// set max price
 		if pricePerUnit != "" && pixelsPerUnit != "" {
-			pr, err := strconv.ParseInt(pricePerUnit, 10, 64)
-			if err != nil {
-				respond400(w, errors.Wrapf(err, "Error converting string to int64").Error())
+			pr, ok := new(big.Rat).SetString(pricePerUnit)
+			if !ok {
+				respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", pricePerUnit))
 				return
 			}
-			px, err := strconv.ParseInt(pixelsPerUnit, 10, 64)
-			if err != nil {
-				respond400(w, errors.Wrapf(err, "Error converting string to int64").Error())
+			px, ok := new(big.Rat).SetString(pixelsPerUnit)
+			if !ok {
+				respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
 				return
 			}
-			if px <= 0 {
-				respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", px))
+			if px.Sign() <= 0 {
+				respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
 				return
+			}
+			pricePerPixel := new(big.Rat).Quo(pr, px)
+
+			var autoPrice *core.AutoConvertedPrice
+			if pricePerPixel.Sign() > 0 {
+				var err error
+				autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					if monitor.Enabled {
+						monitor.MaxTranscodingPrice(price)
+					}
+					glog.Infof("Maximum transcoding price: %v wei per pixel\n", price.FloatString(3))
+				})
+				if err != nil {
+					respond400(w, errors.Wrap(err, "error converting price").Error())
+					return
+				}
 			}
 
-			var price *big.Rat
-			if pr > 0 {
-				price = big.NewRat(pr, px)
-			}
-
-			BroadcastCfg.SetMaxPrice(price)
-			glog.Infof("Maximum transcoding price: %d per %q pixels\n", pr, px)
+			BroadcastCfg.SetMaxPrice(autoPrice)
 		}
 
 		// set broadcast profiles
@@ -174,6 +195,102 @@ func setBroadcastConfigHandler() http.Handler {
 
 			BroadcastJobVideoProfiles = profiles
 			glog.Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
+		}
+	})
+}
+
+func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			maxPricePerUnit := r.PostFormValue("maxPricePerUnit")
+			pixelsPerUnit := r.PostFormValue("pixelsPerUnit")
+			currency := r.PostFormValue("currency")
+			pipeline := r.PostFormValue("pipeline")
+			modelID := r.PostFormValue("modelID")
+
+			if pipeline == "" || modelID == "" {
+				respond400(w, "pipeline and modelID must be set")
+				return
+			}
+
+			cap, err := core.PipelineToCapability(pipeline)
+			if err != nil {
+				respond400(w, "pipeline not supported")
+				return
+			}
+
+			// set max price
+			if maxPricePerUnit != "" && pixelsPerUnit != "" {
+				pr, ok := new(big.Rat).SetString(maxPricePerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", maxPricePerUnit))
+					return
+				}
+				px, ok := new(big.Rat).SetString(pixelsPerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
+					return
+				}
+				if px.Sign() <= 0 {
+					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
+					return
+				}
+				pricePerPixel := new(big.Rat).Quo(pr, px)
+
+				var autoPrice *core.AutoConvertedPrice
+				if pricePerPixel.Sign() > 0 {
+					var err error
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(monitor.ToPipeline(core.CapabilityNameLookup[cap]), modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
+					})
+					if err != nil {
+						respond400(w, errors.Wrap(err, "error converting price").Error())
+						return
+					}
+
+					BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
+					respondOk(w, nil)
+				} else {
+					respond400(w, fmt.Sprintf("pricePerPixel needs to be > 0: %v", pricePerPixel.FloatString(3)))
+				}
+			} else {
+				respond400(w, "maxPricePerUnit and pixelsPerUnit need to be set")
+				return
+			}
+		} else {
+			respond400(w, "Node must be gateway node to set max price per capability")
+			return
+		}
+	})
+}
+
+type networkCapabilitiesResponse struct {
+	CapabilitiesNames map[core.Capability]string        `json:"capabilities_names"`
+	Orchestrators     []*common.OrchNetworkCapabilities `json:"orchestrators"`
+}
+
+func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+
+			orchNetworkCaps := s.LivepeerNode.GetNetworkCapabilities()
+			if orchNetworkCaps == nil {
+				respond500(w, "network capabilities not available")
+			}
+
+			networkCapabilities := &networkCapabilitiesResponse{
+				CapabilitiesNames: core.CapabilityNameLookup,
+				Orchestrators:     orchNetworkCaps,
+			}
+
+			respondJson(w, networkCapabilities)
+			return
+		} else {
+			respond400(w, "Node must be gateway node to get network capabilities")
+			return
 		}
 	})
 }
@@ -204,6 +321,88 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 		}
 
 		respondJson(w, transcodingOptions)
+	})
+}
+
+// poolOrchestrator contains information about an orchestrator in a pool.
+type poolOrchestrator struct {
+	Url          string  `json:"url"`
+	LatencyScore float64 `json:"latency_score"`
+	InFlight     int     `json:"in_flight"`
+}
+
+// aiPoolInfo contains information about an AI pool.
+type aiPoolInfo struct {
+	Size          int                `json:"size"`
+	InUse         int                `json:"in_use"`
+	Orchestrators []poolOrchestrator `json:"orchestrators"`
+}
+
+// suspendedInfo contains information about suspended orchestrators.
+type suspendedInfo struct {
+	List         map[string]int `json:"list"`
+	CurrentCount int            `json:"current_count"`
+}
+
+// aiOrchestratorPools contains information about all AI pools.
+type aiOrchestratorPools struct {
+	Cold        aiPoolInfo    `json:"cold"`
+	Warm        aiPoolInfo    `json:"warm"`
+	LastRefresh time.Time     `json:"last_refresh"`
+	Suspended   suspendedInfo `json:"suspended"`
+}
+
+// getAIPoolsInfoHandler returns information about AI orchestrator pools.
+func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aiPoolsInfoResp := make(map[string]aiOrchestratorPools)
+
+		s.AISessionManager.mu.Lock()
+		defer s.AISessionManager.mu.Unlock()
+
+		// Return if no selectors are present.
+		if len(s.AISessionManager.selectors) == 0 {
+			glog.Warning("Orchestrator pools are not yet initialized")
+			respondJson(w, aiPoolsInfoResp)
+			return
+		}
+
+		// Loop through selectors and get pools info.
+		for cap, pool := range s.AISessionManager.selectors {
+			warmPool := aiPoolInfo{
+				Size:  pool.warmPool.Size(),
+				InUse: len(pool.warmPool.inUseSess),
+			}
+			for _, sess := range pool.warmPool.sessMap {
+				poolOrchestrator := poolOrchestrator{
+					Url:          sess.Transcoder(),
+					LatencyScore: sess.LatencyScore,
+					InFlight:     len(sess.SegsInFlight),
+				}
+				warmPool.Orchestrators = append(warmPool.Orchestrators, poolOrchestrator)
+			}
+
+			coldPool := aiPoolInfo{
+				Size:  pool.coldPool.Size(),
+				InUse: len(pool.coldPool.inUseSess),
+			}
+			for _, sess := range pool.coldPool.sessMap {
+				coldPool.Orchestrators = append(coldPool.Orchestrators, poolOrchestrator{
+					Url:          sess.Transcoder(),
+					LatencyScore: sess.LatencyScore,
+					InFlight:     len(sess.SegsInFlight),
+				})
+			}
+
+			aiPoolsInfoResp[cap] = aiOrchestratorPools{
+				Cold:        coldPool,
+				Warm:        warmPool,
+				LastRefresh: pool.lastRefreshTime,
+				Suspended:   suspendedInfo{List: pool.suspender.list, CurrentCount: pool.suspender.count},
+			}
+		}
+
+		respondJson(w, aiPoolsInfoResp)
 	})
 }
 
@@ -277,32 +476,33 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			return
 		}
 
-		blockRewardCutStr := r.FormValue("blockRewardCut")
+		blockRewardCutStr := r.PostFormValue("blockRewardCut")
 		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 64)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		feeShareStr := r.FormValue("feeShare")
+		feeShareStr := r.PostFormValue("feeShare")
 		feeShare, err := strconv.ParseFloat(feeShareStr, 64)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		if err := s.setOrchestratorPriceInfo("default", r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
+		pricePerUnit, pixelsPerUnit, currency := r.PostFormValue("pricePerUnit"), r.PostFormValue("pixelsPerUnit"), r.PostFormValue("currency")
+		if err := s.setOrchestratorPriceInfo("default", pricePerUnit, pixelsPerUnit, currency); err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		serviceURI := r.FormValue("serviceURI")
+		serviceURI := r.PostFormValue("serviceURI")
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		if unbondingLockIDStr != "" {
 			unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 			if err != nil {
@@ -325,7 +525,7 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			}
 		}
 
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		if amountStr != "" {
 			amount, err := common.ParseBigInt(amountStr)
 			if err != nil {
@@ -383,10 +583,11 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 
 func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pixels := r.FormValue("pixelsPerUnit")
-		price := r.FormValue("pricePerUnit")
+		pixels := r.PostFormValue("pixelsPerUnit")
+		price := r.PostFormValue("pricePerUnit")
+		currency := r.PostFormValue("currency")
 		if pixels != "" && price != "" {
-			if err := s.setOrchestratorPriceInfo("default", price, pixels); err != nil {
+			if err := s.setOrchestratorPriceInfo("default", price, pixels, currency); err != nil {
 				respond400(w, err.Error())
 				return
 			}
@@ -397,7 +598,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			feeShare       float64
 			err            error
 		)
-		blockRewardCutStr := r.FormValue("blockRewardCut")
+		blockRewardCutStr := r.PostFormValue("blockRewardCut")
 
 		if blockRewardCutStr != "" {
 			blockRewardCut, err = strconv.ParseFloat(blockRewardCutStr, 64)
@@ -408,7 +609,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			}
 		}
 
-		feeShareStr := r.FormValue("feeShare")
+		feeShareStr := r.PostFormValue("feeShare")
 		if feeShareStr != "" {
 			feeShare, err = strconv.ParseFloat(feeShareStr, 64)
 			if err != nil {
@@ -440,7 +641,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			}
 		}
 
-		serviceURI := r.FormValue("serviceURI")
+		serviceURI := r.PostFormValue("serviceURI")
 		if serviceURI != "" {
 			if _, err := url.ParseRequestURI(serviceURI); err != nil {
 				respond400(w, err.Error())
@@ -458,24 +659,8 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 	}))
 }
 
-func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr string) error {
-	ok, err := regexp.MatchString("^[0-9]+$", pricePerUnitStr)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("pricePerUnit is not a valid integer, provided %v", pricePerUnitStr)
-	}
-
-	ok, err = regexp.MatchString("^[0-9]+$", pixelsPerUnitStr)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("pixelsPerUnit is not a valid integer, provided %v", pixelsPerUnitStr)
-	}
-
-	ok, err = regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", broadcasterEthAddr)
+func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr, currency string) error {
+	ok, err := regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", broadcasterEthAddr)
 	if err != nil {
 		return err
 	}
@@ -483,28 +668,34 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 		return fmt.Errorf("broadcasterEthAddr is not a valid eth address, provided %v", broadcasterEthAddr)
 	}
 
-	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
-	if err != nil {
-		return fmt.Errorf("error converting pricePerUnit string to int64: %v", err)
+	pricePerUnit, ok := new(big.Rat).SetString(pricePerUnitStr)
+	if !ok {
+		return fmt.Errorf("error parsing pricePerUnit value: %s", pricePerUnitStr)
 	}
-	if pricePerUnit < 0 {
-		return fmt.Errorf("price unit must be greater than or equal to 0, provided %d", pricePerUnit)
-	}
-
-	pixelsPerUnit, err := strconv.ParseInt(pixelsPerUnitStr, 10, 64)
-	if err != nil {
-		return fmt.Errorf("error converting pixelsPerUnit string to int64: %v", err)
-	}
-	if pixelsPerUnit <= 0 {
-		return fmt.Errorf("pixels per unit must be greater than 0, provided %d", pixelsPerUnit)
+	if pricePerUnit.Sign() < 0 {
+		return fmt.Errorf("price unit must be greater than or equal to 0, provided %s", pricePerUnitStr)
 	}
 
-	s.LivepeerNode.SetBasePrice(broadcasterEthAddr, big.NewRat(pricePerUnit, pixelsPerUnit))
-	if broadcasterEthAddr == "default" {
-		glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
-	} else {
-		glog.Infof("Price per pixel set to %d wei for %d pixels for broadcaster %s\n", pricePerUnit, pixelsPerUnit, broadcasterEthAddr)
+	pixelsPerUnit, ok := new(big.Rat).SetString(pixelsPerUnitStr)
+	if !ok {
+		return fmt.Errorf("error parsing pixelsPerUnit value: %v", pixelsPerUnitStr)
 	}
+	if pixelsPerUnit.Sign() <= 0 {
+		return fmt.Errorf("pixels per unit must be greater than 0, provided %s", pixelsPerUnitStr)
+	}
+
+	pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+	autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+		if broadcasterEthAddr == "default" {
+			glog.Infof("Price: %v wei per pixel\n ", price.FloatString(3))
+		} else {
+			glog.Infof("Price: %v wei per pixel for broadcaster %v", price.FloatString(3), broadcasterEthAddr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("error converting price: %v", err)
+	}
+	s.LivepeerNode.SetBasePrice(broadcasterEthAddr, autoPrice)
 
 	return nil
 }
@@ -512,6 +703,12 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI string) error {
 	parsedURI, err := url.Parse(serviceURI)
 	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	if !common.ValidateServiceURI(parsedURI) {
+		err = errors.New("service address must be a public IP address or hostname")
 		glog.Error(err)
 		return err
 	}
@@ -540,7 +737,7 @@ func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI 
 func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.OrchestratorNode {
-			maxfacevalue := r.FormValue("maxfacevalue")
+			maxfacevalue := r.PostFormValue("maxfacevalue")
 			if maxfacevalue != "" {
 				mfv, success := new(big.Int).SetString(maxfacevalue, 10)
 				if success {
@@ -562,11 +759,12 @@ func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.OrchestratorNode {
-			pricePerUnitStr := r.FormValue("pricePerUnit")
-			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
-			broadcasterEthAddr := r.FormValue("broadcasterEthAddr")
+			pricePerUnitStr := r.PostFormValue("pricePerUnit")
+			pixelsPerUnitStr := r.PostFormValue("pixelsPerUnit")
+			currency := r.PostFormValue("currency")
+			broadcasterEthAddr := r.PostFormValue("broadcasterEthAddr")
 
-			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr)
+			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr, currency)
 			if err == nil {
 				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for broadcaster %s\n", pricePerUnitStr, pixelsPerUnitStr, broadcasterEthAddr)))
 			} else {
@@ -580,7 +778,7 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 
 func (s *LivepeerServer) setMaxSessions() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		frmMaxSessions := r.FormValue("maxSessions")
+		frmMaxSessions := r.PostFormValue("maxSessions")
 		if frmMaxSessions == "auto" {
 			s.LivepeerNode.AutoSessionLimit = true
 			s.LivepeerNode.SetMaxSessions(s.LivepeerNode.GetCurrentCapacity())
@@ -602,13 +800,13 @@ func (s *LivepeerServer) setMaxSessions() http.Handler {
 // Bond, withdraw, reward
 func bondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
-		toAddr := r.FormValue("toAddr")
+		toAddr := r.PostFormValue("toAddr")
 
 		tx, err := client.Bond(amount, ethcommon.HexToAddress(toAddr))
 		if err != nil {
@@ -627,7 +825,7 @@ func bondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 		if err != nil {
 			glog.Errorf("Cannot convert unbondingLockId: %v", err)
@@ -635,7 +833,7 @@ func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		var tx *ethtypes.Transaction
-		toAddr := r.FormValue("toAddr")
+		toAddr := r.PostFormValue("toAddr")
 		if toAddr != "" {
 			tx, err = client.RebondFromUnbonded(ethcommon.HexToAddress(toAddr), unbondingLockID)
 		} else {
@@ -657,7 +855,7 @@ func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func unbondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
@@ -681,7 +879,7 @@ func unbondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func withdrawStakeHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 		if err != nil {
 			respond400(w, fmt.Sprintf("Cannot convert unbondingLockId: %v", err))
@@ -788,7 +986,7 @@ func withdrawFeesHandler(client eth.LivepeerEthClient, db ChainIdGetter) http.Ha
 			}
 		} else {
 			// L2 contracts
-			amountStr := r.FormValue("amount")
+			amountStr := r.PostFormValue("amount")
 			if amountStr == "" {
 				respond400(w, "missing form param: amount")
 				return
@@ -1049,8 +1247,8 @@ func ethBalanceHandler(client eth.LivepeerEthClient) http.Handler {
 
 func transferTokensHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		to := r.FormValue("to")
-		amountStr := r.FormValue("amount")
+		to := r.PostFormValue("to")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
@@ -1121,7 +1319,7 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 			sigFormat = "text/plain"
 		}
 
-		message := r.FormValue("message")
+		message := r.PostFormValue("message")
 
 		var signed []byte
 		var err error
@@ -1157,13 +1355,13 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 
 func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		poll := r.FormValue("poll")
+		poll := r.PostFormValue("poll")
 		if !ethcommon.IsHexAddress(poll) {
 			respond500(w, "invalid poll contract address")
 			return
 		}
 
-		choiceStr := r.FormValue("choiceID")
+		choiceStr := r.PostFormValue("choiceID")
 		choiceID, ok := new(big.Int).SetString(choiceStr, 10)
 		if !ok {
 			respond500(w, "choiceID is not a valid integer value")
@@ -1193,10 +1391,54 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	}))
 }
 
+func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proposalIDStr := r.PostFormValue("proposalID")
+		proposalID, ok := new(big.Int).SetString(proposalIDStr, 10)
+		if !ok {
+			respond500(w, "proposalID is not a valid integer value")
+			return
+		}
+
+		supportStr := r.PostFormValue("support")
+		support, ok := new(big.Int).SetString(supportStr, 10)
+		if !ok {
+			respond500(w, "support is not a valid integer value")
+			return
+		}
+		if !types.ProposalVoteChoice(int(support.Int64())).IsValid() {
+			respond500(w, "invalid support")
+			return
+		}
+
+		reason := r.PostFormValue("reason")
+
+		// submit tx
+		var tx *ethtypes.Transaction
+		var err error
+		if reason != "" {
+			tx, err = client.ProposalVoteWithReason(proposalID, uint8(support.Uint64()), reason)
+		} else {
+			tx, err = client.ProposalVote(proposalID, uint8(support.Uint64()))
+		}
+		if err != nil {
+			respond500(w, fmt.Sprintf("unable to submit proposal vote transaction err=%q", err))
+			return
+		}
+
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("unable to mine proposal vote transaction err=%q", err))
+			return
+		}
+
+		respondOk(w, tx.Hash().Bytes())
+	}))
+}
+
 // Gas Price
 func setMaxGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amount := r.FormValue("amount")
+		amount := r.PostFormValue("amount")
 		gprice, err := common.ParseBigInt(amount)
 		if err != nil {
 			respond400(w, fmt.Sprintf("Parsing failed for price: %v", err))
@@ -1216,7 +1458,7 @@ func setMaxGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 
 func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		minGasPrice, err := common.ParseBigInt(r.FormValue("minGasPrice"))
+		minGasPrice, err := common.ParseBigInt(r.PostFormValue("minGasPrice"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid minGasPrice: %v", err))
 			return
@@ -1248,13 +1490,13 @@ func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 // Tickets
 func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		depositAmount, err := common.ParseBigInt(r.FormValue("depositAmount"))
+		depositAmount, err := common.ParseBigInt(r.PostFormValue("depositAmount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid depositAmount: %v", err))
 			return
 		}
 
-		reserveAmount, err := common.ParseBigInt(r.FormValue("reserveAmount"))
+		reserveAmount, err := common.ParseBigInt(r.PostFormValue("reserveAmount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid reserveAmount: %v", err))
 			return
@@ -1278,7 +1520,7 @@ func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 
 func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amount, err := common.ParseBigInt(r.FormValue("amount"))
+		amount, err := common.ParseBigInt(r.PostFormValue("amount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid amount: %v", err))
 			return
@@ -1402,7 +1644,7 @@ func setLogLevelHandler() http.Handler {
 			respond500(w, "nil log level")
 			return
 		}
-		err := vFlag.Set(r.FormValue("loglevel"))
+		err := vFlag.Set(r.PostFormValue("loglevel"))
 		if err != nil {
 			respond400(w, "parameter 'logLevel' not defined")
 			return
@@ -1462,6 +1704,40 @@ func respondJsonOk(w http.ResponseWriter, msg []byte) {
 	respondOk(w, msg)
 }
 
+type APIErrorResponse struct {
+	Error error `json:"error"`
+}
+
+type APIError struct {
+	Message string `json:"message"`
+}
+
+func (err *APIError) Error() string { return err.Message }
+
+func handleAPIError(ctx context.Context, w io.Writer, err error, code int) {
+	clog.Errorf(ctx, "Error with API code=%v err=%v", code, err)
+
+	apiErr := &APIError{Message: err.Error()}
+
+	if code == http.StatusInternalServerError {
+		apiErr.Message = "Internal Server Error"
+	} else if code == http.StatusServiceUnavailable {
+		apiErr.Message = "Service Unavailable Error"
+	}
+
+	resp := &APIErrorResponse{Error: apiErr}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		clog.Errorf(ctx, "Error with API JSON encoding err=%v", err)
+	}
+}
+
+func respondJsonError(ctx context.Context, w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+
+	handleAPIError(ctx, w, err, code)
+}
+
 func respond500(w http.ResponseWriter, errMsg string) {
 	respondWithError(w, errMsg, http.StatusInternalServerError)
 }
@@ -1471,7 +1747,7 @@ func respond400(w http.ResponseWriter, errMsg string) {
 }
 
 func respondWithError(w http.ResponseWriter, errMsg string, code int) {
-	glog.Errorf("HTTP Response Error %v: %v", code, errMsg)
+	glog.Errorf("HTTP Response Error statusCode=%d err=%v", code, errMsg)
 	http.Error(w, errMsg, code)
 }
 
@@ -1483,7 +1759,7 @@ func mustHaveFormParams(h http.Handler, params ...string) http.Handler {
 		}
 
 		for _, param := range params {
-			if r.FormValue(param) == "" {
+			if r.PostFormValue(param) == "" {
 				respond400(w, fmt.Sprintf("missing form param: %s", param))
 				return
 			}

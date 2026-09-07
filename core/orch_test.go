@@ -8,9 +8,14 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/golang/glog"
@@ -56,7 +61,7 @@ func TestServeTranscoder(t *testing.T) {
 	}
 }
 
-func TestRemoteTranscoder(t *testing.T) {
+func sync_TestRemoteTranscoder(t *testing.T) {
 	m := NewRemoteTranscoderManager()
 	initTranscoder := func() (*RemoteTranscoder, *StubTranscoderServer) {
 		strm := &StubTranscoderServer{manager: m}
@@ -155,6 +160,10 @@ func TestRemoteTranscoder(t *testing.T) {
 	assert.Greater(ticksWhenSegIsShort*25, ticksWhenSegIsLong)
 }
 
+func TestRemoteTranscoder(t *testing.T) {
+	synctest.Test(t, sync_TestRemoteTranscoder)
+}
+
 func newWg(delta int) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	wg.Add(delta)
@@ -245,7 +254,10 @@ func TestSelectTranscoder(t *testing.T) {
 	strm := &StubTranscoderServer{manager: m, WithholdResults: false}
 	strm2 := &StubTranscoderServer{manager: m}
 
+	LivepeerVersion = "0.4.1"
 	capabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	LivepeerVersion = "undefined"
+
 	richCapabilities := NewCapabilities(append(DefaultCapabilities(), Capability_HEVC_Encode), []Capability{})
 	allCapabilities := NewCapabilities(append(DefaultCapabilities(), OptionalCapabilities()...), []Capability{})
 
@@ -259,7 +271,7 @@ func TestSelectTranscoder(t *testing.T) {
 	go func() { m.Manage(strm, 1, capabilities.ToNetCapabilities()) }()
 	time.Sleep(1 * time.Millisecond) // allow time for first stream to register
 	go func() { m.Manage(strm2, 1, richCapabilities.ToNetCapabilities()); wg.Done() }()
-	time.Sleep(1 * time.Millisecond) // allow time for second stream to register
+	time.Sleep(1 * time.Millisecond) // allow time for second stream to register e for third stream to register
 
 	assert.NotNil(m.liveTranscoders[strm])
 	assert.NotNil(m.liveTranscoders[strm2])
@@ -341,6 +353,20 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Equal(1, t1.load)
 	m.completeStreamSession(testSessionId)
 	assert.Equal(0, t1.load)
+
+	// assert one transcoder with the correct Livepeer version is selected
+	minVersionCapabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	minVersionCapabilities.SetMinVersionConstraint("0.4.0")
+	currentTranscoder, err = m.selectTranscoder(testSessionId, minVersionCapabilities)
+	assert.Nil(err)
+	m.completeStreamSession(testSessionId)
+
+	// assert no transcoders available for min version higher than any transcoder
+	minVersionHighCapabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	minVersionHighCapabilities.SetMinVersionConstraint("0.4.2")
+	currentTranscoder, err = m.selectTranscoder(testSessionId, minVersionHighCapabilities)
+	assert.NotNil(err)
+	m.completeStreamSession(testSessionId)
 }
 
 func TestCompleteStreamSession(t *testing.T) {
@@ -383,7 +409,7 @@ func TestRemoveFromRemoteTranscoders(t *testing.T) {
 	remoteTranscoderList = append(remoteTranscoderList, tr...)
 	assert.Len(remoteTranscoderList, 5)
 
-	// Remove transcoder froms head of the list
+	// Remove transcoder forms head of the list
 	remoteTranscoderList = removeFromRemoteTranscoders(tr[0], remoteTranscoderList)
 	assert.Equal(remoteTranscoderList[0], tr[1])
 	assert.Equal(remoteTranscoderList[1], tr[2])
@@ -660,6 +686,42 @@ func TestGetSegmentChan(t *testing.T) {
 
 }
 
+func TestTranscodeSegmentLoopRejectsLoopbackStorage(t *testing.T) {
+	var hits atomic.Int32
+	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("protected"))
+	}))
+	defer protected.Close()
+
+	oldNodeStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldNodeStorage }()
+
+	for _, storageType := range []net.OSInfo_StorageType{net.OSInfo_S3, net.OSInfo_GOOGLE} {
+		t.Run(storageType.String(), func(t *testing.T) {
+			n, _ := NewLivepeerNode(nil, "", nil)
+			md := StubSegTranscodingMetadata()
+			md.AuthToken.SessionId = t.Name()
+			md.OS = &net.OSInfo{
+				StorageType: storageType,
+				S3Info:      &net.S3OSInfo{Host: protected.URL + "/bucket"},
+			}
+
+			segChan := make(SegmentChan)
+			require.NoError(t, n.transcodeSegmentLoop(context.Background(), md, segChan))
+			close(segChan)
+			defer n.endTranscodingSession(md.AuthToken.SessionId, context.Background())
+
+			storage := n.StorageConfigs[md.AuthToken.SessionId]
+			require.NotNil(t, storage)
+			_, err := storage.OS.SaveData(context.Background(), "segment.ts", strings.NewReader("segment"), nil, time.Second)
+			require.ErrorContains(t, err, "localhost downloads are blocked")
+		})
+	}
+	require.Zero(t, hits.Load())
+}
+
 func TestOrchCheckCapacity(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := NewLivepeerNode(nil, "", nil)
@@ -704,7 +766,7 @@ func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
@@ -785,7 +847,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	// orchestrator inactive -> error
 	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
@@ -856,7 +918,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
@@ -888,7 +950,7 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
@@ -928,7 +990,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
@@ -968,7 +1030,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
@@ -1038,7 +1100,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestIDs := make([]string, 5)
 
@@ -1097,7 +1159,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 
@@ -1165,7 +1227,7 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 	paymentError := errors.New("ReceiveTicket error")
@@ -1227,7 +1289,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 
@@ -1265,7 +1327,7 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 	orch.address = addr
-	orch.node.SetBasePrice("default", big.NewRat(0, 1))
+	orch.node.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 
 	manifestID := ManifestID("some manifest")
 
@@ -1307,7 +1369,7 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 
 func TestTicketParams(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.priceInfo["default"] = big.NewRat(1, 1)
+	n.priceInfo["default"] = NewFixedPrice(big.NewRat(1, 1))
 	priceInfo := &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
@@ -1388,7 +1450,7 @@ func TestPriceInfo(t *testing.T) {
 	expPricePerPixel := big.NewRat(101, 100)
 
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
@@ -1406,7 +1468,7 @@ func TestPriceInfo(t *testing.T) {
 
 	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
 	basePrice = big.NewRat(10, 1)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(1010, 100)
 
@@ -1421,7 +1483,7 @@ func TestPriceInfo(t *testing.T) {
 
 	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
 	basePrice = big.NewRat(1, 10)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(101, 1000)
 
@@ -1435,7 +1497,7 @@ func TestPriceInfo(t *testing.T) {
 	assert.Equal(priceInfo.PixelsPerUnit, expPrice.Denom().Int64())
 	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
 	basePrice = big.NewRat(25, 10)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	orch = NewOrchestrator(n, nil)
 	expPricePerPixel = big.NewRat(2525, 1000)
 
@@ -1451,7 +1513,7 @@ func TestPriceInfo(t *testing.T) {
 	// basePrice = 10/1 , txMultiplier = 100/10 => expPricePerPixel = 11
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(100, 10)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
@@ -1470,7 +1532,7 @@ func TestPriceInfo(t *testing.T) {
 	// basePrice = 10/1 , txMultiplier = 1/10 => expPricePerPixel = 110
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(1, 10)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
@@ -1489,7 +1551,7 @@ func TestPriceInfo(t *testing.T) {
 	// basePrice = 10, txMultiplier = 1 => expPricePerPixel = 20
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(1, 1)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
@@ -1506,7 +1568,7 @@ func TestPriceInfo(t *testing.T) {
 	assert.Equal(priceInfo.PixelsPerUnit, expPrice.Denom().Int64())
 
 	// basePrice = 0 => expPricePerPixel = 0
-	n.SetBasePrice("default", big.NewRat(0, 1))
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(0, 1)))
 	orch = NewOrchestrator(n, nil)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{}, "")
@@ -1516,7 +1578,7 @@ func TestPriceInfo(t *testing.T) {
 
 	// test no overflows
 	basePrice = big.NewRat(25000, 1)
-	n.SetBasePrice("default", basePrice)
+	n.SetBasePrice("default", NewFixedPrice(basePrice))
 	faceValue, _ := new(big.Int).SetString("22245599237119512", 10)
 	txCost := new(big.Int).Mul(big.NewInt(100000), big.NewInt(7500000000))
 	txMultiplier = new(big.Rat).SetFrac(faceValue, txCost) // 926899968213313/31250000000000
@@ -1572,7 +1634,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	expError := errors.New("TxMultiplier Error")
 
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.SetBasePrice("default", big.NewRat(1, 1))
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
@@ -1581,6 +1643,202 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{}, "")
 	assert.Nil(t, priceInfo)
 	assert.EqualError(t, err, expError.Error())
+}
+
+func TestAllCapsPriceInfo(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+
+	orch := NewOrchestrator(n, nil)
+
+	//set prices
+	addr1 := "0x1000000000000000000000000000000000000000"
+	addr2 := "0x2000000000000000000000000000000000000000"
+
+	price1 := big.NewRat(1, 1)
+	price2 := big.NewRat(2, 1)
+	price3 := big.NewRat(3, 1)
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price2))
+	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "default", NewFixedPrice(price3))
+
+	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 1)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price set for specific gateway addr1 should override the default price
+			assert.Equal(t, price.PricePerUnit, price2.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			t.Error("should not get ImageToImage price")
+		}
+	}
+
+	//test addr2 gets default TextToImage price and specific ImageToImage price
+	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr2))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 2)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price should be the default price
+			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			assert.Equal(t, price.PricePerUnit, price3.Num().Int64())
+		}
+	}
+
+	//test addr3 gets only the default TextToImage price
+	addr3 := "0x3000000000000000000000000000000000000000"
+	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr3))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 1)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price should be the default price
+			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			t.Error("should not get ImageToImage price")
+		}
+	}
+}
+
+func TestBYOCExternalCapabilityConstant(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(Capability(37), Capability_BYOC)
+
+	name, ok := CapabilityNameLookup[Capability_BYOC]
+	assert.True(ok, "Capability_BYOC should exist in CapabilityNameLookup")
+	assert.Equal("byoc", name)
+}
+
+func TestBYOCExternalCapsPriceInfo(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	addr1 := "0x1000000000000000000000000000000000000000"
+
+	n.ExternalCapabilities.Capabilities["my-service"] = &ExternalCapability{Name: "my-service"}
+	n.ExternalCapabilities.Capabilities["another-service"] = &ExternalCapability{Name: "another-service"}
+	n.SetPriceForExternalCapability("default", "my-service", big.NewRat(10, 1))
+	n.SetPriceForExternalCapability("default", "another-service", big.NewRat(20, 1))
+
+	// Also set a built-in cap price so we verify both coexist
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(big.NewRat(5, 1)))
+
+	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 3) // 1 built-in + 2 BYOC external
+
+	byocPrices := map[string]*net.PriceInfo{}
+	builtInCount := 0
+	for _, p := range prices {
+		if p.Capability == uint32(Capability_BYOC) {
+			byocPrices[p.Constraint] = p
+		} else {
+			builtInCount++
+		}
+	}
+	assert.Equal(t, 1, builtInCount)
+	assert.Len(t, byocPrices, 2)
+
+	myService := byocPrices["my-service"]
+	assert.NotNil(t, myService)
+	assert.Equal(t, int64(10), myService.PricePerUnit)
+	assert.Equal(t, int64(1), myService.PixelsPerUnit)
+	assert.Equal(t, uint32(Capability_BYOC), myService.Capability)
+	assert.Equal(t, "my-service", myService.Constraint)
+
+	anotherService := byocPrices["another-service"]
+	assert.NotNil(t, anotherService)
+	assert.Equal(t, int64(20), anotherService.PricePerUnit)
+}
+
+func TestBYOCExternalCapsSenderPricing(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	n.Recipient = new(pm.MockRecipient)
+	orch := NewOrchestrator(n, nil)
+
+	addr1 := "0x1000000000000000000000000000000000000000"
+	addr2 := "0x2000000000000000000000000000000000000000"
+	addr3 := "0x3000000000000000000000000000000000000000"
+
+	n.ExternalCapabilities.Capabilities["my-service"] = &ExternalCapability{Name: "my-service"}
+	n.SetPriceForExternalCapability("default", "my-service", big.NewRat(10, 1))
+	n.SetPriceForExternalCapability(addr1, "my-service", big.NewRat(100, 1))
+	n.SetPriceForExternalCapability(addr2, "my-service", big.NewRat(200, 1))
+
+	getBYOCPrice := func(addr string) int64 {
+		prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr))
+		assert.Nil(t, err)
+		for _, p := range prices {
+			if p.Capability == uint32(Capability_BYOC) {
+				return p.PricePerUnit
+			}
+		}
+		t.Fatalf("no BYOC price found for %s", addr)
+		return 0
+	}
+
+	assert.Equal(t, int64(100), getBYOCPrice(addr1), "sender-specific price")
+	assert.Equal(t, int64(200), getBYOCPrice(addr2), "sender-specific price")
+	assert.Equal(t, int64(10), getBYOCPrice(addr3), "falls back to default")
+}
+
+func TestBYOCExternalCapsPriceEdgeCases(t *testing.T) {
+	addr := "0x1000000000000000000000000000000000000000"
+
+	tests := []struct {
+		name          string
+		price         *big.Rat
+		nilExtCaps    bool
+		expectPresent bool
+		expectPrice   int64
+	}{
+		{"zero price included", big.NewRat(0, 1), false, true, 0},
+		{"negative price skipped", big.NewRat(-5, 1), false, false, 0},
+		{"nil ExternalCapabilities", nil, true, false, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, _ := NewLivepeerNode(nil, "", nil)
+			n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+			n.Recipient = new(pm.MockRecipient)
+
+			if tt.nilExtCaps {
+				n.ExternalCapabilities = nil
+			} else {
+				n.ExternalCapabilities.Capabilities["svc"] = &ExternalCapability{Name: "svc"}
+				n.SetPriceForExternalCapability("default", "svc", tt.price)
+			}
+
+			orch := NewOrchestrator(n, nil)
+			prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr))
+			assert.Nil(t, err)
+
+			var byocPrice *net.PriceInfo
+			for _, p := range prices {
+				if p.Capability == uint32(Capability_BYOC) {
+					byocPrice = p
+				}
+			}
+
+			if tt.expectPresent {
+				assert.NotNil(t, byocPrice, "BYOC price should be present")
+				assert.Equal(t, tt.expectPrice, byocPrice.PricePerUnit)
+			} else {
+				assert.Nil(t, byocPrice, "BYOC price should not be present")
+			}
+		})
+	}
 }
 
 func TestDebitFees(t *testing.T) {

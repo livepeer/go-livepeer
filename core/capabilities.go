@@ -1,62 +1,94 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-
 	"sync"
 
+	"github.com/Masterminds/semver/v3"
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+type ModelConstraints map[string]*ModelConstraint
+
+type ModelConstraint struct {
+	Warm          bool
+	Capacity      int
+	RunnerVersion string
+}
+
 type Capability int
 type CapabilityString []uint64
-type Constraints struct{}
+type Constraints struct {
+	minVersion    string
+	perCapability PerCapabilityConstraints
+}
+type CapabilityConstraints struct {
+	// Models contains a *ModelConstraint for each supported model ID
+	Models ModelConstraints
+}
+type PerCapabilityConstraints map[Capability]*CapabilityConstraints
 type Capabilities struct {
 	bitstring   CapabilityString
 	mandatories CapabilityString
+	version     string
 	constraints Constraints
 	capacities  map[Capability]int
 	mutex       sync.Mutex
 }
+
 type CapabilityTest struct {
 	inVideoData []byte
 	outProfile  ffmpeg.VideoProfile
 }
 
-// Do not rearrange these values! Only append.
 const (
-	Capability_Invalid Capability = iota - 2
-	Capability_Unused
-	Capability_H264
-	Capability_MPEGTS
-	Capability_MP4
-	Capability_FractionalFramerates
-	Capability_StorageDirect
-	Capability_StorageS3
-	Capability_StorageGCS
-	Capability_ProfileH264Baseline
-	Capability_ProfileH264Main
-	Capability_ProfileH264High
-	Capability_ProfileH264ConstrainedHigh
-	Capability_GOP
-	Capability_AuthToken
-	Capability_SceneClassification // Deprecated, but can't remove because of Capability ordering
-	Capability_MPEG7VideoSignature
-	Capability_HEVC_Decode
-	Capability_HEVC_Encode
-	Capability_VP8_Decode
-	Capability_VP9_Decode
-	Capability_VP8_Encode
-	Capability_VP9_Encode
-	Capability_H264_Decode_444_8bit
-	Capability_H264_Decode_422_8bit
-	Capability_H264_Decode_444_10bit
-	Capability_H264_Decode_422_10bit
-	Capability_H264_Decode_420_10bit
-	Capability_SegmentSlicing
+	Capability_Invalid                    Capability = -2
+	Capability_Unused                     Capability = -1
+	Capability_H264                       Capability = 0
+	Capability_MPEGTS                     Capability = 1
+	Capability_MP4                        Capability = 2
+	Capability_FractionalFramerates       Capability = 3
+	Capability_StorageDirect              Capability = 4
+	Capability_StorageS3                  Capability = 5
+	Capability_StorageGCS                 Capability = 6
+	Capability_ProfileH264Baseline        Capability = 7
+	Capability_ProfileH264Main            Capability = 8
+	Capability_ProfileH264High            Capability = 9
+	Capability_ProfileH264ConstrainedHigh Capability = 10
+	Capability_GOP                        Capability = 11
+	Capability_AuthToken                  Capability = 12
+	Capability_SceneClassification        Capability = 13 // Deprecated, but can't remove because of Capability ordering
+	Capability_MPEG7VideoSignature        Capability = 14
+	Capability_HEVC_Decode                Capability = 15
+	Capability_HEVC_Encode                Capability = 16
+	Capability_VP8_Decode                 Capability = 17
+	Capability_VP9_Decode                 Capability = 18
+	Capability_VP8_Encode                 Capability = 19
+	Capability_VP9_Encode                 Capability = 20
+	Capability_H264_Decode_444_8bit       Capability = 21
+	Capability_H264_Decode_422_8bit       Capability = 22
+	Capability_H264_Decode_444_10bit      Capability = 23
+	Capability_H264_Decode_422_10bit      Capability = 24
+	Capability_H264_Decode_420_10bit      Capability = 25
+	Capability_SegmentSlicing             Capability = 26
+	Capability_TextToImage                Capability = 27
+	Capability_ImageToImage               Capability = 28
+	Capability_ImageToVideo               Capability = 29
+	Capability_Upscale                    Capability = 30
+	Capability_AudioToText                Capability = 31
+	Capability_SegmentAnything2           Capability = 32
+	Capability_LLM                        Capability = 33
+	Capability_ImageToText                Capability = 34
+	Capability_LiveVideoToVideo           Capability = 35
+	Capability_TextToSpeech               Capability = 36
+	Capability_BYOC                       Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -72,7 +104,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ProfileH264Baseline:        "H264 Baseline profile",
 	Capability_ProfileH264Main:            "H264 Main profile",
 	Capability_ProfileH264High:            "H264 High profile",
-	Capability_ProfileH264ConstrainedHigh: "H264 Constained High profile",
+	Capability_ProfileH264ConstrainedHigh: "H264 Constrained, Contained High profile",
 	Capability_GOP:                        "GOP",
 	Capability_AuthToken:                  "Auth token",
 	Capability_MPEG7VideoSignature:        "MPEG7 signature",
@@ -88,6 +120,17 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 	Capability_SegmentSlicing:             "Segment slicing",
+	Capability_TextToImage:                "Text to image",
+	Capability_ImageToImage:               "Image to image",
+	Capability_ImageToVideo:               "Image to video",
+	Capability_Upscale:                    "Upscale",
+	Capability_AudioToText:                "Audio to text",
+	Capability_SegmentAnything2:           "Segment anything 2",
+	Capability_LLM:                        "Llm",
+	Capability_ImageToText:                "Image to text",
+	Capability_LiveVideoToVideo:           "Live video to video",
+	Capability_TextToSpeech:               "Text to speech",
+	Capability_BYOC:                       "byoc",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -173,6 +216,14 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_444_10bit,
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
+		Capability_TextToImage,
+		Capability_ImageToImage,
+		Capability_ImageToVideo,
+		Capability_Upscale,
+		Capability_AudioToText,
+		Capability_SegmentAnything2,
+		Capability_ImageToText,
+		Capability_TextToSpeech,
 	}
 }
 
@@ -182,6 +233,20 @@ func MandatoryOCapabilities() []Capability {
 	return []Capability{
 		Capability_AuthToken,
 	}
+}
+
+func RemoveCapability(haystack []Capability, needle Capability) []Capability {
+	for i, c := range haystack {
+		if c == needle {
+			// TODO use slices.Delete once go-livepeer updates to latest golang
+			return append(haystack[:i], haystack[i+1:]...)
+		}
+	}
+	return haystack
+}
+
+func AddCapability(caps []Capability, newCap Capability) []Capability {
+	return append(caps, newCap)
 }
 
 func NewCapabilityString(caps []Capability) CapabilityString {
@@ -205,6 +270,67 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func (c1 PerCapabilityConstraints) CompatibleWith(c2 PerCapabilityConstraints) bool {
+	for c1Cap, c1Constraints := range c1 {
+		c2Constraints, ok := c2[c1Cap]
+		if !ok {
+			// No constraints on this capability so assume compatibility
+			continue
+		}
+
+		if !c1Constraints.CompatibleWith(c2Constraints) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (c *PerCapabilityConstraints) SetRunnerVersion(cap Capability, modelId, version string) {
+	if c == nil {
+		return
+	}
+	if (*c)[cap] == nil {
+		(*c)[cap] = &CapabilityConstraints{Models: make(ModelConstraints)}
+	}
+	if (*c)[cap].Models[modelId] == nil {
+		(*c)[cap].Models[modelId] = &ModelConstraint{}
+	}
+	(*c)[cap].Models[modelId].RunnerVersion = version
+}
+
+func (c *PerCapabilityConstraints) GetRunnerVersion(cap Capability, modelId string) string {
+	if c == nil || (*c)[cap] == nil || (*c)[cap].Models[modelId] == nil {
+		return ""
+	}
+	return (*c)[cap].Models[modelId].RunnerVersion
+}
+
+func (c1 *CapabilityConstraints) CompatibleWith(c2 *CapabilityConstraints) bool {
+	return c1.Models.CompatibleWith(c2.Models)
+}
+
+func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
+	for c1ModelID, c1ModelConstraint := range c1 {
+		c2ModelConstraint, ok := c2[c1ModelID]
+		if !ok {
+			// c2 does not support this model ID so it is incompatible
+			return false
+		}
+
+		if c1ModelConstraint.Warm && !c2ModelConstraint.Warm {
+			// c1 requires the model ID to be warm, but c2's model ID is not warm so it is incompatible
+			return false
+		}
+
+		if !isVersionCompatible(c1ModelConstraint.RunnerVersion, c2ModelConstraint.RunnerVersion) {
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -316,6 +442,42 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 	return &Capabilities{bitstring: NewCapabilityString(capList)}, nil
 }
 
+func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities) bool {
+	if bcast == nil || orch == nil {
+		// should not happen, but just in case, return true by default
+		return true
+	}
+	return isVersionCompatible(bcast.constraints.minVersion, orch.Version)
+}
+
+func isVersionCompatible(minVersion, version string) bool {
+	if minVersion == "" {
+		// min version not defined in Gateway, any version is compatible
+		return true
+	}
+	if version == "" || version == "undefined" {
+		// Orchestrator/Transcoder/Runner version is not set, so it's incompatible
+		return false
+	}
+
+	minVer, err := semver.NewVersion(minVersion)
+	if err != nil {
+		glog.Warningf("error while parsing minVersion: %v", err)
+		return true
+	}
+	ver, err := semver.NewVersion(version)
+	if err != nil {
+		glog.Warningf("error while parsing version: %v", err)
+		return false
+	}
+
+	// Ignore prerelease versions as in go-livepeer/ai-runner we actually define post-release suffixes
+	minVerNoSuffix, _ := minVer.SetPrerelease("")
+	verNoSuffix, _ := ver.SetPrerelease("")
+
+	return !verNoSuffix.LessThan(&minVerNoSuffix)
+}
+
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 	// Ensure bcast and orch are compatible with one another.
 
@@ -323,6 +485,9 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		// Weird golang behavior: interface value can evaluate to non-nil
 		// even if the underlying concrete type is nil.
 		// cf. common.CapabilityComparator
+		return false
+	}
+	if !bcast.LivepeerVersionCompatibleWith(orch) {
 		return false
 	}
 
@@ -337,6 +502,11 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
+	orchCapabilityConstraints := CapabilitiesFromNetCapabilities(orch).constraints.perCapability
+	if !bcast.constraints.perCapability.CompatibleWith(orchCapabilityConstraints) {
+		return false
+	}
+
 	return bcast.bitstring.CompatibleWith(orch.Bitstring)
 }
 
@@ -346,9 +516,25 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32)}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion, PerCapability: make(map[uint32]*net.Capabilities_CapabilityConstraints)}}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
+	}
+	if c.constraints.perCapability != nil {
+		for capability, constraints := range c.constraints.perCapability {
+			models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
+					Warm:          modelConstraint.Warm,
+					Capacity:      uint32(modelConstraint.Capacity),
+					RunnerVersion: modelConstraint.RunnerVersion,
+				}
+			}
+
+			netCaps.Constraints.PerCapability[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
+				Models: models,
+			}
+		}
 	}
 	return netCaps
 }
@@ -361,6 +547,8 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		bitstring:   caps.Bitstring,
 		mandatories: caps.Mandatories,
 		capacities:  make(map[Capability]int),
+		version:     caps.Version,
+		constraints: Constraints{minVersion: caps.Constraints.GetMinVersion(), perCapability: make(PerCapabilityConstraints)},
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)
@@ -377,11 +565,25 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 			coreCaps.capacities[Capability(capabilityInt)] = int(capacity)
 		}
 	}
+
+	if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+		for capabilityInt, constraints := range caps.Constraints.PerCapability {
+			models := make(map[string]*ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity), RunnerVersion: modelConstraint.RunnerVersion}
+			}
+
+			coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
+				Models: models,
+			}
+		}
+	}
+
 	return coreCaps
 }
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{capacities: make(map[Capability]int)}
+	c := &Capabilities{capacities: make(map[Capability]int), constraints: Constraints{perCapability: make(PerCapabilityConstraints)}, version: LivepeerVersion}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
@@ -459,7 +661,15 @@ func CapabilityToName(capability Capability) (string, error) {
 	return capName, nil
 }
 
-func InArray(capability Capability, caps []Capability) bool {
+func (c Capability) String() string {
+	name, err := CapabilityToName(c)
+	if err != nil {
+		return fmt.Sprintf("%d", int(c))
+	}
+	return name
+}
+
+func HasCapability(caps []Capability, capability Capability) bool {
 	for _, c := range caps {
 		if capability == c {
 			return true
@@ -566,4 +776,60 @@ func (bcast *Capabilities) LegacyOnly() bool {
 		return false
 	}
 	return bcast.bitstring.CompatibleWith(legacyCapabilityString)
+}
+
+func (bcast *Capabilities) SetPerCapabilityConstraints(constraints PerCapabilityConstraints) {
+	if bcast != nil {
+		bcast.constraints.perCapability = constraints
+	}
+}
+
+func (bcast *Capabilities) PerCapability() PerCapabilityConstraints {
+	if bcast != nil {
+		return bcast.constraints.perCapability
+	}
+	return nil
+}
+
+func (bcast *Capabilities) SetMinVersionConstraint(minVersionConstraint string) {
+	if bcast != nil {
+		bcast.constraints.minVersion = minVersionConstraint
+	}
+}
+
+func (bcast *Capabilities) MinVersionConstraint() string {
+	if bcast != nil {
+		return bcast.constraints.minVersion
+	}
+	return ""
+}
+
+func (bcast *Capabilities) SetMinRunnerVersionConstraint(minVersionsJson string) {
+	type MinVersionEntry struct {
+		ModelID    string `json:"model_id"`
+		Pipeline   string `json:"pipeline"`
+		MinVersion string `json:"minVersion"`
+	}
+	var entries []MinVersionEntry
+	err := json.Unmarshal([]byte(minVersionsJson), &entries)
+	if err != nil {
+		clog.Errorf(context.Background(), "Cannot unmarshal minVersionJson: %v", err)
+		return
+	}
+	for _, e := range entries {
+		if e.ModelID == "" || e.Pipeline == "" || e.MinVersion == "" {
+			clog.Errorf(context.Background(), "Invalid minVersionJson entry: %v", e)
+			continue
+		}
+		c, err := PipelineToCapability(e.Pipeline)
+		if err != nil {
+			clog.Errorf(context.Background(), "Cannot convert pipeline to capability: %v", err)
+			continue
+		}
+		bcast.constraints.perCapability.SetRunnerVersion(c, e.ModelID, e.MinVersion)
+	}
+}
+
+func (bcast *Capabilities) MinRunnerVersionConstraint(cap Capability, modelID string) string {
+	return bcast.constraints.perCapability.GetRunnerVersion(cap, modelID)
 }

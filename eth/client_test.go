@@ -24,7 +24,7 @@ func copyTranscoders(transcoders []*lpTypes.Transcoder) []*lpTypes.Transcoder {
 func TestSimulateTranscoderPool(t *testing.T) {
 	assert := assert.New(t)
 
-	// use copyTranscoders() to avoid mutating the orignal slice
+	// use copyTranscoders() to avoid mutating the original slice
 	transcoders := []*lpTypes.Transcoder{
 		{
 			Address:        ethcommon.HexToAddress("aaa"),

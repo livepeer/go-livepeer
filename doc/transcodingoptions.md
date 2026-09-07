@@ -114,7 +114,7 @@ An example of a full JSON configuration:
 The CLI port has a `/setBroadcastConfig` API . This may be useful if the transcoding options set via CLI flags need to be adjusted at runtime. Note that pricing needs to be set; for offchain transcoding, a placehodler value will suffice.
 
 ```
-curl 'http://localhost:7935/setBroadcastConfig?transcodingOptions=P720p25fps16x9,P240p30fps4x3&maxPricePerUnit=1&pixelsPerUnit=1'
+curl --data-urlencode 'transcodingOptions=P720p25fps16x9,P240p30fps4x3' --data-urlencode 'maxPricePerUnit=1' --data-urlencode 'pixelsPerUnit=1' http://localhost:7935/setBroadcastConfig
 ```
 
 ### `livepeer_cli` tool

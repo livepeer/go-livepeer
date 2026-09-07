@@ -270,7 +270,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(updatedOrch[0].PricePerPixel, orchUpdate.PricePerPixel)
 	assert.Equal(updatedOrch[0].Stake, orchUpdate.Stake)
 
-	// udpating only pricePerPixel
+	// updating only pricePerPixel
 	priceUpdate := &DBOrch{
 		EthereumAddr:  orchAddress,
 		PricePerPixel: 99,
@@ -775,7 +775,7 @@ func TestDBUnbondingLocks(t *testing.T) {
 		return
 	}
 	if len(unbondingLocks) != 2 {
-		t.Error("Unxpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
+		t.Error("Unexpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
 		return
 	}
 

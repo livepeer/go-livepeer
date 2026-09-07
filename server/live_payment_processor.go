@@ -1,0 +1,122 @@
+package server
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/lpms/ffmpeg"
+)
+
+var defaultSegInfo = ffmpeg.MediaFormatInfo{
+	Height: 720,
+	Width:  1280,
+	FPS:    30.0,
+}
+
+type LivePaymentProcessor struct {
+	interval time.Duration
+	units    int64
+
+	lastProcessedAt time.Time
+	lastProcessedMu sync.RWMutex
+	processCh       chan time.Time
+
+	processSegmentFunc func(units int64) error
+}
+
+type segment struct {
+	timestamp time.Time
+	segData   []byte
+}
+
+func NewLV2VPaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
+	units := int64(defaultSegInfo.Height) * int64(defaultSegInfo.Width) * int64(defaultSegInfo.FPS)
+	return newLivePaymentProcessor(ctx, processInterval, units, processSegmentFunc)
+}
+
+func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
+	return newLivePaymentProcessor(ctx, processInterval, 1, processSegmentFunc)
+}
+
+func newLivePaymentProcessor(ctx context.Context, processInterval time.Duration, units int64, processSegmentFunc func(units int64) error) *LivePaymentProcessor {
+	pp := &LivePaymentProcessor{
+		interval: processInterval,
+		units:    units,
+
+		processCh:          make(chan time.Time, 1),
+		processSegmentFunc: processSegmentFunc,
+		lastProcessedAt:    time.Now(),
+	}
+	pp.start(ctx)
+	return pp
+}
+
+func (p *LivePaymentProcessor) start(ctx context.Context) {
+	go func() {
+		for {
+			select {
+			case timestamp := <-p.processCh:
+				p.processOne(ctx, timestamp)
+			case <-ctx.Done():
+				clog.Info(ctx, "Done processing payments for session")
+				return
+			}
+		}
+	}()
+}
+
+func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Time) {
+	if p.shouldSkip(timestamp) {
+		return
+	}
+
+	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
+	unitsSinceLastProcessed := float64(p.units) * secSinceLastProcessed
+	clog.Info(ctx, "Processing live payment", "secsSinceLastProcessed", secSinceLastProcessed, "unitsSinceLastProcessed", unitsSinceLastProcessed)
+
+	processedUnits := int64(unitsSinceLastProcessed)
+	err := p.processSegmentFunc(processedUnits)
+	if err != nil {
+		clog.InfofErr(ctx, "Error processing payment", err)
+		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
+		// return
+	}
+
+	p.lastProcessedMu.Lock()
+	defer p.lastProcessedMu.Unlock()
+	// Advance only by the billed duration so truncated fractional units are
+	// included in a later payment instead of being discarded on every callback.
+	processedDuration := time.Duration(float64(processedUnits) / float64(p.units) * float64(time.Second))
+	p.lastProcessedAt = p.lastProcessedAt.Add(processedDuration)
+}
+
+func (p *LivePaymentProcessor) process(ctx context.Context) {
+	timestamp := time.Now()
+	if p.shouldSkip(timestamp) {
+		// Only need to process segments periodically
+		return
+	}
+
+	go func() {
+		select {
+		case p.processCh <- timestamp:
+		default:
+			// We process one segment at the time, no need to buffer them
+		}
+	}()
+
+	return
+}
+
+func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
+	p.lastProcessedMu.RLock()
+	lastProcessedAt := p.lastProcessedAt
+	p.lastProcessedMu.RUnlock()
+	if lastProcessedAt.Add(p.interval).After(timestamp) {
+		// We don't process every segment, because it's too compute-expensive
+		return true
+	}
+	return false
+}

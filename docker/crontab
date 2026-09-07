@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+BASH_ENV=/etc/environment
+
+*/5 * * * * /opt/mediamtx-metrics.bash >> /var/log/cron.log 2>&1

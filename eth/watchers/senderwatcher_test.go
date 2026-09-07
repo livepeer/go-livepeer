@@ -118,7 +118,7 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	require.Nil(err)
 
-	// if not existant on map; make RPC call and init the map
+	// if not existent on map; make RPC call and init the map
 	_, ok := sw.claimedReserve[stubSender]
 	require.False(ok)
 	lpEth.ClaimedAmount = big.NewInt(5000)
@@ -126,7 +126,7 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 	assert.Nil(err)
 	assert.Zero(lpEth.ClaimedAmount.Cmp(claimed))
 
-	// if existant on map return the map value
+	// if existent on map return the map value
 	sw.claimedReserve[stubSender] = big.NewInt(10000)
 	claimed, err = sw.ClaimedReserve(stubSender, stubClaimant)
 	assert.Nil(err)

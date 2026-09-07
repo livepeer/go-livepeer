@@ -1,11 +1,12 @@
 name: Label issues
+
 on:
   issues:
-    types:
-      - reopened
-      - opened
+    types: [opened, reopened]
+
 jobs:
   label_issues:
+    if: ${{ github.event_name == 'issues' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write

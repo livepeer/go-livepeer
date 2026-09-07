@@ -2,12 +2,15 @@ package starter
 
 import (
 	"errors"
+	"flag"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -87,19 +90,123 @@ func TestIsLocalURL(t *testing.T) {
 	assert.False(isLocal)
 }
 
-func TestParseGetBroadcasterPrices(t *testing.T) {
+func TestIsWildcardIPAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		addr string
+		want bool
+	}{
+		{name: "wildcard with default port", addr: "0.0.0.0:7935", want: true},
+		{name: "wildcard with custom port", addr: "0.0.0.0:1234", want: true},
+		{name: "IPv6 wildcard", addr: "[::]:7935", want: true},
+		{name: "loopback", addr: "127.0.0.1:7935", want: false},
+		{name: "IPv6 loopback", addr: "[::1]:7935", want: false},
+		{name: "hostname", addr: "localhost:7935", want: false},
+		{name: "IPv4 wildcard without port", addr: "0.0.0.0", want: true},
+		{name: "IPv6 wildcard without port", addr: "::", want: true},
+		{name: "bracketed IPv6 wildcard without port", addr: "[::]", want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, isWildcardIPAddr(test.addr))
+		})
+	}
+}
+
+func TestDefaultAddrBareIP(t *testing.T) {
+	assert.Equal(t, "0.0.0.0:7935", defaultAddr("0.0.0.0", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("::", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("[::]", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("::1", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("[::1]", "127.0.0.1", "7935"))
+}
+
+func TestGetServiceURIServiceAddrScheme(t *testing.T) {
+	uri, err := getServiceURI(nil, "127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "https://127.0.0.1:8935", uri.String())
+
+	uri, err = getServiceURI(nil, "http://127.0.0.1:8935")
+	require.NoError(t, err)
+	require.Equal(t, "http://127.0.0.1:8935", uri.String())
+
+	uri, err = getServiceURI(nil, "https://orch.example.com:443")
+	require.NoError(t, err)
+	require.Equal(t, "https://orch.example.com:443", uri.String())
+
+	uri, err = getServiceURI(nil, "gopher://orch.example.com:443")
+	require.NoError(t, err)
+	require.Equal(t, "https://gopher://orch.example.com:443", uri.String())
+
+	uri, err = getServiceURI(nil, "none")
+	require.NoError(t, err)
+	require.Equal(t, "", uri.String())
+}
+
+func TestParseLiveRunnerAddr(t *testing.T) {
+	uri, err := parseLiveRunnerAddr("http://go-livepeer:8935")
+	require.NoError(t, err)
+	require.Equal(t, "http://go-livepeer:8935", uri.String())
+
+	uri, err = parseLiveRunnerAddr("https://public.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "https://public.example.com", uri.String())
+
+	_, err = parseLiveRunnerAddr("go-livepeer:8935")
+	require.Error(t, err)
+
+	_, err = parseLiveRunnerAddr("ftp://go-livepeer:8935")
+	require.Error(t, err)
+}
+
+func TestParseGetGatewayPrices(t *testing.T) {
 	assert := assert.New(t)
 
-	j := `{"broadcasters":[{"ethaddress":"0x0000000000000000000000000000000000000000","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"0x1000000000000000000000000000000000000000","priceperunit":2000,"pixelsperunit":3}]}`
+	// TODO: Keep checking old field for backwards compatibility, remove in future
+	jsonTemplate := `{"%s":[{"ethaddress":"0x0000000000000000000000000000000000000000","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"0x1000000000000000000000000000000000000000","priceperunit":2000,"pixelsperunit":3}]}`
+	testCases := []string{"gateways", "broadcasters"}
 
-	prices := getBroadcasterPrices(j)
+	for _, tc := range testCases {
+		jsonStr := fmt.Sprintf(jsonTemplate, tc)
+
+		prices := getGatewayPrices(jsonStr)
+		assert.NotNil(prices)
+		assert.Equal(2, len(prices))
+
+		price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+		price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+		assert.Equal(big.NewRat(1000, 1), price1)
+		assert.Equal(big.NewRat(2000, 3), price2)
+	}
+}
+
+func TestMaxPricePerCapability(t *testing.T) {
+	assert := assert.New(t)
+
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "image-to-image", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
+
+	prices := getCapabilityPrices(jsonTemplate)
 	assert.NotNil(prices)
-	assert.Equal(2, len(prices))
+	assert.Equal(3, len(prices))
 
-	price1 := big.NewRat(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
-	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	// Confirm Pipeline and ModelID is parsed correctly
+	assert.Equal(prices[0].Pipeline, "text-to-image")
+	assert.Equal(prices[1].Pipeline, "image-to-video")
+	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[1].ModelID, "default")
+
+	// Confirm prices are parsed correctly
+	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	assert.NotEqual(price1, price2)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
+
+	// Confirm modelID is "default" if not set and price set correctly
+	assert.Equal(prices[2].ModelID, "default")
+	price3 := new(big.Rat).Quo(prices[2].PricePerUnit, prices[2].PixelsPerUnit)
+	assert.Equal(big.NewRat(3000, 1), price3)
 }
 
 // Address provided to keystore file
@@ -195,93 +302,10 @@ func TestParse_ParseEthKeystorePathFileNotFound(t *testing.T) {
 }
 
 func TestUpdatePerfScore(t *testing.T) {
-	perfStatsResp := `
-	{
-	  "0x001ffe939761eea3f37dd2223bd08401a3848bf3": {
-	    "FRA": {
-	      "success_rate": 0,
-	      "round_trip_score": 0,
-	      "score": 0
-	    },
-	    "LAX": {
-	      "success_rate": 0.3333333333333333,
-	      "round_trip_score": 0.978674309814987,
-	      "score": 0.326224769938329
-	    },
-	    "LON": {
-	      "success_rate": 0.3333333333333333,
-	      "round_trip_score": 0.9999999981139247,
-	      "score": 0.33333333270464155
-	    },
-	    "MDW": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.8356601580708897,
-	      "score": 0.8356601580708897
-	    },
-	    "NYC": {
-	      "success_rate": 0.6666666666666666,
-	      "round_trip_score": 0.9564037252220472,
-	      "score": 0.6376024834813647
-	    },
-	    "PRG": {
-	      "success_rate": 0.6666666666666666,
-	      "round_trip_score": 0.9988698987407547,
-	      "score": 0.6659132658271698
-	    },
-	    "SAO": {
-	      "success_rate": 0.3333333333333333,
-	      "round_trip_score": 0.8955986338422629,
-	      "score": 0.29853287794742095
-	    },
-	    "SIN": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.9969482179442755,
-	      "score": 0.9969482179442755
-	    }
-	  },
-	  "0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38": {
-	    "FRA": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.6646347113088987,
-	      "score": 0.6646347113088987
-	    },
-	    "LAX": {
-	      "success_rate": 0.8222222222222223,
-	      "round_trip_score": 0.381062716451423,
-	      "score": 0.3133182335267256
-	    },
-	    "LON": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.7694480079804097,
-	      "score": 0.7694480079804097
-	    },
-	    "MDW": {
-	      "success_rate": 0.6222222222222222,
-	      "round_trip_score": 0.36531156012968535,
-	      "score": 0.22730497074735978
-	    },
-	    "NYC": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.543865046753563,
-	      "score": 0.543865046753563
-	    },
-	    "PRG": {
-	      "success_rate": 1,
-	      "round_trip_score": 0.6681529487891555,
-	      "score": 0.6681529487891555
-	    },
-	    "SAO": {
-	      "success_rate": 0.6888888888888888,
-	      "round_trip_score": 0.33652629465036343,
-	      "score": 0.23182922520358365
-	    },
-	    "SIN": {
-	      "success_rate": 0.6,
-	      "round_trip_score": 0.3958106005746348,
-	      "score": 0.23748636034478088
-	    }
-	  }
-	}`
+	b, err := os.ReadFile("test_fixtures/perf_stats.json") // just pass the file name
+	assert.NoError(t, err, "Unable to open test fixture `test_fixtures/perf_stats.json`")
+
+	perfStatsResp := string(b)
 	scores := &common.PerfScore{Scores: map[ethcommon.Address]float64{
 		// some previous data
 		ethcommon.HexToAddress("0x001ffe939761eea3f37dd2223bd08401a3848bf3"): 0.11,
@@ -294,4 +318,239 @@ func TestUpdatePerfScore(t *testing.T) {
 		ethcommon.HexToAddress("0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38"): 0.3133182335267256,
 	}
 	require.Equal(t, expScores, scores.Scores)
+}
+
+func TestParsePricePerUnit(t *testing.T) {
+	tests := []struct {
+		name             string
+		pricePerUnitStr  string
+		expectedPrice    *big.Rat
+		expectedCurrency string
+		expectError      bool
+	}{
+		{
+			name:             "Valid input with integer price",
+			pricePerUnitStr:  "100USD",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with fractional price",
+			pricePerUnitStr:  "0.13USD",
+			expectedPrice:    big.NewRat(13, 100),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with decimal price",
+			pricePerUnitStr:  "99.99EUR",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "EUR",
+			expectError:      false,
+		},
+		{
+			name:             "Lower case currency",
+			pricePerUnitStr:  "99.99eur",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "eur",
+			expectError:      false,
+		},
+		{
+			name:             "Currency with numbers",
+			pricePerUnitStr:  "420DOG3",
+			expectedPrice:    big.NewRat(420, 1),
+			expectedCurrency: "DOG3",
+			expectError:      false,
+		},
+		{
+			name:             "No specified currency, empty currency",
+			pricePerUnitStr:  "100",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "",
+			expectError:      false,
+		},
+		{
+			name:             "Explicit wei currency",
+			pricePerUnitStr:  "100wei",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "wei",
+			expectError:      false,
+		},
+		{
+			name:             "Invalid number",
+			pricePerUnitStr:  "abcUSD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+		{
+			name:             "Negative price",
+			pricePerUnitStr:  "-100USD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			price, currency, err := parsePricePerUnit(tt.pricePerUnitStr)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, tt.expectedPrice.Cmp(price) == 0)
+				assert.Equal(t, tt.expectedCurrency, currency)
+			}
+		})
+	}
+}
+
+func TestPrintConfigRedaction(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a config with sensitive values
+	cfg := DefaultLivepeerConfig()
+	testPassword := "secretpassword123"
+	testApiKey := "api-key-abc123"
+	testOrchSecret := "orch-secret-456"
+	testServiceAddr := "127.0.0.1:8936"
+	testRemoteSignerHeaders := "Authorization:Bearer gateway-token"
+	testRemoteSignerWebhookHeaders := "Authorization:Bearer webhook-token,X-API-Key:secret"
+
+	cfg.EthPassword = &testPassword
+	cfg.LiveAIAuthApiKey = &testApiKey
+	cfg.OrchSecret = &testOrchSecret
+	cfg.ServiceAddr = &testServiceAddr
+	cfg.RemoteSignerHeaders = &testRemoteSignerHeaders
+	cfg.RemoteSignerWebhookHeaders = &testRemoteSignerWebhookHeaders
+
+	// Capture the output
+	var buf []byte
+	writer := &testWriter{buf: &buf}
+	cfg.PrintConfig(writer)
+
+	output := string(buf)
+
+	// Verify sensitive values are redacted
+	assert.NotContains(output, testPassword, "EthPassword should be redacted")
+	assert.NotContains(output, testApiKey, "LiveAIAuthApiKey should be redacted")
+	assert.NotContains(output, testOrchSecret, "OrchSecret should be redacted")
+	assert.NotContains(output, testRemoteSignerHeaders, "RemoteSignerHeaders should be redacted")
+	assert.NotContains(output, testRemoteSignerWebhookHeaders, "RemoteSignerWebhookHeaders should be redacted")
+	assert.Contains(output, "***", "Should contain redacted placeholder")
+
+	// Verify non-sensitive values are still shown
+	assert.Contains(output, testServiceAddr, "ServiceAddr should not be redacted")
+}
+
+func TestParseHeaderMap(t *testing.T) {
+	require := require.New(t)
+	headers := parseHeaderMap("Authorization: Bearer abc, X-Webhook-Secret: webhook-secret, X-API-Key: secret,invalid, :missing-key")
+	require.Equal("Bearer abc", headers["Authorization"])
+	require.Equal("webhook-secret", headers["X-Webhook-Secret"])
+	require.Equal("secret", headers["X-API-Key"])
+	_, exists := headers["invalid"]
+	require.False(exists)
+	_, exists = headers[""]
+	require.False(exists)
+}
+
+func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	err := fs.Parse([]string{
+		"-remoteSignerHeaders", "Authorization:Bearer gateway-token",
+		"-remoteSignerWebhookUrl", "https://example.com/webhook",
+		"-remoteSignerWebhookHeaders", "Authorization:Bearer abc,X-API-Key:secret",
+	})
+	require.NoError(err)
+	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
+	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
+	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
+}
+
+func TestNewLivepeerConfig_EnableCliTxRoutesFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.False(*cfg.CliTxRoutes)
+	require.NoError(fs.Parse([]string{"-enableCliTxRoutes"}))
+	require.True(*cfg.CliTxRoutes)
+}
+
+func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-useLiveRunners"}))
+	require.True(*cfg.UseLiveRunners)
+}
+
+func TestNewLivepeerConfig_LiveRunnerConfigFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerConfig", "/tmp/runners.json"}))
+	require.Equal("/tmp/runners.json", *cfg.LiveRunnerConfig)
+}
+
+func TestNewLivepeerConfig_LiveRunnerProxyURLFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerProxyUrl", "https://{proxy}.example.com"}))
+	require.Equal("https://{proxy}.example.com", *cfg.LiveRunnerProxyURL)
+}
+
+func TestNewLivepeerConfig_LiveRunnerAddrFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.NoError(fs.Parse([]string{"-liveRunnerAddr", "http://go-livepeer:8935"}))
+	require.Equal("http://go-livepeer:8935", *cfg.LiveRunnerAddr)
+}
+
+func TestNewLivepeerConfig_UseLiveWorkersFlagRemoved(t *testing.T) {
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	NewLivepeerConfig(fs)
+	require.Error(t, fs.Parse([]string{"-useLiveWorkers"}))
+}
+
+func TestLiveRunnerOrchSecretLiteralBehavior(t *testing.T) {
+	secret, err := common.ReadFromFile("literal-secret")
+	require.Error(t, err)
+	require.Equal(t, "literal-secret", secret)
+	require.NotEmpty(t, secret)
+}
+
+func TestLiveRunnerManagerConstruction(t *testing.T) {
+	node, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+
+	manager := runner.NewLiveRunnerRegistry(runner.LiveRunnerRegistryConfig{
+		ProxyURLTemplate: "https://example.com/run/{proxy}",
+	})
+	t.Cleanup(manager.Stop)
+	node.LiveRunnerManager = manager
+	require.NotNil(t, node.LiveRunnerManager)
+}
+
+// Helper struct to capture output for testing
+type testWriter struct {
+	buf *[]byte
+}
+
+func (w *testWriter) Write(p []byte) (n int, err error) {
+	*w.buf = append(*w.buf, p...)
+	return len(p), nil
 }
