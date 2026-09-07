@@ -1,17 +1,54 @@
 version: 2
 
 updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: daily
-
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+    # Never resolve a release younger than a week: gives the ecosystem time
+    # to detect and yank compromised versions before we pull them in.
+    cooldown:
+      default-days: 7
+    groups:
+      # go-ethereum uses 1.x versioning where minors are breaking. Keep it
+      # in its own PR so it cannot block the routine group.
+      go-ethereum:
+        patterns:
+          - github.com/ethereum/go-ethereum
+      # One combined PR per week instead of one per package.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # One combined PR; action majors are routine tag moves and CI
+    # validates the grouped PR anyway.
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /docker
     schedule:
-      interval: daily
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Base image choices are deliberate platform decisions, not routine
+    # updates: CUDA is pinned on purpose and Ubuntu majors need manual work.
+    ignore:
+      - dependency-name: nvidia/cuda
+      - dependency-name: ubuntu
+        update-types: ["version-update:semver-major"]
+    groups:
+      docker:
+        patterns:
+          - "*"
