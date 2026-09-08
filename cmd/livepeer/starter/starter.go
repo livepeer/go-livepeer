@@ -1003,8 +1003,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		recipientAddr := n.Eth.Account().Address
 		if *cfg.EthOrchAddr != "" {
 			// HexToAddress silently coerces garbage to the zero address.
-			if !ethcommon.IsHexAddress(*cfg.EthOrchAddr) {
-				exit("-ethOrchAddr %q is not a valid hex address", *cfg.EthOrchAddr)
+			if !common.ValidChecksumAddress(*cfg.EthOrchAddr) {
+				exit("-ethOrchAddr %q is not a valid address (bad hex or EIP-55 checksum)", *cfg.EthOrchAddr)
 			}
 			recipientAddr = ethcommon.HexToAddress(*cfg.EthOrchAddr)
 		}
