@@ -151,6 +151,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: go
+          tools: linked
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
