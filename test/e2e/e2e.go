@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -120,9 +121,32 @@ var newCfg = &orchestratorConfig{
 	ServiceURI:     "127.0.0.1:18545",
 }
 
-func lpCfg() starter.LivepeerConfig {
+// nonLoopbackIPv4 returns an address that the segment-download SSRF guard
+// permits the local e2e nodes to use for their advertised HTTP endpoints.
+func nonLoopbackIPv4(t *testing.T) string {
+	t.Helper()
+
+	addrs, err := net.InterfaceAddrs()
+	require.NoError(t, err)
+	for _, addr := range addrs {
+		ip, _, err := net.ParseCIDR(addr.String())
+		if err != nil {
+			continue
+		}
+		if ip = ip.To4(); ip != nil && ip.IsGlobalUnicast() && !ip.IsLoopback() {
+			return ip.String()
+		}
+	}
+
+	t.Skip("no non-loopback IPv4 address available for e2e HTTP servers")
+	return ""
+}
+
+func lpCfg(t *testing.T) starter.LivepeerConfig {
+	httpHost := nonLoopbackIPv4(t)
+
 	mu.Lock()
-	serviceAddr := fmt.Sprintf("127.0.0.1:%d", httpPort)
+	serviceAddr := fmt.Sprintf("%s:%d", httpHost, httpPort)
 	httpPort++
 	cliAddr := fmt.Sprintf("127.0.0.1:%d", cliPort)
 	cliPort++
@@ -149,6 +173,7 @@ func lpCfg() starter.LivepeerConfig {
 	cfg.InitializeRound = &initializeRound
 	cfg.InitializeRoundMaxDelay = &initializeRoundMaxDelay
 	cfg.CliTxRoutes = boolPointer(true)
+	cfg.HttpIngest = boolPointer(true)
 	return cfg
 }
 
@@ -225,7 +250,7 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, o *livepeer) {
 }
 
 func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
-	lpConf := lpCfg()
+	lpConf := lpCfg(t)
 	lpConf.Orchestrator = boolPointer(true)
 	lpConf.Transcoder = boolPointer(true)
 
@@ -236,7 +261,7 @@ func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *ge
 }
 
 func startOrchestratorWithExistingAccount(t *testing.T, ctx context.Context, geth *gethContainer, ethAcct *string, datadir *string) *livepeer {
-	lpConf := lpCfg()
+	lpConf := lpCfg(t)
 	lpConf.Orchestrator = boolPointer(true)
 	lpConf.Transcoder = boolPointer(true)
 
@@ -269,7 +294,7 @@ func registerOrchestrator(t *testing.T, o *livepeer) {
 }
 
 func startBroadcasterWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
-	lpConf := lpCfg()
+	lpConf := lpCfg(t)
 	lpConf.Broadcaster = boolPointer(true)
 
 	o := startLivepeer(t, lpConf, geth, ctx)
