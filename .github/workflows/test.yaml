@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Block fixup commit merge
         uses: 13rac1/block-fixup-merge-action@v2.0.0
@@ -42,7 +42,7 @@ jobs:
           sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g
 
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -55,7 +55,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: './go.mod'
           cache: true
@@ -63,7 +63,7 @@ jobs:
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /home/runner/compiled
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('install_ffmpeg.sh') }}
@@ -108,7 +108,7 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.4.0
           skip-pkg-cache: true
@@ -131,7 +131,7 @@ jobs:
           ./test_e2e.sh
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CI_CODECOV_TOKEN }}
           files: ./cover.out
@@ -144,7 +144,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -167,7 +167,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v7
         with:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion

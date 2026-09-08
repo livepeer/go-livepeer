@@ -14,13 +14,13 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Download artifacts from build stage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v24
         with:
           workflow: build.yaml
           run_id: ${{ github.event.workflow_run.id }}
@@ -51,7 +51,7 @@ jobs:
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
       - name: Release to github
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: ${{ steps.match-tag.outputs.match != '' }}
         with:
           generate_release_notes: true
