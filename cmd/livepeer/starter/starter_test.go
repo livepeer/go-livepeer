@@ -184,16 +184,16 @@ func TestParseGetGatewayPrices(t *testing.T) {
 func TestMaxPricePerCapability(t *testing.T) {
 	assert := assert.New(t)
 
-	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "image-to-image", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "live-video-to-video", "model_id": "noop", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "live-video-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "byoc", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
 
 	prices := getCapabilityPrices(jsonTemplate)
 	assert.NotNil(prices)
 	assert.Equal(3, len(prices))
 
 	// Confirm Pipeline and ModelID is parsed correctly
-	assert.Equal(prices[0].Pipeline, "text-to-image")
-	assert.Equal(prices[1].Pipeline, "image-to-video")
-	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[0].Pipeline, "live-video-to-video")
+	assert.Equal(prices[1].Pipeline, "live-video-to-video")
+	assert.Equal(prices[0].ModelID, "noop")
 	assert.Equal(prices[1].ModelID, "default")
 
 	// Confirm prices are parsed correctly

@@ -1660,49 +1660,49 @@ func TestAllCapsPriceInfo(t *testing.T) {
 	price1 := big.NewRat(1, 1)
 	price2 := big.NewRat(2, 1)
 	price3 := big.NewRat(3, 1)
-	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price1))
-	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price2))
-	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "default", NewFixedPrice(price3))
+	n.SetBasePriceForCap("default", Capability_LiveVideoToVideo, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr1, Capability_LiveVideoToVideo, "default", NewFixedPrice(price2))
+	n.SetBasePriceForCap(addr2, Capability_BYOC, "default", NewFixedPrice(price3))
 
 	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
 	assert.Nil(t, err)
 	assert.Len(t, prices, 1)
 	for _, price := range prices {
 		switch price.Capability {
-		case uint32(Capability_TextToImage):
+		case uint32(Capability_LiveVideoToVideo):
 			//price set for specific gateway addr1 should override the default price
 			assert.Equal(t, price.PricePerUnit, price2.Num().Int64())
-		case uint32(Capability_ImageToImage):
-			t.Error("should not get ImageToImage price")
+		case uint32(Capability_BYOC):
+			t.Error("should not get BYOC price")
 		}
 	}
 
-	//test addr2 gets default TextToImage price and specific ImageToImage price
+	//test addr2 gets default LiveVideoToVideo price and specific BYOC price
 	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr2))
 	assert.Nil(t, err)
 	assert.Len(t, prices, 2)
 	for _, price := range prices {
 		switch price.Capability {
-		case uint32(Capability_TextToImage):
+		case uint32(Capability_LiveVideoToVideo):
 			//price should be the default price
 			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
-		case uint32(Capability_ImageToImage):
+		case uint32(Capability_BYOC):
 			assert.Equal(t, price.PricePerUnit, price3.Num().Int64())
 		}
 	}
 
-	//test addr3 gets only the default TextToImage price
+	//test addr3 gets only the default LiveVideoToVideo price
 	addr3 := "0x3000000000000000000000000000000000000000"
 	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr3))
 	assert.Nil(t, err)
 	assert.Len(t, prices, 1)
 	for _, price := range prices {
 		switch price.Capability {
-		case uint32(Capability_TextToImage):
+		case uint32(Capability_LiveVideoToVideo):
 			//price should be the default price
 			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
-		case uint32(Capability_ImageToImage):
-			t.Error("should not get ImageToImage price")
+		case uint32(Capability_BYOC):
+			t.Error("should not get BYOC price")
 		}
 	}
 }
@@ -1730,7 +1730,7 @@ func TestBYOCExternalCapsPriceInfo(t *testing.T) {
 	n.SetPriceForExternalCapability("default", "another-service", big.NewRat(20, 1))
 
 	// Also set a built-in cap price so we verify both coexist
-	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(big.NewRat(5, 1)))
+	n.SetBasePriceForCap("default", Capability_LiveVideoToVideo, "default", NewFixedPrice(big.NewRat(5, 1)))
 
 	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
 	assert.Nil(t, err)

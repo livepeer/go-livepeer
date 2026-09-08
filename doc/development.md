@@ -248,23 +248,6 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       ]
     },
     {
-      "name": "Launch AI W (off-chain)",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "cmd/livepeer",
-      "buildFlags": "-ldflags='-extldflags=-lm -X github.com/livepeer/go-livepeer/core.LivepeerVersion=0.0.0'", // Fix missing symbol and version mismatch errors.
-      "args": [
-        "-aiWorker",
-        "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
-        "-v=6",
-        "-nvidia=all",
-        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=${env:HOME}/.lpData/models"
-      ]
-    },
-    {
       "name": "Launch AI G (off-chain)",
       "type": "go",
       "request": "launch",
@@ -323,23 +306,6 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-ethAcctAddr=<ETH_ACCT_ADDR>",
         "-ethOrchAddr=<ORCH_ADDR>",
         "-pricePerUnit=0"
-      ]
-    },
-    {
-      "name": "Launch AI W (on-chain)",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "cmd/livepeer",
-      "buildFlags": "-tags=mainnet,experimental -ldflags='-extldflags=-lm -X github.com/livepeer/go-livepeer/core.LivepeerVersion=0.0.0'", // Fix missing symbol error, version mismatch error and enable mainnet.
-      "args": [
-        "-aiWorker",
-        "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
-        "-v=6",
-        "-nvidia=all",
-        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=${env:HOME}/.lpData/models"
       ]
     },
     {

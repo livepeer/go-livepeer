@@ -89,7 +89,7 @@ curl "http://127.0.0.1:7936/discover-orchestrators"
 curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion"
 
 # Filter by multiple capabilities (OR behavior)
-curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion&caps=text-to-image/black-forest-labs/FLUX.1-dev"
+curl "http://127.0.0.1:7936/discover-orchestrators?caps=live-video-to-video/streamdiffusion&caps=live-video-to-video/comfyui"
 ```
 
 The remote signer periodically retrieves the latest orchestrator capabilities and

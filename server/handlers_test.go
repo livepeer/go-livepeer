@@ -278,16 +278,16 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	//set price per unit for specific pipeline
 	p1, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(1, 1), nil)
 	p2, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(2, 1), nil)
-	p1_pipeline := "text-to-image"
+	p1_pipeline := "live-video-to-video"
 	p1_pipeline_cap, _ := core.PipelineToCapability(p1_pipeline)
 	p1_modelID := "default"
 
-	p2_pipeline := "image-to-image"
+	p2_pipeline := "live-video-to-video"
 	p2_pipeline_cap, _ := core.PipelineToCapability(p2_pipeline)
-	p2_modelID := "default"
+	p2_modelID := "noop"
 
 	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "default", nil)
-	defer BroadcastCfg.SetCapabilityMaxPrice(p2_pipeline_cap, "default", nil)
+	defer BroadcastCfg.SetCapabilityMaxPrice(p2_pipeline_cap, "noop", nil)
 	defer BroadcastCfg.SetCapabilityMaxPrice(p1_pipeline_cap, "stabilityai/sd-turbo", nil)
 
 	status1, _ := postForm(handler, url.Values{
@@ -310,7 +310,7 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusOK, status2)
-	assert.Equal(p2.Value(), BroadcastCfg.getCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
+	assert.Equal(p2.Value(), BroadcastCfg.getCapabilityMaxPrice(p2_pipeline_cap, p2_modelID))
 
 	p1_modelID = "stabilityai/sd-turbo"
 	status1, _ = postForm(handler, url.Values{
@@ -336,7 +336,7 @@ func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
 		"maxPricePerUnit": {"10"},
 		"pixelsPerUnit":   {"1"},
 		"currency":        {"WEI"},
-		"pipeline":        {"text-to-image"},
+		"pipeline":        {"live-video-to-video"},
 		"modelID":         {"default"},
 	})
 
@@ -355,7 +355,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"maxPricePerUnit": {"a"},
 		"pixelsPerUnit":   {"1"},
 		"currency":        {"WEI"},
-		"pipeline":        {"text-to-image"},
+		"pipeline":        {"live-video-to-video"},
 		"modelID":         {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status1)
@@ -365,7 +365,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"a"},
 		"currency":        {"WEI"},
-		"pipeline":        {"text-to-image"},
+		"pipeline":        {"live-video-to-video"},
 		"modelID":         {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status2)
@@ -385,7 +385,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
 		"currency":        {"WEI"},
-		"pipeline":        {"text-to-image"},
+		"pipeline":        {"live-video-to-video"},
 		"modelID":         {""},
 	})
 	assert.Equal(http.StatusBadRequest, status5)
@@ -406,7 +406,7 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 
 	// setup orchestrator remote info to include in db
 	var capPrices []*net.PriceInfo
-	capPrice := &net.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
+	capPrice := &net.PriceInfo{Capability: uint32(core.Capability_LiveVideoToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
 	capPrices = append(capPrices, capPrice)
 	wkrHdw := net.HardwareInformation{
 		Pipeline: "32",
@@ -421,7 +421,7 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	}
 	var hdwList []*net.HardwareInformation
 	hdwList = append(hdwList, &wkrHdw)
-	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, &core.Capabilities{})
+	caps := newAICapabilities(core.Capability_LiveVideoToVideo, "livepeer/model1", true, &core.Capabilities{})
 	orchAddress := pm.RandAddress()
 	var networkCaps []*common.OrchNetworkCapabilities
 	orchNetworkCaps := &common.OrchNetworkCapabilities{
@@ -447,7 +447,7 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	err := json.Unmarshal([]byte(body), &networkCapsResp)
 	assert.Nil(err)
 
-	assert.Equal(networkCapsResp.CapabilitiesNames[core.Capability_AudioToText], core.CapabilityNameLookup[core.Capability_AudioToText])
+	assert.Equal(networkCapsResp.CapabilitiesNames[core.Capability_LiveVideoToVideo], core.CapabilityNameLookup[core.Capability_LiveVideoToVideo])
 	assert.Equal(networkCapsResp.Orchestrators[0].Address, orchAddress.Hex())
 	assert.Equal(networkCapsResp.Orchestrators[0].LocalAddress, orchAddress.Hex())
 	assert.Equal(networkCapsResp.Orchestrators[0].CapabilitiesPrices, capPrices)

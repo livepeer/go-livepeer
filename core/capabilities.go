@@ -78,17 +78,12 @@ const (
 	Capability_H264_Decode_422_10bit      Capability = 24
 	Capability_H264_Decode_420_10bit      Capability = 25
 	Capability_SegmentSlicing             Capability = 26
-	Capability_TextToImage                Capability = 27
-	Capability_ImageToImage               Capability = 28
-	Capability_ImageToVideo               Capability = 29
-	Capability_Upscale                    Capability = 30
-	Capability_AudioToText                Capability = 31
-	Capability_SegmentAnything2           Capability = 32
-	Capability_LLM                        Capability = 33
-	Capability_ImageToText                Capability = 34
-	Capability_LiveVideoToVideo           Capability = 35
-	Capability_TextToSpeech               Capability = 36
-	Capability_BYOC                       Capability = 37
+	// 27-34 and 36 were the removed ai-runner batch pipelines (text-to-image,
+	// image-to-image, image-to-video, upscale, audio-to-text, segment-anything-2,
+	// llm, image-to-text, text-to-speech). They stay reserved because the values
+	// are wire-protocol bit positions.
+	Capability_LiveVideoToVideo Capability = 35
+	Capability_BYOC             Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -120,16 +115,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 	Capability_SegmentSlicing:             "Segment slicing",
-	Capability_TextToImage:                "Text to image",
-	Capability_ImageToImage:               "Image to image",
-	Capability_ImageToVideo:               "Image to video",
-	Capability_Upscale:                    "Upscale",
-	Capability_AudioToText:                "Audio to text",
-	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LLM:                        "Llm",
-	Capability_ImageToText:                "Image to text",
 	Capability_LiveVideoToVideo:           "Live video to video",
-	Capability_TextToSpeech:               "Text to speech",
 	Capability_BYOC:                       "byoc",
 }
 
@@ -216,14 +202,6 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_444_10bit,
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
-		Capability_TextToImage,
-		Capability_ImageToImage,
-		Capability_ImageToVideo,
-		Capability_Upscale,
-		Capability_AudioToText,
-		Capability_SegmentAnything2,
-		Capability_ImageToText,
-		Capability_TextToSpeech,
 	}
 }
 

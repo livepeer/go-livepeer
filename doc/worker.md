@@ -1,7 +1,14 @@
 # AI Worker
 
-The AI Worker node manages [`ai-runner`](https://github.com/livepeer/ai-runner) containers running on the host system.
-These containers are started, monitored and stopped dynamically depending on the usage.
+An orchestrator started with `-aiWorker` manages live runner containers (for example the
+`livepeer/ai-runner:live-app-*` and `daydreamlive/scope-runner` images) running on the host
+system to serve `live-video-to-video`. These containers are started, monitored and stopped
+dynamically depending on the usage.
+
+The batch pipelines of the deprecated [`ai-runner`](https://github.com/livepeer/ai-runner)
+(text-to-image, image-to-image, image-to-video, upscale, audio-to-text, segment-anything-2,
+llm, image-to-text, text-to-speech) and the standalone AI worker node type were removed;
+their routes answer `410 Gone`.
 
 This diagram describes the lifecycle of a container:
 
