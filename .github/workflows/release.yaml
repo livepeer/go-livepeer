@@ -11,8 +11,6 @@ jobs:
   release:
     name: Prepare github release
     runs-on: ubuntu-24.04
-    # Needed to publish the release; declared explicitly so the repository
-    # default token can stay read-only.
     permissions:
       contents: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
