@@ -148,6 +148,37 @@ To rebuild and restart the runner, run the following command:
 make box-runner
 ```
 
+## Live runner
+
+The live runner is the other way to run realtime apps on an orchestrator: the app is a plain HTTP service that registers itself, and the orchestrator reverse-proxies clients to it. These targets test it with the published [runner-app-examples](https://github.com/livepeer/runner-app-examples) images. Stop the box orchestrator first, both use port 8935. Needs `curl` and `jq`. The echo test also needs [uv](https://docs.astral.sh/uv/), `ffmpeg` and `ffplay`.
+
+1. Start an orchestrator with live runners enabled
+
+   ```bash
+   make box-live-runner
+   ```
+
+2. Start the hello-world app. It registers itself with the orchestrator
+
+   ```bash
+   make box-live-runner-app
+   ```
+
+3. Call it through the orchestrator. Prints the discovery entry and `{"message": "Hello, box!"}`
+
+   ```bash
+   make box-live-runner-call
+   ```
+
+For realtime video over trickle, run the echo app instead and pipe a test pattern through it. A blurred test pattern in ffplay is the pass:
+
+```bash
+APP=echo make box-live-runner-app
+make box-live-runner-echo
+```
+
+`DOCKER=true` runs the orchestrator from the `livepeer/go-livepeer` image. `FFMPEG` and `FFPLAY` override the binaries used by the echo test.
+
 ## Frontend
 
 To start the frontend, run the following commands:
