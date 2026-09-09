@@ -1009,6 +1009,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			recipientAddr = ethcommon.HexToAddress(*cfg.EthOrchAddr)
 		}
 
+		n.RecipientAddr = nodeRecipientAddr(*cfg.Orchestrator, *cfg.EthOrchAddr, recipientAddr)
+
 		smCfg := &pm.LocalSenderMonitorConfig{
 			Claimant:        recipientAddr,
 			CleanupInterval: cleanupInterval,
@@ -1087,7 +1089,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
-			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -2340,6 +2341,15 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", ethUri, inferredUri)
 	}
 	return ethUri, nil
+}
+
+// A LIP-118 reward caller has no -orchestrator flag, so -ethOrchAddr alone must qualify.
+func nodeRecipientAddr(isOrchestrator bool, ethOrchAddr string, recipientAddr ethcommon.Address) string {
+	// The zero address means the node's own account, as NewRewardService also treats it.
+	if recipientAddr == (ethcommon.Address{}) || (!isOrchestrator && ethOrchAddr == "") {
+		return ""
+	}
+	return recipientAddr.Hex()
 }
 
 func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
