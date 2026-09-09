@@ -1,8 +1,10 @@
 SHELL=/bin/bash
 GO_BUILD_DIR?="./"
 
-MOCKGEN=go run github.com/golang/mock/mockgen
-ABIGEN=go run github.com/ethereum/go-ethereum/cmd/abigen
+# Generators run on the host even when cross-compiling, so GOOS and GOARCH
+# from the environment must not leak into them.
+MOCKGEN=GOOS= GOARCH= go run github.com/golang/mock/mockgen
+ABIGEN=GOOS= GOARCH= go run github.com/ethereum/go-ethereum/cmd/abigen
 
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
 
