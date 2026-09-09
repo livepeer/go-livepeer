@@ -236,7 +236,13 @@ func (w *wizard) setRewardCaller() {
 		return
 	}
 
-	current := strings.TrimSpace(httpGet(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort)))
+	current, ok := httpGetWithStatus(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort))
+	if !ok {
+		fmt.Printf("Error getting the current reward caller: %v\n", strings.TrimSpace(current))
+		fmt.Println("Not changing the reward caller")
+		return
+	}
+	current = strings.TrimSpace(current)
 
 	var rewardCaller string
 	if current != "" {

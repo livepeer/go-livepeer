@@ -267,19 +267,24 @@ func (w *wizard) readDefaultFloat(def float64) float64 {
 }
 
 func httpGet(url string) string {
+	result, _ := httpGetWithStatus(url)
+	return result
+}
+
+// httpGet returns the body whatever the status, so an error body reads as success.
+func httpGetWithStatus(url string) (string, bool) {
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Error("Error sending HTTP GET", "url", url, "err", err)
-		return ""
+		return "", false
 	}
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil || string(result) == "" {
-		return ""
+	if err != nil {
+		return "", false
 	}
-	return string(result)
-
+	return string(result), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func httpPostWithParams(url string, val url.Values) (string, bool) {
