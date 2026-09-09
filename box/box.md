@@ -2,7 +2,26 @@
 
 ## Requirements
 - Docker is installed (executing `docker` should succeed)
-- [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed)
+- [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed). The gateway also runs the `ffmpeg` on its PATH to publish output to MediaMTX. A broken build there shows up as an empty playback.
+- The runner container can reach the host on port 8935 for trickle. With a default-deny firewall, allow it on the Docker bridge, for example `sudo ufw allow in on docker0 to any port 8935 proto tcp`. Blocked traffic shows up as `no orchestrators available` from the gateway.
+
+## Without an ai-runner checkout
+
+`make box` rebuilds the runner image from a sibling `ai-runner` checkout, which is archived. Pull the images and skip the rebuild instead:
+
+```bash
+docker pull livepeer/ai-runner:live-app-noop
+docker pull livepeerci/mediamtx
+export REBUILD=false
+```
+
+Without a local `mediamtx` binary, run it from the image:
+
+```bash
+docker run --rm --name mediamtx --network host -v $(pwd)/box/mediamtx.yml:/mediamtx.yml livepeerci/mediamtx
+```
+
+The noop runner takes about a minute to start. Wait until `curl http://127.0.0.1:8900/health` returns `{"status":"IDLE"}` before `make box-stream`.
 
 ## Usage (Linux AMD64)
 
