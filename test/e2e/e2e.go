@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"net"
+	gonet "net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
@@ -121,32 +122,25 @@ var newCfg = &orchestratorConfig{
 	ServiceURI:     "127.0.0.1:18545",
 }
 
-// nonLoopbackIPv4 returns an address that the segment-download SSRF guard
-// permits the local e2e nodes to use for their advertised HTTP endpoints.
-func nonLoopbackIPv4(t *testing.T) string {
-	t.Helper()
-
-	addrs, err := net.InterfaceAddrs()
-	require.NoError(t, err)
-	for _, addr := range addrs {
-		ip, _, err := net.ParseCIDR(addr.String())
-		if err != nil {
-			continue
-		}
-		if ip = ip.To4(); ip != nil && ip.IsGlobalUnicast() && !ip.IsLoopback() {
-			return ip.String()
+// localIP returns a non-loopback IPv4 address of this host, since gateways
+// refuse to download segments from loopback addresses. Falls back to
+// 127.0.0.1 with a warning so the tests that do not download still run.
+func localIP() string {
+	addrs, err := gonet.InterfaceAddrs()
+	if err == nil {
+		for _, a := range addrs {
+			if ipn, ok := a.(*gonet.IPNet); ok && !ipn.IP.IsLoopback() && ipn.IP.To4() != nil {
+				return ipn.IP.String()
+			}
 		}
 	}
-
-	t.Skip("no non-loopback IPv4 address available for e2e HTTP servers")
-	return ""
+	glog.Warning("e2e: no non-loopback IPv4 interface, using 127.0.0.1; push tests will fail")
+	return "127.0.0.1"
 }
 
-func lpCfg(t *testing.T) starter.LivepeerConfig {
-	httpHost := nonLoopbackIPv4(t)
-
+func lpCfg() starter.LivepeerConfig {
 	mu.Lock()
-	serviceAddr := fmt.Sprintf("%s:%d", httpHost, httpPort)
+	serviceAddr := fmt.Sprintf("%s:%d", localIP(), httpPort)
 	httpPort++
 	cliAddr := fmt.Sprintf("127.0.0.1:%d", cliPort)
 	cliPort++
@@ -169,11 +163,11 @@ func lpCfg(t *testing.T) starter.LivepeerConfig {
 	cfg.EthPassword = &ethPassword
 	cfg.Network = &network
 	cfg.BlockPollingInterval = &blockPollingInterval
+	// The tests activate and bond orchestrators through the CLI tx routes.
+	cfg.CliTxRoutes = boolPointer(true)
 	cfg.PricePerUnit = &pricePerUnit
 	cfg.InitializeRound = &initializeRound
 	cfg.InitializeRoundMaxDelay = &initializeRoundMaxDelay
-	cfg.CliTxRoutes = boolPointer(true)
-	cfg.HttpIngest = boolPointer(true)
 	return cfg
 }
 
@@ -250,7 +244,7 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, o *livepeer) {
 }
 
 func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
-	lpConf := lpCfg(t)
+	lpConf := lpCfg()
 	lpConf.Orchestrator = boolPointer(true)
 	lpConf.Transcoder = boolPointer(true)
 
@@ -261,7 +255,7 @@ func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *ge
 }
 
 func startOrchestratorWithExistingAccount(t *testing.T, ctx context.Context, geth *gethContainer, ethAcct *string, datadir *string) *livepeer {
-	lpConf := lpCfg(t)
+	lpConf := lpCfg()
 	lpConf.Orchestrator = boolPointer(true)
 	lpConf.Transcoder = boolPointer(true)
 
@@ -294,7 +288,7 @@ func registerOrchestrator(t *testing.T, o *livepeer) {
 }
 
 func startBroadcasterWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
-	lpConf := lpCfg(t)
+	lpConf := lpCfg()
 	lpConf.Broadcaster = boolPointer(true)
 
 	o := startLivepeer(t, lpConf, geth, ctx)
