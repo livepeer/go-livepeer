@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/golang/glog"
-	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
 )
