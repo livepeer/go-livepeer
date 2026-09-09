@@ -8,6 +8,10 @@ ABIGEN=GOOS= GOARCH= go run github.com/ethereum/go-ethereum/cmd/abigen
 
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
 
+# Release builds: skip the generated files, they are committed.
+.PHONY: binaries
+binaries: livepeer livepeer_cli livepeer_router livepeer_bench
+
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
 
