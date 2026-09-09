@@ -60,8 +60,8 @@ ifeq ($(BUILDOS),darwin)
 		cgo_ldflags += -framework CoreFoundation -framework Security
 		ifeq ($(BUILDARCH),amd64)
 			ifeq ($(GOARCH),arm64)
-				cgo_cflags += --target=arm64-apple-macos11
-				cgo_ldflags += --target=arm64-apple-macos11
+				cgo_cflags += --target=arm64-apple-macos13
+				cgo_ldflags += --target=arm64-apple-macos13
 			endif
 		endif
 	endif
