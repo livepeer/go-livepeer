@@ -54,3 +54,4 @@ orchestrator.log
 mediamtx.log
 
 box/supabase
+box/.cache/
