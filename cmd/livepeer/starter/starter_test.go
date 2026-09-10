@@ -7,14 +7,12 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"testing"
-
 	"strings"
+	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/ai/runner"
 	"github.com/livepeer/go-livepeer/common"
-
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
