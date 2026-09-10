@@ -1643,7 +1643,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	httpIngest := true
-
 	*cfg.CliAddr = cliAddr(*cfg.CliAddr, n.NodeType)
 
 	if n.NodeType == core.BroadcasterNode {
@@ -2342,8 +2341,6 @@ func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) erro
 	return nil
 }
 
-// cliAddr returns the address the CLI server binds. Every node type gets a default, so
-// none is left with the empty address that net/http serves on :80.
 func cliAddr(addr string, nodeType core.NodeType) string {
 	const host = "127.0.0.1"
 	switch nodeType {
