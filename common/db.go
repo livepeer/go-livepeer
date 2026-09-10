@@ -37,6 +37,7 @@ type DB struct {
 	winningTicketCount               *sql.Stmt
 	markWinningTicketRedeemed        *sql.Stmt
 	removeWinningTicket              *sql.Stmt
+	clearDeadWinningTickets          *sql.Stmt
 	insertMiniHeader                 *sql.Stmt
 	findLatestMiniHeader             *sql.Stmt
 	findAllMiniHeadersSortedByNumber *sql.Stmt
@@ -324,6 +325,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.markWinningTicketRedeemed = stmt
 
+	// Clear dead tickets
+	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE (redeemedAt IS NULL AND txHash IS NULL AND creationRound < ?) OR (redeemedAt IS NOT NULL AND txHash=?)")
+	if err != nil {
+		glog.Error("Unable to prepare clearDeadWinningTickets ", err)
+		d.Close()
+		return nil, err
+	}
+	d.clearDeadWinningTickets = stmt
+
 	// Insert block header
 	stmt, err = db.Prepare("INSERT INTO blockheaders(number, parent, hash, logs) VALUES(?, ?, ?, ?)")
 	if err != nil {
@@ -404,6 +414,9 @@ func (db *DB) Close() {
 	}
 	if db.removeWinningTicket != nil {
 		db.removeWinningTicket.Close()
+	}
+	if db.clearDeadWinningTickets != nil {
+		db.clearDeadWinningTickets.Close()
 	}
 	if db.insertMiniHeader != nil {
 		db.insertMiniHeader.Close()
@@ -747,6 +760,19 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 		return errors.Wrapf(err, "failed deleting winning ticket sender=%v", ticket.Sender.Hex())
 	}
 	return nil
+}
+
+// ClearDeadWinningTickets removes winning tickets that can never be redeemed: unredeemed
+// tickets with a creationRound older than minCreationRound (outside the redemption validity
+// window) and tickets marked redeemed with a zero txHash (permanently failed redemptions).
+// Live tickets within the validity window and successfully redeemed tickets are kept.
+// It returns the number of removed tickets.
+func (db *DB) ClearDeadWinningTickets(minCreationRound int64) (int64, error) {
+	res, err := db.clearDeadWinningTickets.Exec(minCreationRound, ethcommon.Hash{}.Hex())
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed clearing dead winning tickets minCreationRound=%v", minCreationRound)
+	}
+	return res.RowsAffected()
 }
 
 // SelectEarliestWinningTicket selects the earliest stored winning ticket for a 'sender' that is not expired and not yet redeemed

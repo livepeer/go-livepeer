@@ -189,8 +189,18 @@ func TestTicketQueueLoop_IsNonRetryableTicketErr_MarkAsRedeemed(t *testing.T) {
 	consumeQueue(qc)
 	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
 
-	// Test that ticket is not marked as redeemed if there is an error checking the tx, but the tx did not fail
+	// Test that ticket is marked as redeemed if it is expired on-chain
 	ticket = defaultSignedTicket(sender, 2)
+	addTicket(ticket)
+
+	qc = &queueConsumer{
+		redemptionErr: errors.New("execution reverted: ticket is expired"),
+	}
+	consumeQueue(qc)
+	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
+
+	// Test that ticket is not marked as redeemed if there is an error checking the tx, but the tx did not fail
+	ticket = defaultSignedTicket(sender, 3)
 	addTicket(ticket)
 
 	qc = &queueConsumer{

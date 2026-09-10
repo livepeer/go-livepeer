@@ -1188,6 +1188,83 @@ func TestRemoveWinningTicket(t *testing.T) {
 	require.Equal(count, 0)
 }
 
+func TestClearDeadWinningTickets(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	minCreationRound := int64(100)
+
+	// live unredeemed ticket within the redemption validity window
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.CreationRound = minCreationRound
+	liveTicket := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(liveTicket)
+	require.Nil(err)
+
+	// expired unredeemed ticket outside the redemption validity window
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.CreationRound = minCreationRound - 1
+	expiredTicket := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(expiredTicket)
+	require.Nil(err)
+
+	// ticket whose redemption permanently failed (marked redeemed with a zero txHash)
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.CreationRound = minCreationRound
+	failedTicket := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(failedTicket)
+	require.Nil(err)
+	err = dbh.MarkWinningTicketRedeemed(failedTicket, ethcommon.Hash{})
+	require.Nil(err)
+
+	// successfully redeemed ticket (real txHash)
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.CreationRound = minCreationRound - 1
+	redeemedTicket := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(redeemedTicket)
+	require.Nil(err)
+	err = dbh.MarkWinningTicketRedeemed(redeemedTicket, pm.RandHash())
+	require.Nil(err)
+
+	require.Equal(4, getRowCountOrFatal("SELECT count(sig) FROM ticketQueue", dbraw, t))
+
+	// removes only the expired unredeemed and permanently failed tickets
+	count, err := dbh.ClearDeadWinningTickets(minCreationRound)
+	assert.Nil(err)
+	assert.Equal(int64(2), count)
+
+	assert.Equal(2, getRowCountOrFatal("SELECT count(sig) FROM ticketQueue", dbraw, t))
+	// the live unredeemed ticket is kept
+	assert.Equal(1, getRowCountOrFatal("SELECT count(sig) FROM ticketQueue WHERE redeemedAt IS NULL AND txHash IS NULL", dbraw, t))
+	// the successfully redeemed ticket is kept
+	assert.Equal(1, getRowCountOrFatal("SELECT count(sig) FROM ticketQueue WHERE redeemedAt IS NOT NULL", dbraw, t))
+
+	// clearing again removes nothing
+	count, err = dbh.ClearDeadWinningTickets(minCreationRound)
+	assert.Nil(err)
+	assert.Equal(int64(0), count)
+}
+
 func TestInsertMiniHeader_ReturnsFindLatestMiniHeader(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
