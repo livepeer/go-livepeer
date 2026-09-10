@@ -12,8 +12,8 @@ jobs:
       issues: write
     steps:
       - name: Label issues
-        uses: andymckay/labeler@master
-        with:
-          add-labels: "status: triage"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          ignore-if-assigned: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          gh issue edit "$ISSUE_URL" --add-label "status: triage"
