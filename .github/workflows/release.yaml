@@ -20,14 +20,8 @@ jobs:
         github.event.workflow_run.head_repository.full_name == github.repository
       }}
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_branch }}
-
       - name: Download artifacts from build stage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v24
         with:
           workflow: build.yaml
           run_id: ${{ github.event.workflow_run.id }}
@@ -42,11 +36,15 @@ jobs:
           find . -type f -exec mv '{}' ./ \;
           find . -type d -empty -delete
 
-      - uses: actions-ecosystem/action-regex-match@v2
+      - name: Match release tag
         id: match-tag
-        with:
-          text: ${{ github.event.workflow_run.head_branch }}
-          regex: '^v([0-9]+\.\d+\.\d+)$'
+        shell: bash
+        env:
+          REF_NAME: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [[ "$REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "match=${BASH_REMATCH[0]}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts
         if: ${{ steps.match-tag.outputs.match != '' }}
@@ -58,7 +56,7 @@ jobs:
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
       - name: Release to github
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: ${{ steps.match-tag.outputs.match != '' }}
         with:
           generate_release_notes: true
