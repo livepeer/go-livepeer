@@ -11,6 +11,8 @@ jobs:
   release:
     name: Prepare github release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
