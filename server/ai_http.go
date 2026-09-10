@@ -580,14 +580,15 @@ func (h *lphttp) PaymentForLiveRunnerSession(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	buf, err := proto.Marshal(&lpnet.PaymentResult{Info: oInfo})
+	paymentURL := h.orchestrator.ServiceURI().JoinPath("apps", runnerID, "session", sessionID, "payment").String()
+	data, err := marshalLivePaymentChallengeResponse(oInfo, paymentURL)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to marshal payment result err=%q", err)
+		respondJsonError(ctx, w, err, http.StatusInternalServerError)
 		return
 	}
 	clog.V(common.DEBUG).Infof(ctx, "Live runner session payment processed, current balance=%s", currentBalanceLog(h, payment, segData))
 
-	w.Write(buf)
+	respondJsonOk(w, data)
 }
 
 func (h *lphttp) StopLiveRunnerSessionInternal(w http.ResponseWriter, r *http.Request) {
