@@ -137,6 +137,9 @@ jobs:
   codeql:
     name: Perform CodeQL analysis
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - name: Check out code
