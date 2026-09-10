@@ -11,6 +11,9 @@ jobs:
   release:
     name: Prepare github release
     runs-on: ubuntu-24.04
+    environment:
+      name: github-release
+      url: https://github.com/livepeer/go-livepeer/releases
     permissions:
       contents: write
     if: >-
