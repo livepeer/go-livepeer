@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -293,7 +294,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		monitor.MaxFloat(sender.Hex(), maxFloat)
 	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
-		return nil, errInsufficientSenderReserve
+		return nil, fmt.Errorf("%w: faceValue %v is less than ticketEV %v (sender max float: %v); the sender's reserve is too low for this orchestrator's -ticketEV", errInsufficientSenderReserve, faceValue, r.cfg.EV, maxFloat)
 	}
 
 	// faceValue must be >= txCostWithGasPrice(current gasPrice) OR >= txCostWithGasPrice(avg gasPrice)
@@ -309,7 +310,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// and needs to be redeemed.
 	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
 	if faceValue.Cmp(txCost) < 0 && faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) < 0 {
-		return nil, errInsufficientSenderReserve
+		return nil, fmt.Errorf("%w: faceValue %v cannot cover the ticket redemption tx cost (at current gas price: %v, at avg gas price: %v); increase -maxFaceValue or the sender's reserve", errInsufficientSenderReserve, faceValue, txCost, r.txCostWithGasPrice(avgGasPrice))
 	}
 
 	return faceValue, nil
