@@ -969,3 +969,55 @@ func createMockJobToken(hostUrl string) *JobToken {
 		AvailableCapacity: 1,
 	}
 }
+
+func TestVerifyTokenCreds_OffchainEmptySig(t *testing.T) {
+	// In offchain mode the gateway sends an empty Sig (no keystore to sign
+	// with). The orchestrator's VerifySig short-circuits to true offchain,
+	// so the empty Sig must round-trip through hex.DecodeString without
+	// erroring.
+	mockJobOrch := newMockJobOrchestrator()
+	mockJobOrch.verifySignature = func(addr ethcommon.Address, msg string, sig []byte) bool {
+		return true
+	}
+	bso := &BYOCOrchestratorServer{
+		node: mockJobLivepeerNode(),
+		orch: mockJobOrch,
+	}
+
+	js := &JobSender{
+		Addr: "0x0000000000000000000000000000000000000000",
+		Sig:  "",
+	}
+	jsBytes, _ := json.Marshal(js)
+	creds := base64.StdEncoding.EncodeToString(jsBytes)
+
+	got, err := bso.verifyTokenCreds(context.Background(), creds)
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "", got.Sig)
+}
+
+func TestVerifyTokenCreds_StripsHexPrefix(t *testing.T) {
+	// "0x"-prefixed signatures must be accepted regardless of length.
+	// (Pre-fix code only stripped the prefix when len > 130, breaking
+	// short or empty sigs.)
+	mockJobOrch := newMockJobOrchestrator()
+	mockJobOrch.verifySignature = func(addr ethcommon.Address, msg string, sig []byte) bool {
+		return true
+	}
+	bso := &BYOCOrchestratorServer{
+		node: mockJobLivepeerNode(),
+		orch: mockJobOrch,
+	}
+
+	js := &JobSender{
+		Addr: "0x0000000000000000000000000000000000000000",
+		Sig:  "0xdeadbeef",
+	}
+	jsBytes, _ := json.Marshal(js)
+	creds := base64.StdEncoding.EncodeToString(jsBytes)
+
+	got, err := bso.verifyTokenCreds(context.Background(), creds)
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+}
