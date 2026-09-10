@@ -12,7 +12,7 @@ import (
 // error with a 500 and a plain-text body looks to the caller like a successful read. The
 // reward caller wizard offers to unset the value it reads back, so it must be able to tell
 // an error body from an address.
-func TestHttpGetWithStatus(t *testing.T) {
+func TestHttpGetWithSuccess(t *testing.T) {
 	tests := []struct {
 		name     string
 		status   int
@@ -54,7 +54,7 @@ func TestHttpGetWithStatus(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			body, ok := httpGetWithStatus(srv.URL)
+			body, ok := httpGetWithSuccess(srv.URL)
 			assert.Equal(t, tt.wantBody, body)
 			assert.Equal(t, tt.wantOk, ok)
 		})
@@ -67,7 +67,7 @@ func TestHttpGetUnreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	body, ok := httpGetWithStatus(url)
+	body, ok := httpGetWithSuccess(url)
 	assert.Equal(t, "", body)
 	assert.False(t, ok)
 	assert.Equal(t, "", httpGet(url))
