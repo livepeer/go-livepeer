@@ -247,9 +247,7 @@ func TestDockerManager_Stop(t *testing.T) {
 	defer cancel()
 	containerID := "container1"
 	rc := &RunnerContainer{
-		RunnerContainerConfig: RunnerContainerConfig{
-			ID: containerID,
-		},
+		ID:     containerID,
 		Name:   containerID,
 		Client: mockClient,
 	}
@@ -491,10 +489,9 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Add an unused managed container.
 				dockerManager.containers["container1"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						Pipeline: pipeline,
-						ModelID:  modelID,
-					}}
+					Pipeline: pipeline,
+					ModelID:  modelID,
+				}
 			},
 			expectedHasCapacity: true,
 		},
@@ -523,10 +520,9 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is not available by setting a container for the GPU.
 				dockerManager.gpuContainers["gpu0"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						Pipeline: pipeline,
-						ModelID:  modelID,
-					}}
+					Pipeline: pipeline,
+					ModelID:  modelID,
+				}
 			},
 			expectedHasCapacity: false,
 		},
@@ -645,12 +641,10 @@ func TestDockerManager_allocGPU(t *testing.T) {
 
 	container1 := func(keepWarm bool) *RunnerContainer {
 		return &RunnerContainer{
-			Name: "container1",
-			RunnerContainerConfig: RunnerContainerConfig{
-				ID:       "container1",
-				KeepWarm: keepWarm,
-				GPU:      "gpu0",
-			},
+			Name:     "container1",
+			ID:       "container1",
+			KeepWarm: keepWarm,
+			GPU:      "gpu0",
 		}
 	}
 	tests := []struct {
@@ -733,10 +727,8 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 
 	rc := &RunnerContainer{
 		Name: containerID,
-		RunnerContainerConfig: RunnerContainerConfig{
-			ID:  containerID,
-			GPU: gpu,
-		},
+		ID:   containerID,
+		GPU:  gpu,
 	}
 	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
@@ -766,10 +758,8 @@ func TestDockerManager_watchContainer(t *testing.T) {
 
 		containerID := "container1"
 		rc := &RunnerContainer{
-			Name: containerID,
-			RunnerContainerConfig: RunnerContainerConfig{
-				ID: containerID,
-			},
+			Name:   containerID,
+			ID:     containerID,
 			Client: mockClient,
 		}
 

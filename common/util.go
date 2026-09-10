@@ -395,7 +395,7 @@ func getPCIDefault() ([]*pci.Device, error) {
 		return nil, err
 	}
 
-	return pci.ListDevices(), nil
+	return pci.Devices, nil
 }
 
 var getGPU = getGPUDefault
