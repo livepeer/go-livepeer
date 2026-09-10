@@ -170,6 +170,27 @@ box-stream:
 box-playback:
 	./box/stream.sh playback
 
+.PHONY: box-live-runner
+box-live-runner:
+ifeq ($(strip ${DOCKER}),true)
+	docker build -t livepeer/go-livepeer -f docker/Dockerfile .
+else ifneq ($(strip ${REBUILD}),false)
+	@$(MAKE) livepeer
+endif
+	./box/live-runner.sh orchestrator
+
+.PHONY: box-live-runner-app
+box-live-runner-app:
+	./box/live-runner.sh app
+
+.PHONY: box-live-runner-call
+box-live-runner-call:
+	./box/live-runner.sh call
+
+.PHONY: box-live-runner-echo
+box-live-runner-echo:
+	./box/live-runner.sh echo
+
 .PHONY: box-supabase
 box-supabase:
 	./box/supabase.sh
