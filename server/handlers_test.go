@@ -1069,6 +1069,40 @@ func TestDelegatorInfoHandler(t *testing.T) {
 	assert.Contains(body, `"StartRound":4`)
 }
 
+// A reward caller has no orchestrator node type, so /IsOrchestrator answers false. The CLI
+// needs /IsRewardCaller to tell it apart from a gateway.
+func TestIsRewardCallerHandler(t *testing.T) {
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	tests := []struct {
+		name          string
+		recipientAddr string
+		want          string
+	}{
+		{"reward caller acting for another address", orch.Hex(), "true"},
+		{"orchestrator on its own account", account.Hex(), "false"},
+		{"node with no orchestrator identity", "", "false"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, err := core.NewLivepeerNode(nil, "", nil)
+			require.NoError(t, err)
+			n.RecipientAddr = tt.recipientAddr
+
+			client := &eth.MockClient{}
+			client.On("Account").Return(accounts.Account{Address: account})
+
+			s := &LivepeerServer{LivepeerNode: n}
+			status, body := get(s.isRewardCallerHandler(client))
+
+			assert.Equal(t, http.StatusOK, status)
+			assert.Equal(t, tt.want, body)
+		})
+	}
+}
+
 // On the orchestrator's own account RecipientAddr equals the account, so /reward must
 // keep calling reward() rather than the rewardForTranscoder path.
 func TestRewardHandler(t *testing.T) {

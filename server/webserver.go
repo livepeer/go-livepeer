@@ -50,6 +50,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/orchestratorInfo", s.orchestratorInfoHandler(client))
 	mux.Handle("/IsOrchestrator", s.isOrchestratorHandler())
 	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
+	mux.Handle("/IsRewardCaller", s.isRewardCallerHandler(client))
 
 	// Broadcast / Transcoding config
 	mux.Handle("POST /setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))

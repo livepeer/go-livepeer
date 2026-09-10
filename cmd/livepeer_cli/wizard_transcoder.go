@@ -33,6 +33,11 @@ func (w *wizard) isRedeemer() bool {
 	return isT == "true"
 }
 
+func (w *wizard) isRewardCaller() bool {
+	isRC := httpGet(fmt.Sprintf("http://%v:%v/IsRewardCaller", w.host, w.httpPort))
+	return isRC == "true"
+}
+
 func myHostPort() string {
 	// TODO Fall back to try other services if this one fails. Ask a peer?
 	// 	http://myexternalip.com

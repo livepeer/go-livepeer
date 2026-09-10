@@ -124,6 +124,13 @@ func (s *LivepeerServer) isOrchestratorHandler() http.Handler {
 	})
 }
 
+// A LIP-118 reward caller has no node type, so /IsOrchestrator answers false for it.
+func (s *LivepeerServer) isRewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, []byte(fmt.Sprintf("%v", !s.isOrchestratorAccount(client))))
+	}))
+}
+
 func (s *LivepeerServer) isRedeemerHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.RedeemerNode)))
