@@ -1790,6 +1790,18 @@ func TestMustHaveFormParams_SingleParamRequiredAndProvided(t *testing.T) {
 	assert.Equal("success", body)
 }
 
+func TestMustHaveFormParams_QueryParamNotAccepted(t *testing.T) {
+	assert := assert.New(t)
+	handler := mustHaveFormParams(dummyHandler(), "a")
+	req := httptest.NewRequest(http.MethodPost, "/?a=foo", nil)
+	res := httptest.NewRecorder()
+
+	handler.ServeHTTP(res, req)
+
+	assert.Equal(http.StatusBadRequest, res.Code)
+	assert.Equal("missing form param: a\n", res.Body.String())
+}
+
 func TestMustHaveFormParams_MultipleParamsRequiredOneNotProvided(t *testing.T) {
 	assert := assert.New(t)
 

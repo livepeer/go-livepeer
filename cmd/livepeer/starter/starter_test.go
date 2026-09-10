@@ -90,6 +90,38 @@ func TestIsLocalURL(t *testing.T) {
 	assert.False(isLocal)
 }
 
+func TestIsWildcardIPAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		addr string
+		want bool
+	}{
+		{name: "wildcard with default port", addr: "0.0.0.0:7935", want: true},
+		{name: "wildcard with custom port", addr: "0.0.0.0:1234", want: true},
+		{name: "IPv6 wildcard", addr: "[::]:7935", want: true},
+		{name: "loopback", addr: "127.0.0.1:7935", want: false},
+		{name: "IPv6 loopback", addr: "[::1]:7935", want: false},
+		{name: "hostname", addr: "localhost:7935", want: false},
+		{name: "IPv4 wildcard without port", addr: "0.0.0.0", want: true},
+		{name: "IPv6 wildcard without port", addr: "::", want: true},
+		{name: "bracketed IPv6 wildcard without port", addr: "[::]", want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, isWildcardIPAddr(test.addr))
+		})
+	}
+}
+
+func TestDefaultAddrBareIP(t *testing.T) {
+	assert.Equal(t, "0.0.0.0:7935", defaultAddr("0.0.0.0", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("::", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("[::]", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("::1", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("[::1]", "127.0.0.1", "7935"))
+}
+
 func TestGetServiceURIServiceAddrScheme(t *testing.T) {
 	uri, err := getServiceURI(nil, "127.0.0.1:8935")
 	require.NoError(t, err)
@@ -440,6 +472,16 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer gateway-token", *cfg.RemoteSignerHeaders)
 	require.Equal("https://example.com/webhook", *cfg.RemoteSignerWebhookURL)
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
+}
+
+func TestNewLivepeerConfig_EnableCliTxRoutesFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.False(*cfg.CliTxRoutes)
+	require.NoError(fs.Parse([]string{"-enableCliTxRoutes"}))
+	require.True(*cfg.CliTxRoutes)
 }
 
 func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {

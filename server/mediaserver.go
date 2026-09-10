@@ -112,6 +112,7 @@ type LivepeerServer struct {
 	LivepeerNode            *core.LivepeerNode
 	HTTPMux                 *http.ServeMux
 	ExposeCurrentManifest   bool
+	CliTxRoutes             bool
 	recordingsAuthResponses *cache.Cache
 
 	AISessionManager *AISessionManager
@@ -284,6 +285,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		profiles := []ffmpeg.VideoProfile{}
 		var VerificationFreq uint
 		nonce := common.RandomUint64()
+		configFromHeader := webhookResponseOverride != nil
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
@@ -332,7 +334,12 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 
 			// set OS if it was provided
 			if resp.ObjectStore != "" {
-				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				if configFromHeader {
+					os, err = drivers.ParseOSURLWithHTTPClient(
+						resp.ObjectStore, false, core.LocalhostBlockedHTTPClient())
+				} else {
+					os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				}
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
@@ -341,7 +348,12 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			}
 			// set Recording OS if it was provided
 			if resp.RecordObjectStore != "" {
-				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
+				if configFromHeader {
+					ros, err = drivers.ParseOSURLWithHTTPClient(
+						resp.RecordObjectStore, true, core.LocalhostBlockedHTTPClient())
+				} else {
+					ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
+				}
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
@@ -831,7 +843,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	status, mediaFormat, err := ffmpeg.GetCodecInfoBytes(body)
 	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
-		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
+		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s status=%d format=%q vcodec=%q err=%q",
+			r.URL, status, mediaFormat.Format, mediaFormat.Vcodec, err)
+		return
+	}
+	if (status != ffmpeg.CodecStatusOk && !isZeroFrame) || (isZeroFrame && mediaFormat.Vcodec == "") {
+		errorOut(http.StatusUnprocessableEntity, "Invalid input media url=%s status=%d format=%q vcodec=%q",
+			r.URL, status, mediaFormat.Format, mediaFormat.Vcodec)
 		return
 	}
 

@@ -225,7 +225,7 @@ func (w *wizard) callReward() {
 	}
 
 	fmt.Printf("Calling reward for round %v\n", c)
-	httpGet(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
+	httpPost(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
 }
 
 func (w *wizard) vote() {

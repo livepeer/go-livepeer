@@ -16,6 +16,8 @@ The round initialization service is disabled by default and can be enabled by st
 
 After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priority fee + base fee.
 
+The CLI routes that set gas prices are disabled by default. Start the node with `-enableCliTxRoutes` before using `/setMaxGasPrice` or `/setMinGasPrice` directly or through `livepeer_cli`.
+
 ### Max gas price
 
 The `maxGasPrice` parameter makes sure the transaction fee never exceeds the specified limit.
@@ -31,7 +33,7 @@ The following options can be used to get the max gas price:
 The following options can be used to set the max gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
 
 - Start the node with `-maxGasPrice <MAX_GAS_PRICE>`
-- `curl localhost:7935/setMaxGasPrice?maxGasPrice=<MAX_GAS_PRICE>`
+- `curl --data-urlencode 'amount=<MAX_GAS_PRICE>' localhost:7935/setMaxGasPrice`
 - Run `livepeer_cli` and select the set max gas price option
 
 ### Min gas price
@@ -44,7 +46,7 @@ The following options can be used to get the min gas price:
 The following options can be used to set the min gas price to `<MIN_GAS_PRICE>`, a Wei denominated value:
 
 - Start the node with `-minGasPrice <MIN_GAS_PRICE>`
-- `curl localhost:7935/setMinGasPrice?minGasPrice=<MIN_GAS_PRICE>`
+- `curl --data-urlencode 'minGasPrice=<MIN_GAS_PRICE>' localhost:7935/setMinGasPrice`
 - Run `livepeer_cli` and select the set min gas price option
 
 ### Known edge-cases

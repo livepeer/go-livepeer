@@ -8,8 +8,12 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -680,6 +684,42 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
 	}
 
+}
+
+func TestTranscodeSegmentLoopRejectsLoopbackStorage(t *testing.T) {
+	var hits atomic.Int32
+	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("protected"))
+	}))
+	defer protected.Close()
+
+	oldNodeStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldNodeStorage }()
+
+	for _, storageType := range []net.OSInfo_StorageType{net.OSInfo_S3, net.OSInfo_GOOGLE} {
+		t.Run(storageType.String(), func(t *testing.T) {
+			n, _ := NewLivepeerNode(nil, "", nil)
+			md := StubSegTranscodingMetadata()
+			md.AuthToken.SessionId = t.Name()
+			md.OS = &net.OSInfo{
+				StorageType: storageType,
+				S3Info:      &net.S3OSInfo{Host: protected.URL + "/bucket"},
+			}
+
+			segChan := make(SegmentChan)
+			require.NoError(t, n.transcodeSegmentLoop(context.Background(), md, segChan))
+			close(segChan)
+			defer n.endTranscodingSession(md.AuthToken.SessionId, context.Background())
+
+			storage := n.StorageConfigs[md.AuthToken.SessionId]
+			require.NotNil(t, storage)
+			_, err := storage.OS.SaveData(context.Background(), "segment.ts", strings.NewReader("segment"), nil, time.Second)
+			require.ErrorContains(t, err, "localhost downloads are blocked")
+		})
+	}
+	require.Zero(t, hits.Load())
 }
 
 func TestOrchCheckCapacity(t *testing.T) {
