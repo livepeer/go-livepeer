@@ -17,22 +17,37 @@ updates:
         applies-to: version-updates
         patterns:
           - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
       # One combined PR per week instead of one per package.
       minor-and-patch:
         applies-to: version-updates
         update-types:
           - minor
           - patch
+        exclude-patterns:
+          - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
       go-ethereum-security:
         applies-to: security-updates
         patterns:
           - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
       security-updates:
         applies-to: security-updates
         patterns:
           - "*"
         exclude-patterns:
           - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
+    ignore:
+      # go-tools is pinned to its minio branch, which Dependabot cannot
+      # follow, and every published tag is a downgrade. Update by hand:
+      # go get github.com/livepeer/go-tools@minio. See #4054.
+      - dependency-name: github.com/livepeer/go-tools
+      # docker/cli 29 needs the moby/moby client the AI worker does not use
+      # yet. Drop once the worker moves to moby/moby.
+      - dependency-name: github.com/docker/cli
+        versions: [">=29.0.0"]
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
@@ -58,8 +73,8 @@ updates:
     # updates: CUDA is pinned on purpose and Ubuntu majors need manual work.
     ignore:
       - dependency-name: nvidia/cuda
+      # Ubuntu releases are deliberate LTS choices, not routine bumps.
       - dependency-name: ubuntu
-        update-types: ["version-update:semver-major"]
     groups:
       docker:
         patterns:
