@@ -618,12 +618,59 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if balUpdate.NumTickets <= 0 {
-		// No new tickets are needed when reserved balance already covers the
-		// required minimum credit (fee with ticket EV as the floor). Caller
-		// should retry once balance has been run down further.
-		err = errors.New("no tickets")
-		clog.Errorf(ctx, "No tickets")
-		respondJsonError(ctx, w, err, HTTPStatusNoTickets)
+		// A SKIPPED CYCLE IS A COMPLETED CYCLE, NOT A FAILED ONE.
+		//
+		// The reserved balance already covers the minimum credit, so nothing is
+		// minted. But the service consumed since `LastUpdate` still has to be
+		// debited, and the caller has to be TOLD, because this signer keeps no
+		// state of its own: the balance and the clock both travel with the
+		// client. Answering with a bare error leaves the caller replaying the
+		// same state forever.
+		//
+		// That deadlocks after the FIRST payment rather than occasionally.
+		// Right after minting, existingCredit is numTickets*ev, and minCredit
+		// is max(fee, ev) -- so existingCredit >= minCredit always holds, this
+		// branch is taken every time, and the state never moves. The session
+		// then coasts on its opening payment while every cycle here looks like
+		// a harmless skip, and the orchestrator releases it for `insufficient
+		// balance` once that credit is spent. Measured: a live session funded
+		// one ticket upfront, skipped every 3-second cycle for three minutes,
+		// and was released at the exact moment that ticket's credit ran out.
+		balUpdate.Debit = fee
+		balUpdate.Status = ReceivedChange
+		completeBalanceUpdate(sess, balUpdate)
+		if newBal := sessionBalance.Balance(); newBal != nil {
+			state.Balance = newBal.RatString()
+		}
+		state.LastUpdate = now
+		state.PMSessionID = sess.PMSessionID
+		if senderNonce, nonceErr := sender.Nonce(sess.PMSessionID); nonceErr == nil {
+			state.SenderNonce = senderNonce
+		}
+		stateBytes, err := json.Marshal(state)
+		if err != nil {
+			clog.Errorf(ctx, "Failed to encode RemotePaymentState err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+		stateSig, err := signState(ls, stateBytes)
+		if err != nil {
+			clog.Errorf(ctx, "Could not sign state err=%q", err)
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+		clog.Info(ctx, "No tickets needed", "fee", fee.FloatString(0), "newBalance", state.Balance, "seqNo", state.SequenceNumber)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(HTTPStatusNoTickets)
+		// Keep the usual error body so callers that only read the message see
+		// no change; the state rides alongside it.
+		_ = json.NewEncoder(w).Encode(struct {
+			Error *APIError             `json:"error"`
+			State RemotePaymentStateSig `json:"state"`
+		}{
+			Error: &APIError{Message: "no tickets"},
+			State: RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
+		})
 		return
 	}
 	if balUpdate.NumTickets > 100 {

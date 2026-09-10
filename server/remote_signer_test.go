@@ -1053,6 +1053,89 @@ func TestGenerateLivePayment_LiveBillsElapsedSeconds(t *testing.T) {
 	})
 }
 
+func TestGenerateLivePayment_SkippedCycleAdvancesState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+
+		ethClient := newTestEthClient(t)
+		node, _ := core.NewLivepeerNode(ethClient, "", nil)
+		node.Balances = core.NewAddressBalances(1 * time.Minute)
+		defer node.Balances.StopCleanup()
+		node.Sender = newMockSender(mockSenderConfig{ev: big.NewRat(35, 1)})
+		ls := &LivepeerServer{LivepeerNode: node}
+
+		oInfo := &net.OrchestratorInfo{
+			Address:   ethClient.addr.Bytes(),
+			PriceInfo: &net.PriceInfo{PricePerUnit: 3, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{
+				Recipient: pm.RandAddress().Bytes(),
+			},
+			AuthToken: stubAuthToken,
+		}
+		orchBlob, err := proto.Marshal(oInfo)
+		require.NoError(err)
+
+		pay := func(state RemotePaymentStateSig, manifestID string) (int, RemotePaymentStateSig) {
+			reqBody, err := json.Marshal(RemotePaymentRequest{
+				Orchestrator: orchBlob,
+				ManifestID:   manifestID,
+				Type:         RemoteType_Live,
+				State:        state,
+			})
+			require.NoError(err)
+			req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(reqBody))
+			rr := httptest.NewRecorder()
+			ls.GenerateLivePayment(rr, req)
+			var resp struct {
+				Error *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+				State RemotePaymentStateSig `json:"state"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			if rr.Code == HTTPStatusNoTickets {
+				require.NotNil(resp.Error)
+				require.Contains(resp.Error.Message, "no tickets")
+			}
+			return rr.Code, resp.State
+		}
+		balance := func(s RemotePaymentStateSig) (RemotePaymentState, *big.Rat) {
+			var state RemotePaymentState
+			require.NoError(json.Unmarshal(s.State, &state))
+			bal, ok := new(big.Rat).SetString(state.Balance)
+			require.True(ok, "failed to parse balance: %q", state.Balance)
+			return state, bal
+		}
+
+		// 10 s minimum at 3 wei/s against a 35 wei ticket: balance 5.
+		code, s := pay(RemotePaymentStateSig{}, "")
+		require.Equal(http.StatusOK, code)
+
+		// 1 s later the balance is short of one ticket, so another is minted: 5 + 35 - 3 = 37.
+		time.Sleep(time.Second)
+		code, s = pay(s, "live-manifest")
+		require.Equal(http.StatusOK, code)
+		_, bal := balance(s)
+		require.Zero(bal.Cmp(big.NewRat(37, 1)), "unexpected balance: %s", bal.RatString())
+
+		// 1 s later 37 covers a ticket, so nothing is minted. The cycle is
+		// still billed and the advanced state comes back with the 482.
+		time.Sleep(time.Second)
+		skippedAt := time.Now()
+		code, s = pay(s, "live-manifest")
+		require.Equal(HTTPStatusNoTickets, code)
+		require.NotEmpty(s.State)
+		state, bal := balance(s)
+		require.True(skippedAt.Equal(state.LastUpdate))
+		require.Zero(bal.Cmp(big.NewRat(34, 1)), "unexpected balance after skip: %s", bal.RatString())
+
+		// Carrying that state, the next cycle is short again and mints.
+		time.Sleep(time.Second)
+		code, _ = pay(s, "live-manifest")
+		require.Equal(http.StatusOK, code)
+	})
+}
+
 func TestGenerateLivePayment_FixedBillsOneUnitAndAllowsState(t *testing.T) {
 	require := require.New(t)
 
