@@ -6,6 +6,7 @@
 
 * CLI: Privileged HTTP endpoints on port 7935 now require `POST`.
 * CLI: Routes on port 7935 that submit Ethereum transactions, sign messages, or change gas controls are disabled by default unless the node is started with `-enableCliTxRoutes`
+* Gateway: Orchestrators must advertise a routable service address. When a gateway and an orchestrator run on the same machine, start the orchestrator with `-serviceAddr <host-ip>:8935` instead of `127.0.0.1`, `localhost` or `0.0.0.0`, and point the gateway's `-orchAddr` at that address.
 
 ## v0.9.1
 
