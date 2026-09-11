@@ -11,6 +11,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.Network = fs.String("network", *cfg.Network, "Network to connect to")
 	cfg.RtmpAddr = fs.String("rtmpAddr", *cfg.RtmpAddr, "Address to bind for RTMP commands")
 	cfg.CliAddr = fs.String("cliAddr", *cfg.CliAddr, "Address to bind for  CLI commands")
+	cfg.CliTxRoutes = fs.Bool("enableCliTxRoutes", *cfg.CliTxRoutes, "Enable CLI routes that submit Ethereum transactions, sign messages, or change gas price controls")
 	cfg.HttpAddr = fs.String("httpAddr", *cfg.HttpAddr, "Address to bind for HTTP commands")
 	cfg.ServiceAddr = fs.String("serviceAddr", *cfg.ServiceAddr, "Orchestrator only. Overrides the on-chain serviceURI that gateways can use to contact this node; may be an IP or hostname.")
 	cfg.Nodes = fs.String("nodes", *cfg.Nodes, "Comma-separated list of instance URLs for this orchestrator")

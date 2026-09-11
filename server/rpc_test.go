@@ -1358,6 +1358,7 @@ func TestRefreshPayment_ReturnsPinnedPaymentChallenge(t *testing.T) {
 	challenge, got := decodeLiveRunnerPaymentChallenge(t, rr.Body.Bytes())
 	require.Equal(t, "http://orch.example", challenge.Orchestrator)
 	require.Equal(t, string(manifestID), challenge.ManifestID)
+	require.Equal(t, "http://orch.example/payment", challenge.PaymentURL)
 	require.Equal(t, "http://orch.example", got.Transcoder)
 	require.True(t, proto.Equal(ticketParams, got.TicketParams))
 	require.Equal(t, int64(7), got.PriceInfo.PricePerUnit)

@@ -90,6 +90,38 @@ func TestIsLocalURL(t *testing.T) {
 	assert.False(isLocal)
 }
 
+func TestIsWildcardIPAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		addr string
+		want bool
+	}{
+		{name: "wildcard with default port", addr: "0.0.0.0:7935", want: true},
+		{name: "wildcard with custom port", addr: "0.0.0.0:1234", want: true},
+		{name: "IPv6 wildcard", addr: "[::]:7935", want: true},
+		{name: "loopback", addr: "127.0.0.1:7935", want: false},
+		{name: "IPv6 loopback", addr: "[::1]:7935", want: false},
+		{name: "hostname", addr: "localhost:7935", want: false},
+		{name: "IPv4 wildcard without port", addr: "0.0.0.0", want: true},
+		{name: "IPv6 wildcard without port", addr: "::", want: true},
+		{name: "bracketed IPv6 wildcard without port", addr: "[::]", want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, isWildcardIPAddr(test.addr))
+		})
+	}
+}
+
+func TestDefaultAddrBareIP(t *testing.T) {
+	assert.Equal(t, "0.0.0.0:7935", defaultAddr("0.0.0.0", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("::", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::]:7935", defaultAddr("[::]", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("::1", "127.0.0.1", "7935"))
+	assert.Equal(t, "[::1]:7935", defaultAddr("[::1]", "127.0.0.1", "7935"))
+}
+
 func TestGetServiceURIServiceAddrScheme(t *testing.T) {
 	uri, err := getServiceURI(nil, "127.0.0.1:8935")
 	require.NoError(t, err)
@@ -442,6 +474,16 @@ func TestNewLivepeerConfig_RemoteSignerWebhookFlags(t *testing.T) {
 	require.Equal("Authorization:Bearer abc,X-API-Key:secret", *cfg.RemoteSignerWebhookHeaders)
 }
 
+func TestNewLivepeerConfig_EnableCliTxRoutesFlag(t *testing.T) {
+	require := require.New(t)
+
+	fs := flag.NewFlagSet("livepeer-test", flag.ContinueOnError)
+	cfg := NewLivepeerConfig(fs)
+	require.False(*cfg.CliTxRoutes)
+	require.NoError(fs.Parse([]string{"-enableCliTxRoutes"}))
+	require.True(*cfg.CliTxRoutes)
+}
+
 func TestNewLivepeerConfig_UseLiveRunnersFlag(t *testing.T) {
 	require := require.New(t)
 
@@ -511,4 +553,57 @@ type testWriter struct {
 func (w *testWriter) Write(p []byte) (n int, err error) {
 	*w.buf = append(*w.buf, p...)
 	return len(p), nil
+}
+
+func TestNodeRecipientAddr(t *testing.T) {
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	tests := []struct {
+		name           string
+		isOrchestrator bool
+		ethOrchAddr    string
+		recipientAddr  ethcommon.Address
+		want           string
+	}{
+		{
+			name:           "orchestrator on its own account",
+			isOrchestrator: true,
+			recipientAddr:  account,
+			want:           account.Hex(),
+		},
+		{
+			name:           "orchestrator with -ethOrchAddr",
+			isOrchestrator: true,
+			ethOrchAddr:    orch.Hex(),
+			recipientAddr:  orch,
+			want:           orch.Hex(),
+		},
+		{
+			name:          "reward caller without -orchestrator",
+			ethOrchAddr:   orch.Hex(),
+			recipientAddr: orch,
+			want:          orch.Hex(),
+		},
+		{
+			name:          "node with no orchestrator identity",
+			recipientAddr: account,
+			want:          "",
+		},
+		{
+			// The reward service reads the zero address as the node's own account, so
+			// the CLI endpoints must not key on the zero address instead.
+			name:          "-ethOrchAddr set to the zero address",
+			ethOrchAddr:   "0x0000000000000000000000000000000000000000",
+			recipientAddr: ethcommon.Address{},
+			want:          "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := nodeRecipientAddr(tt.isOrchestrator, tt.ethOrchAddr, tt.recipientAddr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

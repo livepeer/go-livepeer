@@ -909,7 +909,8 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 		var orchOS drivers.OSSession
 		if len(od.RemoteInfo.Storage) > 0 {
-			orchOS = drivers.NewSession(core.FromNetOsInfo(od.RemoteInfo.Storage[0]))
+			orchOS = drivers.NewSessionWithHTTPClient(
+				core.FromNetOsInfo(od.RemoteInfo.Storage[0]), core.LocalhostBlockedHTTPClient())
 		}
 
 		bcastOS := params.OS
@@ -1558,7 +1559,8 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 	sess.OrchestratorInfo = oInfo
 
 	if len(oInfo.Storage) > 0 {
-		sess.OrchestratorOS = drivers.NewSession(core.FromNetOsInfo(oInfo.Storage[0]))
+		sess.OrchestratorOS = drivers.NewSessionWithHTTPClient(
+			core.FromNetOsInfo(oInfo.Storage[0]), core.LocalhostBlockedHTTPClient())
 	}
 
 	if sess.Sender != nil && oInfo.TicketParams != nil {

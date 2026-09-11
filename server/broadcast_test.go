@@ -7,9 +7,11 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1123,6 +1125,12 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 
 func TestUpdateSession(t *testing.T) {
 	assert := assert.New(t)
+	var storageRequests atomic.Int32
+	storageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		storageRequests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer storageServer.Close()
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
@@ -1139,7 +1147,7 @@ func TestUpdateSession(t *testing.T) {
 		Storage: []*net.OSInfo{
 			{
 				StorageType: 1,
-				S3Info:      &net.S3OSInfo{Host: "http://apple.com"},
+				S3Info:      &net.S3OSInfo{Host: storageServer.URL + "/bucket"},
 			},
 		},
 	}
@@ -1152,6 +1160,9 @@ func TestUpdateSession(t *testing.T) {
 	// Check that a new PM session is not created because BroadcastSession.Sender = nil
 	assert.Equal("foo", sess.PMSessionID)
 	assert.Equal(info.Transcoder, sess.Transcoder())
+	_, err := sess.OrchestratorOS.SaveData(context.Background(), "segment.ts", strings.NewReader("segment"), nil, time.Second)
+	require.ErrorContains(t, err, "localhost downloads are blocked")
+	assert.Zero(storageRequests.Load())
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
@@ -1483,6 +1494,35 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	_, ok := cxn.sessManager.trustedPool.sessMap[sess.OrchestratorInfo.GetTranscoder()]
 	assert.False(ok)
 	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
+}
+
+func TestDownloadResultsRejectsLoopbackURL(t *testing.T) {
+	var hits atomic.Int32
+	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("protected"))
+	}))
+	defer protected.Close()
+
+	sess := StubBroadcastSession("https://orchestrator.example")
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	cxn := &rtmpConnection{
+		pl:          &stubPlaylistManager{},
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+	res := &ReceivedTranscodeResult{TranscodeData: &net.TranscodeData{
+		Segments: []*net.TranscodedSegmentData{{Url: protected.URL}},
+	}}
+	verifier := newStubSegmentVerifier(&stubVerifier{retries: 1})
+
+	oldDownloadSeg := downloadSeg
+	downloadSeg = core.DownloadData
+	defer func() { downloadSeg = oldDownloadSeg }()
+
+	_, err := downloadResults(context.Background(), cxn, &stream.HLSSegment{}, sess, res, verifier)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "localhost downloads are blocked")
+	require.Zero(t, hits.Load())
 }
 
 func TestRefreshSession(t *testing.T) {

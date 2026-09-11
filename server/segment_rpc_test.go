@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	gonet "net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,6 +122,59 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Equal("Forbidden", strings.TrimSpace(string(body)))
+}
+
+func TestServeSegment_RejectsLoopbackURI(t *testing.T) {
+	var hits atomic.Int32
+	protected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("protected"))
+	}))
+	defer protected.Close()
+
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
+	}
+	creds, err := genSegCreds(s, &stream.HLSSegment{Data: []byte("segment")}, nil, false)
+	require.NoError(t, err)
+
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldStorage }()
+	serviceURL, err := url.Parse("foo")
+	require.NoError(t, err)
+	orch.On("ServiceURI").Return(serviceURL)
+	orch.On("Nodes").Return(nil)
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("ProcessPayment", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
+
+	headers := map[string]string{
+		paymentHeader:  "",
+		segmentHeader:  creds,
+		"Content-Type": "application/vnd+livepeer.uri",
+	}
+	resp := httpPostResp(handler, strings.NewReader(protected.URL), headers)
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "BadRequest", strings.TrimSpace(string(body)))
+	require.Zero(t, hits.Load())
 }
 
 func TestServeSegment_TranscodeSegError(t *testing.T) {
@@ -2222,6 +2277,43 @@ func stubTLSServer() (*httptest.Server, *http.ServeMux) {
 		NextProtos: []string{http2.NextProtoTLS},
 	}
 	ts.StartTLS()
+
+	return ts, mux
+}
+
+func stubNonLoopbackTLSServer(t *testing.T) (*httptest.Server, *http.ServeMux) {
+	t.Helper()
+
+	addrs, err := gonet.InterfaceAddrs()
+	require.NoError(t, err)
+	var host gonet.IP
+	for _, addr := range addrs {
+		ip, _, err := gonet.ParseCIDR(addr.String())
+		if err != nil {
+			continue
+		}
+		if ip = ip.To4(); ip != nil && ip.IsGlobalUnicast() && !ip.IsLoopback() {
+			host = ip
+			break
+		}
+	}
+	if host == nil {
+		t.Skip("no non-loopback IPv4 interface available")
+	}
+
+	mux := http.NewServeMux()
+	ts := httptest.NewUnstartedServer(mux)
+	require.NoError(t, ts.Listener.Close())
+	ts.Listener, err = gonet.Listen("tcp4", "0.0.0.0:0")
+	require.NoError(t, err)
+	ts.TLS = &tls.Config{
+		NextProtos: []string{http2.NextProtoTLS},
+	}
+	ts.StartTLS()
+
+	_, port, err := gonet.SplitHostPort(ts.Listener.Addr().String())
+	require.NoError(t, err)
+	ts.URL = "https://" + gonet.JoinHostPort(host.String(), port)
 
 	return ts, mux
 }

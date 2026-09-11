@@ -103,8 +103,8 @@ type orchInfo struct {
 
 func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addr := client.Account().Address
-		t, err := client.GetTranscoder(addr)
+		// Report the orchestrator's record; a reward caller account's is empty.
+		t, err := client.GetTranscoder(s.orchestratorAddr(client))
 		if err != nil {
 			respond500(w, "could not get transcoder")
 			return
@@ -124,6 +124,13 @@ func (s *LivepeerServer) isOrchestratorHandler() http.Handler {
 	})
 }
 
+// A LIP-118 reward caller has no node type, so /IsOrchestrator answers false for it.
+func (s *LivepeerServer) isRewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, []byte(fmt.Sprintf("%v", !s.isOrchestratorAccount(client))))
+	}))
+}
+
 func (s *LivepeerServer) isRedeemerHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.RedeemerNode)))
@@ -133,10 +140,10 @@ func (s *LivepeerServer) isRedeemerHandler() http.Handler {
 // Broadcast / Transcoding config
 func setBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pricePerUnit := r.FormValue("maxPricePerUnit")
-		pixelsPerUnit := r.FormValue("pixelsPerUnit")
-		currency := r.FormValue("currency")
-		transcodingOptions := r.FormValue("transcodingOptions")
+		pricePerUnit := r.PostFormValue("maxPricePerUnit")
+		pixelsPerUnit := r.PostFormValue("pixelsPerUnit")
+		currency := r.PostFormValue("currency")
+		transcodingOptions := r.PostFormValue("transcodingOptions")
 
 		if (pricePerUnit == "" || pixelsPerUnit == "") && transcodingOptions == "" {
 			respond400(w, "missing form params (maxPricePerUnit AND pixelsPerUnit) or transcodingOptions")
@@ -202,11 +209,11 @@ func setBroadcastConfigHandler() http.Handler {
 func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.BroadcasterNode {
-			maxPricePerUnit := r.FormValue("maxPricePerUnit")
-			pixelsPerUnit := r.FormValue("pixelsPerUnit")
-			currency := r.FormValue("currency")
-			pipeline := r.FormValue("pipeline")
-			modelID := r.FormValue("modelID")
+			maxPricePerUnit := r.PostFormValue("maxPricePerUnit")
+			pixelsPerUnit := r.PostFormValue("pixelsPerUnit")
+			currency := r.PostFormValue("currency")
+			pipeline := r.PostFormValue("pipeline")
+			modelID := r.PostFormValue("modelID")
 
 			if pipeline == "" || modelID == "" {
 				respond400(w, "pipeline and modelID must be set")
@@ -451,6 +458,39 @@ func roundInitializedHandler(client eth.LivepeerEthClient) http.Handler {
 }
 
 // Orchestrator registration/activation
+
+// orchestratorAddr returns the on-chain orchestrator this node acts for: -ethOrchAddr when
+// set, otherwise the node's own account.
+func (s *LivepeerServer) orchestratorAddr(client eth.LivepeerEthClient) ethcommon.Address {
+	if s.LivepeerNode != nil && s.LivepeerNode.RecipientAddr != "" {
+		return ethcommon.HexToAddress(s.LivepeerNode.RecipientAddr)
+	}
+	return client.Account().Address
+}
+
+// isOrchestratorAccount reports whether the node's account is the orchestrator itself, i.e.
+// -ethOrchAddr is unset or equals the account.
+func (s *LivepeerServer) isOrchestratorAccount(client eth.LivepeerEthClient) bool {
+	return s.orchestratorAddr(client) == client.Account().Address
+}
+
+// mustBeOrchestratorAccount rejects requests unless the node's account is the orchestrator.
+// The wrapped handlers send transactions the contracts key on msg.sender; setServiceURI and
+// setRewardCaller have no caller check and would silently write to the wrong key.
+func (s *LivepeerServer) mustBeOrchestratorAccount(client eth.LivepeerEthClient, h http.Handler) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.isOrchestratorAccount(client) {
+			respond400(w, fmt.Sprintf(
+				"node account %v is not orchestrator %v; "+
+					"orchestrator configuration must be sent from the orchestrator's own account",
+				client.Account().Address.Hex(), s.orchestratorAddr(client).Hex(),
+			))
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+}
+
 func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t, err := client.GetTranscoder(client.Account().Address)
@@ -476,33 +516,33 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			return
 		}
 
-		blockRewardCutStr := r.FormValue("blockRewardCut")
+		blockRewardCutStr := r.PostFormValue("blockRewardCut")
 		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 64)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		feeShareStr := r.FormValue("feeShare")
+		feeShareStr := r.PostFormValue("feeShare")
 		feeShare, err := strconv.ParseFloat(feeShareStr, 64)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		pricePerUnit, pixelsPerUnit, currency := r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit"), r.FormValue("currency")
+		pricePerUnit, pixelsPerUnit, currency := r.PostFormValue("pricePerUnit"), r.PostFormValue("pixelsPerUnit"), r.PostFormValue("currency")
 		if err := s.setOrchestratorPriceInfo("default", pricePerUnit, pixelsPerUnit, currency); err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		serviceURI := r.FormValue("serviceURI")
+		serviceURI := r.PostFormValue("serviceURI")
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
 			respond400(w, err.Error())
 			return
 		}
 
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		if unbondingLockIDStr != "" {
 			unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 			if err != nil {
@@ -525,7 +565,7 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			}
 		}
 
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		if amountStr != "" {
 			amount, err := common.ParseBigInt(amountStr)
 			if err != nil {
@@ -583,9 +623,9 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 
 func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pixels := r.FormValue("pixelsPerUnit")
-		price := r.FormValue("pricePerUnit")
-		currency := r.FormValue("currency")
+		pixels := r.PostFormValue("pixelsPerUnit")
+		price := r.PostFormValue("pricePerUnit")
+		currency := r.PostFormValue("currency")
 		if pixels != "" && price != "" {
 			if err := s.setOrchestratorPriceInfo("default", price, pixels, currency); err != nil {
 				respond400(w, err.Error())
@@ -598,7 +638,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			feeShare       float64
 			err            error
 		)
-		blockRewardCutStr := r.FormValue("blockRewardCut")
+		blockRewardCutStr := r.PostFormValue("blockRewardCut")
 
 		if blockRewardCutStr != "" {
 			blockRewardCut, err = strconv.ParseFloat(blockRewardCutStr, 64)
@@ -609,7 +649,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			}
 		}
 
-		feeShareStr := r.FormValue("feeShare")
+		feeShareStr := r.PostFormValue("feeShare")
 		if feeShareStr != "" {
 			feeShare, err = strconv.ParseFloat(feeShareStr, 64)
 			if err != nil {
@@ -641,7 +681,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 			}
 		}
 
-		serviceURI := r.FormValue("serviceURI")
+		serviceURI := r.PostFormValue("serviceURI")
 		if serviceURI != "" {
 			if _, err := url.ParseRequestURI(serviceURI); err != nil {
 				respond400(w, err.Error())
@@ -737,7 +777,7 @@ func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI 
 func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.OrchestratorNode {
-			maxfacevalue := r.FormValue("maxfacevalue")
+			maxfacevalue := r.PostFormValue("maxfacevalue")
 			if maxfacevalue != "" {
 				mfv, success := new(big.Int).SetString(maxfacevalue, 10)
 				if success {
@@ -759,10 +799,10 @@ func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.OrchestratorNode {
-			pricePerUnitStr := r.FormValue("pricePerUnit")
-			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
-			currency := r.FormValue("currency")
-			broadcasterEthAddr := r.FormValue("broadcasterEthAddr")
+			pricePerUnitStr := r.PostFormValue("pricePerUnit")
+			pixelsPerUnitStr := r.PostFormValue("pixelsPerUnit")
+			currency := r.PostFormValue("currency")
+			broadcasterEthAddr := r.PostFormValue("broadcasterEthAddr")
 
 			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr, currency)
 			if err == nil {
@@ -778,7 +818,7 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 
 func (s *LivepeerServer) setMaxSessions() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		frmMaxSessions := r.FormValue("maxSessions")
+		frmMaxSessions := r.PostFormValue("maxSessions")
 		if frmMaxSessions == "auto" {
 			s.LivepeerNode.AutoSessionLimit = true
 			s.LivepeerNode.SetMaxSessions(s.LivepeerNode.GetCurrentCapacity())
@@ -800,13 +840,13 @@ func (s *LivepeerServer) setMaxSessions() http.Handler {
 // Bond, withdraw, reward
 func bondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
 			return
 		}
-		toAddr := r.FormValue("toAddr")
+		toAddr := r.PostFormValue("toAddr")
 
 		tx, err := client.Bond(amount, ethcommon.HexToAddress(toAddr))
 		if err != nil {
@@ -825,7 +865,7 @@ func bondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 		if err != nil {
 			glog.Errorf("Cannot convert unbondingLockId: %v", err)
@@ -833,7 +873,7 @@ func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		var tx *ethtypes.Transaction
-		toAddr := r.FormValue("toAddr")
+		toAddr := r.PostFormValue("toAddr")
 		if toAddr != "" {
 			tx, err = client.RebondFromUnbonded(ethcommon.HexToAddress(toAddr), unbondingLockID)
 		} else {
@@ -855,7 +895,7 @@ func rebondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func unbondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amountStr := r.FormValue("amount")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
@@ -879,7 +919,7 @@ func unbondHandler(client eth.LivepeerEthClient) http.Handler {
 
 func withdrawStakeHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		unbondingLockIDStr := r.PostFormValue("unbondingLockId")
 		unbondingLockID, err := common.ParseBigInt(unbondingLockIDStr)
 		if err != nil {
 			respond400(w, fmt.Sprintf("Cannot convert unbondingLockId: %v", err))
@@ -986,7 +1026,7 @@ func withdrawFeesHandler(client eth.LivepeerEthClient, db ChainIdGetter) http.Ha
 			}
 		} else {
 			// L2 contracts
-			amountStr := r.FormValue("amount")
+			amountStr := r.PostFormValue("amount")
 			if amountStr == "" {
 				respond400(w, "missing form param: amount")
 				return
@@ -1101,10 +1141,20 @@ func registeredOrchestratorsHandler(client eth.LivepeerEthClient, db *common.DB)
 	})))
 }
 
-func rewardHandler(client eth.LivepeerEthClient) http.Handler {
+func (s *LivepeerServer) rewardHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		glog.Infof("Calling reward")
-		tx, err := client.Reward()
+		var (
+			tx  *ethtypes.Transaction
+			err error
+		)
+		if !s.isOrchestratorAccount(client) {
+			orch := s.orchestratorAddr(client)
+			glog.Infof("Calling reward for orchestrator %v", orch.Hex())
+			tx, err = client.RewardForTranscoder(orch)
+		} else {
+			glog.Infof("Calling reward")
+			tx, err = client.Reward()
+		}
 		if err != nil {
 			respond500(w, fmt.Sprintf("Error calling reward: %v", err))
 			return
@@ -1115,6 +1165,66 @@ func rewardHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 		glog.Infof("Call to reward successful")
 		respondOk(w, nil)
+	}))
+}
+
+// setRewardCallerHandler authorizes an address to call reward on behalf of this node's
+// account (LIP-118). The rewardCaller param is required; an empty value unsets any
+// existing authorization, so an absent param never revokes by accident.
+func (s *LivepeerServer) setRewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			respond500(w, fmt.Sprintf("parse form error: %v", err))
+			return
+		}
+		if _, ok := r.PostForm["rewardCaller"]; !ok {
+			respond400(w, "missing form param: rewardCaller (send it empty to unset)")
+			return
+		}
+
+		var rewardCaller ethcommon.Address
+		if v := strings.TrimSpace(r.PostFormValue("rewardCaller")); v != "" {
+			if !common.ValidChecksumAddress(v) {
+				respond400(w, fmt.Sprintf("invalid reward caller address %v (bad hex or EIP-55 checksum)", v))
+				return
+			}
+			rewardCaller = ethcommon.HexToAddress(v)
+		}
+
+		if rewardCaller == (ethcommon.Address{}) {
+			glog.Infof("Unsetting reward caller for %v", client.Account().Address.Hex())
+		} else {
+			glog.Infof("Setting reward caller %v for %v", rewardCaller.Hex(), client.Account().Address.Hex())
+		}
+
+		tx, err := client.SetRewardCaller(rewardCaller)
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("Error setting reward caller: %v", err))
+			return
+		}
+		glog.Infof("Reward caller updated")
+		respondOk(w, nil)
+	}))
+}
+
+// rewardCallerHandler returns the address currently authorized to call reward for the
+// orchestrator this node acts for, or the empty string when none is set.
+func (s *LivepeerServer) rewardCallerHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rewardCaller, err := client.GetRewardCaller(s.orchestratorAddr(client))
+		if err != nil {
+			respond500(w, fmt.Sprintf("Error getting reward caller: %v", err))
+			return
+		}
+		if rewardCaller == (ethcommon.Address{}) {
+			respondOk(w, []byte(""))
+			return
+		}
+		respondOk(w, []byte(rewardCaller.Hex()))
 	}))
 }
 
@@ -1247,8 +1357,8 @@ func ethBalanceHandler(client eth.LivepeerEthClient) http.Handler {
 
 func transferTokensHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		to := r.FormValue("to")
-		amountStr := r.FormValue("amount")
+		to := r.PostFormValue("to")
+		amountStr := r.PostFormValue("amount")
 		amount, err := common.ParseBigInt(amountStr)
 		if err != nil {
 			respond400(w, err.Error())
@@ -1319,7 +1429,7 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 			sigFormat = "text/plain"
 		}
 
-		message := r.FormValue("message")
+		message := r.PostFormValue("message")
 
 		var signed []byte
 		var err error
@@ -1355,13 +1465,13 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 
 func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		poll := r.FormValue("poll")
+		poll := r.PostFormValue("poll")
 		if !ethcommon.IsHexAddress(poll) {
 			respond500(w, "invalid poll contract address")
 			return
 		}
 
-		choiceStr := r.FormValue("choiceID")
+		choiceStr := r.PostFormValue("choiceID")
 		choiceID, ok := new(big.Int).SetString(choiceStr, 10)
 		if !ok {
 			respond500(w, "choiceID is not a valid integer value")
@@ -1393,14 +1503,14 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 
 func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proposalIDStr := r.FormValue("proposalID")
+		proposalIDStr := r.PostFormValue("proposalID")
 		proposalID, ok := new(big.Int).SetString(proposalIDStr, 10)
 		if !ok {
 			respond500(w, "proposalID is not a valid integer value")
 			return
 		}
 
-		supportStr := r.FormValue("support")
+		supportStr := r.PostFormValue("support")
 		support, ok := new(big.Int).SetString(supportStr, 10)
 		if !ok {
 			respond500(w, "support is not a valid integer value")
@@ -1411,7 +1521,7 @@ func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		reason := r.FormValue("reason")
+		reason := r.PostFormValue("reason")
 
 		// submit tx
 		var tx *ethtypes.Transaction
@@ -1438,7 +1548,7 @@ func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
 // Gas Price
 func setMaxGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amount := r.FormValue("amount")
+		amount := r.PostFormValue("amount")
 		gprice, err := common.ParseBigInt(amount)
 		if err != nil {
 			respond400(w, fmt.Sprintf("Parsing failed for price: %v", err))
@@ -1458,7 +1568,7 @@ func setMaxGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 
 func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		minGasPrice, err := common.ParseBigInt(r.FormValue("minGasPrice"))
+		minGasPrice, err := common.ParseBigInt(r.PostFormValue("minGasPrice"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid minGasPrice: %v", err))
 			return
@@ -1490,13 +1600,13 @@ func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 // Tickets
 func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		depositAmount, err := common.ParseBigInt(r.FormValue("depositAmount"))
+		depositAmount, err := common.ParseBigInt(r.PostFormValue("depositAmount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid depositAmount: %v", err))
 			return
 		}
 
-		reserveAmount, err := common.ParseBigInt(r.FormValue("reserveAmount"))
+		reserveAmount, err := common.ParseBigInt(r.PostFormValue("reserveAmount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid reserveAmount: %v", err))
 			return
@@ -1520,7 +1630,7 @@ func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 
 func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amount, err := common.ParseBigInt(r.FormValue("amount"))
+		amount, err := common.ParseBigInt(r.PostFormValue("amount"))
 		if err != nil {
 			respond400(w, fmt.Sprintf("invalid amount: %v", err))
 			return
@@ -1644,7 +1754,7 @@ func setLogLevelHandler() http.Handler {
 			respond500(w, "nil log level")
 			return
 		}
-		err := vFlag.Set(r.FormValue("loglevel"))
+		err := vFlag.Set(r.PostFormValue("loglevel"))
 		if err != nil {
 			respond400(w, "parameter 'logLevel' not defined")
 			return
@@ -1759,7 +1869,7 @@ func mustHaveFormParams(h http.Handler, params ...string) http.Handler {
 		}
 
 		for _, param := range params {
-			if r.FormValue(param) == "" {
+			if r.PostFormValue(param) == "" {
 				respond400(w, fmt.Sprintf("missing form param: %s", param))
 				return
 			}

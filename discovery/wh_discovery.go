@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -79,7 +80,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	// retrieve addrs from webhook if time since lastRequest is more than the refresh interval
 	body, err := getURLsfromWebhook(w.callback, w.headers)
 	if err != nil {
-		return nil, err
+		return w.cachedInfosOnError(err)
 	}
 
 	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
@@ -94,7 +95,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 
 	infos, err := deserializeWebhookJSON(body)
 	if err != nil {
-		return nil, err
+		return w.cachedInfosOnError(err)
 	}
 
 	pool = &orchestratorPool{
@@ -113,6 +114,20 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	w.mu.Unlock()
 
 	return infos, nil
+}
+
+func (w *webhookPool) cachedInfosOnError(refreshErr error) ([]common.OrchestratorLocalInfo, error) {
+	// Re-read the pool after the failed refresh so a concurrent successful
+	// refresh can still supply the latest cached snapshot.
+	w.mu.RLock()
+	pool := w.pool
+	w.mu.RUnlock()
+	if pool == nil {
+		return nil, refreshErr
+	}
+
+	glog.Warningf("Unable to refresh orchestrator webhook; using cached orchestrator list: %v", refreshErr)
+	return pool.GetInfos(), nil
 }
 
 func (w *webhookPool) GetInfos() []common.OrchestratorLocalInfo {
@@ -174,6 +189,11 @@ func getURLsfromWebhook(cbUrl *url.URL, headers map[string]string) ([]byte, erro
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		err := fmt.Errorf("orchestrator webhook returned HTTP status %s", resp.Status)
+		glog.Error(err)
+		return nil, err
+	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		glog.Error("Unable to read response body ", err)

@@ -664,6 +664,7 @@ func TestLiveRunnerReserveSessionOnchainReturnsPaymentChallenge(t *testing.T) {
 	require.NotEmpty(t, challenge.PaymentParams)
 	require.Equal(t, lp.orchestrator.ServiceURI().String(), challenge.Orchestrator)
 	require.NotEmpty(t, challenge.ManifestID)
+	require.Equal(t, lp.orchestrator.ServiceURI().JoinPath("apps", "runner-1", "session", challenge.ManifestID, "payment").String(), challenge.PaymentURL)
 	require.Equal(t, challenge.ManifestID, oInfo.GetAuthToken().GetSessionId())
 	require.NotNil(t, oInfo.GetTicketParams())
 	require.NotNil(t, oInfo.GetPriceInfo())
@@ -698,8 +699,7 @@ func TestLiveRunnerFixedPriceSessionAccountsOnce(t *testing.T) {
 		require.NotNil(t, balance)
 		require.Zero(t, balance.Sign())
 
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 
 		manager := lp.node.LiveRunnerManager.(*runner.LiveRunnerRegistry)
 		_, err := manager.RunnerEndpointForSession("runner-1", challenge.ManifestID)
@@ -844,16 +844,14 @@ func TestLiveRunnerPaidSessionMonitorDebitsBalance(t *testing.T) {
 		require.NotNil(t, balance)
 		require.Equal(t, "3", balance.FloatString(0))
 
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 
 		balance = orch.Balance(orch.Address(), core.ManifestID(sessionID))
 		require.NotNil(t, balance)
 		require.Equal(t, "2", balance.FloatString(0))
 
 		require.NoError(t, manager.ReleaseSession("runner-1", sessionID))
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 	})
 }
 
@@ -887,8 +885,7 @@ func TestReservePaidLiveRunnerSessionContextCancellationStopsBilling(t *testing.
 		// An active monitor would debit one unit per second. Canceling its parent
 		// context must stop billing without releasing the reserved session.
 		cancel()
-		time.Sleep(2 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(2 * time.Second)
 
 		_, err = manager.RunnerEndpointForSession("runner-1", sessionID)
 		require.NoError(t, err)
@@ -936,8 +933,7 @@ func TestLiveRunnerPaidSessionMonitorReleasesOnInsufficientBalance(t *testing.T)
 
 		sessionID := reservePaidLiveRunnerSession(t, lp, "runner-1", liveRunnerTestPricePerSecond(1))
 
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 
 		_, err := manager.RunnerEndpointForSession("runner-1", sessionID)
 		var runnerErr *runner.RunnerError
@@ -971,8 +967,7 @@ func TestLiveRunnerPaidSessionMonitorCancelsRequestOnInsufficientBalance(t *test
 		_, _, ok := lp.reservePaidLiveRunnerSession(ctx, w, req, manager, "runner-1", priceInfo, cancel)
 		require.True(t, ok, w.Body.String())
 
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 		select {
 		case <-ctx.Done():
 		default:
@@ -1000,8 +995,7 @@ func TestLiveRunnerPaidSessionMonitorExitsAfterManualStop(t *testing.T) {
 		lp.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNoContent, w.Code)
 
-		time.Sleep(time.Second)
-		synctest.Wait()
+		synctest.Sleep(time.Second)
 
 		balance := orch.Balance(orch.Address(), core.ManifestID(sessionID))
 		require.NotNil(t, balance)
@@ -1042,6 +1036,7 @@ func TestLiveRunnerReserveSessionOnchainUsesPublicServiceURIForPaymentChallenge(
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
 	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
 	require.Equal(t, "https://public.example.com", challenge.Orchestrator)
+	require.Equal(t, "https://public.example.com/apps/runner-1/session/"+challenge.ManifestID+"/payment", challenge.PaymentURL)
 	require.Equal(t, challenge.Orchestrator, oInfo.GetTranscoder())
 }
 
@@ -2054,7 +2049,9 @@ func requestScopePaymentChallenge(t *testing.T, lp *lphttp) (liveRunnerPaymentCh
 	setRequestHeaders(req, liveRunnerSenderHeaders(lp.orchestrator.(*stubOrchestrator)))
 	lp.ServeHTTP(w, req)
 	require.Equal(t, http.StatusPaymentRequired, w.Code)
-	return decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	challenge, oInfo := decodeLiveRunnerPaymentChallenge(t, w.Body.Bytes())
+	require.Equal(t, lp.orchestrator.ServiceURI().JoinPath("payment").String(), challenge.PaymentURL)
+	return challenge, oInfo
 }
 
 func closeScopeEvents(t *testing.T, lp *lphttp, manifestID string) {
