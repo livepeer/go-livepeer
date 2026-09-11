@@ -106,6 +106,9 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 		ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/whip", ls.CreateWhip(whipServer))
 		ls.HTTPMux.Handle("HEAD /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusMethodNotAllowed))
 		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
+		// Resource URL handed to the client in Location on create.
+		ls.HTTPMux.Handle("DELETE /live/video-to-video/{stream}/whip/{resource}", ls.DeleteWhip(whipServer))
+		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip/{resource}", ls.WithCode(http.StatusNoContent))
 	}
 
 	var whepServer *media.WHEPServer
@@ -947,6 +950,26 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 			http.Error(w, "Failed to encode status", http.StatusInternalServerError)
 			return
 		}
+	})
+}
+
+// DeleteWhip terminates a WHIP session via DELETE on the resource URL
+// returned in the Location header at create time (WHIP spec, ingest
+// session termination). 404 if the resource is unknown or already gone.
+func (ls *LivepeerServer) DeleteWhip(server *media.WHIPServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		corsHeaders(w, r.Method)
+		resource := r.PathValue("resource")
+		if resource == "" {
+			http.Error(w, "Missing resource", http.StatusBadRequest)
+			return
+		}
+		ctx := clog.AddVal(r.Context(), "stream", r.PathValue("stream"))
+		if !server.DeleteWHIP(ctx, resource) {
+			http.Error(w, "Resource not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	})
 }
 
