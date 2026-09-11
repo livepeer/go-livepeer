@@ -50,6 +50,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/orchestratorInfo", s.orchestratorInfoHandler(client))
 	mux.Handle("/IsOrchestrator", s.isOrchestratorHandler())
 	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
+	mux.Handle("/IsRewardCaller", s.isRewardCallerHandler(client))
 
 	// Broadcast / Transcoding config
 	mux.Handle("POST /setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
@@ -74,6 +75,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/delegatorInfo", delegatorInfoHandler(client))
 	mux.Handle("/orchestratorEarningPoolsForRound", orchestratorEarningPoolsForRoundHandler(client))
 	mux.Handle("/registeredOrchestrators", registeredOrchestratorsHandler(client, db))
+	mux.Handle("/rewardCaller", s.rewardCallerHandler(client))
 
 	// Protocol parameters
 	mux.Handle("/protocolParameters", protocolParametersHandler(client, db))
@@ -111,8 +113,8 @@ func (s *LivepeerServer) registerCliTxRoutes(mux *http.ServeMux) {
 
 	// Rounds and orchestrator registration
 	mux.Handle("POST /initializeRound", initializeRoundHandler(client))
-	mux.Handle("POST /activateOrchestrator", mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI"))
-	mux.Handle("POST /setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
+	mux.Handle("POST /activateOrchestrator", s.mustBeOrchestratorAccount(client, mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI")))
+	mux.Handle("POST /setOrchestratorConfig", s.mustBeOrchestratorAccount(client, mustHaveFormParams(s.setOrchestratorConfigHandler(client))))
 
 	// Bonding, withdrawals, and rewards
 	mux.Handle("POST /bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))
@@ -121,7 +123,8 @@ func (s *LivepeerServer) registerCliTxRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /withdrawStake", mustHaveFormParams(withdrawStakeHandler(client), "unbondingLockId"))
 	mux.Handle("POST /withdrawFees", withdrawFeesHandler(client, db))
 	mux.Handle("POST /claimEarnings", claimEarningsHandler(client))
-	mux.Handle("POST /reward", rewardHandler(client))
+	mux.Handle("POST /reward", s.rewardHandler(client))
+	mux.Handle("POST /setRewardCaller", s.mustBeOrchestratorAccount(client, mustHaveFormParams(s.setRewardCallerHandler(client))))
 
 	// Wallet and governance operations
 	mux.Handle("POST /transferTokens", mustHaveFormParams(transferTokensHandler(client), "to", "amount"))

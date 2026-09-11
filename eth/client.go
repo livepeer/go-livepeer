@@ -70,6 +70,12 @@ type LivepeerEthClient interface {
 	// Staking
 	Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
+
+	// Reward caller (LIP-118)
+	SetRewardCaller(rewardCaller ethcommon.Address) (*types.Transaction, error)
+	GetRewardCaller(transcoder ethcommon.Address) (ethcommon.Address, error)
+	RewardForTranscoder(transcoder ethcommon.Address) (*types.Transaction, error)
+
 	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
 	Rebond(unbondingLockID *big.Int) (*types.Transaction, error)
 	RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error)
@@ -1021,31 +1027,52 @@ func (c *client) ProposalVoteWithReason(proposalId *big.Int, support uint8, reas
 }
 
 func (c *client) Reward() (*types.Transaction, error) {
-	addr := c.accountManager.Account().Address
-
-	tr, err := c.GetTranscoder(addr)
+	hints, err := c.rewardHints(c.accountManager.Account().Address)
 	if err != nil {
 		return nil, err
 	}
 
-	ep, err := c.GetTranscoderEarningsPoolForRound(addr, tr.LastActiveStakeUpdateRound)
+	return c.bondingManager.RewardWithHint(c.transactOpts(), hints.PosPrev, hints.PosNext)
+}
+
+// RewardForTranscoder calls reward for `transcoder`; reverts unless the node is its reward caller.
+func (c *client) RewardForTranscoder(transcoder ethcommon.Address) (*types.Transaction, error) {
+	hints, err := c.rewardHints(transcoder)
 	if err != nil {
 		return nil, err
+	}
+
+	return c.bondingManager.RewardForTranscoderWithHint(c.transactOpts(), transcoder, hints.PosPrev, hints.PosNext)
+}
+
+// rewardHints computes the transcoder pool position hints for a reward call on behalf of
+// `transcoder`. The hints are based on the transcoder's stake, never the caller's.
+func (c *client) rewardHints(transcoder ethcommon.Address) (lpTypes.TranscoderPoolHints, error) {
+	var hints lpTypes.TranscoderPoolHints
+
+	tr, err := c.GetTranscoder(transcoder)
+	if err != nil {
+		return hints, err
+	}
+
+	ep, err := c.GetTranscoderEarningsPoolForRound(transcoder, tr.LastActiveStakeUpdateRound)
+	if err != nil {
+		return hints, err
 	}
 	activeTotalStake := ep.TotalStake
 
 	mintable, err := c.CurrentMintableTokens()
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get current mintable tokens")
+		return hints, errors.Wrapf(err, "unable to get current mintable tokens")
 	}
 
 	totalBonded, err := c.GetTotalBonded()
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get total bonded")
+		return hints, errors.Wrapf(err, "unable to get total bonded")
 	}
 
 	if totalBonded.Cmp(big.NewInt(0)) == 0 {
-		return nil, errors.New("no rewards to be minted")
+		return hints, errors.New("no rewards to be minted")
 	}
 
 	// reward = (current mintable tokens for the round * active transcoder stake) / total active stake
@@ -1054,18 +1081,28 @@ func (c *client) Reward() (*types.Transaction, error) {
 	// get the transcoder pool
 	transcoders, err := c.TranscoderPool()
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+		return hints, errors.Wrapf(err, "unable to get transcoder pool")
 	}
 
 	// get max pool size
 	maxSize, err := c.GetTranscoderPoolMaxSize()
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+		return hints, errors.Wrapf(err, "unable to get transcoder pool max size")
 	}
 
-	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64()))
+	return simulateTranscoderPoolUpdate(transcoder, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64())), nil
+}
 
-	return c.bondingManager.RewardWithHint(c.transactOpts(), hints.PosPrev, hints.PosNext)
+// SetRewardCaller authorizes `rewardCaller` to call reward for the node's account; the
+// zero address unsets it. Must be sent from the transcoder's own wallet.
+func (c *client) SetRewardCaller(rewardCaller ethcommon.Address) (*types.Transaction, error) {
+	return c.bondingManager.SetRewardCaller(c.transactOpts(), rewardCaller)
+}
+
+// GetRewardCaller returns the address `transcoder` authorized to call reward on its
+// behalf, or the zero address if none is set.
+func (c *client) GetRewardCaller(transcoder ethcommon.Address) (ethcommon.Address, error) {
+	return c.bondingManager.TranscoderToRewardCaller(c.callOpts(), transcoder)
 }
 
 func (c *client) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jaypipes/ghw"
 	"github.com/jaypipes/ghw/pkg/gpu"
@@ -452,6 +453,20 @@ func ParseAccelDevices(devices string, acceleration ffmpeg.Acceleration) ([]stri
 		return detectNvidiaDevices()
 	}
 	return strings.Split(devices, ","), nil
+}
+
+// ValidChecksumAddress reports whether addr is a valid hex address whose EIP-55
+// checksum, if present, is correct. Single-case addresses carry no checksum and
+// are accepted as-is.
+func ValidChecksumAddress(addr string) bool {
+	if !ethcommon.IsHexAddress(addr) {
+		return false
+	}
+	hex := strings.TrimPrefix(strings.TrimPrefix(addr, "0x"), "0X")
+	if hex == strings.ToLower(hex) || hex == strings.ToUpper(hex) {
+		return true
+	}
+	return hex == ethcommon.HexToAddress(addr).Hex()[2:]
 }
 
 func ParseEthAddr(strJsonKey string) (string, error) {

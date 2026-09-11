@@ -1002,8 +1002,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
 		recipientAddr := n.Eth.Account().Address
 		if *cfg.EthOrchAddr != "" {
+			// HexToAddress silently coerces garbage to the zero address.
+			if !common.ValidChecksumAddress(*cfg.EthOrchAddr) {
+				exit("-ethOrchAddr %q is not a valid address (bad hex or EIP-55 checksum)", *cfg.EthOrchAddr)
+			}
 			recipientAddr = ethcommon.HexToAddress(*cfg.EthOrchAddr)
 		}
+
+		n.RecipientAddr = nodeRecipientAddr(*cfg.Orchestrator, *cfg.EthOrchAddr, recipientAddr)
 
 		smCfg := &pm.LocalSenderMonitorConfig{
 			Claimant:        recipientAddr,
@@ -1083,7 +1089,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
-			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -1268,7 +1273,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		var reward bool
 		if cfg.Reward == nil {
 			// If the node address is an on-chain registered address, start the reward service
-			t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+			t, err := n.Eth.GetTranscoder(recipientAddr)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -1282,10 +1287,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			reward = *cfg.Reward
 		}
 
+		// Fail early unless this account is the orchestrator or its reward caller (LIP-118).
+		if reward {
+			if err := eth.CheckRewardCaller(n.Eth, recipientAddr); err != nil {
+				if !errors.Is(err, eth.ErrNotRewardCaller) || cfg.Reward != nil {
+					exit("%s", err)
+				}
+				glog.Warning(err)
+				reward = false
+			}
+		}
+
 		if reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eth.NewRewardService(n.Eth, timeWatcher)
+			rs := eth.NewRewardService(n.Eth, timeWatcher, recipientAddr)
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
@@ -2305,8 +2321,13 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		return inferredUri, err
 	}
 
-	// On-chain lookup and matching with inferred public address
-	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
+	// On-chain lookup and matching with inferred public address.
+	// The URI is registered under the orchestrator (-ethOrchAddr), not the node's account.
+	uriAddr := n.Eth.Account().Address
+	if n.RecipientAddr != "" {
+		uriAddr = ethcommon.HexToAddress(n.RecipientAddr)
+	}
+	addr, err = n.Eth.GetServiceURI(uriAddr)
 	if err != nil {
 		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%q", err)
 		return nil, err
@@ -2320,6 +2341,15 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", ethUri, inferredUri)
 	}
 	return ethUri, nil
+}
+
+// A LIP-118 reward caller has no -orchestrator flag, so -ethOrchAddr alone must qualify.
+func nodeRecipientAddr(isOrchestrator bool, ethOrchAddr string, recipientAddr ethcommon.Address) string {
+	// The zero address means the node's own account, as NewRewardService also treats it.
+	if recipientAddr == (ethcommon.Address{}) || (!isOrchestrator && ethOrchAddr == "") {
+		return ""
+	}
+	return recipientAddr.Hex()
 }
 
 func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
