@@ -107,8 +107,8 @@ func (w *wizard) activateOrchestrator() {
 		return
 	}
 
-	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
-	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
+	fmt.Printf("Current token balance: %v\n", w.getFormattedTokenBalance())
+	fmt.Printf("Current bonded amount: %v\n", eth.FormatUnits(d.BondedAmount, "LPT"))
 
 	val := w.getOrchestratorConfigFormValues()
 
@@ -157,7 +157,8 @@ func (w *wizard) activateOrchestrator() {
 
 			amount := big.NewInt(0)
 			for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
-				amount = w.readBigInt("Enter bond amount")
+				fmt.Printf("Enter bond amount in LPT - ")
+				amount = w.readPositiveBaseAmount()
 				if balBigInt.Cmp(amount) < 0 {
 					fmt.Printf("Must enter an amount smaller than the current balance. ")
 				}
@@ -186,7 +187,7 @@ func (w *wizard) setOrchestratorConfig() {
 		return
 	}
 
-	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
+	fmt.Printf("Current token balance: %v\n", w.getFormattedTokenBalance())
 
 	val := w.getOrchestratorConfigFormValues()
 
