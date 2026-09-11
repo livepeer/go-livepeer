@@ -59,7 +59,11 @@ func (w *wizard) deposit() {
 		"depositAmount": {depositAmount.String()},
 		"reserveAmount": {reserveAmount.String()},
 	}
-	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
+		}
 
 	return
 }
@@ -104,7 +108,11 @@ func (w *wizard) unlock() {
 		return
 	}
 
-	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/unlock", w.host, w.httpPort)))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPost(fmt.Sprintf("http://%v:%v/unlock", w.host, w.httpPort))
+		}
 }
 
 func (w *wizard) cancelUnlock() {
@@ -138,7 +146,11 @@ func (w *wizard) cancelUnlock() {
 		return
 	}
 
-	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/cancelUnlock", w.host, w.httpPort)))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/cancelUnlock", w.host, w.httpPort)))
+		}
 }
 
 func (w *wizard) withdraw() {
@@ -173,7 +185,11 @@ func (w *wizard) withdraw() {
 		return
 	}
 
-	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort)))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort)))
+		}
 }
 
 func (w *wizard) senderInfo() (info pm.SenderInfo, err error) {
