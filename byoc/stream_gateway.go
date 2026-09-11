@@ -109,7 +109,7 @@ func (bsg *BYOCGatewayServer) sendStopStreamToOrch(ctx context.Context, streamID
 			Req: &JobRequest{
 				Capability: capability,
 				Request:    string(jobReqDetStr),
-				Timeout:    10,
+				Timeout:    60,
 			},
 		},
 		node: bsg.node,
