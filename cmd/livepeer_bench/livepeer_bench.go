@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -87,7 +87,6 @@ func main() {
 	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.LogLevel(*log * 8))
 
 	var wg sync.WaitGroup
-	dir := path.Dir(*in)
 
 	table := tablewriter.NewWriter(os.Stderr)
 	data := [][]string{
@@ -139,7 +138,7 @@ func main() {
 					if v == nil {
 						continue
 					}
-					u := path.Join(dir, v.URI)
+					u := segmentPath(*in, v.URI)
 					in := &ffmpeg.TranscodeOptionsIn{
 						Fname: u,
 						Accel: accel,
@@ -221,6 +220,14 @@ func main() {
 		statsTable.AppendBulk(stats)
 		statsTable.Render()
 	}
+}
+
+// segmentPath returns the path to a playlist segment by joining the input
+// manifest's directory with the segment's URI (which is relative to the
+// manifest). filepath is used instead of path so that Windows-style backslash
+// separators in the manifest path are handled correctly.
+func segmentPath(manifest, segmentURI string) string {
+	return filepath.Join(filepath.Dir(manifest), segmentURI)
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
