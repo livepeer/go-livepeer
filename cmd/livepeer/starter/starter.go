@@ -509,6 +509,13 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
+	// The livepeer binary never called lpms_init, so FFmpeg stayed at its default
+	// INFO level. NVIDIA scale_npp then logs a warning on every downscale
+	// ("super-sampling not supported for output dimensions, using lanczos")
+	// because LPMS requests interp_algo=super, which only applies to upscales.
+	// ERROR keeps real encoder/decoder failures and drops that expected noise.
+	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogError)
+
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
 			glog.Exit("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
