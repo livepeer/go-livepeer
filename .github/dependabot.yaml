@@ -1,17 +1,81 @@
 version: 2
 
 updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: daily
-
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+    # Never resolve a release younger than a week: gives the ecosystem time
+    # to detect and yank compromised versions before we pull them in.
+    cooldown:
+      default-days: 7
+    # Version and security updates are grouped separately. go-ethereum
+    # minors are breaking and usually need code changes, so it gets its
+    # own PR in both streams and cannot block the rest.
+    groups:
+      go-ethereum:
+        applies-to: version-updates
+        patterns:
+          - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
+      # One combined PR per week instead of one per package.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
+      go-ethereum-security:
+        applies-to: security-updates
+        patterns:
+          - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - github.com/ethereum/go-ethereum
+          - github.com/consensys/gnark-crypto
+    ignore:
+      # go-tools is pinned to its minio branch, which Dependabot cannot
+      # follow, and every published tag is a downgrade. Update by hand:
+      # go get github.com/livepeer/go-tools@minio. See #4054.
+      - dependency-name: github.com/livepeer/go-tools
+      # docker/cli 29 needs the moby/moby client the AI worker does not use
+      # yet. Drop once the worker moves to moby/moby.
+      - dependency-name: github.com/docker/cli
+        versions: [">=29.0.0"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # One combined PR; action majors are routine tag moves and CI
+    # validates the grouped PR anyway.
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /docker
     schedule:
-      interval: daily
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Base image choices are deliberate platform decisions, not routine
+    # updates: CUDA is pinned on purpose and Ubuntu majors need manual work.
+    ignore:
+      - dependency-name: nvidia/cuda
+      # Ubuntu releases are deliberate LTS choices, not routine bumps.
+      - dependency-name: ubuntu
+    groups:
+      docker:
+        patterns:
+          - "*"
