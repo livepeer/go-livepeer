@@ -318,7 +318,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 	// The registered capability name is set as the Constraint, making BYOC
 	// pricing seamless alongside built-in capabilities like LiveVideoToVideo.
 	if orch.node != nil && orch.node.ExternalCapabilities != nil {
-		for name := range orch.node.ExternalCapabilities.Capabilities {
+		for _, name := range orch.node.ExternalCapabilities.GetCapabilityNames() {
 			price := orch.node.GetPriceForJob(ethAddr, name)
 			if price == nil {
 				price = orch.node.GetPriceForJob("default", name)
