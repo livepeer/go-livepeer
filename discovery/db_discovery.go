@@ -125,40 +125,43 @@ func (cfg DBOrchestratorPoolCacheConfig) New() (*DBOrchestratorPoolCache, error)
 	return dbo, nil
 }
 
-func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
+func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
+	infos, _ := dbo.getLocalInfos()
+	return infos
+}
+
+// getLocalInfos is getURLs plus the address registered for each ServiceURI, so
+// the poller and the dial path can check the recipient a response names.
+func (dbo *DBOrchestratorPoolCache) getLocalInfos() ([]common.OrchestratorLocalInfo, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			CurrentRound:   dbo.rm.LastInitializedRound(),
 			UpdatedLastDay: true,
 		},
 	)
-	if err != nil || len(orchs) <= 0 {
+	if err != nil {
 		return nil, err
 	}
-
-	var uris []*url.URL
+	infos := make([]common.OrchestratorLocalInfo, 0, len(orchs))
 	for _, orch := range orchs {
-		if uri, err := url.Parse(orch.ServiceURI); err == nil {
-			uris = append(uris, uri)
+		uri, err := url.Parse(orch.ServiceURI)
+		if err != nil {
+			continue
 		}
+		infos = append(infos, common.OrchestratorLocalInfo{
+			URL:               uri,
+			Score:             common.Score_Untrusted,
+			ExpectedRecipient: expectedRecipient(orch.EthereumAddr),
+		})
 	}
-	return uris, nil
-}
-
-func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
-	uris, _ := dbo.getURLs()
-	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
-	for _, uri := range uris {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: common.Score_Untrusted})
-	}
-	return infos
+	return infos, nil
 }
 
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
-	uris, err := dbo.getURLs()
-	if err != nil || len(uris) <= 0 {
+	infos, err := dbo.getLocalInfos()
+	if err != nil || len(infos) <= 0 {
 		return nil, err
 	}
 
@@ -195,7 +198,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 
 	orchPool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		Broadcaster:         dbo.bcast,
-		URIs:                uris,
+		Infos:               infos,
 		Pred:                pred,
 		Score:               common.Score_Untrusted,
 		OrchBlacklist:       dbo.orchBlacklist,
@@ -349,7 +352,10 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			if err != nil {
 				continue
 			}
-			orchs = append(orchs, common.OrchestratorLocalInfo{URL: url})
+			orchs = append(orchs, common.OrchestratorLocalInfo{
+				URL:               url,
+				ExpectedRecipient: expectedRecipient(o.EthereumAddr),
+			})
 		}
 
 		glog.Infof("Using DB orchestrator pool with %d orchestrators", len(orchs))
@@ -420,6 +426,14 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 
 		var dbOrch *common.DBOrch
 		if info.GetTicketParams() != nil {
+			// The row is keyed on the recipient the response supplies, so an
+			// endpoint naming another orchestrator's address would orphan a row
+			// or overwrite that orchestrator's price entry.
+			if recipientMismatch(ctx, &orch, info) {
+				errc <- fmt.Errorf("unexpected ticket recipient orch=%v", info.GetTranscoder())
+				return
+			}
+
 			dbOrch = &common.DBOrch{
 				EthereumAddr: ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
 			}
@@ -674,4 +688,14 @@ func callOrchestratorDiscovery(ctx context.Context, orchURI *url.URL) (json.RawM
 	}
 
 	return json.RawMessage(body), nil
+}
+
+// expectedRecipient converts a registered address into an expectation. An empty
+// address is no expectation rather than the zero address, which would reject
+// every response for that row.
+func expectedRecipient(ethereumAddr string) []byte {
+	if ethereumAddr == "" {
+		return nil
+	}
+	return ethcommon.HexToAddress(ethereumAddr).Bytes()
 }

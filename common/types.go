@@ -64,6 +64,16 @@ type OrchestratorLocalInfo struct {
 	URL     *url.URL `json:"Url"`
 	Score   float32
 	Latency *time.Duration
+	// ExpectedRecipient is the ticket recipient this endpoint should name, when
+	// the gateway has grounds to expect one. For an orchestrator reached through
+	// its registered ServiceURI that is the address registered on chain; for an
+	// endpoint advertised by another orchestrator it is that orchestrator's
+	// recipient. Raw bytes because it is compared against
+	// TicketParams.Recipient, which is also raw bytes.
+	//
+	// Empty when there are no grounds, for example a webhook pool or a
+	// -orchAddr list, in which case nothing is checked.
+	ExpectedRecipient []byte `json:"-"`
 }
 
 // combines B's local metadata about O with info received from this O

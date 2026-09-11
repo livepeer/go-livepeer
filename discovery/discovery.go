@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
 	"encoding/hex"
@@ -31,8 +32,11 @@ var serverGetOrchInfo = server.GetOrchestratorInfo
 
 // OrchestratorPoolConfig groups options used to construct an orchestratorPool.
 type OrchestratorPoolConfig struct {
-	Broadcaster         common.Broadcaster
-	URIs                []*url.URL
+	Broadcaster common.Broadcaster
+	URIs        []*url.URL
+	// Infos supersedes URIs when set, so callers that know more about an
+	// endpoint than its URL can pass it through.
+	Infos               []common.OrchestratorLocalInfo
 	Pred                func(*net.OrchestratorInfo) bool
 	Score               float32
 	OrchBlacklist       []string
@@ -92,13 +96,16 @@ func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 }
 
 func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPool, error) {
-	if len(cfg.URIs) == 0 {
+	if len(cfg.URIs) == 0 && len(cfg.Infos) == 0 {
 		return nil, errors.New("orchestrator pool config must contain at least one URI")
 	}
 
-	infos := make([]common.OrchestratorLocalInfo, 0, len(cfg.URIs))
-	for _, uri := range cfg.URIs {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: cfg.Score})
+	infos := cfg.Infos
+	if len(infos) == 0 {
+		infos = make([]common.OrchestratorLocalInfo, 0, len(cfg.URIs))
+		for _, uri := range cfg.URIs {
+			infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: cfg.Score})
+		}
 	}
 
 	return &orchestratorPool{
@@ -226,7 +233,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 		}
 
-		if err == nil && !isBlacklisted(info) && isCompatible(info) && doingWork {
+		if err == nil && !isBlacklisted(info) && !recipientMismatch(ctx, od.LocalInfo, info) && isCompatible(info) && doingWork {
 			infoCh <- orchDescr
 			return
 		}
@@ -355,4 +362,33 @@ func (o *orchestratorPool) Broadcaster() common.Broadcaster {
 
 func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {
 
+}
+
+// recipientMismatch reports whether an endpoint named a ticket recipient other
+// than the one the gateway had grounds to expect.
+//
+// The recipient is what tickets are made payable to and what selection groups
+// sessions by, so an endpoint free to name any address is paid as, and counted
+// as, whoever it likes. An empty expectation means the gateway has no grounds,
+// and nothing is checked.
+//
+// Refs #4082.
+func recipientMismatch(ctx context.Context, li *common.OrchestratorLocalInfo, info *net.OrchestratorInfo) bool {
+	expected := li.ExpectedRecipient
+	if len(expected) == 0 {
+		return false
+	}
+	claimed := info.GetTicketParams().GetRecipient()
+	if len(claimed) == 0 {
+		// No claim to contradict. The dial path already rejects nil ticket
+		// params in its pred, and the poller tolerates them for capability
+		// caching, so this is not the place to decide that.
+		return false
+	}
+	if bytes.Equal(expected, claimed) {
+		return false
+	}
+	clog.V(common.DEBUG).Infof(ctx, "Discarding orchestrator naming an unexpected payee uri=%v expected=0x%x claimed=0x%x",
+		li.URL, expected, claimed)
+	return true
 }

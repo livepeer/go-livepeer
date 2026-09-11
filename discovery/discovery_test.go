@@ -2458,3 +2458,149 @@ func wgWait(wg *sync.WaitGroup) bool {
 		return false
 	}
 }
+
+func TestRecipientMismatch(t *testing.T) {
+	assert := assert.New(t)
+	expected := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes()
+	other := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222").Bytes()
+	u, _ := url.Parse("https://orch.example.com:8935")
+	ctx := context.Background()
+
+	li := func(exp []byte) *common.OrchestratorLocalInfo {
+		return &common.OrchestratorLocalInfo{URL: u, ExpectedRecipient: exp}
+	}
+	info := func(r []byte) *net.OrchestratorInfo {
+		return &net.OrchestratorInfo{Transcoder: u.String(), TicketParams: &net.TicketParams{Recipient: r}}
+	}
+
+	// no expectation: a webhook pool or -orchAddr list, nothing to check against
+	assert.False(recipientMismatch(ctx, li(nil), info(other)))
+	// response agrees with the chain
+	assert.False(recipientMismatch(ctx, li(expected), info(expected)))
+	// response names someone else
+	assert.True(recipientMismatch(ctx, li(expected), info(other)))
+	// no claim to contradict. The dial path's pred already rejects nil ticket
+	// params, and the poller tolerates them for capability caching, so this
+	// predicate does not decide it.
+	assert.False(recipientMismatch(ctx, li(expected), &net.OrchestratorInfo{Transcoder: u.String()}))
+	// an empty registered address is no expectation, not the zero address
+	assert.False(recipientMismatch(ctx, li(expectedRecipient("")), info(other)))
+}
+
+// The dial path builds its pool from the DB, so the address registered for a
+// ServiceURI is available and must be enforced there, not only in the poller.
+func sync_TestDBOrchestratorPoolCache_GetOrchestrators_RejectsUnexpectedRecipient(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	honestURL := "https://honest.example.com:8935"
+	liarURL := "https://liar.example.com:8935"
+	honest := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	liar := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+	someoneElse := ethcommon.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		r := honest
+		if u.String() == liarURL {
+			r = someoneElse // not the address registered for liarURL
+		}
+		return &net.OrchestratorInfo{
+			Address:      pm.RandBytes(20),
+			Transcoder:   u.String(),
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{Recipient: r.Bytes()},
+		}, nil
+	}
+
+	uH, _ := url.Parse(honestURL)
+	uL, _ := url.Parse(liarURL)
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		Infos: []common.OrchestratorLocalInfo{
+			{URL: uH, Score: common.Score_Untrusted, ExpectedRecipient: honest.Bytes()},
+			{URL: uL, Score: common.Score_Untrusted, ExpectedRecipient: liar.Bytes()},
+		},
+		DiscoveryTimeout: 50 * time.Millisecond,
+	})
+	require.NoError(err)
+	pool.getOrchInfo = getOrchInfo
+
+	ods, err := pool.GetOrchestrators(context.TODO(), 2, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	require.NoError(err)
+
+	var got []string
+	for _, od := range ods {
+		got = append(got, od.LocalInfo.URL.String())
+	}
+	assert.ElementsMatch([]string{honestURL}, got,
+		"the endpoint naming an address other than the one registered for it must not be dialled")
+}
+
+func TestDBOrchestratorPoolCache_GetOrchestrators_RejectsUnexpectedRecipient(t *testing.T) {
+	synctest.Test(t, sync_TestDBOrchestratorPoolCache_GetOrchestrators_RejectsUnexpectedRecipient)
+}
+
+// In steady state node.OrchestratorPool is the DBOrchestratorPoolCache itself,
+// so cacheOrchInfos takes the GetInfos() branch rather than the DB fallback.
+// This exercises that branch: rows go in the DB, the cache is its own pool, and
+// a response naming an address other than the registered one must not be cached.
+func TestDBOrchestratorPoolCache_cacheOrchInfos_GetInfosBranch_ChecksRecipient(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	honestURL := "https://honest.example.com:8935"
+	liarURL := "https://liar.example.com:8935"
+	honest := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	liar := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+	someoneElse := ethcommon.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	// cacheOrchInfos only overrides the RPC when the pool is an *orchestratorPool,
+	// and here it is the cache itself, so stub the package-level hook.
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, u *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		r := honest
+		if u.String() == liarURL {
+			r = someoneElse // not the address registered for liarURL
+		}
+		return &net.OrchestratorInfo{
+			Address:      pm.RandBytes(20),
+			Transcoder:   u.String(),
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{Recipient: r.Bytes()},
+		}, nil
+	}
+
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.NoError(err)
+
+	// registered rows, so getLocalInfos has an address for each ServiceURI
+	for _, o := range []*common.DBOrch{
+		{ServiceURI: honestURL, EthereumAddr: honest.Hex(), PricePerPixel: 1, ActivationRound: 0, DeactivationRound: 1000},
+		{ServiceURI: liarURL, EthereumAddr: liar.Hex(), PricePerPixel: 1, ActivationRound: 0, DeactivationRound: 1000},
+	} {
+		require.NoError(dbh.UpdateOrch(o))
+	}
+
+	node := &core.LivepeerNode{Database: dbh}
+	dbo := &DBOrchestratorPoolCache{
+		store:               dbh,
+		rm:                  &stubRoundsManager{round: big.NewInt(1)},
+		bcast:               core.NewBroadcaster(node),
+		node:                node,
+		ignoreCapacityCheck: true,
+	}
+	// this is the steady-state arrangement: the cache is its own pool, so
+	// cacheOrchInfos reads GetInfos() rather than falling back to the DB
+	node.OrchestratorPool = dbo
+
+	require.NoError(dbo.cacheOrchInfos())
+
+	cached := map[string]bool{}
+	for _, o := range node.GetNetworkCapabilities() {
+		cached[o.OrchURI] = true
+	}
+	assert.True(cached[honestURL], "recipient matches the registered address")
+	assert.False(cached[liarURL], "recipient names an address other than the registered one")
+}
