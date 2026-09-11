@@ -554,3 +554,56 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 	*w.buf = append(*w.buf, p...)
 	return len(p), nil
 }
+
+func TestNodeRecipientAddr(t *testing.T) {
+	account := ethcommon.HexToAddress("0x1111111111111111111111111111111111111111")
+	orch := ethcommon.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	tests := []struct {
+		name           string
+		isOrchestrator bool
+		ethOrchAddr    string
+		recipientAddr  ethcommon.Address
+		want           string
+	}{
+		{
+			name:           "orchestrator on its own account",
+			isOrchestrator: true,
+			recipientAddr:  account,
+			want:           account.Hex(),
+		},
+		{
+			name:           "orchestrator with -ethOrchAddr",
+			isOrchestrator: true,
+			ethOrchAddr:    orch.Hex(),
+			recipientAddr:  orch,
+			want:           orch.Hex(),
+		},
+		{
+			name:          "reward caller without -orchestrator",
+			ethOrchAddr:   orch.Hex(),
+			recipientAddr: orch,
+			want:          orch.Hex(),
+		},
+		{
+			name:          "node with no orchestrator identity",
+			recipientAddr: account,
+			want:          "",
+		},
+		{
+			// The reward service reads the zero address as the node's own account, so
+			// the CLI endpoints must not key on the zero address instead.
+			name:          "-ethOrchAddr set to the zero address",
+			ethOrchAddr:   "0x0000000000000000000000000000000000000000",
+			recipientAddr: ethcommon.Address{},
+			want:          "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := nodeRecipientAddr(tt.isOrchestrator, tt.ethOrchAddr, tt.recipientAddr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

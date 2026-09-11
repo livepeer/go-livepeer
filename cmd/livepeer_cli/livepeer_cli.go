@@ -41,7 +41,7 @@ func main() {
 		}
 
 		// Set up the logger to print everything and the random generator
-		log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(c.Int("loglevel")), log.StreamHandler(os.Stdout, log.TerminalFormat(true))))
+		log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.FromLegacyLevel(c.Int("loglevel")), true)))
 		rand.Seed(time.Now().UnixNano())
 
 		// Start the wizard and relinquish control
@@ -53,6 +53,7 @@ func main() {
 		}
 		w.orchestrator = w.isOrchestrator()
 		w.redeemer = w.isRedeemer()
+		w.rewardCaller = w.isRewardCaller()
 		w.checkNet()
 		w.run()
 
@@ -69,6 +70,7 @@ type wizard struct {
 	host         string
 	orchestrator bool
 	redeemer     bool
+	rewardCaller bool
 	testnet      bool
 	offchain     bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
@@ -79,12 +81,13 @@ type wizardOpt struct {
 	invoke          func()
 	testnet         bool
 	orchestrator    bool
+	rewardCaller    bool
 	notOrchestrator bool
 }
 
 func (w *wizard) initializeOptions() []wizardOpt {
 	options := []wizardOpt{
-		{desc: "Get node status", invoke: func() { w.stats(w.orchestrator) }},
+		{desc: "Get node status", invoke: func() { w.stats(w.orchestrator || w.rewardCaller) }},
 		{desc: "View protocol parameters", invoke: w.protocolStats},
 		{desc: "List registered orchestrators", invoke: func() { w.registeredOrchestratorStats() }},
 		{desc: "Invoke \"initialize round\"", invoke: w.initializeRound},
@@ -94,9 +97,10 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"withdraw stake\" (LPT)", invoke: w.withdrawStake},
 		{desc: "Invoke \"withdraw fees\" (ETH)", invoke: w.withdrawFees},
 		{desc: "Invoke \"transfer\" (LPT)", invoke: w.transferTokens},
-		{desc: "Invoke \"reward\"", invoke: w.callReward, orchestrator: true},
+		{desc: "Invoke \"reward\"", invoke: w.callReward, rewardCaller: true},
 		{desc: "Invoke multi-step \"become an orchestrator\"", invoke: w.activateOrchestrator, orchestrator: true},
 		{desc: "Set orchestrator config", invoke: w.setOrchestratorConfig, orchestrator: true},
+		{desc: "Set reward caller", invoke: w.setRewardCaller, orchestrator: true},
 		{desc: "Invoke \"deposit broadcasting funds\" (ETH)", invoke: w.deposit, notOrchestrator: true},
 		{desc: "Invoke \"unlock broadcasting funds\"", invoke: w.unlock, notOrchestrator: true},
 		{desc: "Invoke \"cancel unlock of broadcasting funds\"", invoke: w.cancelUnlock, notOrchestrator: true},
@@ -127,12 +131,24 @@ func (w *wizard) initializeOptions() []wizardOpt {
 
 func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
 	isOrchestratorOrRedeemer := w.orchestrator || w.redeemer
+	actsForOrchestrator := isOrchestratorOrRedeemer || w.rewardCaller
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
 		if opt.testnet && !w.testnet {
 			continue
 		}
-		if !opt.orchestrator && !opt.notOrchestrator || isOrchestratorOrRedeemer && opt.orchestrator || !isOrchestratorOrRedeemer && opt.notOrchestrator {
+		var show bool
+		switch {
+		case opt.orchestrator:
+			show = isOrchestratorOrRedeemer
+		case opt.rewardCaller:
+			show = actsForOrchestrator
+		case opt.notOrchestrator:
+			show = !actsForOrchestrator
+		default:
+			show = true
+		}
+		if show {
 			filtered = append(filtered, opt)
 		}
 	}
@@ -157,7 +173,7 @@ func (w *wizard) run() {
 	fmt.Println("+-----------------------------------------------------------+")
 	fmt.Println()
 
-	w.stats(w.orchestrator)
+	w.stats(w.orchestrator || w.rewardCaller)
 	options := w.filterOptions(w.initializeOptions())
 
 	// Basics done, loop ad infinitum about what to do

@@ -502,6 +502,13 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if state.PMSessionID != sessionID {
 		nonce = 0
 	}
+	// Orchestrators cap the sender nonce at 600, so retrieve fresh ticket params to be safe.
+	if nonce >= 500 {
+		err := errors.New("refresh session for remote signer")
+		w.Header().Set(RefreshSessionOrchestratorURLHeader, oInfo.Transcoder)
+		respondJsonError(ctx, w, err, HTTPStatusRefreshSession)
+		return
+	}
 
 	initialPrice := &net.PriceInfo{
 		PricePerUnit:  state.InitialPricePerUnit,

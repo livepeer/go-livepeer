@@ -150,7 +150,7 @@ jobs:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         run: |
           git config --global --add safe.directory '*'
-          ./ci_env.sh make
+          ./ci_env.sh make binaries
 
       - name: Archive binaries for windows
         if: matrix.target.GOOS == 'windows'
@@ -248,7 +248,7 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
+          ./ci_env.sh make binaries
 
       - name: Match release ref
         id: match-tag

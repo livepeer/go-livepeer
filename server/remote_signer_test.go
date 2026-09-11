@@ -670,6 +670,90 @@ func TestGenerateLivePayment_StateValidationErrors(t *testing.T) {
 	}
 }
 
+func TestGenerateLivePayment_SenderNonceRefresh(t *testing.T) {
+	ethClient := newTestEthClient(t)
+	node, _ := core.NewLivepeerNode(ethClient, "", nil)
+	node.Balances = core.NewAddressBalances(time.Minute)
+	node.Sender = newMockSender(mockSenderConfig{})
+	ls := &LivepeerServer{LivepeerNode: node}
+
+	recipientRandHash := pm.RandHash()
+	orchInfo := &net.OrchestratorInfo{
+		Address:    ethClient.addr.Bytes(),
+		Transcoder: "http://orch.example",
+		PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+		TicketParams: &net.TicketParams{
+			Recipient:         pm.RandAddress().Bytes(),
+			RecipientRandHash: recipientRandHash.Bytes(),
+		},
+		AuthToken: stubAuthToken,
+	}
+	orchBlob, err := proto.Marshal(orchInfo)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		nonce       uint32
+		pmSessionID string
+		wantStatus  int
+	}{
+		{
+			name:        "below threshold",
+			nonce:       499,
+			pmSessionID: recipientRandHash.Hex(),
+			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "at threshold",
+			nonce:       500,
+			pmSessionID: recipientRandHash.Hex(),
+			wantStatus:  HTTPStatusRefreshSession,
+		},
+		{
+			name:        "ticket params already refreshed",
+			nonce:       500,
+			pmSessionID: "old-session",
+			wantStatus:  http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stateBytes, err := json.Marshal(RemotePaymentState{
+				StateID:              "state",
+				PMSessionID:          tt.pmSessionID,
+				OrchestratorAddress:  ethClient.addr,
+				SenderNonce:          tt.nonce,
+				InitialPricePerUnit:  1,
+				InitialPixelsPerUnit: 1,
+			})
+			require.NoError(t, err)
+			stateSig, err := signState(ls, stateBytes)
+			require.NoError(t, err)
+
+			body, err := json.Marshal(RemotePaymentRequest{
+				State:        RemotePaymentStateSig{State: stateBytes, Sig: stateSig},
+				Orchestrator: orchBlob,
+				ManifestID:   "manifest",
+				InPixels:     1,
+			})
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/generate-live-payment", bytes.NewReader(body))
+			rr := httptest.NewRecorder()
+			ls.GenerateLivePayment(rr, req)
+
+			require.Equal(t, tt.wantStatus, rr.Code)
+			if tt.wantStatus == HTTPStatusRefreshSession {
+				require.Equal(t, orchInfo.Transcoder, rr.Header().Get(RefreshSessionOrchestratorURLHeader))
+				var apiErr apiErrorResponse
+				require.NoError(t, json.NewDecoder(rr.Body).Decode(&apiErr))
+				require.Contains(t, apiErr.Error.Message, "refresh session for remote signer")
+			}
+		})
+	}
+}
+
 func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 	require := require.New(t)
 

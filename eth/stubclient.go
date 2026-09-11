@@ -100,6 +100,21 @@ func (m *MockClient) Reward() (*types.Transaction, error) {
 	return mockTransaction(args, 0), args.Error(1)
 }
 
+func (m *MockClient) RewardForTranscoder(transcoder common.Address) (*types.Transaction, error) {
+	args := m.Called(transcoder)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) SetRewardCaller(rewardCaller common.Address) (*types.Transaction, error) {
+	args := m.Called(rewardCaller)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) GetRewardCaller(transcoder common.Address) (common.Address, error) {
+	args := m.Called(transcoder)
+	return args.Get(0).(common.Address), args.Error(1)
+}
+
 func (m *MockClient) GetTranscoderEarningsPoolForRound(address common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	args := m.Called()
 	return args.Get(0).(*lpTypes.TokenPools), args.Error(1)
@@ -325,6 +340,15 @@ func (e *StubClient) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Trans
 	return nil, nil
 }
 func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) RewardForTranscoder(common.Address) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) SetRewardCaller(common.Address) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) GetRewardCaller(common.Address) (common.Address, error) {
+	return common.Address{}, nil
+}
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
