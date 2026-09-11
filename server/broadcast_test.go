@@ -1991,3 +1991,21 @@ func TestGetCapabilitiesMaxPrice(t *testing.T) {
 	capabilitiesWithDefault := &StubCapabilityComparator{NetCaps: netCapsWithDefault}
 	assert.Equal(t, big.NewRat(3, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesWithDefault))
 }
+
+func TestNewSessionManager_CleanupSessionWithoutSender(t *testing.T) {
+	// Offchain nodes have no payment sender; removing a session must not panic. See #4080.
+	n, _ := core.NewLivepeerNode(nil, "", nil)
+	require.Nil(t, n.Sender)
+
+	mid := core.RandomManifestID()
+	storage := drivers.NewMemoryDriver(nil).NewSession(string(mid))
+	params := &core.StreamParameters{OS: storage}
+
+	bsm := NewSessionManager(context.TODO(), n, params)
+	sess := StubBroadcastSession("http://127.0.0.1:8935")
+	sess.PMSessionID = "offchain-session"
+	bsm.trustedPool.sessMap[sess.Transcoder()] = sess
+
+	require.NotPanics(t, func() { bsm.suspendAndRemoveOrch(sess) })
+	require.NotContains(t, bsm.trustedPool.sessMap, sess.Transcoder())
+}
