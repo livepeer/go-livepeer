@@ -221,6 +221,12 @@ func (w *wizard) rebond() {
 	}
 
 	if dInfo.Status == "Unbonded" {
+		w.printGasInfo(big.NewInt(eth.BondGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to bond %v LPT to \"%s\"?", eth.FormatUnits(amount, "lpt"), tAddr.Hex())) {
+			return
+		}
+
+
 		fmt.Printf("You are unbonded - you will need to choose an address to rebond to.\n")
 
 		var toAddr common.Address
@@ -260,6 +266,12 @@ func (w *wizard) unbond() {
 
 	fmt.Printf("Current Bonded Amount: %v\n", eth.FormatUnits(dInfo.BondedAmount, "LPT"))
 	fmt.Printf("Current Delegate: %v\n", dInfo.DelegateAddress.Hex())
+		w.printGasInfo(big.NewInt(eth.RebondGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to rebond from unbonding lock %v?", unbondingLockID)) {
+			return
+		}
+
+
 
 	fmt.Printf("Would you like to fully unbond? (y/n) - ")
 
@@ -298,6 +310,12 @@ func (w *wizard) withdrawStake() {
 	if err != nil {
 		glog.Errorf("Error getting delegator info: %v", err)
 		return
+		w.printGasInfo(big.NewInt(eth.UnbondGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to unbond %v LPT?", eth.FormatUnits(amount, "lpt"))) {
+			return
+		}
+
+
 	}
 
 	fmt.Printf("Current Bonded Amount: %v\n", eth.FormatUnits(dInfo.BondedAmount, "LPT"))
@@ -324,6 +342,12 @@ func (w *wizard) withdrawStake() {
 	}
 
 	val := url.Values{
+		w.printGasInfo(big.NewInt(eth.WithdrawStakeGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to withdraw stake from unbonding lock %v?", unbondingLockID)) {
+			return
+		}
+
+
 		"unbondingLockId": {fmt.Sprintf("%v", strconv.FormatInt(unbondingLockID, 10))},
 	}
 
@@ -336,6 +360,12 @@ func (w *wizard) withdrawFees() {
 		glog.Errorf("Error getting delegator info: %v", err)
 		return
 	}
+		w.printGasInfo(big.NewInt(eth.WithdrawFeesGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to withdraw %v ETH in fees?", eth.FormatUnits(dInfo.PendingFees, "eth"))) {
+			return
+		}
+
+
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", dInfo.PendingFees.String())},
