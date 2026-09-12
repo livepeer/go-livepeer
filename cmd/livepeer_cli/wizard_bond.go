@@ -286,6 +286,28 @@ func (w *wizard) unbond() {
 		}
 	}
 
+	// Warn if unbonding full amount while being an orchestrator (delegated to self)
+	if amount.Cmp(dInfo.BondedAmount) == 0 && dInfo.DelegateAddress == dInfo.Address {
+		fmt.Printf("\nWARNING: You are about to unbond your entire stake.\n")
+		fmt.Printf("Since you are an orchestrator (delegated to yourself), this will DEACTIVATE your orchestrator.\n")
+		fmt.Printf("Your orchestrator will no longer be eligible to receive work or rewards until you rebond and reactivate.\n")
+		fmt.Printf("Are you sure you want to proceed? (y/n) - ")
+
+		confirm := ""
+		for {
+			confirm = w.readString()
+			if confirm == "y" || confirm == "n" {
+				break
+			}
+			fmt.Printf("Enter (y)es or (n)o \n")
+		}
+
+		if confirm == "n" {
+			fmt.Printf("Unbond cancelled.\n")
+			return
+		}
+	}
+
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
