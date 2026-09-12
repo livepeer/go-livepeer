@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,4 +72,25 @@ func TestHttpGetUnreachable(t *testing.T) {
 	assert.Equal(t, "", body)
 	assert.False(t, ok)
 	assert.Equal(t, "", httpGet(url))
+}
+
+// A node that cannot read its own orchestrator record answers /orchestratorInfo with a
+// plain-text 500. That body does not unmarshal, so getOrchestratorInfo hands back a nil
+// transcoder, which the prompt used to carry past the questions and then dereference.
+// It has to report the error before asking anything, so this returns without reading
+// stdin or reaching myHostPort.
+func TestPromptOrchestratorConfigReportsAnUnreadableRecord(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "could not get transcoder", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	assert.NoError(t, err)
+
+	w := &wizard{host: u.Hostname(), httpPort: u.Port()}
+	_, _, _, _, _, _, err = w.promptOrchestratorConfig()
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "could not read orchestrator record")
 }
