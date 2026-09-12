@@ -30,10 +30,6 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 3 gwei
-// TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(3), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
-
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -74,6 +70,7 @@ type TicketParamsConfig struct {
 // GasPriceMonitor defines methods for monitoring gas prices
 type GasPriceMonitor interface {
 	GasPrice() *big.Int
+	AvgGasPrice() *big.Int
 }
 
 // recipient is an implementation of the Recipient interface that
@@ -307,7 +304,8 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// The expectation is that if the avg gasPrice check runs and passes then it is reasonable to advertise ticket params
 	// because there is a good chance that the current gasPrice will come back down by the time a winning ticket is received
 	// and needs to be redeemed.
-	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
+	// avgGasPrice is derived from the gas price monitor's rolling average to smooth transient spikes.
+	avgGasPrice := r.gpm.AvgGasPrice()
 	if faceValue.Cmp(txCost) < 0 && faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) < 0 {
 		return nil, errInsufficientSenderReserve
 	}

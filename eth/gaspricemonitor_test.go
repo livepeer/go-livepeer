@@ -218,6 +218,55 @@ func TestStop(t *testing.T) {
 	assert.False(ok)
 }
 
+func TestAvgGasPrice(t *testing.T) {
+	gasPrice1 := big.NewInt(100)
+	gpo := newStubGasPriceOracle(gasPrice1)
+
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0), nil)
+
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
+	require.Nil(t, err)
+	defer gpm.Stop()
+
+	assert.Equal(t, gasPrice1, gpm.AvgGasPrice())
+
+	gasPrice2 := big.NewInt(200)
+	gpm.updateGasPrice(gasPrice2)
+	assert.Equal(t, big.NewInt(120), gpm.AvgGasPrice())
+
+	gasPrice3 := big.NewInt(50)
+	gpm.updateGasPrice(gasPrice3)
+	assert.Equal(t, big.NewInt(106), gpm.AvgGasPrice())
+}
+
+func TestAvgGasPriceFallback(t *testing.T) {
+	min := big.NewInt(3)
+	gpm := NewGasPriceMonitor(newStubGasPriceOracle(big.NewInt(5)), 1*time.Hour, min, nil)
+
+	assert.Equal(t, min, gpm.AvgGasPrice())
+
+	gpm.updateGasPrice(big.NewInt(10))
+	assert.Equal(t, big.NewInt(10), gpm.AvgGasPrice())
+}
+
+func TestAvgGasPriceIgnoresBelowMin(t *testing.T) {
+	min := big.NewInt(10)
+	gpo := newStubGasPriceOracle(big.NewInt(5))
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, min, nil)
+
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
+	require.Nil(t, err)
+	defer gpm.Stop()
+
+	assert.Equal(t, min, gpm.GasPrice())
+	assert.Equal(t, min, gpm.AvgGasPrice())
+
+	gpm.updateGasPrice(big.NewInt(40))
+	assert.Equal(t, big.NewInt(40), gpm.AvgGasPrice())
+}
+
 func TestMinGasPrice(t *testing.T) {
 	gasPrice := big.NewInt(777)
 	gpo := newStubGasPriceOracle(gasPrice)
