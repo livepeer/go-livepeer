@@ -30,14 +30,25 @@ const (
 	defaultLiveRunnerHeartbeatInterval = 5 * time.Second
 	defaultLiveRunnerHeartbeatTTL      = 20 * time.Second
 	defaultLiveRunnerHealthInterval    = 5 * time.Second
-	defaultLiveRunnerHealthStatusCode  = http.StatusOK
-	defaultLiveRunnerHealthTimeout     = 3 * time.Second
-	defaultLiveRunnerO2RInterval       = 10 * time.Second
-	liveRunnerO2RKeepaliveMessage      = `{"keep":"alive"}`
-	liveRunnerIDRandomBytes            = 5
-	proxyIDRandomBytes                 = 16
-	liveRunnerSeedBytes                = 32
-	maxMetadataBytes                   = 1024
+	// HOW MANY CONSECUTIVE FAILED POLLS BEFORE A RUNNER IS TAKEN OUT OF SERVICE.
+	//
+	// One failure used to be enough, and it released every session on the
+	// runner. A runner under load cannot guarantee a reply inside the 3s
+	// timeout: measured on a 2-vCPU BYOC capability serving 35 concurrent
+	// chunk uploads, /health answered in 1.49s at the moment its orchestrator
+	// gave up on it, and the session -- 21m54s of continuously paid live
+	// publishing -- was destroyed and the runner marked ready again 2 seconds
+	// later. Three polls is still 15s to notice a runner that is genuinely
+	// gone, and no longer confuses "busy" with "gone".
+	defaultLiveRunnerHealthFailures   = 3
+	defaultLiveRunnerHealthStatusCode = http.StatusOK
+	defaultLiveRunnerHealthTimeout    = 3 * time.Second
+	defaultLiveRunnerO2RInterval      = 10 * time.Second
+	liveRunnerO2RKeepaliveMessage     = `{"keep":"alive"}`
+	liveRunnerIDRandomBytes           = 5
+	proxyIDRandomBytes                = 16
+	liveRunnerSeedBytes               = 32
+	maxMetadataBytes                  = 1024
 )
 
 const (
@@ -240,6 +251,9 @@ type liveRunner struct {
 	sessions      map[string]*liveRunnerSession
 	priceSource   LiveRunnerPriceInfo
 	converter     *core.AutoConvertedPrice
+	// Consecutive failed health polls. A live session represents work already
+	// paid for and in flight, so it is not thrown away on one missed poll.
+	healthFailures int
 }
 
 type liveRunnerSession struct {
@@ -1469,11 +1483,21 @@ func (r *LiveRunnerRegistry) checkStaticRunnerHealth() {
 		if !c.runner.removed && c.runner.static {
 			prevStatus := c.runner.Status
 			if healthy {
+				if c.runner.healthFailures > 0 {
+					slog.Info("static live runner health recovered", "runner_id", c.runner.RunnerID, "app", c.runner.App, "after_failures", c.runner.healthFailures, "health_url", c.healthURL)
+				}
+				c.runner.healthFailures = 0
 				c.runner.Status = "ready"
 			} else {
-				c.runner.Status = "unavailable"
-				for sessionID := range c.runner.sessions {
-					c.runner.releaseSessionLocked(sessionID)
+				c.runner.healthFailures++
+				if c.runner.healthFailures < defaultLiveRunnerHealthFailures {
+					// Busy, not gone. Say so and leave the sessions alone.
+					slog.Info("static live runner health poll failed", "runner_id", c.runner.RunnerID, "app", c.runner.App, "failures", c.runner.healthFailures, "of", defaultLiveRunnerHealthFailures, "health_url", c.healthURL)
+				} else {
+					c.runner.Status = "unavailable"
+					for sessionID := range c.runner.sessions {
+						c.runner.releaseSessionLocked(sessionID)
+					}
 				}
 			}
 			if c.runner.Status != prevStatus {

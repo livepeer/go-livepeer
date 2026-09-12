@@ -1303,6 +1303,14 @@ func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t 
 		t.Fatal(err)
 	}
 	statusCode = http.StatusOK
+	// Fewer than defaultLiveRunnerHealthFailures consecutive failures leave the
+	// runner in service and its sessions alone.
+	for i := 1; i < defaultLiveRunnerHealthFailures; i++ {
+		registry.checkStaticRunnerHealth()
+		if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+			t.Fatalf("expected session to survive %d failed health poll(s), got %v", i, err)
+		}
+	}
 	registry.checkStaticRunnerHealth()
 	if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); !isRunnerErrorStatus(err, http.StatusNotFound) {
 		t.Fatalf("expected unhealthy static runner to release sessions, got %v", err)
@@ -1310,6 +1318,45 @@ func TestLiveRunnerRegistry_StaticRunnerCustomHealthStatusAndUnhealthyRelease(t 
 	if runners := registry.Runners(); len(runners) != 0 {
 		data, _ := json.Marshal(runners)
 		t.Fatalf("expected unhealthy static runner to be hidden, got %s", data)
+	}
+}
+
+func TestLiveRunnerRegistry_StaticRunnerHealthyPollResetsFailures(t *testing.T) {
+	statusCode := http.StatusOK
+	healthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+	}))
+	defer healthSrv.Close()
+
+	registry := newLiveRunnerTestRegistry()
+	resp, err := registry.RegisterStaticRunners(StaticLiveRunnerConfig{Runners: []StaticLiveRunnerConfigEntry{{
+		Label:     "busy-runner",
+		RunnerURL: "https://runner.example.com",
+		App:       "live-video-to-video/scope",
+		Capacity:  1,
+		HealthURL: healthSrv.URL,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := resp.Runners[0].RunnerID
+	sessionID, _, err := registry.ReserveSession(runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A runner that misses polls now and then, but never enough in a row, is
+	// busy rather than gone: its session must outlive any number of such misses.
+	for round := 0; round < 3; round++ {
+		statusCode = http.StatusServiceUnavailable
+		for i := 1; i < defaultLiveRunnerHealthFailures; i++ {
+			registry.checkStaticRunnerHealth()
+		}
+		statusCode = http.StatusOK
+		registry.checkStaticRunnerHealth()
+		if _, err := registry.RunnerEndpointForSession(runnerID, sessionID); err != nil {
+			t.Fatalf("round %d: expected session to survive intermittent failures, got %v", round, err)
+		}
 	}
 }
 
