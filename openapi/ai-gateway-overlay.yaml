@@ -1,0 +1,72 @@
+overlay: 1.0.0
+info:
+  title: Overlay for translating AI runner OpenAPI spec to AI Gateway spec.
+  version: 1.0.0
+extends: https://github.com/livepeer/ai-worker/blob/main/runner/openapi.yaml
+
+actions:
+  # Remove health path and schema.
+  - target: "$.paths['/health']"
+    description: Remove the health path.
+    remove: true
+  - target: "$.components.schemas['HealthCheck']"
+    description: Remove the HealthCheck schema.
+    remove: true
+
+  # Ensure model_id is required for all routes.
+  - target: "$.components.schemas.Body_audio_to_text_audio_to_text_post"
+    description: Ensure model_id is required for Text to Audio route.
+    update:
+      required:
+        - model_id
+  - target: "$.components.schemas.Body_audio_to_text_audio_to_text_post.properties.model_id.default"
+    description: Remove default value for model_id in Text to Audio route.
+    remove: true
+
+  - target: "$.components.schemas.Body_image_to_image_image_to_image_post"
+    description: Ensure model_id is required for Image to Image route.
+    update:
+      required:
+        - model_id
+  - target: "$.components.schemas.Body_image_to_image_image_to_image_post.properties.model_id.default"
+    description: Remove default value for model_id in Image to Image route.
+    remove: true
+
+  - target: "$.components.schemas.Body_image_to_video_image_to_video_post"
+    description: Ensure model_id is required for Image to Video route.
+    update:
+      required:
+        - model_id
+  - target: "$.components.schemas.Body_image_to_video_image_to_video_post.properties.model_id.default"
+    description: Remove default value for model_id in Image to Video route.
+    remove: true
+
+  - target: "$.components.schemas.Body_upscale_upscale_post"
+    description: Ensure model_id is required for Upscale route.
+    update:
+      required:
+        - model_id
+  - target: "$.components.schemas.Body_upscale_upscale_post.properties.model_id.default"
+    description: Remove default value for model_id in Upscale route.
+    remove: true
+
+  - target: "$.components.schemas.TextToImageParams"
+    description: Ensure model_id is required for Text to Image route.
+    update:
+      required:
+        - model_id
+  - target: "$.components.schemas.TextToImageParams.properties.model_id.default"
+    description: Remove default value for model_id in Text to Image route.
+    remove: true
+
+  # Replace VideoResponse schema with ImageResponse schema.
+  - target: "$.components.schemas['VideoResponse']"
+    description: Remove the VideoResponse schema.
+    remove: true
+  - target: "$.components.schemas"
+    description: Create a new VideoResponse schema that extends ImageResponse.
+    update:
+      VideoResponse:
+        allOf:
+          - $ref: "#/components/schemas/ImageResponse"
+        title: VideoResponse
