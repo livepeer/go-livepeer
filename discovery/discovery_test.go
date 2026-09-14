@@ -392,6 +392,49 @@ func TestDBOrchestratorPoolCache_cacheOrchInfos_ExtraNodes(t *testing.T) {
 	assert.Equal(0, calls[extra4])
 }
 
+func TestDBOrchestratorPoolCache_cacheOrchInfos_PreservesDiscoveryOnRefreshFailure(t *testing.T) {
+	require := require.New(t)
+
+	responses := make(chan int, 2)
+	responses <- http.StatusOK
+	responses <- http.StatusBadGateway
+	discovery := json.RawMessage(`[{"address":"https://orch.example.com:8935","runners":[{"app":"live-video-to-video/noop","price_info":{"price":1,"currency":"wei","unit":"seconds"}}]}]`)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal("/discovery", r.URL.Path)
+		status := <-responses
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = w.Write(discovery)
+		}
+	}))
+	defer ts.Close()
+
+	orchURL, err := url.Parse(ts.URL)
+	require.NoError(err)
+	orchPool := &orchestratorPool{
+		infos: []common.OrchestratorLocalInfo{{URL: orchURL}},
+		getOrchInfo: func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+			return &net.OrchestratorInfo{
+				Address:    pm.RandBytes(20),
+				Transcoder: orchestratorServer.String(),
+				PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			}, nil
+		},
+	}
+	node := &core.LivepeerNode{OrchestratorPool: orchPool}
+	dbo := &DBOrchestratorPoolCache{
+		bcast:                &stubBroadcaster{},
+		node:                 node,
+		useDiscoveryEndpoint: true,
+	}
+
+	require.NoError(dbo.cacheOrchInfos())
+	require.JSONEq(string(discovery), string(node.GetNetworkCapabilities()[0].Discovery))
+
+	require.NoError(dbo.cacheOrchInfos())
+	require.JSONEq(string(discovery), string(node.GetNetworkCapabilities()[0].Discovery))
+}
+
 func sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,

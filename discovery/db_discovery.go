@@ -467,12 +467,26 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		startOrchLookup(orch, 0)
 	}
 
+	lastDiscovery := make(map[string]json.RawMessage)
+	if dbo.useDiscoveryEndpoint {
+		for _, orchCaps := range dbo.node.GetNetworkCapabilities() {
+			if orchCaps != nil && len(orchCaps.Discovery) > 0 {
+				lastDiscovery[orchCaps.OrchURI] = orchCaps.Discovery
+			}
+		}
+	}
+
 	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
 	for i := 0; i < numOrchs; i++ {
 		select {
 		case res := <-resc:
 			//add response to network capabilities
-			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res))
+			orchCaps := orchInfoToOrchNetworkCapabilities(res)
+			if len(orchCaps.Discovery) == 0 {
+				// empty discovery, so optimistically add last seen info, assuming nothing has changed
+				orchCaps.Discovery = lastDiscovery[orchCaps.OrchURI]
+			}
+			orchNetworkCapabilities = append(orchNetworkCapabilities, orchCaps)
 
 			// discover newly advertised nodes. only recurse the first level.
 			if res.level == 0 && len(res.orchInfo.GetNodes()) > 0 {
