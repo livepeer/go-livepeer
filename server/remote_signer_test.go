@@ -1587,11 +1587,14 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	//
 	// Note: Prices are returned as `CapabilitiesPrices` (capability menu pricing), not via global
 	// `PriceInfo` (which is intentionally expensive in these fixtures).
+	orch1LastSeen := time.Date(2026, time.September, 15, 0, 30, 0, 0, time.UTC)
+	orch2LastSeen := orch1LastSeen.Add(time.Minute)
 	node := &core.LivepeerNode{}
 	require.NoError(node.UpdateNetworkCapabilities([]*common.OrchNetworkCapabilities{
 		{
 			OrchURI:      "https://orch1.example.com:8935",
 			Capabilities: orch1Caps,
+			LastSeen:     orch1LastSeen,
 			// Global fallback price is intentionally expensive.
 			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
 			CapabilitiesPrices: []*net.PriceInfo{
@@ -1639,6 +1642,7 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 		{
 			OrchURI:      "https://orch2.example.com:8935",
 			Capabilities: orch2Caps,
+			LastSeen:     orch2LastSeen,
 			// Global fallback price is intentionally expensive.
 			PriceInfo: &net.PriceInfo{PricePerUnit: 200, PixelsPerUnit: 1},
 			CapabilitiesPrices: []*net.PriceInfo{
@@ -1725,17 +1729,21 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(float32(common.Score_Trusted), orch1Resp.Score)
 	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch1Resp.Capabilities)
 	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, orch1Resp))
+	require.Equal(orch1LastSeen, orch1Resp.LastSeen)
+	require.Contains(string(body), `"last_seen":"2026-09-15T00:30:00Z"`)
 	requireNotContainsDiscoveryField(t, body, "unknown_field")
 	discoveredResp := discoveryResponseByAddress(t, resp, "https://discovered.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), discoveredResp.Score)
 	require.Equal([]string{"live-video-to-video/model-a"}, discoveredResp.Capabilities)
 	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveredResp))
+	require.Equal(orch2LastSeen, discoveredResp.LastSeen)
 	require.Equal(1, discoveredResp.Runners[1].Capacity)
 	require.Equal(0, discoveredResp.Runners[1].CapacityUsed)
 	orch2Resp := discoveryResponseByAddress(t, resp, "https://orch2.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch2Resp.Score)
 	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch2Resp.Capabilities)
 	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, orch2Resp))
+	require.Equal(orch2LastSeen, orch2Resp.LastSeen)
 	orch3Resp := discoveryResponseByAddress(t, resp, "https://orch3.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch3Resp.Score)
 	require.Equal([]string{"live-video-to-video/model-a"}, orch3Resp.Capabilities)
@@ -1858,6 +1866,7 @@ func TestRemoteSigner_Discovery_EmptyCacheRetriesBeforeInterval(t *testing.T) {
 	ls.GetOrchestrators(rdp, rr, req)
 
 	require.Equal(http.StatusOK, rr.Code)
+	require.NotContains(rr.Body.String(), "last_seen")
 	var resp []discoveryResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp, 1)
