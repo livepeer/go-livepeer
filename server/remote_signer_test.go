@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
@@ -35,6 +36,31 @@ type testEthClient struct {
 	*eth.StubClient
 	key  *ecdsa.PrivateKey
 	addr ethcommon.Address
+}
+
+type discoveryPriceFeedWatcher struct {
+	base          string
+	quote         string
+	currenciesErr error
+	data          eth.PriceData
+	currentErr    error
+	reads         int
+	ctx           context.Context
+	sink          chan<- eth.PriceData
+}
+
+func (w *discoveryPriceFeedWatcher) Currencies() (string, string, error) {
+	w.reads++
+	return w.base, w.quote, w.currenciesErr
+}
+
+func (w *discoveryPriceFeedWatcher) Current() (eth.PriceData, error) {
+	w.reads++
+	return w.data, w.currentErr
+}
+
+func (w *discoveryPriceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceData) {
+	w.ctx, w.sink = ctx, sink
 }
 
 type apiErrorResponse struct {
@@ -2000,6 +2026,144 @@ func discoveryRaw(t *testing.T, data string) json.RawMessage {
 	return json.RawMessage(data)
 }
 
+func TestRemoteSigner_Discovery_PriceUSD(t *testing.T) {
+	previousWatcher := core.PriceFeedWatcher
+	t.Cleanup(func() { core.PriceFeedWatcher = previousWatcher })
+	feed := func(base, quote string, rate *big.Rat) *discoveryPriceFeedWatcher {
+		return &discoveryPriceFeedWatcher{base: base, quote: quote, data: eth.PriceData{Price: rate}}
+	}
+	for _, test := range []struct {
+		name    string
+		watcher *discoveryPriceFeedWatcher
+		want    json.Number
+	}{
+		{"ETH/USD", feed("eth", "usd", big.NewRat(2000, 1)), "2"},
+		{"USD/ETH", feed("USD", "ETH", big.NewRat(1, 2000)), "2"},
+		{"integer trailing zeros", feed("ETH", "USD", big.NewRat(2000000, 1)), "2000"},
+		{"fraction", feed("ETH", "USD", big.NewRat(125, 1)), "0.125"},
+		{"repeating fraction", feed("ETH", "USD", big.NewRat(1000, 3)), "0.333333333333333333"},
+		{"small fraction", feed("ETH", "USD", big.NewRat(1, 1000000000000)), "0.000000000000001"},
+		{"missing watcher", nil, ""},
+		{"unsupported currencies", feed("BTC", "USD", big.NewRat(100000, 1)), ""},
+		{"currencies error", &discoveryPriceFeedWatcher{currenciesErr: fmt.Errorf("unavailable")}, ""},
+		{"current price error", &discoveryPriceFeedWatcher{base: "ETH", quote: "USD", currentErr: fmt.Errorf("unavailable")}, ""},
+		{"nil price", feed("ETH", "USD", nil), ""},
+		{"zero price", feed("ETH", "USD", big.NewRat(0, 1)), ""},
+		{"negative price", feed("ETH", "USD", big.NewRat(-1, 1)), ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			core.PriceFeedWatcher = nil
+			if test.watcher != nil {
+				core.PriceFeedWatcher = test.watcher
+			}
+			usdPrice, err := core.NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
+			if test.want == "" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				defer usdPrice.Stop()
+			}
+			pool := remoteDiscoveryPriceTestPool(t)
+			ls := &LivepeerServer{LivepeerNode: &core.LivepeerNode{USDToWei: usdPrice}}
+			before, err := json.Marshal(pool.cached)
+			require.NoError(t, err)
+			resp, body := getRemoteDiscoveryResponse(t, ls, pool)
+			require.Len(t, resp, 1)
+			require.Len(t, resp[0].Runners, 1)
+			info := resp[0].Runners[0].PriceInfo
+			require.NotNil(t, info)
+			expected := *pool.cached[0].Runners[0].PriceInfo
+			expected.PriceUSD = test.want
+			require.Equal(t, expected, *info)
+			if test.want == "" {
+				require.NotContains(t, string(body), "price_usd")
+			} else {
+				require.Contains(t, string(body), fmt.Sprintf("%q:%s", "price_usd", test.want))
+				require.Equal(t, 2, test.watcher.reads, "discovery must not read the feed")
+			}
+			after, err := json.Marshal(pool.cached)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "response must not mutate the cache")
+		})
+	}
+}
+
+func TestRemoteSigner_Discovery_PriceUSDUpdates(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		previousWatcher := core.PriceFeedWatcher
+		defer func() { core.PriceFeedWatcher = previousWatcher }()
+		watcher := &discoveryPriceFeedWatcher{base: "ETH", quote: "USD", data: eth.PriceData{Price: big.NewRat(2000, 1)}}
+		core.PriceFeedWatcher = watcher
+		usdPrice, err := core.NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
+		require.NoError(t, err)
+		defer usdPrice.Stop()
+		require.NotNil(t, watcher.sink, "conversion must subscribe even without USD price limits")
+		pool := remoteDiscoveryPriceTestPool(t)
+		ls := &LivepeerServer{LivepeerNode: &core.LivepeerNode{USDToWei: usdPrice}}
+		resp, _ := getRemoteDiscoveryResponse(t, ls, pool)
+		require.Equal(t, json.Number("2"), resp[0].Runners[0].PriceInfo.PriceUSD)
+		watcher.sink <- eth.PriceData{Price: big.NewRat(3000, 1)}
+		synctest.Wait()
+		resp, _ = getRemoteDiscoveryResponse(t, ls, pool)
+		require.Equal(t, json.Number("3"), resp[0].Runners[0].PriceInfo.PriceUSD)
+		require.Equal(t, 2, watcher.reads, "requests must use the cached conversion")
+	})
+}
+
+func TestRemoteSigner_USDConversionLifecycle(t *testing.T) {
+	previousWatcher := core.PriceFeedWatcher
+	t.Cleanup(func() { core.PriceFeedWatcher = previousWatcher })
+	for _, discovery := range []bool{false, true} {
+		t.Run(fmt.Sprintf("discovery=%t", discovery), func(t *testing.T) {
+			watcher := &discoveryPriceFeedWatcher{base: "ETH", quote: "USD", data: eth.PriceData{Price: big.NewRat(2000, 1)}}
+			core.PriceFeedWatcher = watcher
+			ls := &LivepeerServer{
+				HTTPMux: http.NewServeMux(),
+				LivepeerNode: &core.LivepeerNode{
+					RemoteDiscovery: discovery,
+					Eth:             newTestEthClient(t),
+				},
+			}
+			// An invalid bind address exits without opening a listener.
+			require.Error(t, StartRemoteSignerServer(ls, "invalid:bind:address"))
+			require.NotNil(t, ls.LivepeerNode.USDToWei)
+			require.Equal(t, big.NewRat(1e18, 2000), ls.LivepeerNode.USDToWei.Value())
+			require.Equal(t, 2, watcher.reads)
+			require.NotNil(t, watcher.ctx)
+			require.ErrorIs(t, watcher.ctx.Err(), context.Canceled)
+		})
+	}
+}
+
+func remoteDiscoveryPriceTestPool(t *testing.T) *remoteDiscoveryPool {
+	t.Helper()
+	// An orchestrator-supplied USD price must be replaced or omitted in responses.
+	entries := remoteDiscoveryEntries(discoveryRaw(t, `[{"runners":[{
+		"url":"https://priced.example.com/runner","app":"live-video-to-video/scope",
+		"price_info":{"price":1000000000000000,"currency":"wei","unit":"seconds","price_usd":999}
+	}]}]`))
+	require.Len(t, entries, 1)
+	return &remoteDiscoveryPool{
+		cached: []remoteDiscoveryOrchestrator{{
+			URL:     &url.URL{Scheme: "https", Host: "priced.example.com"},
+			Runners: entries[0].Runners,
+		}},
+		lastRefresh:  time.Now(),
+		refreshEvery: time.Hour,
+	}
+}
+
+func getRemoteDiscoveryResponse(t *testing.T, ls *LivepeerServer, pool *remoteDiscoveryPool) ([]discoveryResponse, []byte) {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	ls.GetOrchestrators(pool, rr, httptest.NewRequest(http.MethodGet, "/discover-orchestrators", nil))
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.Bytes()
+	var resp []discoveryResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	return resp, body
+}
+
 func TestValidateRunnerPriceAcceptsFixedUnit(t *testing.T) {
 	price, err := validateRunnerPrice(&runner.LiveRunnerPriceInfo{
 		Price:    json.Number("7"),
@@ -2088,6 +2252,7 @@ func TestRemoteDiscoveryRunnerMetadataRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &response))
 	require.Len(t, response.Runners, 1)
 	require.Equal(t, `{"region":"us-west"}`, response.Runners[0].Metadata)
+	require.Equal(t, *entries[0].Runners[0].PriceInfo, *response.Runners[0].PriceInfo)
 }
 
 func TestRemoteDiscoveryFiltersInvalidRunnerMetadata(t *testing.T) {

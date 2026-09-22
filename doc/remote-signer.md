@@ -79,6 +79,8 @@ When enabled, the signer exposes:
 
 The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`, and optional `runners`) in a format that is compatible with the gateway's orchestrator discovery webhook. The `address` field is the orchestrator service address used by gateways, not the signer's Ethereum/account address.
 
+If ETH/USD conversion is available, each runner's `price_info` also includes a numeric `price_usd` converted from the wei `price`.
+
 Clients can filter for orchestrators matching a given capability via the `caps` query param. This param can be repeated to retrieve orchestrators supporting any one of the given capabilities. For example:
 
 ```bash

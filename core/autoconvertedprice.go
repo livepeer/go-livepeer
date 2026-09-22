@@ -74,6 +74,9 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 	if err != nil {
 		return nil, fmt.Errorf("error getting current price data: %v", err)
 	}
+	if currencyPrice.Price == nil || currencyPrice.Price.Sign() <= 0 {
+		return nil, fmt.Errorf("price feed must return a positive price")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	price := &AutoConvertedPrice{
@@ -117,6 +120,9 @@ func (a *AutoConvertedPrice) startAutoConvertLoop(ctx context.Context, baseCurre
 			case <-ctx.Done():
 				return
 			case currencyPrice := <-priceUpdated:
+				if currencyPrice.Price == nil || currencyPrice.Price.Sign() <= 0 {
+					continue
+				}
 				a.mu.Lock()
 				a.current = new(big.Rat).Mul(a.basePrice, currencyToWeiMultiplier(currencyPrice, baseCurrency))
 				a.mu.Unlock()

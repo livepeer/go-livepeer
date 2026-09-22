@@ -78,6 +78,14 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
+	usdPrice, err := core.NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
+	ls.LivepeerNode.USDToWei = usdPrice
+	if err != nil {
+		glog.Warningf("Remote signer USD conversion unavailable: %v", err)
+	} else {
+		defer usdPrice.Stop()
+	}
+
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
@@ -856,13 +864,30 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 	}
 
 	infos := pool.Orchestrators(filteredCaps)
+	var weiPerUSD *big.Rat
+	if ls.LivepeerNode != nil && ls.LivepeerNode.USDToWei != nil {
+		weiPerUSD = ls.LivepeerNode.USDToWei.Value()
+	}
 	resp := make([]discoveryResponse, 0, len(infos))
 	for _, cached := range infos {
+		runners := make([]runner.LiveRunnerDiscoveryRunner, 0, len(cached.Runners))
+		for _, r := range cached.Runners {
+			if r.PriceInfo != nil {
+				priceInfo := *r.PriceInfo
+				priceInfo.PriceUSD = "" // Only advertise USD prices derived by this signer.
+				if price, ok := runnerPrice(r.PriceInfo); ok && weiPerUSD != nil && weiPerUSD.Sign() > 0 {
+					usd := new(big.Rat).Quo(price, weiPerUSD).FloatString(18)
+					priceInfo.PriceUSD = json.Number(strings.TrimSuffix(strings.TrimRight(usd, "0"), "."))
+				}
+				r.PriceInfo = &priceInfo
+			}
+			runners = append(runners, r)
+		}
 		resp = append(resp, discoveryResponse{
 			Address:      cached.URL.String(),
 			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
-			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
+			Runners:      runners,
 		})
 	}
 
