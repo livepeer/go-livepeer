@@ -751,6 +751,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		} else if req.Type == RemoteType_Fixed {
 			pipeline = RemoteType_Fixed
 		}
+		var feeUSD *json.Number
+		if ls.LivepeerNode.USDToWei != nil {
+			if usd := usdPrice(fee, ls.LivepeerNode.USDToWei.Value()); usd != "" {
+				feeUSD = &usd
+			}
+		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
@@ -770,6 +776,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"pixels":             pixels,
 			"session_balance":    newBal.FloatString(0),
 			"computed_fee":       fee.FloatString(0),
+			"computed_fee_usd":   feeUSD,
 			"cost":               orchPrice.FloatString(10),
 			"sequence_number":    state.SequenceNumber,
 			"num_tickets":        balUpdate.NumTickets,
@@ -839,6 +846,14 @@ type discoveryResponse struct {
 	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
 }
 
+func usdPrice(price, weiPerUSD *big.Rat) json.Number {
+	if weiPerUSD == nil || weiPerUSD.Sign() <= 0 {
+		return ""
+	}
+	usd := new(big.Rat).Quo(price, weiPerUSD).FloatString(18)
+	return json.Number(strings.TrimSuffix(strings.TrimRight(usd, "0"), "."))
+}
+
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
 func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.ResponseWriter, r *http.Request) {
 	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
@@ -875,9 +890,8 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 			if r.PriceInfo != nil {
 				priceInfo := *r.PriceInfo
 				priceInfo.PriceUSD = "" // Only advertise USD prices derived by this signer.
-				if price, ok := runnerPrice(r.PriceInfo); ok && weiPerUSD != nil && weiPerUSD.Sign() > 0 {
-					usd := new(big.Rat).Quo(price, weiPerUSD).FloatString(18)
-					priceInfo.PriceUSD = json.Number(strings.TrimSuffix(strings.TrimRight(usd, "0"), "."))
+				if price, ok := runnerPrice(r.PriceInfo); ok {
+					priceInfo.PriceUSD = usdPrice(price, weiPerUSD)
 				}
 				r.PriceInfo = &priceInfo
 			}

@@ -2026,6 +2026,45 @@ func discoveryRaw(t *testing.T, data string) json.RawMessage {
 	return json.RawMessage(data)
 }
 
+func TestUSDPrice(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		price     *big.Rat
+		weiPerUSD *big.Rat
+		want      json.Number
+	}{
+		{"normal fee", big.NewRat(1e15, 1), big.NewRat(5e14, 1), "2"},
+		{"fractional wei fee", big.NewRat(1, 2), big.NewRat(5e14, 1), "0.000000000000001"},
+		{"repeating decimal", big.NewRat(1, 1), big.NewRat(3, 1), "0.333333333333333333"},
+		{"zero fee", big.NewRat(0, 1), big.NewRat(5e14, 1), "0"},
+		{"unavailable rate", big.NewRat(1, 1), nil, ""},
+		{"zero rate", big.NewRat(1, 1), big.NewRat(0, 1), ""},
+		{"negative rate", big.NewRat(1, 1), big.NewRat(-1, 1), ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			priceBefore := new(big.Rat).Set(test.price)
+			rateBefore := ""
+			if test.weiPerUSD != nil {
+				rateBefore = test.weiPerUSD.RatString()
+			}
+			usd := usdPrice(test.price, test.weiPerUSD)
+			require.Equal(t, test.want, usd)
+			var feeUSD *json.Number
+			wantJSON := "null"
+			if usd != "" {
+				feeUSD, wantJSON = &usd, string(test.want)
+			}
+			encoded, err := json.Marshal(map[string]interface{}{"computed_fee_usd": feeUSD})
+			require.NoError(t, err)
+			require.JSONEq(t, fmt.Sprintf(`{"computed_fee_usd":%s}`, wantJSON), string(encoded))
+			require.Equal(t, priceBefore, test.price, "conversion must not change the fee")
+			if test.weiPerUSD != nil {
+				require.Equal(t, rateBefore, test.weiPerUSD.RatString(), "conversion must not change the cached rate")
+			}
+		})
+	}
+}
+
 func TestRemoteSigner_Discovery_PriceUSD(t *testing.T) {
 	previousWatcher := core.PriceFeedWatcher
 	t.Cleanup(func() { core.PriceFeedWatcher = previousWatcher })
