@@ -827,6 +827,7 @@ func TestGenerateLivePayment_LV2V_Succeeds(t *testing.T) {
 		require.NoError(err)
 		var payment net.Payment
 		require.NoError(proto.Unmarshal(paymentBytes, &payment))
+		require.Equal(ethClient.addr.Bytes(), payment.Sender)
 
 		return resp, payment
 	}

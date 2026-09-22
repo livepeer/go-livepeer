@@ -764,6 +764,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"app":                state.App,
 			"pipeline":           pipeline,
 			"request_id":         requestID,
+			"payer_address":      sess.Broadcaster.Address().Hex(),
 			"orch_address":       orchAddr.Hex(),
 			"orch_url":           oInfo.Transcoder,
 			"manifest_id":        manifestID,
