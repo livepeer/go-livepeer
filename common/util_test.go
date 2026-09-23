@@ -476,3 +476,25 @@ func TestMimeTypeToExtension(t *testing.T) {
 	_, err := MimeTypeToExtension(invalidContentType)
 	assert.Equal(ErrNoExtensionsForType, err)
 }
+
+func TestValidChecksumAddress(t *testing.T) {
+	assert := assert.New(t)
+
+	// EIP-55 checksummed, with and without the 0x prefix
+	assert.True(ValidChecksumAddress("0x16a72bdb3017196825BC53809b87F96fbEE31F6C"))
+	assert.True(ValidChecksumAddress("16a72bdb3017196825BC53809b87F96fbEE31F6C"))
+
+	// single-case addresses carry no checksum
+	assert.True(ValidChecksumAddress("0x16a72bdb3017196825bc53809b87f96fbee31f6c"))
+	assert.True(ValidChecksumAddress("0x16A72BDB3017196825BC53809B87F96FBEE31F6C"))
+
+	// one character's case flipped breaks the checksum
+	assert.False(ValidChecksumAddress("0x16a72bdb3017196825bC53809b87F96fbEE31F6C"))
+	// one mistyped hex digit in a checksummed address breaks it too
+	assert.False(ValidChecksumAddress("0x26a72bdb3017196825BC53809b87F96fbEE31F6C"))
+
+	// not addresses at all
+	assert.False(ValidChecksumAddress(""))
+	assert.False(ValidChecksumAddress("0x123"))
+	assert.False(ValidChecksumAddress("not-an-address"))
+}

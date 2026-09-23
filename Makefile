@@ -1,10 +1,16 @@
 SHELL=/bin/bash
 GO_BUILD_DIR?="./"
 
-MOCKGEN=go run github.com/golang/mock/mockgen
-ABIGEN=go run github.com/ethereum/go-ethereum/cmd/abigen
+# Generators run on the host even when cross-compiling, so GOOS and GOARCH
+# from the environment must not leak into them.
+MOCKGEN=GOOS= GOARCH= go run github.com/golang/mock/mockgen
+ABIGEN=GOOS= GOARCH= go run github.com/ethereum/go-ethereum/cmd/abigen
 
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
+
+# Release builds: skip the generated files, they are committed.
+.PHONY: binaries
+binaries: livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
@@ -60,8 +66,8 @@ ifeq ($(BUILDOS),darwin)
 		cgo_ldflags += -framework CoreFoundation -framework Security
 		ifeq ($(BUILDARCH),amd64)
 			ifeq ($(GOARCH),arm64)
-				cgo_cflags += --target=arm64-apple-macos11
-				cgo_ldflags += --target=arm64-apple-macos11
+				cgo_cflags += --target=arm64-apple-macos13
+				cgo_ldflags += --target=arm64-apple-macos13
 			endif
 		endif
 	endif
@@ -169,6 +175,27 @@ box-stream:
 .PHONY: box-playback
 box-playback:
 	./box/stream.sh playback
+
+.PHONY: box-live-runner
+box-live-runner:
+ifeq ($(strip ${DOCKER}),true)
+	docker build -t livepeer/go-livepeer -f docker/Dockerfile .
+else ifneq ($(strip ${REBUILD}),false)
+	@$(MAKE) livepeer
+endif
+	./box/live-runner.sh orchestrator
+
+.PHONY: box-live-runner-app
+box-live-runner-app:
+	./box/live-runner.sh app
+
+.PHONY: box-live-runner-call
+box-live-runner-call:
+	./box/live-runner.sh call
+
+.PHONY: box-live-runner-echo
+box-live-runner-echo:
+	./box/live-runner.sh echo
 
 .PHONY: box-supabase
 box-supabase:

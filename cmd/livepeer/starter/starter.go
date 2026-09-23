@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	Network                    *string
 	RtmpAddr                   *string
 	CliAddr                    *string
+	CliTxRoutes                *bool
 	HttpAddr                   *string
 	ServiceAddr                *string
 	Nodes                      *string
@@ -209,6 +210,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetwork := "offchain"
 	defaultRtmpAddr := ""
 	defaultCliAddr := ""
+	defaultCliTxRoutes := false
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
 	defaultNodes := ""
@@ -340,6 +342,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Network:      &defaultNetwork,
 		RtmpAddr:     &defaultRtmpAddr,
 		CliAddr:      &defaultCliAddr,
+		CliTxRoutes:  &defaultCliTxRoutes,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
 		Nodes:        &defaultNodes,
@@ -999,8 +1002,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
 		recipientAddr := n.Eth.Account().Address
 		if *cfg.EthOrchAddr != "" {
+			// HexToAddress silently coerces garbage to the zero address.
+			if !common.ValidChecksumAddress(*cfg.EthOrchAddr) {
+				exit("-ethOrchAddr %q is not a valid address (bad hex or EIP-55 checksum)", *cfg.EthOrchAddr)
+			}
 			recipientAddr = ethcommon.HexToAddress(*cfg.EthOrchAddr)
 		}
+
+		n.RecipientAddr = nodeRecipientAddr(*cfg.Orchestrator, *cfg.EthOrchAddr, recipientAddr)
 
 		smCfg := &pm.LocalSenderMonitorConfig{
 			Claimant:        recipientAddr,
@@ -1080,7 +1089,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
-			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -1265,7 +1273,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		var reward bool
 		if cfg.Reward == nil {
 			// If the node address is an on-chain registered address, start the reward service
-			t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+			t, err := n.Eth.GetTranscoder(recipientAddr)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -1279,10 +1287,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			reward = *cfg.Reward
 		}
 
+		// Fail early unless this account is the orchestrator or its reward caller (LIP-118).
+		if reward {
+			if err := eth.CheckRewardCaller(n.Eth, recipientAddr); err != nil {
+				if !errors.Is(err, eth.ErrNotRewardCaller) || cfg.Reward != nil {
+					exit("%s", err)
+				}
+				glog.Warning(err)
+				reward = false
+			}
+		}
+
 		if reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eth.NewRewardService(n.Eth, timeWatcher)
+			rs := eth.NewRewardService(n.Eth, timeWatcher, recipientAddr)
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
@@ -1825,6 +1844,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if n.NodeType == core.RemoteSignerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
 	}
+	if isWildcardIPAddr(*cfg.CliAddr) {
+		glog.Warningf("Binding -cliAddr to a wildcard address (%s) exposes the CLI server on all network interfaces; use a loopback address or restrict access with a firewall", *cfg.CliAddr)
+	}
 
 	// Apply default capabilities if not running as a transcoder.
 	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
@@ -1923,6 +1945,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Current ManifestID will be available over ", *cfg.HttpAddr)
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
+	s.CliTxRoutes = *cfg.CliTxRoutes
 	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
 		s.StartCliWebserver(srv)
@@ -2298,8 +2321,13 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		return inferredUri, err
 	}
 
-	// On-chain lookup and matching with inferred public address
-	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
+	// On-chain lookup and matching with inferred public address.
+	// The URI is registered under the orchestrator (-ethOrchAddr), not the node's account.
+	uriAddr := n.Eth.Account().Address
+	if n.RecipientAddr != "" {
+		uriAddr = ethcommon.HexToAddress(n.RecipientAddr)
+	}
+	addr, err = n.Eth.GetServiceURI(uriAddr)
 	if err != nil {
 		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%q", err)
 		return nil, err
@@ -2313,6 +2341,15 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", ethUri, inferredUri)
 	}
 	return ethUri, nil
+}
+
+// A LIP-118 reward caller has no -orchestrator flag, so -ethOrchAddr alone must qualify.
+func nodeRecipientAddr(isOrchestrator bool, ethOrchAddr string, recipientAddr ethcommon.Address) string {
+	// The zero address means the node's own account, as NewRewardService also treats it.
+	if recipientAddr == (ethcommon.Address{}) || (!isOrchestrator && ethOrchAddr == "") {
+		return ""
+	}
+	return recipientAddr.Hex()
 }
 
 func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
@@ -2345,12 +2382,30 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 		return defaultHost + ":" + defaultPort
 	}
 
+	if ip := net.ParseIP(trimIPv6Brackets(addr)); ip != nil {
+		return net.JoinHostPort(ip.String(), defaultPort)
+	}
 	if addr[0] == ':' {
 		return defaultHost + addr
 	}
-	// not IPv6 safe
 	if !strings.Contains(addr, ":") {
 		return addr + ":" + defaultPort
+	}
+	return addr
+}
+
+func isWildcardIPAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = trimIPv6Brackets(addr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
+}
+
+func trimIPv6Brackets(addr string) string {
+	if len(addr) >= 2 && addr[0] == '[' && addr[len(addr)-1] == ']' {
+		return addr[1 : len(addr)-1]
 	}
 	return addr
 }

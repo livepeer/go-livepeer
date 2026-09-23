@@ -33,9 +33,7 @@ func newStubTicketStore() *stubTicketStore {
 	return &stubTicketStore{
 		tickets:   make(map[ethcommon.Address][]*SignedTicket),
 		submitted: make(map[string]bool),
-		stubBlockStore: stubBlockStore{
-			isActive: true,
-		},
+		isActive:  true,
 	}
 }
 

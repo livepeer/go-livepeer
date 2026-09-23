@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	gonet "net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
@@ -120,9 +122,25 @@ var newCfg = &orchestratorConfig{
 	ServiceURI:     "127.0.0.1:18545",
 }
 
+// localIP returns a non-loopback IPv4 address of this host, since gateways
+// refuse to download segments from loopback addresses. Falls back to
+// 127.0.0.1 with a warning so the tests that do not download still run.
+func localIP() string {
+	addrs, err := gonet.InterfaceAddrs()
+	if err == nil {
+		for _, a := range addrs {
+			if ipn, ok := a.(*gonet.IPNet); ok && !ipn.IP.IsLoopback() && ipn.IP.To4() != nil {
+				return ipn.IP.String()
+			}
+		}
+	}
+	glog.Warning("e2e: no non-loopback IPv4 interface, using 127.0.0.1; push tests will fail")
+	return "127.0.0.1"
+}
+
 func lpCfg() starter.LivepeerConfig {
 	mu.Lock()
-	serviceAddr := fmt.Sprintf("127.0.0.1:%d", httpPort)
+	serviceAddr := fmt.Sprintf("%s:%d", localIP(), httpPort)
 	httpPort++
 	cliAddr := fmt.Sprintf("127.0.0.1:%d", cliPort)
 	cliPort++
@@ -145,6 +163,8 @@ func lpCfg() starter.LivepeerConfig {
 	cfg.EthPassword = &ethPassword
 	cfg.Network = &network
 	cfg.BlockPollingInterval = &blockPollingInterval
+	// The tests activate and bond orchestrators through the CLI tx routes.
+	cfg.CliTxRoutes = boolPointer(true)
 	cfg.PricePerUnit = &pricePerUnit
 	cfg.InitializeRound = &initializeRound
 	cfg.InitializeRoundMaxDelay = &initializeRoundMaxDelay

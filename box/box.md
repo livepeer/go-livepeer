@@ -2,7 +2,26 @@
 
 ## Requirements
 - Docker is installed (executing `docker` should succeed)
-- [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed)
+- [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed). The gateway also runs the `ffmpeg` on its PATH to publish output to MediaMTX. A broken build there shows up as an empty playback.
+- The runner container can reach the host on port 8935 for trickle. With a default-deny firewall, allow it on the Docker bridge, for example `sudo ufw allow in on docker0 to any port 8935 proto tcp`. Blocked traffic shows up as `no orchestrators available` from the gateway.
+
+## Without an ai-runner checkout
+
+`make box` rebuilds the runner image from a sibling `ai-runner` checkout, which is archived. Pull the images and skip the rebuild instead:
+
+```bash
+docker pull livepeer/ai-runner:live-app-noop
+docker pull livepeerci/mediamtx
+export REBUILD=false
+```
+
+Without a local `mediamtx` binary, run it from the image:
+
+```bash
+docker run --rm --name mediamtx --network host -v $(pwd)/box/mediamtx.yml:/mediamtx.yml livepeerci/mediamtx
+```
+
+The noop runner takes about a minute to start. Wait until `curl http://127.0.0.1:8900/health` returns `{"status":"IDLE"}` before `make box-stream`.
 
 ## Usage (Linux AMD64)
 
@@ -128,6 +147,37 @@ To rebuild and restart the runner, run the following command:
 ```bash
 make box-runner
 ```
+
+## Live runner
+
+The live runner is the other way to run realtime apps on an orchestrator: the app is a plain HTTP service that registers itself, and the orchestrator reverse-proxies clients to it. These targets test it with the published [runner-app-examples](https://github.com/livepeer/runner-app-examples) images. Stop the box orchestrator first, both use port 8935. Needs `curl` and `jq`. The echo test also needs [uv](https://docs.astral.sh/uv/), `ffmpeg` and `ffplay`.
+
+1. Start an orchestrator with live runners enabled
+
+   ```bash
+   make box-live-runner
+   ```
+
+2. Start the hello-world app. It registers itself with the orchestrator
+
+   ```bash
+   make box-live-runner-app
+   ```
+
+3. Call it through the orchestrator. Prints the discovery entry and `{"message": "Hello, box!"}`
+
+   ```bash
+   make box-live-runner-call
+   ```
+
+For realtime video over trickle, run the echo app instead and pipe a test pattern through it. A blurred test pattern in ffplay is the pass:
+
+```bash
+APP=echo make box-live-runner-app
+make box-live-runner-echo
+```
+
+`DOCKER=true` runs the orchestrator from the `livepeer/go-livepeer` image. `FFMPEG` and `FFPLAY` override the binaries used by the echo test.
 
 ## Frontend
 

@@ -19,6 +19,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
 
 ### Configuration Files
 
+The configurations below run a gateway and an orchestrator on the same machine. Replace `<host-ip>` with a routable address of your machine, such as its LAN IP. Since v0.9.2 the orchestrator's service address must be routable, so `127.0.0.1`, `localhost` and `0.0.0.0` no longer work there.
+
 <details>
 <summary>Launch.json (transcoding)</summary>
 
@@ -50,7 +52,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-transcoder",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all"
       ]
@@ -65,7 +67,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-orchSecret=orchSecret",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6"
       ]
     },
@@ -79,7 +81,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-transcoder",
         "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all"
       ]
@@ -94,7 +96,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-gateway",
         "-transcodingOptions=${env:HOME}/.lpData/offchain/transcodingOptions.json",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
         "6"
@@ -110,7 +112,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-transcoder",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all",
         "-network=arbitrum-one-mainnet",
@@ -131,7 +133,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-orchSecret=orchSecret",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-network=arbitrum-one-mainnet",
         "-ethUrl=https://arb1.arbitrum.io/rpc",
@@ -151,7 +153,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-transcoder",
         "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all"
       ]
@@ -166,7 +168,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-gateway",
         "-transcodingOptions=${env:HOME}/.lpData/offchain/transcodingOptions.json",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
         "6",
@@ -226,7 +228,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-aiWorker",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all",
         "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
@@ -243,7 +245,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-orchSecret=orchSecret",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6"
       ]
     },
@@ -257,7 +259,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-aiWorker",
         "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all",
         "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
@@ -274,7 +276,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-gateway",
         "-datadir=${env:HOME}/.lpData2",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
         "6",
@@ -292,7 +294,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-orchestrator",
         "-aiWorker",
         "-aiServiceRegistry",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all",
         "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
@@ -315,7 +317,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-orchestrator",
         "-orchSecret=orchSecret",
         "-aiServiceRegistry",
-        "-serviceAddr=0.0.0.0:8935",
+        "-serviceAddr=<host-ip>:8935",
         "-v=6",
         "-network=arbitrum-one-mainnet",
         "-ethUrl=https://arb1.arbitrum.io/rpc",
@@ -335,7 +337,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-aiWorker",
         "-orchSecret=orchSecret",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-v=6",
         "-nvidia=all",
         "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
@@ -353,7 +355,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-gateway",
         "-aiServiceRegistry",
         "-datadir=${env:HOME}/.lpData2",
-        "-orchAddr=0.0.0.0:8935",
+        "-orchAddr=<host-ip>:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
         "6",

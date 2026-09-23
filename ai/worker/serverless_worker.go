@@ -229,10 +229,9 @@ func (f *ServerlessWorker) LiveVideoToVideo(ctx context.Context, req GenLiveVide
 		if trickleBasePath == "" {
 			return ""
 		}
-		u := *controlURL
+		u := controlURL.Clone()
 		u.Path = trickleBasePath
-		u = *u.JoinPath(channelName)
-		return u.String()
+		return u.JoinPath(channelName).String()
 	}
 	if buildTrickleURL(manifestID+"-test") == "" {
 		return nil, fmt.Errorf("could not construct trickle channel URL from control URL %q", *req.ControlUrl)

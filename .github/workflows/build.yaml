@@ -59,7 +59,7 @@ jobs:
           apt install -yqq build-essential make git zip unzip zlib1g-dev zlib1g libzlcore-dev yasm
 
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -68,7 +68,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: './go.mod'
           cache: true
@@ -150,7 +150,7 @@ jobs:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         run: |
           git config --global --add safe.directory '*'
-          ./ci_env.sh make
+          ./ci_env.sh make binaries
 
       - name: Archive binaries for windows
         if: matrix.target.GOOS == 'windows'
@@ -169,7 +169,7 @@ jobs:
           tar -czvf "../releases/$LP_BUILD_DIR.tar.gz" ./
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -191,7 +191,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -200,7 +200,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: './go.mod'
           cache: true
@@ -217,7 +217,7 @@ jobs:
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/compiled
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
@@ -248,13 +248,17 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
+          ./ci_env.sh make binaries
 
-      - uses: actions-ecosystem/action-regex-match@v2
+      - name: Match release ref
         id: match-tag
-        with:
-          text: ${{ github.ref_name }}
-          regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF_NAME" =~ ^(master|main|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "match=${BASH_REMATCH[0]}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Codesign and notarize binaries
         if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
@@ -277,7 +281,7 @@ jobs:
           tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
@@ -294,7 +298,7 @@ jobs:
       - linux-build
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -303,7 +307,7 @@ jobs:
 
       - name: Set up python
         id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: 3.12
           cache: pip
@@ -311,7 +315,7 @@ jobs:
           update-environment: true
 
       - name: Download artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: release-artifacts-*
           path: releases/
@@ -335,14 +339,14 @@ jobs:
 
       - name: Authenticate to Google Cloud
         id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.CI_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.CI_GOOGLE_SERVICE_ACCOUNT }}
 
       - name: Upload release archives to Google Cloud
         id: upload-archives
-        uses: google-github-actions/upload-cloud-storage@v2
+        uses: google-github-actions/upload-cloud-storage@v3
         with:
           path: "releases"
           destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}"
@@ -351,7 +355,7 @@ jobs:
 
       - name: Upload branch manifest file
         id: upload-manifest
-        uses: google-github-actions/upload-cloud-storage@v2
+        uses: google-github-actions/upload-cloud-storage@v3
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"

@@ -158,7 +158,7 @@ Example:
   -httpAddr :9935 \
   -remoteSignerUrl http://127.0.0.1:7936 \
   -remoteSignerHeaders 'Authorization:Bearer gateway-token,X-Tenant:acme' \
-  -orchAddr localhost:8935 \
+  -orchAddr <host-ip>:8935 \
   -v 6
 ```
 
