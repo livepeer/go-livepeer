@@ -2035,6 +2035,7 @@ func TestUSDPrice(t *testing.T) {
 		want      json.Number
 	}{
 		{"normal fee", big.NewRat(1e15, 1), big.NewRat(5e14, 1), "2"},
+		{"large fee", big.NewRat(9007199254740993, 1), big.NewRat(1, 1), "9007199254740993"},
 		{"fractional wei fee", big.NewRat(1, 2), big.NewRat(5e14, 1), "0.000000000000001"},
 		{"repeating decimal", big.NewRat(1, 1), big.NewRat(3, 1), "0.333333333333333333"},
 		{"zero fee", big.NewRat(0, 1), big.NewRat(5e14, 1), "0"},
@@ -2050,10 +2051,10 @@ func TestUSDPrice(t *testing.T) {
 			}
 			usd := usdPrice(test.price, test.weiPerUSD)
 			require.Equal(t, test.want, usd)
-			var feeUSD *json.Number
+			var feeUSD *string
 			wantJSON := "null"
-			if usd != "" {
-				feeUSD, wantJSON = &usd, string(test.want)
+			if usd := usd.String(); usd != "" {
+				feeUSD, wantJSON = &usd, fmt.Sprintf("%q", test.want)
 			}
 			encoded, err := json.Marshal(map[string]interface{}{"computed_fee_usd": feeUSD})
 			require.NoError(t, err)

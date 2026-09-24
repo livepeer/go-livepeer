@@ -750,9 +750,9 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		} else if req.Type == RemoteType_Fixed {
 			pipeline = RemoteType_Fixed
 		}
-		var feeUSD *json.Number
+		var feeUSD *string
 		if ls.LivepeerNode.USDToWei != nil {
-			if usd := usdPrice(fee, ls.LivepeerNode.USDToWei.Value()); usd != "" {
+			if usd := usdPrice(fee, ls.LivepeerNode.USDToWei.Value()).String(); usd != "" {
 				feeUSD = &usd
 			}
 		}
