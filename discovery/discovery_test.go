@@ -429,10 +429,14 @@ func TestDBOrchestratorPoolCache_cacheOrchInfos_PreservesDiscoveryOnRefreshFailu
 	}
 
 	require.NoError(dbo.cacheOrchInfos())
-	require.JSONEq(string(discovery), string(node.GetNetworkCapabilities()[0].Discovery))
+	firstCaps := node.GetNetworkCapabilities()[0]
+	require.JSONEq(string(discovery), string(firstCaps.Discovery))
+	require.WithinDuration(time.Now().UTC(), firstCaps.LastSeen, time.Second)
 
 	require.NoError(dbo.cacheOrchInfos())
-	require.JSONEq(string(discovery), string(node.GetNetworkCapabilities()[0].Discovery))
+	refreshedCaps := node.GetNetworkCapabilities()[0]
+	require.JSONEq(string(firstCaps.Discovery), string(refreshedCaps.Discovery))
+	require.Equal(firstCaps.LastSeen, refreshedCaps.LastSeen)
 }
 
 func sync_TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
