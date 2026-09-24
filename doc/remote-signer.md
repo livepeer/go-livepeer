@@ -77,7 +77,7 @@ When enabled, the signer exposes:
 
 - `GET /discover-orchestrators`
 
-The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`, and optional `runners`) in a format that is compatible with the gateway's orchestrator discovery webhook. The `address` field is the orchestrator service address used by gateways, not the signer's Ethereum/account address.
+The endpoint returns a list of orchestrators (`address`, `score`, `capabilities`, optional `runners`, and optional `last_seen`) in a format that is compatible with the gateway's orchestrator discovery webhook. The `address` field is the orchestrator service address used by gateways, not the signer's Ethereum/account address. `last_seen` is a UTC RFC 3339 timestamp recording the most recent successfully fetched and validated `GET /discovery` response associated with the entry, either from the address's own endpoint or from another response that advertised it. It is omitted until such a response succeeds.
 
 Clients can filter for orchestrators matching a given capability via the `caps` query param. This param can be repeated to retrieve orchestrators supporting any one of the given capabilities. For example:
 
@@ -111,7 +111,8 @@ via discovery.
 In on-chain remote discovery mode, the signer also reads each orchestrator's
 `/discovery` endpoint. Endpoint discovery is fetched with a two-second timeout
 and a 1 MiB response limit. A failure to fetch one endpoint does not invalidate
-the normal orchestrator record.
+the normal orchestrator record. Previously cached endpoint data and its
+associated `last_seen` value are retained across later failures.
 
 Entries are merged by normalized orchestrator address. Within an address,
 runners are merged by their public discovery `url`. Identical duplicates are
