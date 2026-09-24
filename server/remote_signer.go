@@ -78,6 +78,13 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
+	usdPrice, err := core.NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
+	if err != nil {
+		return fmt.Errorf("remote signer requires an ETH/USD price feed: %w", err)
+	}
+	ls.LivepeerNode.USDToWei = usdPrice
+	defer usdPrice.Stop()
+
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
 	ls.HTTPMux.Handle("POST /generate-live-payment", http.HandlerFunc(ls.GenerateLivePayment))
@@ -743,6 +750,12 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 		} else if req.Type == RemoteType_Fixed {
 			pipeline = RemoteType_Fixed
 		}
+		var feeUSD *json.Number
+		if ls.LivepeerNode.USDToWei != nil {
+			if usd := usdPrice(fee, ls.LivepeerNode.USDToWei.Value()); usd != "" {
+				feeUSD = &usd
+			}
+		}
 		// NB: This could could drop events if tha Kafka queue is full!
 		monitor.SendQueueEventAsync("create_signed_ticket", map[string]interface{}{
 			"session_id":         state.StateID,
@@ -750,6 +763,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"app":                state.App,
 			"pipeline":           pipeline,
 			"request_id":         requestID,
+			"payer_address":      sess.Broadcaster.Address().Hex(),
 			"orch_address":       orchAddr.Hex(),
 			"orch_url":           oInfo.Transcoder,
 			"manifest_id":        manifestID,
@@ -762,6 +776,7 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 			"pixels":             pixels,
 			"session_balance":    newBal.FloatString(0),
 			"computed_fee":       fee.FloatString(0),
+			"computed_fee_usd":   feeUSD,
 			"cost":               orchPrice.FloatString(10),
 			"sequence_number":    state.SequenceNumber,
 			"num_tickets":        balUpdate.NumTickets,
@@ -831,6 +846,14 @@ type discoveryResponse struct {
 	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
 }
 
+func usdPrice(price, weiPerUSD *big.Rat) json.Number {
+	if weiPerUSD == nil || weiPerUSD.Sign() <= 0 {
+		return ""
+	}
+	usd := new(big.Rat).Quo(price, weiPerUSD).FloatString(18)
+	return json.Number(strings.TrimSuffix(strings.TrimRight(usd, "0"), "."))
+}
+
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
 func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.ResponseWriter, r *http.Request) {
 	ctx := clog.AddVal(r.Context(), "request_id", string(core.RandomManifestID()))
@@ -856,13 +879,29 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 	}
 
 	infos := pool.Orchestrators(filteredCaps)
+	var weiPerUSD *big.Rat
+	if ls.LivepeerNode != nil && ls.LivepeerNode.USDToWei != nil {
+		weiPerUSD = ls.LivepeerNode.USDToWei.Value()
+	}
 	resp := make([]discoveryResponse, 0, len(infos))
 	for _, cached := range infos {
+		runners := make([]runner.LiveRunnerDiscoveryRunner, 0, len(cached.Runners))
+		for _, r := range cached.Runners {
+			if r.PriceInfo != nil {
+				priceInfo := *r.PriceInfo
+				priceInfo.PriceUSD = "" // Only advertise USD prices derived by this signer.
+				if price, ok := runnerPrice(r.PriceInfo); ok {
+					priceInfo.PriceUSD = usdPrice(price, weiPerUSD)
+				}
+				r.PriceInfo = &priceInfo
+			}
+			runners = append(runners, r)
+		}
 		resp = append(resp, discoveryResponse{
 			Address:      cached.URL.String(),
 			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
-			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
+			Runners:      runners,
 		})
 	}
 

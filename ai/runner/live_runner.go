@@ -81,6 +81,7 @@ type LiveRunnerGPU struct {
 
 type LiveRunnerPriceInfo struct {
 	Price    json.Number `json:"price"`
+	PriceUSD json.Number `json:"price_usd,omitempty"`
 	Currency string      `json:"currency,omitempty"`
 	Unit     string      `json:"unit,omitempty"`
 }
