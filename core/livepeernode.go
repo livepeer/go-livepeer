@@ -131,20 +131,19 @@ type LivepeerNode struct {
 	LiveRunnerManager any // NB: kludge to avoid ai/runner circular dependency
 
 	// Transcoder public fields
-	SegmentChans         map[ManifestID]SegmentChan
-	Recipient            pm.Recipient
-	RecipientAddr        string
-	SelectionAlgorithm   common.SelectionAlgorithm
-	OrchestratorPool     common.OrchestratorPool
-	OrchPerfScore        *common.PerfScore
-	OrchSecret           string
-	Transcoder           Transcoder
-	TranscoderManager    *RemoteTranscoderManager
-	Balances             *AddressBalances
-	Capabilities         *Capabilities
-	ExternalCapabilities *ExternalCapabilities
-	AutoAdjustPrice      bool
-	AutoSessionLimit     bool
+	SegmentChans       map[ManifestID]SegmentChan
+	Recipient          pm.Recipient
+	RecipientAddr      string
+	SelectionAlgorithm common.SelectionAlgorithm
+	OrchestratorPool   common.OrchestratorPool
+	OrchPerfScore      *common.PerfScore
+	OrchSecret         string
+	Transcoder         Transcoder
+	TranscoderManager  *RemoteTranscoderManager
+	Balances           *AddressBalances
+	Capabilities       *Capabilities
+	AutoAdjustPrice    bool
+	AutoSessionLimit   bool
 
 	TrickleInsecureSkipVerify bool
 
@@ -169,7 +168,6 @@ type LivepeerNode struct {
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
-	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
 	Nodes            []string // instance URLs of this orch available to do work
@@ -212,9 +210,6 @@ type LivePipeline struct {
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
-	extCapPrices := make(map[string]map[string]*big.Rat)
-	extCapPrices["default"] = make(map[string]*big.Rat)
-
 	return &LivepeerNode{
 		Eth:                       e,
 		WorkDir:                   wd,
@@ -224,10 +219,8 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		TrickleInsecureSkipVerify: true,
 		segmentMutex:              &sync.RWMutex{},
 		Capabilities:              &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
-		ExternalCapabilities:      NewExternalCapabilities(),
 		priceInfo:                 make(map[string]*AutoConvertedPrice),
 		priceInfoForCaps:          make(map[string]CapabilityPrices),
-		jobPriceInfo:              extCapPrices,
 		StorageConfigs:            make(map[string]*transcodeConfig),
 		storageMutex:              &sync.RWMutex{},
 		LivePipelines:             make(map[string]*LivePipeline),
@@ -373,36 +366,4 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.NetworkCapabilities.Orchestrators
-}
-
-func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	//default price list initialized at startup
-	// check if the senderEthAddress is initialized if not default
-	if _, ok := n.jobPriceInfo[senderEthAddress]; !ok {
-		n.jobPriceInfo[senderEthAddress] = make(map[string]*big.Rat)
-	}
-
-	//set the price
-	senderPrices := n.jobPriceInfo[senderEthAddress]
-	senderPrices[extCapability] = price
-	glog.Infof("Set price for %s to %s", extCapability, price.FloatString(2))
-}
-
-func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability string) *big.Rat {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	senderPrices, ok := n.jobPriceInfo[senderEthAddress]
-	if !ok {
-		//default price list initialized at startup
-		senderPrices = n.jobPriceInfo["default"]
-	}
-	jobPrice := big.NewRat(0, 1)
-
-	if extCapInfo, ok := senderPrices[extCapability]; ok {
-		jobPrice = extCapInfo
-	}
-
-	return jobPrice
 }
