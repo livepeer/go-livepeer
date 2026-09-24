@@ -11,6 +11,8 @@ import (
 	gonet "net"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,7 +24,12 @@ import (
 
 // DownloadData downloads data while refusing connections to addresses that
 // reach the local host, including after DNS resolution or an HTTP redirect.
+// It also rejects URLs with unsafe schemes, embedded credentials, or
+// path-traversal sequences, both on the original URL and on every redirect.
 func DownloadData(ctx context.Context, uri string) ([]byte, error) {
+	if err := validateDownloadURL(uri); err != nil {
+		return nil, err
+	}
 	return downloadDataHTTP(ctx, uri, localhostBlockedHTTPClient)
 }
 
@@ -33,7 +40,38 @@ func DownloadDataAllowLocalhost(ctx context.Context, uri string) ([]byte, error)
 	return downloadDataHTTP(ctx, uri, httpc)
 }
 
-var errLocalhostDownload = errors.New("localhost downloads are blocked")
+var (
+	errLocalhostDownload = errors.New("localhost downloads are blocked")
+	errUnsafeURL         = errors.New("unsafe download URL")
+)
+
+// validateDownloadURL performs pre-dial, pre-request validation on the raw URL
+// string. It rejects non-HTTP(S) schemes, embedded credentials, path traversal,
+// and fragment-only or opaque URIs.
+func validateDownloadURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errUnsafeURL, err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("%w: scheme %q not allowed", errUnsafeURL, u.Scheme)
+	}
+	if u.User != nil {
+		return fmt.Errorf("%w: embedded credentials not allowed", errUnsafeURL)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%w: missing host", errUnsafeURL)
+	}
+	cleaned := strings.ReplaceAll(u.Path, "\\", "/")
+	for _, seg := range strings.Split(cleaned, "/") {
+		if seg == ".." {
+			return fmt.Errorf("%w: path traversal not allowed", errUnsafeURL)
+		}
+	}
+	return nil
+}
 
 func rejectLocalhostDial(_ context.Context, _, address string, _ syscall.RawConn) error {
 	host, _, err := gonet.SplitHostPort(address)
@@ -62,6 +100,9 @@ var localhostBlockedHTTPClient = &http.Client{
 	Transport: &http.Transport{
 		DialContext:     (&gonet.Dialer{ControlContext: rejectLocalhostDial}).DialContext,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return validateDownloadURL(req.URL.String())
 	},
 	Timeout: common.HTTPTimeout / 2,
 }
