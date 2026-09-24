@@ -2150,6 +2150,49 @@ func TestRemoteSigner_Discovery_PriceUSDUpdates(t *testing.T) {
 	})
 }
 
+func TestRemoteSigner_RequiresUSDPriceFeed(t *testing.T) {
+	previousWatcher := core.PriceFeedWatcher
+	t.Cleanup(func() { core.PriceFeedWatcher = previousWatcher })
+	feed := func(base, quote string, rate *big.Rat) *discoveryPriceFeedWatcher {
+		return &discoveryPriceFeedWatcher{base: base, quote: quote, data: eth.PriceData{Price: rate}}
+	}
+	for _, test := range []struct {
+		name    string
+		watcher *discoveryPriceFeedWatcher
+		wantErr string
+	}{
+		{"missing watcher", nil, "PriceFeedWatcher is not initialized"},
+		{"missing ETH", feed("BTC", "USD", big.NewRat(100000, 1)), "price feed does not have ETH"},
+		{"missing USD", feed("ETH", "EUR", big.NewRat(2000, 1)), "price feed does not have USD"},
+		{"currencies error", &discoveryPriceFeedWatcher{currenciesErr: fmt.Errorf("unavailable")}, "error getting price feed currencies"},
+		{"current price error", &discoveryPriceFeedWatcher{base: "ETH", quote: "USD", currentErr: fmt.Errorf("unavailable")}, "error getting current price data"},
+		{"nil price", feed("ETH", "USD", nil), "price feed must return a positive price"},
+		{"zero price", feed("ETH", "USD", big.NewRat(0, 1)), "price feed must return a positive price"},
+		{"negative price", feed("ETH", "USD", big.NewRat(-1, 1)), "price feed must return a positive price"},
+	} {
+		for _, discovery := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/discovery=%t", test.name, discovery), func(t *testing.T) {
+				core.PriceFeedWatcher = nil
+				if test.watcher != nil {
+					core.PriceFeedWatcher = test.watcher
+				}
+				ls := &LivepeerServer{
+					HTTPMux:      http.NewServeMux(),
+					LivepeerNode: &core.LivepeerNode{RemoteDiscovery: discovery},
+				}
+				err := StartRemoteSignerServer(ls, "invalid:bind:address")
+				require.ErrorContains(t, err, "remote signer requires an ETH/USD price feed: "+test.wantErr)
+				require.Nil(t, ls.LivepeerNode.USDToWei)
+				_, pattern := ls.HTTPMux.Handler(httptest.NewRequest(http.MethodPost, "/generate-live-payment", nil))
+				require.Empty(t, pattern, "startup must fail before registering endpoints")
+				if test.watcher != nil {
+					require.Nil(t, test.watcher.ctx, "failed initialization must not subscribe")
+				}
+			})
+		}
+	}
+}
+
 func TestRemoteSigner_USDConversionLifecycle(t *testing.T) {
 	previousWatcher := core.PriceFeedWatcher
 	t.Cleanup(func() { core.PriceFeedWatcher = previousWatcher })

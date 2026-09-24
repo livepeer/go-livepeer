@@ -79,12 +79,11 @@ func (ls *LivepeerServer) SignOrchestratorInfo(w http.ResponseWriter, r *http.Re
 // StartRemoteSignerServer starts the HTTP server for remote signer mode
 func StartRemoteSignerServer(ls *LivepeerServer, bind string) error {
 	usdPrice, err := core.NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
-	ls.LivepeerNode.USDToWei = usdPrice
 	if err != nil {
-		glog.Warningf("Remote signer USD conversion unavailable: %v", err)
-	} else {
-		defer usdPrice.Stop()
+		return fmt.Errorf("remote signer requires an ETH/USD price feed: %w", err)
 	}
+	ls.LivepeerNode.USDToWei = usdPrice
+	defer usdPrice.Stop()
 
 	// Register the remote signer endpoints
 	ls.HTTPMux.Handle("POST /sign-orchestrator-info", http.HandlerFunc(ls.SignOrchestratorInfo))
