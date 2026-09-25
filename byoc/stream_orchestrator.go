@@ -236,7 +236,7 @@ func (bso *BYOCOrchestratorServer) monitorOrchStream(job *orchJob) {
 			return
 		case <-pmtTicker.C:
 			// Check payment status
-			extCap, ok := bso.node.ExternalCapabilities.Capabilities[capability]
+			extCap, ok := bso.node.ExternalCapabilities.GetCapability(capability)
 			if !ok {
 				clog.Errorf(ctx, "Capability not found for payment monitoring, exiting monitoring capability=%s", capability)
 				return
@@ -414,7 +414,9 @@ func (bso *BYOCOrchestratorServer) createWorkerReq(ctx context.Context, workerRo
 	}
 
 	// Add Authorization header if auth token is set for this capability
-	if extCap, ok := bso.node.ExternalCapabilities.Capabilities[capability]; ok {
+	if extCap, ok := bso.node.ExternalCapabilities.GetCapability(capability); ok {
+		extCap.Mu.RLock()
+		defer extCap.Mu.RUnlock()
 		if extCap.AuthToken != "" {
 			req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
 		}
