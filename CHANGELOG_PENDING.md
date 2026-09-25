@@ -23,3 +23,5 @@
 #### Broadcaster
 
 #### CLI
+
+- \#1844 Fix livepeer_bench segment path handling on Windows (@lukiod)
