@@ -4,15 +4,18 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/livepeer/go-livepeer/eth"
 )
 
 func (w *wizard) transferTokens() {
-	fmt.Printf("Current LPT balance: %v\n", w.getTokenBalance())
+	fmt.Printf("Current LPT balance: %v\n", w.getFormattedTokenBalance())
 
 	fmt.Printf("Enter recipient address (in hex i.e. 0xfoo) - ")
 	to := w.readString()
 
-	amount := w.readBigInt("Enter amount")
+	fmt.Printf("Enter amount in LPT - ")
+	amount := w.readPositiveBaseAmount()
 
 	val := url.Values{
 		"to":     {fmt.Sprintf("%v", to)},
@@ -22,7 +25,7 @@ func (w *wizard) transferTokens() {
 	var input string
 	userAccepted := false
 	for !userAccepted {
-		fmt.Printf("Are you sure you want to send %s LPTU to \"%s\"? (y/n) - ", val["amount"][0], val["to"][0])
+		fmt.Printf("Are you sure you want to send %s to \"%s\"? (y/n) - ", eth.FormatUnits(amount, "LPT"), val["to"][0])
 
 		input = w.readString()
 
