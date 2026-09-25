@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -68,7 +69,7 @@ func (w *wizard) stats(isOrchestrator bool) {
 		{"Controller Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["Controller"].Hex()},
 		{"LivepeerToken Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["LivepeerToken"].Hex()},
 		{"LivepeerTokenFaucet Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["LivepeerTokenFaucet"].Hex()},
-		{account(isOrchestrator) + " Account\nYOUR WALLET FOR ETH & LPT", w.getEthAddr()},
+		{w.accountLabel(isOrchestrator), w.getEthAddr()},
 		{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
 		{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
 		{"Max Gas Price", maxGasPriceStr},
@@ -100,6 +101,27 @@ func (w *wizard) stats(isOrchestrator bool) {
 	}
 
 	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
+}
+
+// accountLabel names the row holding the node's signing wallet. Under LIP-118 that wallet
+// is the reward caller rather than the orchestrator, so calling it the orchestrator account
+// would point at the wrong address.
+func (w *wizard) accountLabel(isOrchestrator bool) string {
+	const subtitle = "\nYOUR WALLET FOR ETH & LPT"
+	if isOrchestrator && !w.isOrchestratorAccount() {
+		return "Node Account" + subtitle
+	}
+	return account(isOrchestrator) + " Account" + subtitle
+}
+
+// isOrchestratorAccount reports whether the node's wallet is the orchestrator itself. It
+// assumes it is when the lookup fails, so a transient error cannot relabel the row.
+func (w *wizard) isOrchestratorAccount() bool {
+	t, _, err := w.getOrchestratorInfo()
+	if err != nil || t == nil {
+		return true
+	}
+	return strings.EqualFold(t.Address.Hex(), strings.TrimSpace(w.getEthAddr()))
 }
 
 func account(isOrchestrator bool) string {
@@ -210,12 +232,18 @@ func (w *wizard) orchestratorStats() {
 		glog.Errorf("Error getting broadcaster prices: %v", err)
 	}
 
+	rewardCaller := strings.TrimSpace(httpGet(fmt.Sprintf("http://%v:%v/rewardCaller", w.host, w.httpPort)))
+	if rewardCaller == "" {
+		rewardCaller = "none"
+	}
+
 	fmt.Println("+------------------+")
 	fmt.Println("|ORCHESTRATOR STATS|")
 	fmt.Println("+------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
+		{"Address", t.Address.Hex()},
 		{"Status", t.Status},
 		{"Active", strconv.FormatBool(t.Active)},
 		{"Service URI", t.ServiceURI},
@@ -223,6 +251,7 @@ func (w *wizard) orchestratorStats() {
 		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		{"Fee Cut (%)", eth.FormatPerc(flipPerc(t.FeeShare))},
 		{"Last Reward Round", t.LastRewardRound.String()},
+		{"Reward Caller", rewardCaller},
 		{"Base price per pixel", formatPricePerPixel(priceInfo)},
 		{"Base price for broadcasters", b_prices},
 	}

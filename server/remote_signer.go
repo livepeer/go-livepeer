@@ -502,6 +502,13 @@ func (ls *LivepeerServer) GenerateLivePayment(w http.ResponseWriter, r *http.Req
 	if state.PMSessionID != sessionID {
 		nonce = 0
 	}
+	// Orchestrators cap the sender nonce at 600, so retrieve fresh ticket params to be safe.
+	if nonce >= 500 {
+		err := errors.New("refresh session for remote signer")
+		w.Header().Set(RefreshSessionOrchestratorURLHeader, oInfo.Transcoder)
+		respondJsonError(ctx, w, err, HTTPStatusRefreshSession)
+		return
+	}
 
 	initialPrice := &net.PriceInfo{
 		PricePerUnit:  state.InitialPricePerUnit,
@@ -822,6 +829,7 @@ type discoveryResponse struct {
 	Score        float32                            `json:"score,omitempty"`
 	Capabilities []string                           `json:"capabilities,omitempty"`
 	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+	LastSeen     time.Time                          `json:"last_seen,omitzero"`
 }
 
 // GetOrchestrators returns the configured orchestrators in webhook-compatible format
@@ -856,6 +864,7 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
 			Runners:      append([]runner.LiveRunnerDiscoveryRunner(nil), cached.Runners...),
+			LastSeen:     cached.LastSeen.UTC(),
 		})
 	}
 

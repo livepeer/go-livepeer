@@ -195,7 +195,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}
@@ -212,7 +212,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}
@@ -229,7 +229,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}
@@ -246,7 +246,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}
@@ -263,7 +263,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}
@@ -295,7 +295,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if err != nil || req.ModelId == nil {
 			break
 		}
-		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		input, err = core.DownloadDataAllowLocalhost(ctx, reqData.InputUrl)
 		if err != nil {
 			break
 		}

@@ -80,7 +80,7 @@ var jsonTypedData = `
 `
 
 func TestAccountManager(t *testing.T) {
-	dir, ks := tmpKeyStore(t, true)
+	dir, ks := tmpKeyStore(t)
 
 	a, err := ks.NewAccount("foo")
 	if err != nil {
@@ -110,7 +110,7 @@ func TestAccountManager(t *testing.T) {
 }
 
 func TestEmptyPassphrase(t *testing.T) {
-	dir, ks := tmpKeyStore(t, true)
+	dir, ks := tmpKeyStore(t)
 
 	a, err := ks.NewAccount("")
 	if err != nil {
@@ -140,7 +140,7 @@ func TestSign(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	dir, ks := tmpKeyStore(t, true)
+	dir, ks := tmpKeyStore(t)
 
 	a, err := ks.NewAccount("")
 	require.Nil(err)
@@ -164,7 +164,7 @@ func TestSignTypedData(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	dir, ks := tmpKeyStore(t, true)
+	dir, ks := tmpKeyStore(t)
 
 	a, err := ks.NewAccount("")
 	require.Nil(err)
@@ -185,15 +185,7 @@ func TestSignTypedData(t *testing.T) {
 	assert.Len(sig, 65)
 }
 
-func tmpKeyStore(t *testing.T, encrypted bool) (string, *keystore.KeyStore) {
+func tmpKeyStore(t *testing.T) (string, *keystore.KeyStore) {
 	d := t.TempDir()
-
-	new := keystore.NewPlaintextKeyStore
-	if encrypted {
-		new = func(kd string) *keystore.KeyStore {
-			return keystore.NewKeyStore(kd, keystore.LightScryptN, keystore.LightScryptP)
-		}
-	}
-
-	return d, new(d)
+	return d, keystore.NewKeyStore(d, keystore.LightScryptN, keystore.LightScryptP)
 }

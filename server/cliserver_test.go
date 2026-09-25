@@ -27,6 +27,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var cliTxRoutes = []string{
+	"/initializeRound",
+	"/activateOrchestrator",
+	"/setOrchestratorConfig",
+	"/bond",
+	"/rebond",
+	"/unbond",
+	"/withdrawStake",
+	"/withdrawFees",
+	"/claimEarnings",
+	"/reward",
+	"/transferTokens",
+	"/requestTokens",
+	"/signMessage",
+	"/vote",
+	"/voteOnProposal",
+	"/setMaxGasPrice",
+	"/setMinGasPrice",
+	"/fundDepositAndReserve",
+	"/fundDeposit",
+	"/unlock",
+	"/cancelUnlock",
+	"/withdraw",
+}
+
 func newMockServer() *httptest.Server {
 	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
 	n.NodeType = core.TranscoderNode
@@ -41,6 +66,119 @@ func newMockServer() *httptest.Server {
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	return srv
+}
+
+func TestCLIPrivilegedRoutesRejectGET(t *testing.T) {
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	s := &LivepeerServer{LivepeerNode: n, CliTxRoutes: true}
+	mux := s.cliWebServerHandlers("addr")
+
+	routes := []string{
+		"/setBroadcastConfig",
+		"/setMaxPriceForCapability",
+		"/initializeRound",
+		"/activateOrchestrator",
+		"/setOrchestratorConfig",
+		"/setMaxFaceValue",
+		"/setPriceForBroadcaster",
+		"/setMaxSessions",
+		"/bond",
+		"/rebond",
+		"/unbond",
+		"/withdrawStake",
+		"/withdrawFees",
+		"/claimEarnings",
+		"/reward",
+		"/transferTokens",
+		"/requestTokens",
+		"/signMessage",
+		"/vote",
+		"/voteOnProposal",
+		"/setMaxGasPrice",
+		"/setMinGasPrice",
+		"/fundDepositAndReserve",
+		"/fundDeposit",
+		"/unlock",
+		"/cancelUnlock",
+		"/withdraw",
+		"/setLogLevel",
+	}
+
+	for _, route := range routes {
+		t.Run(route, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			res := httptest.NewRecorder()
+
+			mux.ServeHTTP(res, req)
+
+			require.Equal(t, http.StatusMethodNotAllowed, res.Code)
+			require.Equal(t, http.MethodPost, res.Header().Get("Allow"))
+		})
+	}
+}
+
+func TestCLITxRoutesDisabledByDefault(t *testing.T) {
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	s := &LivepeerServer{LivepeerNode: n}
+	mux := s.cliWebServerHandlers("addr")
+
+	for _, route := range cliTxRoutes {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+" "+route, func(t *testing.T) {
+				req := httptest.NewRequest(method, route, nil)
+				res := httptest.NewRecorder()
+
+				mux.ServeHTTP(res, req)
+
+				require.Equal(t, http.StatusNotFound, res.Code)
+				require.Empty(t, res.Header().Get("Allow"))
+			})
+		}
+	}
+}
+
+func TestCLILocalMutationRoutesRemainEnabled(t *testing.T) {
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	s := &LivepeerServer{LivepeerNode: n}
+	mux := s.cliWebServerHandlers("addr")
+
+	routes := []string{
+		"/setBroadcastConfig",
+		"/setMaxPriceForCapability",
+		"/setMaxFaceValue",
+		"/setPriceForBroadcaster",
+		"/setMaxSessions",
+		"/setLogLevel",
+	}
+
+	for _, route := range routes {
+		t.Run(route, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			res := httptest.NewRecorder()
+
+			mux.ServeHTTP(res, req)
+
+			require.Equal(t, http.StatusMethodNotAllowed, res.Code)
+			require.Equal(t, http.MethodPost, res.Header().Get("Allow"))
+		})
+	}
+}
+
+func TestCLIMutationFormParamsIgnoreQueryString(t *testing.T) {
+	n, err := core.NewLivepeerNode(nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	s := &LivepeerServer{LivepeerNode: n, CliTxRoutes: true}
+	mux := s.cliWebServerHandlers("addr")
+	req := httptest.NewRequest(http.MethodPost, "/transferTokens?to=0x0000000000000000000000000000000000000001&amount=1", nil)
+	res := httptest.NewRecorder()
+
+	mux.ServeHTTP(res, req)
+
+	require.Equal(t, http.StatusBadRequest, res.Code)
+	require.Equal(t, "missing form param: to\n", res.Body.String())
 }
 
 func TestActivateOrchestrator(t *testing.T) {
@@ -59,6 +197,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s, _ := NewLivepeerServer(ctx, "127.0.0.1:1938", n, true, "")
+	s.CliTxRoutes = true
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
