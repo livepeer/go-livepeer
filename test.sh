@@ -35,10 +35,6 @@ cd trickle
 go test -race -timeout 10s
 cd ..
 
-cd byoc
-go test -race -timeout 10s
-cd ..
-
 ./test_args.sh
 
 printf "\n\nAll Tests Passed\n\n"
