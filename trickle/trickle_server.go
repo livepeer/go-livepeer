@@ -477,7 +477,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 		if err != nil {
 			if err == FirstByteTimeout {
 				// Keepalive via provisional headers
-				slog.Info("Sending provisional headers for", "stream", s.name, "idx", idx)
+				slog.Debug("Sending provisional headers for", "stream", s.name, "idx", idx)
 				w.WriteHeader(http.StatusContinue)
 				continue
 			} else if err == io.EOF {
@@ -512,7 +512,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	// Mark segment as closed
 	w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 	segment.close()
-	slog.Info("POST completed", "stream", s.name, "idx", idx, "bytes", totalRead, "took", time.Since(startedAt))
+	slog.Debug("POST completed", "stream", s.name, "idx", idx, "bytes", totalRead, "took", time.Since(startedAt))
 }
 
 func (s *Stream) getForWrite(idx int) (*Segment, bool) {
@@ -521,7 +521,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	if idx == -1 {
 		idx = s.nextWrite
 	}
-	slog.Info("POST segment", "stream", s.name, "idx", idx, "next", s.nextWrite)
+	slog.Debug("POST segment", "stream", s.name, "idx", idx, "next", s.nextWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
 		if idx == segment.idx {
@@ -559,9 +559,9 @@ func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
 		// read request is just a little bit ahead of write head
 		segment = newSegment(idx)
 		s.segments[segmentPos] = segment
-		slog.Info("GET precreating", "stream", s.name, "idx", idx, "next", s.nextWrite)
+		slog.Debug("GET precreating", "stream", s.name, "idx", idx, "next", s.nextWrite)
 	}
-	slog.Info("GET segment", "stream", s.name, "idx", idx, "next", s.nextWrite, "exists?", exists(segment, idx))
+	slog.Debug("GET segment", "stream", s.name, "idx", idx, "next", s.nextWrite, "exists?", exists(segment, idx))
 	return segment, s.nextWrite, exists(segment, idx), s.closed
 }
 
