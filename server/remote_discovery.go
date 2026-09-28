@@ -55,6 +55,7 @@ type remoteDiscoveryOrchestrator struct {
 	URL          *url.URL
 	Capabilities []string
 	Runners      []runner.LiveRunnerDiscoveryRunner
+	LastSeen     time.Time
 }
 
 type remoteDiscoveryMergeEntry struct {
@@ -64,8 +65,9 @@ type remoteDiscoveryMergeEntry struct {
 }
 
 type remoteDiscoveryEntry struct {
-	Address string                             `json:"address"`
-	Runners []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+	Address  string                             `json:"address"`
+	Runners  []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+	LastSeen time.Time                          `json:"-"`
 }
 
 func (o remoteDiscoveryOrchestrator) clone() remoteDiscoveryOrchestrator {
@@ -192,6 +194,7 @@ func (p *remoteDiscoveryPool) refresh() {
 			continue
 		}
 		for _, discovery := range remoteDiscoveryEntries(orchCaps.Discovery) {
+			discovery.LastSeen = orchCaps.LastSeen
 			if discovery.Address == "" {
 				continue
 			}
@@ -243,6 +246,10 @@ func cloneRemoteDiscoveryOrchestrators(cached []remoteDiscoveryOrchestrator) []r
 }
 
 func mergeDiscoveryRunners(entry *remoteDiscoveryMergeEntry, discovery remoteDiscoveryEntry) {
+	if discovery.LastSeen.After(entry.orch.LastSeen) {
+		entry.orch.LastSeen = discovery.LastSeen.UTC()
+	}
+
 	// For each address, merge runners by URL. First wins; matching duplicates are
 	// ignored and conflicting duplicates are logged before keeping the first.
 	for _, r := range discovery.Runners {

@@ -844,6 +844,7 @@ type discoveryResponse struct {
 	Score        float32                            `json:"score,omitempty"`
 	Capabilities []string                           `json:"capabilities,omitempty"`
 	Runners      []runner.LiveRunnerDiscoveryRunner `json:"runners,omitempty"`
+	LastSeen     time.Time                          `json:"last_seen,omitzero"`
 }
 
 func usdPrice(price, weiPerUSD *big.Rat) json.Number {
@@ -902,6 +903,7 @@ func (ls *LivepeerServer) GetOrchestrators(pool *remoteDiscoveryPool, w http.Res
 			Score:        common.Score_Trusted, // Legacy go-livepeer webhook field.
 			Capabilities: append([]string(nil), cached.Capabilities...),
 			Runners:      runners,
+			LastSeen:     cached.LastSeen.UTC(),
 		})
 	}
 
