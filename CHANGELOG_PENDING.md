@@ -18,6 +18,8 @@
 
 #### General
 
+* [#3939](https://github.com/livepeer/go-livepeer/pull/3939) server: Guard nil liveParams so gateway no longer panics on non-live AI requests when no orchestrators are available (@SAY-5)
+
 #### Broadcaster
 
 #### CLI
