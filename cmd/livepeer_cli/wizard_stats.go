@@ -386,6 +386,17 @@ func (w *wizard) getTokenBalance() string {
 	return b
 }
 
+// getFormattedTokenBalance returns the node's LPT balance in LPT, or whatever
+// getTokenBalance returned if that is not a number.
+func (w *wizard) getFormattedTokenBalance() string {
+	b := w.getTokenBalance()
+	bal, err := lcommon.ParseBigInt(b)
+	if err != nil {
+		return b
+	}
+	return eth.FormatUnits(bal, "LPT")
+}
+
 func (w *wizard) getEthBalance() string {
 	e := httpGet(fmt.Sprintf("http://%v:%v/ethBalance", w.host, w.httpPort))
 	if e == "" {
