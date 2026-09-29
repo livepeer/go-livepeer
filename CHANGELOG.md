@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.9.3
+
+### Breaking Changes 🚨🚨
+
+* [#4095](https://github.com/livepeer/go-livepeer/pull/4095) signer: The remote signer now refuses to start without an ETH/USD price feed.
+* [#4011](https://github.com/livepeer/go-livepeer/pull/4011) Orchestrator: With an explicit `-reward`, an account not authorized to call `reward()` now exits at startup instead of silently never calling reward.
+
+### Features ⚒
+
+* [#4011](https://github.com/livepeer/go-livepeer/pull/4011) Add LIP-118 reward caller support so a separate wallet can call `reward()` on behalf of an orchestrator (@rickstaa)
+* [#4095](https://github.com/livepeer/go-livepeer/pull/4095) signer: Show fees in USD
+* [#4089](https://github.com/livepeer/go-livepeer/pull/4089) discovery: Optimistically populate remote discovery
+* [#4029](https://github.com/livepeer/go-livepeer/pull/4029) runner: Use challenge for payment response
+* [#4028](https://github.com/livepeer/go-livepeer/pull/4028) signer: Refresh on nonces >= 500
+
+### Dependencies
+
+* [#4031](https://github.com/livepeer/go-livepeer/pull/4031) Upgrade to Go 1.27.0
+* [#4043](https://github.com/livepeer/go-livepeer/pull/4043) Upgrade go-ethereum to 1.17.5 (@rickstaa)
+
 ## v0.9.2
 
 ### Breaking Changes 🚨🚨
