@@ -1,8 +1,12 @@
 package main
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -58,6 +62,34 @@ func TestHttpGetWithSuccess(t *testing.T) {
 			assert.Equal(t, tt.wantBody, body)
 			assert.Equal(t, tt.wantOk, ok)
 		})
+	}
+}
+
+func TestRequestTokensPrintsSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	(&wizard{host: host, httpPort: port}).requestTokens()
+	writer.Close()
+	os.Stdout = oldStdout
+
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(output); got != "Successfully requested test LPT.\n" {
+		t.Fatalf("unexpected output: %q", got)
 	}
 }
 

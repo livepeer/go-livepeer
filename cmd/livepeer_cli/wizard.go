@@ -320,17 +320,22 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 }
 
 func httpPost(url string) string {
+	result, _ := httpPostWithSuccess(url)
+	return result
+}
+
+func httpPostWithSuccess(url string) (string, bool) {
 	resp, err := http.Post(url, "application/x-www-form-urlencoded", nil)
 	if err != nil {
 		log.Error("Error sending HTTP POST: ", "url", url, "err", err)
-		return ""
+		return "", false
 	}
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil || string(result) == "" {
-		return ""
+	if err != nil {
+		return "", false
 	}
 
-	return string(result)
+	return string(result), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
