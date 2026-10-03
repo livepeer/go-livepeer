@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"net/url"
 	"strings"
+
+	"github.com/livepeer/go-livepeer/eth"
 )
 
 func (w *wizard) transferTokens() {
@@ -13,6 +16,11 @@ func (w *wizard) transferTokens() {
 	to := w.readString()
 
 	amount := w.readBigInt("Enter amount")
+
+		w.printGasInfo(big.NewInt(eth.TransferTokensGas), nil)
+		if !w.confirm(fmt.Sprintf("Are you sure you want to send %v LPTU to \"%s\"?", eth.FormatUnits(amount, "lpt"), to)) {
+			return
+		}
 
 	val := url.Values{
 		"to":     {fmt.Sprintf("%v", to)},
