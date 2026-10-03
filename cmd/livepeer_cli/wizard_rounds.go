@@ -32,5 +32,9 @@ func (w *wizard) currentRound() (*big.Int, error) {
 }
 
 func (w *wizard) initializeRound() {
-	httpPost(fmt.Sprintf("http://%v:%v/initializeRound", w.host, w.httpPort))
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPost(fmt.Sprintf("http://%v:%v/initializeRound", w.host, w.httpPort))
+		}
 }

@@ -13,7 +13,11 @@ func (w *wizard) setMaxGasPrice() {
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxGasPrice", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxGasPrice", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) setMinGasPrice() {
@@ -24,7 +28,11 @@ func (w *wizard) setMinGasPrice() {
 		"minGasPrice": {fmt.Sprintf("%v", minGasPrice.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMinGasPrice", w.host, w.httpPort), val)
+	w.printGasInfo()
+		fmt.Printf("Press 'Y' to approve transaction, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			httpPostWithParams(fmt.Sprintf("http://%v:%v/setMinGasPrice", w.host, w.httpPort), val)
+		}
 }
 
 func (w *wizard) signMessage() {
@@ -33,12 +41,15 @@ func (w *wizard) signMessage() {
 	val := url.Values{
 		"message": {msg},
 	}
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
-	if !ok {
-		fmt.Printf("Error signing message: %v\n", result)
-		return
-	}
-	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
+		fmt.Printf("Press 'Y' to sign, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
+			if !ok {
+				fmt.Printf("Error signing message: %v\n", result)
+				return
+			}
+			fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
+		}
 }
 
 func (w *wizard) signTypedData() {
@@ -50,10 +61,13 @@ func (w *wizard) signTypedData() {
 	headers := map[string]string{
 		"SigFormat": "data/typed",
 	}
-	result, ok := httpPostWithParamsHeaders(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val, headers)
-	if !ok {
-		fmt.Printf("Error signing typed data: %v\n", result)
-		return
-	}
-	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
+		fmt.Printf("Press 'Y' to sign, or any other key to cancel\n")
+		if strings.ToLower(w.read()) == "y" {
+			result, ok := httpPostWithParamsHeaders(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val, headers)
+			if !ok {
+				fmt.Printf("Error signing typed data: %v\n", result)
+				return
+			}
+			fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
+		}
 }
