@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/cenkalti/backoff"
@@ -121,9 +120,6 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
-
-	//API for dynamic capabilities
-	ls.byocSrv = byoc.NewBYOCGatewayServer(ls.LivepeerNode, &StreamStatusStore, whipServer, whepServer, ls.HTTPMux)
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 
