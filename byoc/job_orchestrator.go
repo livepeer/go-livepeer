@@ -594,13 +594,13 @@ func (bso *BYOCOrchestratorServer) verifyTokenCreds(ctx context.Context, tokenCr
 		return nil, err
 	}
 
-	sigHex := jobSender.Sig
-	if len(jobSender.Sig) > 130 {
-		sigHex = jobSender.Sig[2:]
-	}
+	// Strip the "0x" prefix if present. Empty Sig is valid: the gateway sends
+	// it in offchain mode (broadcaster has no Eth keystore); VerifySig
+	// short-circuits to true in that mode.
+	sigHex := strings.TrimPrefix(jobSender.Sig, "0x")
 	sigByte, err := hex.DecodeString(sigHex)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to hex-decode signature", err)
+		clog.Errorf(ctx, "Unable to hex-decode signature err=%v", err)
 		return nil, errSegSig
 	}
 
