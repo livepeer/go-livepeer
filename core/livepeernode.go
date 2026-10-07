@@ -161,6 +161,8 @@ type LivepeerNode struct {
 	InfoSig                    []byte            // sig over eth address for the OrchestratorInfo request
 	RemoteDiscovery            bool              // expose remote discovery endpoint when enabled
 
+	USDToWei *AutoConvertedPrice // Wei value of one USD; set before serving, nil if unavailable.
+
 	// Thread safety for config fields
 	mu                  sync.RWMutex
 	StorageConfigs      map[string]*transcodeConfig

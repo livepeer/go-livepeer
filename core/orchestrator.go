@@ -147,6 +147,9 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	if priceInfoRat == nil {
 		return fmt.Errorf("invalid expected price sent with payment err=%q", "expected price is nil")
 	}
+	if payment.ExpirationParams == nil {
+		return errors.New("invalid payment: expiration params are nil")
+	}
 
 	// During the first payment, set the fixed price per session
 	orch.setFixedPricePerSession(sender, manifestID, priceInfoRat)

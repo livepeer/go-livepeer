@@ -802,6 +802,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNil(t *testing.T) {
 	protoPayment := defaultPayment(t)
 
 	protoPayment.TicketParams = nil
+	protoPayment.ExpirationParams = nil
 
 	err := orch.ProcessPayment(context.Background(), protoPayment, ManifestID("some manifest"))
 
@@ -867,7 +868,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 	assert.NoError(err)
 }
 
-func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
+func TestProcessPayment_InvalidParams(t *testing.T) {
 	assert := assert.New(t)
 	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
@@ -897,6 +898,12 @@ func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 	err = orch.ProcessPayment(context.Background(), pay, ManifestID("some manifest"))
 	assert.Error(err)
 	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "expected price is nil"))
+
+	// test ExpirationParams = nil with a valid expected price
+	pay.ExpectedPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
+	pay.ExpirationParams = nil
+	err = orch.ProcessPayment(context.Background(), pay, ManifestID("some manifest"))
+	assert.EqualError(err, "invalid payment: expiration params are nil")
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
