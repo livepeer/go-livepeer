@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
+	"github.com/livepeer/go-livepeer/core"
 )
 
 func Test_submitLLM(t *testing.T) {
@@ -122,6 +125,52 @@ func TestEncodeReqMetadata(t *testing.T) {
 				t.Errorf("encodeReqMetadata() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// Test_processAIRequest_NoOrchestrators_NonLive ensures that a non-live AI
+// request (liveParams == nil) returns a ServiceUnavailableError instead of
+// panicking when no orchestrators are available.
+func Test_processAIRequest_NoOrchestrators_NonLive(t *testing.T) {
+	cap := core.Capability_AudioToText
+	modelID := "openai/whisper-large-v3"
+
+	node := &core.LivepeerNode{
+		OrchestratorPool:          &stubDiscovery{},
+		AIProcesssingRetryTimeout: time.Second,
+	}
+
+	// Seed the selector cache with empty pools so Select returns nil without
+	// triggering a network refresh (empty OrchestratorPool keeps the refresh
+	// threshold at zero).
+	sel := &AISessionSelector{
+		warmPool:        NewAISessionPool(&LIFOSelector{}, newSuspender(), 0),
+		coldPool:        NewAISessionPool(&LIFOSelector{}, newSuspender(), 0),
+		ttl:             time.Hour,
+		lastRefreshTime: time.Now(),
+		cap:             cap,
+		modelID:         modelID,
+		node:            node,
+		suspender:       newSuspender(),
+	}
+	mgr := NewAISessionManager(node, time.Hour)
+	mgr.selectors[strconv.Itoa(int(cap))+"_"+modelID] = sel
+
+	params := aiRequestParams{
+		node:        node,
+		sessManager: mgr,
+		// liveParams intentionally nil to mimic a non-live pipeline request.
+	}
+
+	req := worker.GenAudioToTextMultipartRequestBody{ModelId: &modelID}
+
+	resp, err := processAIRequest(context.Background(), params, req)
+	if resp != nil {
+		t.Fatalf("expected nil response, got %v", resp)
+	}
+	var unavailable *ServiceUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected ServiceUnavailableError, got %v", err)
 	}
 }
 
