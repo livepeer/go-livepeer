@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -14,6 +15,30 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestTrickleServer_CanceledClientDisconnectIsDebug(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previousLogger)
+
+	stream := &Stream{
+		segments:  make([]*Segment, maxSegmentsPerStream),
+		name:      "test",
+		mimeType:  "video/MP2T",
+		nextWrite: 1,
+	}
+	stream.segments[0] = newSegment(0)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/test/0", nil).WithContext(ctx)
+	stream.handleGet(httptest.NewRecorder(), req, 0)
+
+	output := logs.String()
+	require.Contains(t, output, "level=DEBUG")
+	require.NotContains(t, output, "level=ERROR")
+}
 
 func TestTrickle_Close(t *testing.T) {
 	require := require.New(t)

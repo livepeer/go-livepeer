@@ -274,9 +274,12 @@ func (bso *BYOCOrchestratorServer) processJob(ctx context.Context, w http.Respon
 	req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
 
 	// Add Authorization header if auth token is set for this capability
-	if extCap, ok := bso.node.ExternalCapabilities.Capabilities[orchJob.Req.Capability]; ok {
-		if extCap.AuthToken != "" {
-			req.Header.Add("Authorization", "Bearer "+extCap.AuthToken)
+	if extCap, ok := bso.node.ExternalCapabilities.GetCapability(orchJob.Req.Capability); ok {
+		extCap.Mu.RLock()
+		authToken := extCap.AuthToken
+		extCap.Mu.RUnlock()
+		if authToken != "" {
+			req.Header.Add("Authorization", "Bearer "+authToken)
 		}
 	}
 
