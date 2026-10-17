@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
+
+	"github.com/livepeer/go-livepeer/eth"
 )
 
 func (w *wizard) currentRound() (*big.Int, error) {
@@ -30,6 +32,12 @@ func (w *wizard) currentRound() (*big.Int, error) {
 
 	return cr, nil
 }
+	w.printGasInfo(big.NewInt(eth.InitializeRoundGas), nil)
+	if !w.confirm("Are you sure you want to initialize the round?") {
+		return
+	}
+
+
 
 func (w *wizard) initializeRound() {
 	httpPost(fmt.Sprintf("http://%v:%v/initializeRound", w.host, w.httpPort))
