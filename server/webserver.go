@@ -89,6 +89,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	// Gas Price
 	mux.Handle("/maxGasPrice", maxGasPriceHandler(client))
 	mux.Handle("/minGasPrice", minGasPriceHandler(client))
+	mux.Handle("/estimateTxCost", estimateTxCostHandler(client))
 
 	// Tickets
 	mux.Handle("/senderInfo", senderInfoHandler(client))
