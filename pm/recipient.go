@@ -69,6 +69,9 @@ type TicketParamsConfig struct {
 	// TxCostMultiplier is the desired multiplier of the transaction
 	// cost for redemption
 	TxCostMultiplier int
+
+	// IgnoreSenderReserve instructs the recipient to skip sender reserve checks and accept tickets as long as the computed face value meets EV requirements
+	IgnoreSenderReserve bool
 }
 
 // GasPriceMonitor defines methods for monitoring gas prices
@@ -271,16 +274,28 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		faceValue = new(big.Int).Mul(r.cfg.EV, evMultiplier)
 	}
 
-	// Fetch current max float for sender
-	maxFloat, err := r.sm.MaxFloat(sender)
-	if err != nil {
-		return nil, err
-	}
+	var maxFloat *big.Int
+	if !r.cfg.IgnoreSenderReserve {
+		// Fetch current max float for sender
+		var err error
+		maxFloat, err = r.sm.MaxFloat(sender)
+		if err != nil {
+			return nil, err
+		}
 
-	if faceValue.Cmp(maxFloat) > 0 {
-		// If faceValue > maxFloat
-		// Set faceValue = maxFloat
-		faceValue = maxFloat
+		if faceValue.Cmp(maxFloat) > 0 {
+			// If faceValue > maxFloat
+			// Set faceValue = maxFloat
+			faceValue = maxFloat
+		}
+	} else {
+		available, err := r.sm.SenderFunds(sender)
+		if err != nil {
+			return nil, err
+		}
+		if available.Cmp(faceValue) < 0 {
+			return nil, errInsufficientSenderReserve
+		}
 	}
 
 	if r.maxfacevalue.Cmp(big.NewInt(0)) > 0 {
@@ -290,7 +305,9 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 	if monitor.Enabled {
 		monitor.TicketFaceValue(sender.Hex(), faceValue)
-		monitor.MaxFloat(sender.Hex(), maxFloat)
+		if !r.cfg.IgnoreSenderReserve && maxFloat != nil {
+			monitor.MaxFloat(sender.Hex(), maxFloat)
+		}
 	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve
