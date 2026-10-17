@@ -111,7 +111,7 @@ func getOrchestratorInfo(ctx context.Context, uris []*url.URL, req *net.Orchestr
 		return nil, errNoOrchestrators
 	}
 
-	infoCh := make(chan *net.OrchestratorInfo)
+	infoCh := make(chan *net.OrchestratorInfo, 1)
 	errCh := make(chan error, len(uris))
 
 	cctx, cancel := context.WithTimeout(ctx, getOrchestratorTimeout)
