@@ -31,7 +31,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
+// TODO handle PATCH/PUT for ICE restarts (new Offers)
 
 const (
 	keyframeInterval       = 2 * time.Second // TODO make configurable?
@@ -65,6 +65,45 @@ var WebrtcConfig = webrtc.Configuration{
 type WHIPServer struct {
 	mediaEngine *webrtc.MediaEngine
 	settings    func(*webrtc.API)
+
+	// Live sessions by resource ID, so DELETE can find the connection it
+	// is asked to terminate. Entries are removed when the session ends,
+	// whether that is by DELETE, by the peer, or by an error.
+	mu        sync.Mutex
+	resources map[string]*MediaState
+}
+
+func (s *WHIPServer) track(resourceID string, ms *MediaState) {
+	s.mu.Lock()
+	if s.resources == nil {
+		s.resources = map[string]*MediaState{}
+	}
+	s.resources[resourceID] = ms
+	s.mu.Unlock()
+
+	// Drop the entry once the session ends by any route; MediaState.Close
+	// is idempotent, so a DELETE that races this is harmless.
+	go func() {
+		_ = ms.AwaitClose()
+		s.mu.Lock()
+		delete(s.resources, resourceID)
+		s.mu.Unlock()
+	}()
+}
+
+// DeleteWHIP terminates the session identified by resourceID, per the WHIP
+// spec's DELETE on the resource URL returned in Location. Reports whether
+// the resource existed.
+func (s *WHIPServer) DeleteWHIP(ctx context.Context, resourceID string) bool {
+	s.mu.Lock()
+	ms, ok := s.resources[resourceID]
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	clog.Infof(ctx, "deleting whip resource=%s", resourceID)
+	ms.Close()
+	return true
 }
 
 // handleCreate implements the POST that creates a new resource.
@@ -157,6 +196,8 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// Create a resource ID and ETag
 	resourceID := generateID()
 	etag := generateETag()
+
+	s.track(resourceID, mediaState)
 
 	// Respond with 201 Created
 	resourceURL := fmt.Sprintf("%s/%s", getRequestURL(r), resourceID)
