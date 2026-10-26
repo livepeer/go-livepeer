@@ -86,7 +86,7 @@ jobs:
           reachable=$(jq -rs --arg accepted "$ACCEPTED_VULNS" '
             ($accepted | split(" ")) as $skip
             | [.[] | select(.finding != null) | .finding
-               | select(.trace[0].function != null) | .osv]
+                | select(.trace[0].function != null) | .osv]
             | unique - $skip | .[]' govulncheck.json)
           if [[ -n "$reachable" ]]; then
             echo "Reachable vulnerabilities (details: govulncheck ./... or https://pkg.go.dev/vuln/<ID>):"
