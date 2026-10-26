@@ -7,10 +7,10 @@ updates:
       interval: weekly
     # Never resolve a release younger than a week: gives the ecosystem time
     # to detect and yank compromised versions before we pull them in.
-    # Patch releases carry most security fixes, so they wait only two days.
+    # Patch releases carry most security fixes, so they wait only three days.
     cooldown:
       default-days: 7
-      semver-patch-days: 2
+      semver-patch-days: 3
     # Version and security updates are grouped separately. go-ethereum
     # minors are breaking and usually need code changes, so it gets its
     # own PR in both streams and cannot block the rest.
