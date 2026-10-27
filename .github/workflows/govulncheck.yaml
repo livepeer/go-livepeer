@@ -1,0 +1,90 @@
+name: Vulnerability scan
+
+# Dependabot and CodeQL do not read the Go vulnerability database, so
+# Go toolchain, stdlib and module advisories can go unflagged.
+# govulncheck reads it directly and only reports vulnerabilities the
+# code can reach.
+
+on:
+  push:
+    branches:
+      - tmp/govulncheck-baseline
+  pull_request:
+    branches:
+      - master
+  schedule:
+    # New advisories land against unchanged code, so scan master weekly.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: Run govulncheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Advisories reviewed and accepted. Remove an entry once it is fixed.
+      #   GO-2026-4887, GO-2026-4883: Moby daemon bugs flagged on the whole
+      #   github.com/docker/docker module because the advisories list no
+      #   symbols. go-livepeer only uses the client and has no fixed version
+      #   to move to.
+      ACCEPTED_VULNS: GO-2026-4887 GO-2026-4883
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: './go.mod'
+          cache: true
+
+      - name: Cache ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v6
+        with:
+          path: /home/runner/compiled
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('install_ffmpeg.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-ffmpeg
+
+      - name: Install dependencies
+        timeout-minutes: 10
+        run: |
+          sudo apt update
+          sudo apt install -yqq build-essential pkg-config autoconf git python3 libx11-dev libbz2-dev libbzip3-dev
+
+      - name: Install ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: ./install_ffmpeg.sh
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+
+      - name: Scan for reachable vulnerabilities
+        env:
+          PKG_CONFIG_PATH: "/home/runner/compiled/lib/pkgconfig"
+        run: |
+          govulncheck -format json ./... > govulncheck.json
+          # A finding with a function in its trace is reachable from our code.
+          reachable=$(jq -rs --arg accepted "$ACCEPTED_VULNS" '
+            ($accepted | split(" ")) as $skip
+            | [.[] | select(.finding != null) | .finding
+                | select(.trace[0].function != null) | .osv]
+            | unique - $skip | .[]' govulncheck.json)
+          if [[ -n "$reachable" ]]; then
+            echo "Reachable vulnerabilities (details: govulncheck ./... or https://pkg.go.dev/vuln/<ID>):"
+            echo "$reachable"
+            exit 1
+          fi
+          echo "No reachable vulnerabilities beyond the accepted list."
