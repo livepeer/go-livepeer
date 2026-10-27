@@ -441,7 +441,7 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 		jobReq := &JobRequest{
 			ID:         "test-stream",
 			Capability: "test-capability",
-			Timeout:    10,
+			Timeout:    60,
 			Request:    "{}",
 		}
 		jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
@@ -458,7 +458,7 @@ func TestRunStream_RunAndCancelStream(t *testing.T) {
 		drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 		mockSender := pm.MockSender{}
 		mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
-		mockSender.On("CreateTicketBatch", "foo", 10).Return(mockTicketBatch(10), nil).Twice() //payment sent on start and stop (only once on stop)
+		mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Twice() //payment sent on start and stop (only once on stop)
 		node.Sender = &mockSender
 		node.Balances = core.NewAddressBalances(10 * time.Second)
 		defer node.Balances.StopCleanup()
@@ -614,7 +614,7 @@ func TestRunStream_OrchestratorFailover(t *testing.T) {
 		jobReq := &JobRequest{
 			ID:         "test-stream",
 			Capability: "test-capability",
-			Timeout:    10,
+			Timeout:    60,
 			Request:    "{}",
 		}
 		jobParams := JobParameters{EnableVideoIngress: true, EnableVideoEgress: true, EnableDataOutput: true}
@@ -835,7 +835,7 @@ func TestStopStreamHandler(t *testing.T) {
 			drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 			mockSender := pm.MockSender{}
 			mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
-			mockSender.On("CreateTicketBatch", "foo", 10).Return(mockTicketBatch(10), nil).Once()
+			mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Once()
 			node.Sender = &mockSender
 			node.Balances = core.NewAddressBalances(10 * time.Second)
 			defer node.Balances.StopCleanup()
@@ -874,7 +874,7 @@ func TestStopStreamHandler(t *testing.T) {
 				Request:    marshalToString(t, jobDetails),
 				Capability: "test-capability",
 				Parameters: marshalToString(t, jobParams),
-				Timeout:    10,
+				Timeout:    60,
 			}
 			jobReqB, err := json.Marshal(jobReq)
 			assert.NoError(t, err)
@@ -923,7 +923,7 @@ func TestStopStreamHandler(t *testing.T) {
 			drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 			mockSender := pm.MockSender{}
 			mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
-			mockSender.On("CreateTicketBatch", "foo", 10).Return(mockTicketBatch(10), nil).Once()
+			mockSender.On("CreateTicketBatch", "foo", 60).Return(mockTicketBatch(60), nil).Once()
 			node.Sender = &mockSender
 			node.Balances = core.NewAddressBalances(10 * time.Second)
 			defer node.Balances.StopCleanup()
@@ -956,7 +956,7 @@ func TestStopStreamHandler(t *testing.T) {
 				Request:    marshalToString(t, jobDetails),
 				Capability: "test-capability",
 				Parameters: marshalToString(t, jobParams),
-				Timeout:    10,
+				Timeout:    60,
 			}
 			jobReqB, err := json.Marshal(jobReq)
 			assert.NoError(t, err)
