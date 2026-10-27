@@ -56,19 +56,10 @@ jobs:
             ${{ runner.os }}-ffmpeg
 
       - name: Install dependencies
+        timeout-minutes: 10
         run: |
-          sudo apt update \
-            && sudo apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
-            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main" \
-            && sudo apt update \
-            && sudo apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3
-
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
-            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
-
-          sudo apt install -yqq libx11-dev libbz2-dev libbzip3-dev
+          sudo apt update
+          sudo apt install -yqq build-essential pkg-config autoconf git python3 libx11-dev libbz2-dev libbzip3-dev
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
