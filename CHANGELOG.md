@@ -12,7 +12,6 @@
 * [#4102](https://github.com/livepeer/go-livepeer/pull/4102) Upgrade go-ethereum to 1.17.10
 * [#4117](https://github.com/livepeer/go-livepeer/pull/4117) Upgrade go-jose to v4.1.6
 
-
 ## v0.9.3
 
 ### Breaking Changes 🚨🚨
