@@ -10,7 +10,8 @@
 
 * [#4110](https://github.com/livepeer/go-livepeer/pull/4110) Upgrade to Go 1.27.3 and bump x/net, grpc and other dependencies to fix vulnerabilities reachable from go-livepeer, including HTTP/2 denial of service (@its-DeFine)
 * [#4102](https://github.com/livepeer/go-livepeer/pull/4102) Upgrade go-ethereum to 1.17.10
-* [#4117](https://github.com/livepeer/go-livepeer/pull/4117) Upgrade go-jose to v4.1.6 to address security updates
+* [#4117](https://github.com/livepeer/go-livepeer/pull/4117) Upgrade go-jose to v4.1.6
+
 
 ## v0.9.3
 
