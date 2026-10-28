@@ -440,7 +440,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	return tx, nil
 }
 
-// SubscribeMaxFloatChange notifies subcribers when the max float for a sender has changed
+// SubscribeMaxFloatChange notifies subscribers when the max float for a sender has changed
 // and that it should call LocalSenderMonitor.MaxFloat() to get the latest value
 func (sm *LocalSenderMonitor) SubscribeMaxFloatChange(sender ethcommon.Address, sink chan<- struct{}) event.Subscription {
 	sm.mu.Lock()

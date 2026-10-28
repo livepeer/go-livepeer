@@ -92,6 +92,6 @@ type SenderManager interface {
 	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 	// Clear clears the cached values for a sender
 	Clear(addr ethcommon.Address)
-	// SubscribeReserveChange notifies a subcriber when the senderInfo for a sender changes
+	// SubscribeReserveChange notifies a subscriber when the senderInfo for a sender changes
 	SubscribeReserveChange(sink chan<- ethcommon.Address) event.Subscription
 }

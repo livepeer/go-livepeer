@@ -530,13 +530,13 @@ func (bso *BYOCOrchestratorServer) chargeForCompute(start time.Time, price *net.
 }
 
 func (bso *BYOCOrchestratorServer) addPaymentBalanceHeader(w http.ResponseWriter, sender ethcommon.Address, jobId string) {
-	//check balance and return remaning balance in header of response
+	//check balance and return remaining balance in header of response
 	senderBalance := bso.getPaymentBalance(sender, jobId)
 	w.Header().Set("Livepeer-Payment-Balance", senderBalance.FloatString(0))
 }
 
 func (bso *BYOCOrchestratorServer) getPaymentBalance(sender ethcommon.Address, jobId string) *big.Rat {
-	//check balance and return remaning balance in header of response
+	//check balance and return remaining balance in header of response
 	senderBalance := bso.orch.Balance(sender, core.ManifestID(jobId))
 	if senderBalance == nil {
 		senderBalance = big.NewRat(0, 1)
