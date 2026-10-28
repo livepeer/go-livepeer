@@ -671,7 +671,11 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 
 	if n, err := sendData(); err != nil {
 		// Handle write error or client disconnect
-		slog.Error("Error sending data to client", "stream", s.name, "idx", segment.idx, "sentBytes", n, "err", err)
+		if r.Context().Err() != nil {
+			slog.Debug("Error sending data to client", "stream", s.name, "idx", segment.idx, "sentBytes", n, "err", err)
+		} else {
+			slog.Error("Error sending data to client", "stream", s.name, "idx", segment.idx, "sentBytes", n, "err", err)
+		}
 		return
 	}
 }
