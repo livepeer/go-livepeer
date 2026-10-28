@@ -256,6 +256,22 @@ func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 		return nil
 	}
 
+	// Filter sessions by hardware requirements before selection.
+	if hwReqs := BroadcastCfg.HardwareRequirements(); hwReqs != nil {
+		var filtered []*BroadcastSession
+		for _, sess := range s.sessions {
+			if MatchesHardware(sess.OrchestratorInfo.GetHardware(), hwReqs) {
+				filtered = append(filtered, sess)
+			} else {
+				clog.V(common.DEBUG).Infof(ctx, "Filtered out orchestrator %s: does not meet hardware requirements", sess.OrchestratorInfo.GetTranscoder())
+			}
+		}
+		s.sessions = filtered
+		if len(s.sessions) == 0 {
+			return nil
+		}
+	}
+
 	if s.stakeRdr == nil {
 		// Sessions are selected based on the order of unknownSessions in off-chain mode
 		sess := s.sessions[0]
