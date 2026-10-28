@@ -21,3 +21,4 @@
 #### Broadcaster
 
 #### CLI
+- \#500 Print a confirmation after requesting test LPT (@Ehtasham-Yasin)
