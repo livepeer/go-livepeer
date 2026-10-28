@@ -40,6 +40,11 @@ type accountManager struct {
 }
 
 func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainID *big.Int, passphrase string) (AccountManager, error) {
+	// Unlock resolves a passphrase naming a file to that file's contents, so do
+	// the same here. Otherwise a newly created account is encrypted with the path
+	// while Unlock tries the contents, and the keystore cannot be opened.
+	passphrase, _ = common.ReadFromFile(passphrase)
+
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
