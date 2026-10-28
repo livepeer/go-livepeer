@@ -540,6 +540,10 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
 	cleanupSession := func(sessionID string) {
+		// Offchain nodes have no payment sender and no ticket state to clean.
+		if node.Sender == nil {
+			return
+		}
 		node.Sender.CleanupSession(sessionID)
 	}
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
