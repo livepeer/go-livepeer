@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
@@ -132,8 +131,6 @@ type LivepeerServer struct {
 	liveAIAuthApiKey     string
 	livePaymentInterval  time.Duration
 	outSegmentTimeout    time.Duration
-
-	byocSrv *byoc.BYOCGatewayServer
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
