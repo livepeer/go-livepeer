@@ -178,6 +178,14 @@ func TestDockerManager_EnsureImageAvailable(t *testing.T) {
 			},
 			expectedPull: false,
 		},
+		{
+			name: "ImageNotAvailable",
+			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
+				// Mock client methods to simulate the image not being available locally.
+				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, fmt.Errorf("image not found")).Once()
+			},
+			expectedPull: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -315,6 +323,7 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 		modelID       string
 		expectedImage string
 		expectError   bool
+		expectedErr   string
 	}{
 		{
 			name:          "live-video-to-video with valid modelID",
@@ -346,6 +355,14 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			pipeline:    "live-video-to-video",
 			modelID:     "invalid-model",
 			expectError: true,
+		},
+		{
+			name:        "batch pipeline is rejected",
+			setup:       func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
+			pipeline:    "text-to-image",
+			modelID:     "",
+			expectError: true,
+			expectedErr: "no container image found for pipeline text-to-image: batch pipelines are no longer supported",
 		},
 		{
 			name: "override live image",
@@ -393,7 +410,11 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			image, err := dockerManager.getContainerImageName(tt.pipeline, tt.modelID)
 			if tt.expectError {
 				require.Error(t, err)
-				require.Equal(t, fmt.Sprintf("no container image found for live pipeline %s", tt.modelID), err.Error())
+				if tt.expectedErr != "" {
+					require.EqualError(t, err, tt.expectedErr)
+				} else {
+					require.Equal(t, fmt.Sprintf("no container image found for live pipeline %s", tt.modelID), err.Error())
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expectedImage, image)
