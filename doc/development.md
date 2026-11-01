@@ -236,20 +236,6 @@ The configurations below run a gateway and an orchestrator on the same machine. 
       ]
     },
     {
-      "name": "Launch AI O (off-chain)",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "cmd/livepeer",
-      "buildFlags": "-ldflags='-extldflags=-lm -X github.com/livepeer/go-livepeer/core.LivepeerVersion=0.0.0'", // Fix missing symbol and version mismatch errors.
-      "args": [
-        "-orchestrator",
-        "-orchSecret=orchSecret",
-        "-serviceAddr=<host-ip>:8935",
-        "-v=6"
-      ]
-    },
-    {
       "name": "Launch AI G (off-chain)",
       "type": "go",
       "request": "launch",
@@ -287,27 +273,6 @@ The configurations below run a gateway and an orchestrator on the same machine. 
         "-ethPassword=<ETH_SECRET>",
         "-ethAcctAddr=<ETH_ACCT_ADDR>",
         "-ethOrchAddr=<ORCH_ADDR>"
-      ]
-    },
-    {
-      "name": "Launch AI O (on-chain)",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "cmd/livepeer",
-      "buildFlags": "-tags=mainnet,experimental -ldflags='-extldflags=-lm -X github.com/livepeer/go-livepeer/core.LivepeerVersion=0.0.0'", // Fix missing symbol error, version mismatch error and enable mainnet.
-      "args": [
-        "-orchestrator",
-        "-orchSecret=orchSecret",
-        "-aiServiceRegistry",
-        "-serviceAddr=<host-ip>:8935",
-        "-v=6",
-        "-network=arbitrum-one-mainnet",
-        "-ethUrl=https://arb1.arbitrum.io/rpc",
-        "-ethPassword=<ETH_SECRET>",
-        "-ethAcctAddr=<ETH_ACCT_ADDR>",
-        "-ethOrchAddr=<ORCH_ADDR>",
-        "-pricePerUnit=0"
       ]
     },
     {
