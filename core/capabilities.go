@@ -78,10 +78,7 @@ const (
 	Capability_H264_Decode_422_10bit      Capability = 24
 	Capability_H264_Decode_420_10bit      Capability = 25
 	Capability_SegmentSlicing             Capability = 26
-	// 27-34 and 36 were the removed ai-runner batch pipelines (text-to-image,
-	// image-to-image, image-to-video, upscale, audio-to-text, segment-anything-2,
-	// llm, image-to-text, text-to-speech). They stay reserved because the values
-	// are wire-protocol bit positions.
+	// 27-34 and 36 reserved (were batch AI pipelines); do not reuse.
 	Capability_LiveVideoToVideo Capability = 35
 	// 37 reserved (was BYOC); do not reuse.
 )
