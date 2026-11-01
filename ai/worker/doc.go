@@ -1,20 +1,22 @@
 /*
-Package `worker` hosts the main AI worker logic for managing or using runner
-containers for processing inference requests on the Livepeer AI subnet. The
-package allows interacting with the [AI runner containers], and it includes:
+Package `worker` hosts the AI worker logic for managing or using live runner
+containers that serve live-video-to-video on the Livepeer AI subnet. It includes:
 
 - Golang API Bindings (./runner.gen.go):
 
-Generated from the AI runner's OpenAPI spec. To re-generate them run: `make ai_worker_codegen`
+Generated from ./openapi.yaml, the live runner API spec maintained in this
+repository. To re-generate them run: `make ai_worker_codegen`
 
 - Worker (./worker.go):
 
-Listens for inference requests from the Livepeer AI subnet and routes them to the AI runner.
+Routes live-video-to-video requests to a runner container.
 
 - Docker Manager (./docker.go):
 
-Manages AI runner containers. For a state diagram showing the lifecycle of a container, see the /doc/worker.md file.
+Manages runner containers. For a state diagram showing the lifecycle of a container, see the /doc/worker.md file.
 
-[AI runner containers]: https://github.com/livepeer/ai-runner
+- Serverless Worker (./serverless_worker.go):
+
+Talks to a remote scope runner over a websocket instead of managing containers.
 */
 package worker

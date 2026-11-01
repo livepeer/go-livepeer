@@ -321,34 +321,6 @@ func (r *stubOrchestrator) RegistrationSecret() string {
 func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *stubOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-
 func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	r.requestMu.Lock()
 	defer r.requestMu.Unlock()
@@ -359,21 +331,14 @@ func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
 	return true, nil
 }
-func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-}
 func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
 	r.requestMu.Lock()
 	defer r.requestMu.Unlock()
 	r.storageReqs = append(r.storageReqs, requestID)
 	return nil
 }
-func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
-	return drivers.NewMockOSSession(), true
-}
 func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
-}
-func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func (r *stubOrchestrator) ExtraNodes() int {
 	return 0
@@ -1824,54 +1789,18 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
-	return nil, nil
-}
-func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
-	return nil, nil
-}
 func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
 	return true, nil
 }
-func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
-
-}
 func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
 	return nil
-}
-func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
-	return drivers.NewMockOSSession(), true
 }
 func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
 }
-func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
-}
-
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
 		Recipient:         pm.RandBytes(123),
@@ -1928,7 +1857,7 @@ func Test_setLiveAICapacity(t *testing.T) {
 			capabilities: &net.Capabilities{
 				Constraints: &net.Capabilities_Constraints{
 					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
-						uint32(core.Capability_ImageToText): {},
+						uint32(core.Capability_H264): {},
 					},
 				},
 			},

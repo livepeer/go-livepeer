@@ -75,7 +75,6 @@ const (
 	OrchestratorRpcPort = "8935"
 	OrchestratorCliPort = "7935"
 	TranscoderCliPort   = "6935"
-	AIWorkerCliPort     = "4935"
 	RemoteSignerCliPort = "3935"
 	RedeemerCliPort     = "11935"
 	DefaultCliPort      = "10935"
@@ -87,7 +86,6 @@ var cliPortByNodeType = map[core.NodeType]string{
 	core.BroadcasterNode:  BroadcasterCliPort,
 	core.OrchestratorNode: OrchestratorCliPort,
 	core.TranscoderNode:   TranscoderCliPort,
-	core.AIWorkerNode:     AIWorkerCliPort,
 	core.RemoteSignerNode: RemoteSignerCliPort,
 	core.RedeemerNode:     RedeemerCliPort,
 }
@@ -262,11 +260,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLiveRunnerProxyURL := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
-	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
 	defaultAIMinRunnerVersion := "[]"
+	defaultAIRunnerImage := ""
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLiveRunnerAddr := ""
@@ -394,11 +392,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LiveRunnerProxyURL:       &defaultLiveRunnerProxyURL,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
-		AIRunnerImage:            &defaultAIRunnerImage,
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
 		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
+		AIRunnerImage:            &defaultAIRunnerImage,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LiveRunnerAddr:           &defaultLiveRunnerAddr,
@@ -748,17 +746,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.NodeType = core.RemoteSignerNode
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
+		if *cfg.AIWorker && *cfg.OrchAddr != "" {
+			glog.Warning("-orchAddr is ignored for the AI worker: remote AI workers are not supported for live-video-to-video, the worker runs inside the orchestrator")
+		}
 		if !*cfg.Transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
 		}
-		if !*cfg.AIWorker {
-			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
 	} else if *cfg.AIWorker {
-		n.NodeType = core.AIWorkerNode
+		glog.Exit("-aiWorker requires -orchestrator: the standalone AI worker node type was removed together with the batch pipelines")
 	} else if *cfg.Broadcaster {
 		n.NodeType = core.BroadcasterNode
 		glog.Warning("-broadcaster flag is deprecated and will be removed in a future release. Please use -gateway instead")
@@ -792,8 +790,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			nodeType = lpmon.Transcoder
 		case core.RedeemerNode:
 			nodeType = lpmon.Redeemer
-		case core.AIWorkerNode:
-			nodeType = lpmon.AIWorker
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
@@ -1426,13 +1422,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 		}
-
-		// Backwards compatibility for deprecated flags.
 		if *cfg.AIRunnerImage != "" {
-			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
-			if imageOverrides.Default == "" {
-				imageOverrides.Default = *cfg.AIRunnerImage
-			}
+			glog.Warning("-aiRunnerImage flag is deprecated and ignored. Please use -aiRunnerImageOverrides instead")
 		}
 
 		if *cfg.AIServerless {
@@ -1601,11 +1592,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				n.SetBasePriceForCap(config.Gateway, pipelineCap, config.ModelID, autoPrice)
 			}
 		}
-	} else {
-		if n.NodeType == core.AIWorkerNode {
-			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
-			return
-		}
+	} else if *cfg.AIWorker {
+		glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+		return
 	}
 
 	if *cfg.Objectstore != "" {
@@ -1852,7 +1841,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	// Apply default capabilities if not running as a transcoder.
-	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
+	if !*cfg.Transcoder && n.NodeType == core.OrchestratorNode {
 		aiCaps = append(aiCaps, core.DefaultCapabilities()...)
 	}
 
@@ -1863,10 +1852,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	if cfg.AIMinRunnerVersion != nil {
 		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
-	}
-	if n.AIWorkerManager != nil {
-		// Set min version constraint to prevent incompatible workers.
-		n.Capabilities.SetMinVersionConstraint(core.LivepeerVersion)
 	}
 
 	if drivers.NodeStorage == nil {
@@ -2088,7 +2073,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		go func() {
-			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
 			if err != nil {
 				exit("Error starting Transcoder node: err=%q", err)
 			}
@@ -2124,21 +2109,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	}()
 
-	if n.NodeType == core.TranscoderNode || n.NodeType == core.AIWorkerNode {
+	if n.NodeType == core.TranscoderNode {
 		if n.OrchSecret == "" {
 			glog.Exit("Missing -orchSecret")
 		}
 		if len(orchURLs) <= 0 {
 			glog.Exit("Missing -orchAddr")
 		}
-
-		if n.NodeType == core.TranscoderNode {
-			go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
-		}
-
-		if n.NodeType == core.AIWorkerNode {
-			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
-		}
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
 
 	switch n.NodeType {
@@ -2149,8 +2127,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Infof("Video Ingest Endpoint - rtmp://%v", *cfg.RtmpAddr)
 	case core.TranscoderNode:
 		glog.Infof("**Liveepeer Running in Transcoder Mode***")
-	case core.AIWorkerNode:
-		glog.Infof("**Livepeer Running in AI Worker Mode**")
 	case core.RedeemerNode:
 		glog.Infof("**Livepeer Running in Redeemer Mode**")
 	}
@@ -2513,7 +2489,7 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 
 	// Format of modelPrices json
 	// Model_id will be set to "default" to price all models in the pipeline if not specified.
-	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
+	// {"capabilities_prices": [ {"pipeline": "live-video-to-video", "model_id": "noop", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "live-video-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
 	var pricesSet struct {
 		CapabilitiesPrices []struct {
 			Pipeline      string       `json:"pipeline"`

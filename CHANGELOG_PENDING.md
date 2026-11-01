@@ -6,6 +6,9 @@
 
 - Removed the deprecated BYOC (bring your own container) support, including its
   endpoints, external capability registration and the `byoc` capability.
+- Removed the deprecated ai-runner batch pipelines, including their endpoints and
+  the standalone AI worker node type. `-aiWorker` now requires `-orchestrator`,
+  and `-aiRunnerImage` is ignored.
 
 ### Features ⚒
 
