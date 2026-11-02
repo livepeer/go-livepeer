@@ -82,8 +82,6 @@ func startAIServer(lp *lphttp) error {
 	}
 	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
 
-	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
-
 	lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
 		Mux:      lp.transRPC,
 		BasePath: TrickleHTTPPath,
