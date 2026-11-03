@@ -107,6 +107,11 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
+			// Settle the final interval before publishing EOS so the gateway and
+			// orchestrator use the same accounting boundary.
+			if paymentProcessor != nil {
+				paymentProcessor.processSync(ctx)
+			}
 			if err := publisher.Close(); err != nil {
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
