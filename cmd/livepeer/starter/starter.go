@@ -77,9 +77,20 @@ const (
 	TranscoderCliPort   = "6935"
 	AIWorkerCliPort     = "4935"
 	RemoteSignerCliPort = "3935"
+	RedeemerCliPort     = "11935"
+	DefaultCliPort      = "10935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
+
+var cliPortByNodeType = map[core.NodeType]string{
+	core.BroadcasterNode:  BroadcasterCliPort,
+	core.OrchestratorNode: OrchestratorCliPort,
+	core.TranscoderNode:   TranscoderCliPort,
+	core.AIWorkerNode:     AIWorkerCliPort,
+	core.RemoteSignerNode: RemoteSignerCliPort,
+	core.RedeemerNode:     RedeemerCliPort,
+}
 
 type LivepeerConfig struct {
 	Network                    *string
@@ -1657,13 +1668,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	httpIngest := true
+	*cfg.CliAddr = cliAddr(*cfg.CliAddr, n.NodeType)
 
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
 		*cfg.RtmpAddr = defaultAddr(*cfg.RtmpAddr, "127.0.0.1", BroadcasterRtmpPort)
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", BroadcasterRpcPort)
-		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", BroadcasterCliPort)
 
 		if *cfg.GatewayHost != "" {
 			n.GatewayHost = *cfg.GatewayHost
@@ -1809,8 +1820,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		server.MaxAttempts = *cfg.MaxAttempts
 
 	} else if n.NodeType == core.OrchestratorNode {
-		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", OrchestratorCliPort)
-
 		suri, err := getServiceURI(n, *cfg.ServiceAddr)
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
@@ -1837,12 +1846,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 		}
-	} else if n.NodeType == core.TranscoderNode {
-		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
-	} else if n.NodeType == core.AIWorkerNode {
-		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
-	} else if n.NodeType == core.RemoteSignerNode {
-		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", RemoteSignerCliPort)
 	}
 	if isWildcardIPAddr(*cfg.CliAddr) {
 		glog.Warningf("Binding -cliAddr to a wildcard address (%s) exposes the CLI server on all network interfaces; use a loopback address or restrict access with a firewall", *cfg.CliAddr)
@@ -2375,6 +2378,14 @@ func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) erro
 	}
 
 	return nil
+}
+
+func cliAddr(addr string, nodeType core.NodeType) string {
+	port, ok := cliPortByNodeType[nodeType]
+	if !ok {
+		port = DefaultCliPort
+	}
+	return defaultAddr(addr, "127.0.0.1", port)
 }
 
 func defaultAddr(addr, defaultHost, defaultPort string) string {

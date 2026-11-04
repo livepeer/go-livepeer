@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -606,4 +607,34 @@ func TestNodeRecipientAddr(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestCliAddr(t *testing.T) {
+	// Every node type must get a default. A type reaching the default case is fine; a type
+	// left with the empty address is not, since net/http then serves it on :80.
+	nodeTypes := []core.NodeType{
+		core.DefaultNode, core.BroadcasterNode, core.OrchestratorNode,
+		core.TranscoderNode, core.AIWorkerNode, core.RedeemerNode, core.RemoteSignerNode,
+	}
+	for _, nt := range nodeTypes {
+		t.Run(nt.String(), func(t *testing.T) {
+			addr := cliAddr("", nt)
+			assert.NotEmpty(t, addr)
+			assert.True(t, strings.HasPrefix(addr, "127.0.0.1:"), "must bind loopback, got %v", addr)
+		})
+	}
+
+	// Ports are distinct so co-located nodes do not fight for the socket.
+	seen := map[string]core.NodeType{}
+	for _, nt := range nodeTypes {
+		addr := cliAddr("", nt)
+		if other, dup := seen[addr]; dup {
+			t.Errorf("%v and %v share %v", other, nt, addr)
+		}
+		seen[addr] = nt
+	}
+
+	// An explicit -cliAddr always wins.
+	assert.Equal(t, "0.0.0.0:1234", cliAddr("0.0.0.0:1234", core.RedeemerNode))
+	assert.Equal(t, "127.0.0.1:1234", cliAddr(":1234", core.DefaultNode))
 }
