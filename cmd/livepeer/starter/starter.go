@@ -83,6 +83,15 @@ const (
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
 
+var cliPortByNodeType = map[core.NodeType]string{
+	core.BroadcasterNode:  BroadcasterCliPort,
+	core.OrchestratorNode: OrchestratorCliPort,
+	core.TranscoderNode:   TranscoderCliPort,
+	core.AIWorkerNode:     AIWorkerCliPort,
+	core.RemoteSignerNode: RemoteSignerCliPort,
+	core.RedeemerNode:     RedeemerCliPort,
+}
+
 type LivepeerConfig struct {
 	Network                    *string
 	RtmpAddr                   *string
@@ -2372,23 +2381,11 @@ func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) erro
 }
 
 func cliAddr(addr string, nodeType core.NodeType) string {
-	const host = "127.0.0.1"
-	switch nodeType {
-	case core.BroadcasterNode:
-		return defaultAddr(addr, host, BroadcasterCliPort)
-	case core.OrchestratorNode:
-		return defaultAddr(addr, host, OrchestratorCliPort)
-	case core.TranscoderNode:
-		return defaultAddr(addr, host, TranscoderCliPort)
-	case core.AIWorkerNode:
-		return defaultAddr(addr, host, AIWorkerCliPort)
-	case core.RemoteSignerNode:
-		return defaultAddr(addr, host, RemoteSignerCliPort)
-	case core.RedeemerNode:
-		return defaultAddr(addr, host, RedeemerCliPort)
-	default:
-		return defaultAddr(addr, host, DefaultCliPort)
+	port, ok := cliPortByNodeType[nodeType]
+	if !ok {
+		port = DefaultCliPort
 	}
+	return defaultAddr(addr, "127.0.0.1", port)
 }
 
 func defaultAddr(addr, defaultHost, defaultPort string) string {
