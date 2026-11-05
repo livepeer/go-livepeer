@@ -53,6 +53,17 @@ var deprecatedBatchPipelines = []string{
 	"text-to-speech",
 }
 
+// IsDeprecatedBatchPipeline reports whether name is an ai-runner batch pipeline
+// that go-livepeer no longer serves.
+func IsDeprecatedBatchPipeline(name string) bool {
+	for _, p := range deprecatedBatchPipelines {
+		if p == name {
+			return true
+		}
+	}
+	return false
+}
+
 // deprecatedPipelineHandler rejects requests for a removed batch pipeline with 410 Gone.
 func deprecatedPipelineHandler(pipeline string) http.Handler {
 	msg := fmt.Sprintf("%s is no longer supported: the ai-runner batch pipelines were removed from go-livepeer, see https://github.com/livepeer/ai-runner", pipeline)

@@ -1371,6 +1371,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Errorf("Error parsing -aiModels: %v", err)
 			return
 		}
+		for _, mc := range aiModelConfigs {
+			if server.IsDeprecatedBatchPipeline(mc.Pipeline) {
+				glog.Warningf("-aiModels pipeline %q (model %q) is a removed ai-runner batch pipeline and will not be served; see https://github.com/livepeer/ai-runner", mc.Pipeline, mc.ModelID)
+			}
+		}
 	}
 
 	if *cfg.AIWorker {
