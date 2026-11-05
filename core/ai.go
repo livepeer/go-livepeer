@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,15 +17,6 @@ import (
 var errPipelineNotAvailable = errors.New("pipeline not available")
 
 type AI interface {
-	TextToImage(context.Context, worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error)
-	ImageToImage(context.Context, worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
-	ImageToVideo(context.Context, worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
-	Upscale(context.Context, worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
-	AudioToText(context.Context, worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
-	LLM(context.Context, worker.GenLLMJSONRequestBody) (interface{}, error)
-	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
-	ImageToText(context.Context, worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error)
-	TextToSpeech(context.Context, worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error)
 	LiveVideoToVideo(context.Context, worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
@@ -122,22 +112,6 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 	}
 
 	return configs, nil
-}
-
-// ParseStepsFromModelID parses the number of inference steps from the model ID suffix.
-func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
-	numInferenceSteps := defaultSteps
-
-	// Regular expression to find "_<number>step" pattern anywhere in the model ID.
-	stepPattern := regexp.MustCompile(`_(\d+)step`)
-	matches := stepPattern.FindStringSubmatch(*modelID)
-	if len(matches) == 2 {
-		if parsedSteps, err := strconv.Atoi(matches[1]); err == nil {
-			numInferenceSteps = float64(parsedSteps)
-		}
-	}
-
-	return numInferenceSteps
 }
 
 // AddAICapabilities adds AI capabilities to the node.

@@ -1593,10 +1593,6 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				uint32(core.Capability_LiveVideoToVideo): {
 					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
 						"model-a": {},
-					},
-				},
-				uint32(core.Capability_TextToImage): {
-					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
 						"model-b": {},
 					},
 				},
@@ -1645,7 +1641,7 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 						{"url":"https://orch1.example.com:8935/scope-unsupported-unit","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"usd","unit":"seconds"}},
 						{"url":"https://orch1.example.com:8935/scope-invalid-price","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
 						{"url":"https://orch1.example.com:8935/scope-invalid-pixels","app":"live-video-to-video/model-a","price_info":{"price":0,"currency":"wei","unit":"seconds"}},
-						{"url":"https://orch1.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
+						{"url":"https://orch1.example.com:8935/txt","app":"live-video-to-video/model-b","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
 					]
 				},
 				{
@@ -1684,7 +1680,7 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				{
 					PricePerUnit:  50,
 					PixelsPerUnit: 1,
-					Capability:    uint32(core.Capability_TextToImage),
+					Capability:    uint32(core.Capability_LiveVideoToVideo),
 					Constraint:    "model-b",
 				},
 			},
@@ -1692,7 +1688,7 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 				{
 					"address": "https://orch2.example.com:8935",
 					"runners": [
-						{"url":"https://orch2.example.com:8935/txt","app":"text-to-image/model-b","price_info":{"price":999,"currency":"wei","unit":"seconds"}},
+						{"url":"https://orch2.example.com:8935/txt","app":"live-video-to-video/model-b","price_info":{"price":999,"currency":"wei","unit":"seconds"}},
 						{"url":"https://orch2.example.com:8935/scope","app":"live-video-to-video/model-a","price_info":{"price":1,"currency":"wei","unit":"seconds"}}
 					]
 				},
@@ -1754,8 +1750,8 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Len(resp, 4)
 	orch1Resp := discoveryResponseByAddress(t, resp, "https://orch1.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch1Resp.Score)
-	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch1Resp.Capabilities)
-	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, orch1Resp))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-b"}, orch1Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-b"}, discoveryRunnerApps(t, orch1Resp))
 	require.Equal(orch1LastSeen, orch1Resp.LastSeen)
 	require.Contains(string(body), `"last_seen":"2026-09-15T00:30:00Z"`)
 	requireNotContainsDiscoveryField(t, body, "unknown_field")
@@ -1768,8 +1764,8 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	require.Equal(0, discoveredResp.Runners[1].CapacityUsed)
 	orch2Resp := discoveryResponseByAddress(t, resp, "https://orch2.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch2Resp.Score)
-	require.Equal([]string{"live-video-to-video/model-a", "text-to-image/model-b"}, orch2Resp.Capabilities)
-	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, orch2Resp))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-b"}, orch2Resp.Capabilities)
+	require.Equal([]string{"live-video-to-video/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, orch2Resp))
 	require.Equal(orch2LastSeen, orch2Resp.LastSeen)
 	orch3Resp := discoveryResponseByAddress(t, resp, "https://orch3.example.com:8935")
 	require.Equal(float32(common.Score_Trusted), orch3Resp.Score)
@@ -1783,12 +1779,12 @@ func TestRemoteSigner_Discovery(t *testing.T) {
 	var capsResp []discoveryResponse
 	require.NoError(json.NewDecoder(capsRR.Body).Decode(&capsResp))
 	require.Len(capsResp, 4)
-	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "text-to-image/model-b"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-b"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch1.example.com:8935")))
 	require.Equal([]string{"live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://discovered.example.com:8935")))
-	require.Equal([]string{"text-to-image/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch2.example.com:8935")))
+	require.Equal([]string{"live-video-to-video/model-b", "live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch2.example.com:8935")))
 	require.Equal([]string{"live-video-to-video/model-a"}, discoveryRunnerApps(t, discoveryResponseByAddress(t, capsResp, "https://orch3.example.com:8935")))
 
-	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=text-to-image/model-b", nil)
+	repeatedReq := httptest.NewRequest(http.MethodGet, "/discover-orchestrators?caps=live-video-to-video/model-a&caps=live-video-to-video/model-b", nil)
 	repeatedRR := httptest.NewRecorder()
 	ls.GetOrchestrators(rdp, repeatedRR, repeatedReq)
 	require.Equal(http.StatusOK, repeatedRR.Code)

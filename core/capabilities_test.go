@@ -639,9 +639,9 @@ func TestCapability_String(t *testing.T) {
 		want string
 	}{
 		{
-			name: "Capability_TextToImage",
-			c:    Capability_TextToImage,
-			want: "Text to image",
+			name: "Capability_LiveVideoToVideo",
+			c:    Capability_LiveVideoToVideo,
+			want: "Live video to video",
 		},
 		{
 			name: "Unknown",
@@ -658,23 +658,23 @@ func TestCapability_String(t *testing.T) {
 
 func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	assert := assert.New(t)
-	capabilities := []Capability{Capability_TextToImage}
+	capabilities := []Capability{Capability_LiveVideoToVideo}
 	mandatories := []Capability{4}
 
 	// create model constraints
 	model_id1 := "Model1"
 	model_id2 := "Model2"
 	constraints := make(PerCapabilityConstraints)
-	constraints[Capability_TextToImage] = &CapabilityConstraints{
+	constraints[Capability_LiveVideoToVideo] = &CapabilityConstraints{
 		Models: make(ModelConstraints),
 	}
 	model1Constraint := ModelConstraint{Warm: true, Capacity: 1}
-	constraints[Capability_TextToImage].Models[model_id1] = &ModelConstraint{Warm: true, Capacity: 1}
+	constraints[Capability_LiveVideoToVideo].Models[model_id1] = &ModelConstraint{Warm: true, Capacity: 1}
 
 	// create capabilities with only Model1
 	caps := NewCapabilities(capabilities, mandatories)
 	caps.SetPerCapabilityConstraints(constraints)
-	_, model1ConstraintExists := caps.constraints.perCapability[Capability_TextToImage].Models[model_id1]
+	_, model1ConstraintExists := caps.constraints.perCapability[Capability_LiveVideoToVideo].Models[model_id1]
 	assert.True(model1ConstraintExists)
 
 	newModelConstraint := CapabilityConstraints{
@@ -684,11 +684,11 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	newModelConstraint.Models[model_id2] = &model2Constraint
 
 	// add another model
-	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+	caps.constraints.addCapabilityConstraints(Capability_LiveVideoToVideo, newModelConstraint)
 
 	checkCapsConstraints := caps.constraints.perCapability
 
-	checkConstraint, model2ConstraintExists := checkCapsConstraints[Capability_TextToImage].Models[model_id2]
+	checkConstraint, model2ConstraintExists := checkCapsConstraints[Capability_LiveVideoToVideo].Models[model_id2]
 
 	assert.True(model2ConstraintExists)
 	// check that ModelConstraint values are the same but for two different modelIDs
@@ -696,26 +696,26 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	assert.Equal(model1Constraint, model2Constraint)
 
 	// add another to Model2
-	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+	caps.constraints.addCapabilityConstraints(Capability_LiveVideoToVideo, newModelConstraint)
 	checkCapsConstraints = caps.constraints.perCapability
 	// check capacity increased to 2
-	checkConstraintCapacity := checkCapsConstraints[Capability_TextToImage].Models["Model2"].Capacity
+	checkConstraintCapacity := checkCapsConstraints[Capability_LiveVideoToVideo].Models["Model2"].Capacity
 	assert.Equal(checkConstraintCapacity, 2)
 	// confirm Model1 capacity is still 1
-	checkConstraintCapacity = checkCapsConstraints[Capability_TextToImage].Models["Model1"].Capacity
+	checkConstraintCapacity = checkCapsConstraints[Capability_LiveVideoToVideo].Models["Model1"].Capacity
 	assert.Equal(checkConstraintCapacity, 1)
 
 	// remove constraint and make sure is 1
 	removeModel2Constraint := ModelConstraint{Warm: true, Capacity: 1}
 	newModelConstraint.Models[model_id2] = &removeModel2Constraint
-	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
-	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 2)
-	assert.Equal(caps.constraints.perCapability[Capability_TextToImage].Models["Model2"].Capacity, 1)
+	caps.constraints.removeCapabilityConstraints(Capability_LiveVideoToVideo, newModelConstraint)
+	assert.Equal(len(caps.constraints.perCapability[Capability_LiveVideoToVideo].Models), 2)
+	assert.Equal(caps.constraints.perCapability[Capability_LiveVideoToVideo].Models["Model2"].Capacity, 1)
 
 	// remove constraint and make sure is removed from constraints
-	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
-	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 1)
-	_, exists := caps.constraints.perCapability[Capability_TextToImage].Models["Model2"]
+	caps.constraints.removeCapabilityConstraints(Capability_LiveVideoToVideo, newModelConstraint)
+	assert.Equal(len(caps.constraints.perCapability[Capability_LiveVideoToVideo].Models), 1)
+	_, exists := caps.constraints.perCapability[Capability_LiveVideoToVideo].Models["Model2"]
 	assert.False(exists)
 }
 

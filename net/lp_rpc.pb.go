@@ -1767,180 +1767,6 @@ func (x *NotifySegment) GetProfiles() []byte {
 	return nil
 }
 
-// Sent by the aiworker to register itself to the orchestrator.
-type RegisterAIWorkerRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Shared secret for auth
-	Secret string `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
-	// AIWorker capabilities
-	Capabilities *Capabilities `protobuf:"bytes,2,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
-	// AIWorker hardware info
-	Hardware      []*HardwareInformation `protobuf:"bytes,3,rep,name=hardware,proto3" json:"hardware,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RegisterAIWorkerRequest) Reset() {
-	*x = RegisterAIWorkerRequest{}
-	mi := &file_net_lp_rpc_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterAIWorkerRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterAIWorkerRequest) ProtoMessage() {}
-
-func (x *RegisterAIWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterAIWorkerRequest.ProtoReflect.Descriptor instead.
-func (*RegisterAIWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *RegisterAIWorkerRequest) GetSecret() string {
-	if x != nil {
-		return x.Secret
-	}
-	return ""
-}
-
-func (x *RegisterAIWorkerRequest) GetCapabilities() *Capabilities {
-	if x != nil {
-		return x.Capabilities
-	}
-	return nil
-}
-
-func (x *RegisterAIWorkerRequest) GetHardware() []*HardwareInformation {
-	if x != nil {
-		return x.Hardware
-	}
-	return nil
-}
-
-// Data included by the gateway when submitting a AI job.
-type AIJobData struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// pipeline to use for the job
-	Pipeline string `protobuf:"bytes,1,opt,name=pipeline,proto3" json:"pipeline,omitempty"`
-	// AI job request data
-	RequestData   []byte `protobuf:"bytes,2,opt,name=requestData,proto3" json:"requestData,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AIJobData) Reset() {
-	*x = AIJobData{}
-	mi := &file_net_lp_rpc_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AIJobData) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AIJobData) ProtoMessage() {}
-
-func (x *AIJobData) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AIJobData.ProtoReflect.Descriptor instead.
-func (*AIJobData) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *AIJobData) GetPipeline() string {
-	if x != nil {
-		return x.Pipeline
-	}
-	return ""
-}
-
-func (x *AIJobData) GetRequestData() []byte {
-	if x != nil {
-		return x.RequestData
-	}
-	return nil
-}
-
-// Sent by the orchestrator to the aiworker
-type NotifyAIJob struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Configuration for the AI job
-	AIJobData *AIJobData `protobuf:"bytes,1,opt,name=AIJobData,proto3" json:"AIJobData,omitempty"`
-	// ID for this particular AI task.
-	TaskId        int64 `protobuf:"varint,2,opt,name=taskId,proto3" json:"taskId,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *NotifyAIJob) Reset() {
-	*x = NotifyAIJob{}
-	mi := &file_net_lp_rpc_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *NotifyAIJob) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NotifyAIJob) ProtoMessage() {}
-
-func (x *NotifyAIJob) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NotifyAIJob.ProtoReflect.Descriptor instead.
-func (*NotifyAIJob) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *NotifyAIJob) GetAIJobData() *AIJobData {
-	if x != nil {
-		return x.AIJobData
-	}
-	return nil
-}
-
-func (x *NotifyAIJob) GetTaskId() int64 {
-	if x != nil {
-		return x.TaskId
-	}
-	return 0
-}
-
 // Required parameters for probabilistic micropayment tickets
 type TicketParams struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1968,7 +1794,7 @@ type TicketParams struct {
 
 func (x *TicketParams) Reset() {
 	*x = TicketParams{}
-	mi := &file_net_lp_rpc_proto_msgTypes[22]
+	mi := &file_net_lp_rpc_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1980,7 +1806,7 @@ func (x *TicketParams) String() string {
 func (*TicketParams) ProtoMessage() {}
 
 func (x *TicketParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[22]
+	mi := &file_net_lp_rpc_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1993,7 +1819,7 @@ func (x *TicketParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketParams.ProtoReflect.Descriptor instead.
 func (*TicketParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{22}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TicketParams) GetRecipient() []byte {
@@ -2060,7 +1886,7 @@ type TicketSenderParams struct {
 
 func (x *TicketSenderParams) Reset() {
 	*x = TicketSenderParams{}
-	mi := &file_net_lp_rpc_proto_msgTypes[23]
+	mi := &file_net_lp_rpc_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2072,7 +1898,7 @@ func (x *TicketSenderParams) String() string {
 func (*TicketSenderParams) ProtoMessage() {}
 
 func (x *TicketSenderParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[23]
+	mi := &file_net_lp_rpc_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2085,7 +1911,7 @@ func (x *TicketSenderParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketSenderParams.ProtoReflect.Descriptor instead.
 func (*TicketSenderParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{23}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TicketSenderParams) GetSenderNonce() uint32 {
@@ -2115,7 +1941,7 @@ type TicketExpirationParams struct {
 
 func (x *TicketExpirationParams) Reset() {
 	*x = TicketExpirationParams{}
-	mi := &file_net_lp_rpc_proto_msgTypes[24]
+	mi := &file_net_lp_rpc_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +1953,7 @@ func (x *TicketExpirationParams) String() string {
 func (*TicketExpirationParams) ProtoMessage() {}
 
 func (x *TicketExpirationParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[24]
+	mi := &file_net_lp_rpc_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +1966,7 @@ func (x *TicketExpirationParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketExpirationParams.ProtoReflect.Descriptor instead.
 func (*TicketExpirationParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{24}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TicketExpirationParams) GetCreationRound() int64 {
@@ -2179,7 +2005,7 @@ type Payment struct {
 
 func (x *Payment) Reset() {
 	*x = Payment{}
-	mi := &file_net_lp_rpc_proto_msgTypes[25]
+	mi := &file_net_lp_rpc_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2017,7 @@ func (x *Payment) String() string {
 func (*Payment) ProtoMessage() {}
 
 func (x *Payment) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[25]
+	mi := &file_net_lp_rpc_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2030,7 @@ func (x *Payment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Payment.ProtoReflect.Descriptor instead.
 func (*Payment) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{25}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Payment) GetTicketParams() *TicketParams {
@@ -2263,7 +2089,7 @@ type GPUComputeInfo struct {
 
 func (x *GPUComputeInfo) Reset() {
 	*x = GPUComputeInfo{}
-	mi := &file_net_lp_rpc_proto_msgTypes[26]
+	mi := &file_net_lp_rpc_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2275,7 +2101,7 @@ func (x *GPUComputeInfo) String() string {
 func (*GPUComputeInfo) ProtoMessage() {}
 
 func (x *GPUComputeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[26]
+	mi := &file_net_lp_rpc_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2288,7 +2114,7 @@ func (x *GPUComputeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GPUComputeInfo.ProtoReflect.Descriptor instead.
 func (*GPUComputeInfo) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{26}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GPUComputeInfo) GetId() string {
@@ -2348,7 +2174,7 @@ type HardwareInformation struct {
 
 func (x *HardwareInformation) Reset() {
 	*x = HardwareInformation{}
-	mi := &file_net_lp_rpc_proto_msgTypes[27]
+	mi := &file_net_lp_rpc_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2360,7 +2186,7 @@ func (x *HardwareInformation) String() string {
 func (*HardwareInformation) ProtoMessage() {}
 
 func (x *HardwareInformation) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[27]
+	mi := &file_net_lp_rpc_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2373,7 +2199,7 @@ func (x *HardwareInformation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HardwareInformation.ProtoReflect.Descriptor instead.
 func (*HardwareInformation) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{27}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *HardwareInformation) GetPipeline() string {
@@ -2408,7 +2234,7 @@ type Capabilities_Constraints struct {
 
 func (x *Capabilities_Constraints) Reset() {
 	*x = Capabilities_Constraints{}
-	mi := &file_net_lp_rpc_proto_msgTypes[29]
+	mi := &file_net_lp_rpc_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2420,7 +2246,7 @@ func (x *Capabilities_Constraints) String() string {
 func (*Capabilities_Constraints) ProtoMessage() {}
 
 func (x *Capabilities_Constraints) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[29]
+	mi := &file_net_lp_rpc_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2460,7 +2286,7 @@ type Capabilities_CapabilityConstraints struct {
 
 func (x *Capabilities_CapabilityConstraints) Reset() {
 	*x = Capabilities_CapabilityConstraints{}
-	mi := &file_net_lp_rpc_proto_msgTypes[30]
+	mi := &file_net_lp_rpc_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2472,7 +2298,7 @@ func (x *Capabilities_CapabilityConstraints) String() string {
 func (*Capabilities_CapabilityConstraints) ProtoMessage() {}
 
 func (x *Capabilities_CapabilityConstraints) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[30]
+	mi := &file_net_lp_rpc_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2507,7 +2333,7 @@ type Capabilities_CapabilityConstraints_ModelConstraint struct {
 
 func (x *Capabilities_CapabilityConstraints_ModelConstraint) Reset() {
 	*x = Capabilities_CapabilityConstraints_ModelConstraint{}
-	mi := &file_net_lp_rpc_proto_msgTypes[32]
+	mi := &file_net_lp_rpc_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2519,7 +2345,7 @@ func (x *Capabilities_CapabilityConstraints_ModelConstraint) String() string {
 func (*Capabilities_CapabilityConstraints_ModelConstraint) ProtoMessage() {}
 
 func (x *Capabilities_CapabilityConstraints_ModelConstraint) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[32]
+	mi := &file_net_lp_rpc_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2743,17 +2569,7 @@ const file_net_lp_rpc_proto_rawDesc = "" +
 	"\asegData\x18\x03 \x01(\v2\f.net.SegDataR\asegData\x12\x16\n" +
 	"\x06taskId\x18\x10 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06orchId\x18\x12 \x01(\tR\x06orchId\x12\x1a\n" +
-	"\bprofiles\x18\x11 \x01(\fR\bprofilesJ\x04\b\x02\x10\x03J\x04\b!\x10\"\"\x9e\x01\n" +
-	"\x17RegisterAIWorkerRequest\x12\x16\n" +
-	"\x06secret\x18\x01 \x01(\tR\x06secret\x125\n" +
-	"\fcapabilities\x18\x02 \x01(\v2\x11.net.CapabilitiesR\fcapabilities\x124\n" +
-	"\bhardware\x18\x03 \x03(\v2\x18.net.HardwareInformationR\bhardware\"I\n" +
-	"\tAIJobData\x12\x1a\n" +
-	"\bpipeline\x18\x01 \x01(\tR\bpipeline\x12 \n" +
-	"\vrequestData\x18\x02 \x01(\fR\vrequestData\"S\n" +
-	"\vNotifyAIJob\x12,\n" +
-	"\tAIJobData\x18\x01 \x01(\v2\x0e.net.AIJobDataR\tAIJobData\x12\x16\n" +
-	"\x06taskId\x18\x02 \x01(\x03R\x06taskId\"\x9f\x02\n" +
+	"\bprofiles\x18\x11 \x01(\fR\bprofilesJ\x04\b\x02\x10\x03J\x04\b!\x10\"\"\x9f\x02\n" +
 	"\fTicketParams\x12\x1c\n" +
 	"\trecipient\x18\x01 \x01(\fR\trecipient\x12\x1d\n" +
 	"\n" +
@@ -2793,9 +2609,7 @@ const file_net_lp_rpc_proto_rawDesc = "" +
 	"\fOrchestrator\x12B\n" +
 	"\x0fGetOrchestrator\x12\x18.net.OrchestratorRequest\x1a\x15.net.OrchestratorInfo\x12^\n" +
 	"\x15EndTranscodingSession\x12!.net.EndTranscodingSessionRequest\x1a\".net.EndTranscodingSessionResponse\x12$\n" +
-	"\x04Ping\x12\r.net.PingPong\x1a\r.net.PingPong2P\n" +
-	"\bAIWorker\x12D\n" +
-	"\x10RegisterAIWorker\x12\x1c.net.RegisterAIWorkerRequest\x1a\x10.net.NotifyAIJob0\x012N\n" +
+	"\x04Ping\x12\r.net.PingPong\x1a\r.net.PingPong2N\n" +
 	"\n" +
 	"Transcoder\x12@\n" +
 	"\x12RegisterTranscoder\x12\x14.net.RegisterRequest\x1a\x12.net.NotifySegment0\x01B\aZ\x05./netb\x06proto3"
@@ -2813,7 +2627,7 @@ func file_net_lp_rpc_proto_rawDescGZIP() []byte {
 }
 
 var file_net_lp_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_net_lp_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_net_lp_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_net_lp_rpc_proto_goTypes = []any{
 	(OSInfo_StorageType)(0),                    // 0: net.OSInfo.StorageType
 	(VideoProfile_Format)(0),                   // 1: net.VideoProfile.Format
@@ -2839,35 +2653,32 @@ var file_net_lp_rpc_proto_goTypes = []any{
 	(*PaymentResult)(nil),                      // 21: net.PaymentResult
 	(*RegisterRequest)(nil),                    // 22: net.RegisterRequest
 	(*NotifySegment)(nil),                      // 23: net.NotifySegment
-	(*RegisterAIWorkerRequest)(nil),            // 24: net.RegisterAIWorkerRequest
-	(*AIJobData)(nil),                          // 25: net.AIJobData
-	(*NotifyAIJob)(nil),                        // 26: net.NotifyAIJob
-	(*TicketParams)(nil),                       // 27: net.TicketParams
-	(*TicketSenderParams)(nil),                 // 28: net.TicketSenderParams
-	(*TicketExpirationParams)(nil),             // 29: net.TicketExpirationParams
-	(*Payment)(nil),                            // 30: net.Payment
-	(*GPUComputeInfo)(nil),                     // 31: net.GPUComputeInfo
-	(*HardwareInformation)(nil),                // 32: net.HardwareInformation
-	nil,                                        // 33: net.Capabilities.CapacitiesEntry
-	(*Capabilities_Constraints)(nil),           // 34: net.Capabilities.Constraints
-	(*Capabilities_CapabilityConstraints)(nil), // 35: net.Capabilities.CapabilityConstraints
-	nil, // 36: net.Capabilities.Constraints.PerCapabilityEntry
-	(*Capabilities_CapabilityConstraints_ModelConstraint)(nil), // 37: net.Capabilities.CapabilityConstraints.ModelConstraint
-	nil, // 38: net.Capabilities.CapabilityConstraints.ModelsEntry
-	nil, // 39: net.HardwareInformation.GpuInfoEntry
+	(*TicketParams)(nil),                       // 24: net.TicketParams
+	(*TicketSenderParams)(nil),                 // 25: net.TicketSenderParams
+	(*TicketExpirationParams)(nil),             // 26: net.TicketExpirationParams
+	(*Payment)(nil),                            // 27: net.Payment
+	(*GPUComputeInfo)(nil),                     // 28: net.GPUComputeInfo
+	(*HardwareInformation)(nil),                // 29: net.HardwareInformation
+	nil,                                        // 30: net.Capabilities.CapacitiesEntry
+	(*Capabilities_Constraints)(nil),           // 31: net.Capabilities.Constraints
+	(*Capabilities_CapabilityConstraints)(nil), // 32: net.Capabilities.CapabilityConstraints
+	nil, // 33: net.Capabilities.Constraints.PerCapabilityEntry
+	(*Capabilities_CapabilityConstraints_ModelConstraint)(nil), // 34: net.Capabilities.CapabilityConstraints.ModelConstraint
+	nil, // 35: net.Capabilities.CapabilityConstraints.ModelsEntry
+	nil, // 36: net.HardwareInformation.GpuInfoEntry
 }
 var file_net_lp_rpc_proto_depIdxs = []int32{
 	14, // 0: net.EndTranscodingSessionRequest.auth_token:type_name -> net.AuthToken
 	12, // 1: net.OrchestratorRequest.capabilities:type_name -> net.Capabilities
 	0,  // 2: net.OSInfo.storageType:type_name -> net.OSInfo.StorageType
 	10, // 3: net.OSInfo.s3info:type_name -> net.S3OSInfo
-	33, // 4: net.Capabilities.capacities:type_name -> net.Capabilities.CapacitiesEntry
-	34, // 5: net.Capabilities.constraints:type_name -> net.Capabilities.Constraints
-	27, // 6: net.OrchestratorInfo.ticket_params:type_name -> net.TicketParams
+	30, // 4: net.Capabilities.capacities:type_name -> net.Capabilities.CapacitiesEntry
+	31, // 5: net.Capabilities.constraints:type_name -> net.Capabilities.Constraints
+	24, // 6: net.OrchestratorInfo.ticket_params:type_name -> net.TicketParams
 	11, // 7: net.OrchestratorInfo.price_info:type_name -> net.PriceInfo
 	12, // 8: net.OrchestratorInfo.capabilities:type_name -> net.Capabilities
 	14, // 9: net.OrchestratorInfo.auth_token:type_name -> net.AuthToken
-	32, // 10: net.OrchestratorInfo.hardware:type_name -> net.HardwareInformation
+	29, // 10: net.OrchestratorInfo.hardware:type_name -> net.HardwareInformation
 	9,  // 11: net.OrchestratorInfo.storage:type_name -> net.OSInfo
 	11, // 12: net.OrchestratorInfo.capabilities_prices:type_name -> net.PriceInfo
 	12, // 13: net.SegData.capabilities:type_name -> net.Capabilities
@@ -2887,35 +2698,30 @@ var file_net_lp_rpc_proto_depIdxs = []int32{
 	13, // 27: net.PaymentResult.info:type_name -> net.OrchestratorInfo
 	12, // 28: net.RegisterRequest.capabilities:type_name -> net.Capabilities
 	15, // 29: net.NotifySegment.segData:type_name -> net.SegData
-	12, // 30: net.RegisterAIWorkerRequest.capabilities:type_name -> net.Capabilities
-	32, // 31: net.RegisterAIWorkerRequest.hardware:type_name -> net.HardwareInformation
-	25, // 32: net.NotifyAIJob.AIJobData:type_name -> net.AIJobData
-	29, // 33: net.TicketParams.expiration_params:type_name -> net.TicketExpirationParams
-	27, // 34: net.Payment.ticket_params:type_name -> net.TicketParams
-	29, // 35: net.Payment.expiration_params:type_name -> net.TicketExpirationParams
-	28, // 36: net.Payment.ticket_sender_params:type_name -> net.TicketSenderParams
-	11, // 37: net.Payment.expected_price:type_name -> net.PriceInfo
-	39, // 38: net.HardwareInformation.gpu_info:type_name -> net.HardwareInformation.GpuInfoEntry
-	36, // 39: net.Capabilities.Constraints.PerCapability:type_name -> net.Capabilities.Constraints.PerCapabilityEntry
-	38, // 40: net.Capabilities.CapabilityConstraints.models:type_name -> net.Capabilities.CapabilityConstraints.ModelsEntry
-	35, // 41: net.Capabilities.Constraints.PerCapabilityEntry.value:type_name -> net.Capabilities.CapabilityConstraints
-	37, // 42: net.Capabilities.CapabilityConstraints.ModelsEntry.value:type_name -> net.Capabilities.CapabilityConstraints.ModelConstraint
-	31, // 43: net.HardwareInformation.GpuInfoEntry.value:type_name -> net.GPUComputeInfo
-	8,  // 44: net.Orchestrator.GetOrchestrator:input_type -> net.OrchestratorRequest
-	6,  // 45: net.Orchestrator.EndTranscodingSession:input_type -> net.EndTranscodingSessionRequest
-	5,  // 46: net.Orchestrator.Ping:input_type -> net.PingPong
-	24, // 47: net.AIWorker.RegisterAIWorker:input_type -> net.RegisterAIWorkerRequest
-	22, // 48: net.Transcoder.RegisterTranscoder:input_type -> net.RegisterRequest
-	13, // 49: net.Orchestrator.GetOrchestrator:output_type -> net.OrchestratorInfo
-	7,  // 50: net.Orchestrator.EndTranscodingSession:output_type -> net.EndTranscodingSessionResponse
-	5,  // 51: net.Orchestrator.Ping:output_type -> net.PingPong
-	26, // 52: net.AIWorker.RegisterAIWorker:output_type -> net.NotifyAIJob
-	23, // 53: net.Transcoder.RegisterTranscoder:output_type -> net.NotifySegment
-	49, // [49:54] is the sub-list for method output_type
-	44, // [44:49] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	26, // 30: net.TicketParams.expiration_params:type_name -> net.TicketExpirationParams
+	24, // 31: net.Payment.ticket_params:type_name -> net.TicketParams
+	26, // 32: net.Payment.expiration_params:type_name -> net.TicketExpirationParams
+	25, // 33: net.Payment.ticket_sender_params:type_name -> net.TicketSenderParams
+	11, // 34: net.Payment.expected_price:type_name -> net.PriceInfo
+	36, // 35: net.HardwareInformation.gpu_info:type_name -> net.HardwareInformation.GpuInfoEntry
+	33, // 36: net.Capabilities.Constraints.PerCapability:type_name -> net.Capabilities.Constraints.PerCapabilityEntry
+	35, // 37: net.Capabilities.CapabilityConstraints.models:type_name -> net.Capabilities.CapabilityConstraints.ModelsEntry
+	32, // 38: net.Capabilities.Constraints.PerCapabilityEntry.value:type_name -> net.Capabilities.CapabilityConstraints
+	34, // 39: net.Capabilities.CapabilityConstraints.ModelsEntry.value:type_name -> net.Capabilities.CapabilityConstraints.ModelConstraint
+	28, // 40: net.HardwareInformation.GpuInfoEntry.value:type_name -> net.GPUComputeInfo
+	8,  // 41: net.Orchestrator.GetOrchestrator:input_type -> net.OrchestratorRequest
+	6,  // 42: net.Orchestrator.EndTranscodingSession:input_type -> net.EndTranscodingSessionRequest
+	5,  // 43: net.Orchestrator.Ping:input_type -> net.PingPong
+	22, // 44: net.Transcoder.RegisterTranscoder:input_type -> net.RegisterRequest
+	13, // 45: net.Orchestrator.GetOrchestrator:output_type -> net.OrchestratorInfo
+	7,  // 46: net.Orchestrator.EndTranscodingSession:output_type -> net.EndTranscodingSessionResponse
+	5,  // 47: net.Orchestrator.Ping:output_type -> net.PingPong
+	23, // 48: net.Transcoder.RegisterTranscoder:output_type -> net.NotifySegment
+	45, // [45:49] is the sub-list for method output_type
+	41, // [41:45] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_net_lp_rpc_proto_init() }
@@ -2933,9 +2739,9 @@ func file_net_lp_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_net_lp_rpc_proto_rawDesc), len(file_net_lp_rpc_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   35,
+			NumMessages:   32,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_net_lp_rpc_proto_goTypes,
 		DependencyIndexes: file_net_lp_rpc_proto_depIdxs,

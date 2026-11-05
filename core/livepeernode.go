@@ -49,7 +49,6 @@ const (
 	OrchestratorNode
 	TranscoderNode
 	RedeemerNode
-	AIWorkerNode
 	RemoteSignerNode
 )
 
@@ -59,7 +58,6 @@ var nodeTypeStrs = map[NodeType]string{
 	OrchestratorNode: "orchestrator",
 	TranscoderNode:   "transcoder",
 	RedeemerNode:     "redeemer",
-	AIWorkerNode:     "aiworker",
 	RemoteSignerNode: "remotesigner",
 }
 
@@ -125,7 +123,6 @@ type LivepeerNode struct {
 
 	// AI worker public fields
 	AIWorker                  AI
-	AIWorkerManager           *RemoteAIWorkerManager
 	AIProcesssingRetryTimeout time.Duration
 
 	LiveRunnerManager any // NB: kludge to avoid ai/runner circular dependency
