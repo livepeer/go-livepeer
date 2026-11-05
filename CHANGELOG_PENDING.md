@@ -23,6 +23,7 @@
 ### Bug Fixes 🐞
 
 #### General
+- Demote per-segment trickle POST/GET traces to debug, and initialize FFmpeg logging at error so NVIDIA `scale_npp` downscale fallbacks do not flood production logs
 
 - [#4078](https://github.com/livepeer/go-livepeer/pull/4078) Default `-cliAddr` to a loopback address for every node type, so redeemer and reward caller nodes no longer fail to start by binding the CLI server to `:80` (@rickstaa)
 
