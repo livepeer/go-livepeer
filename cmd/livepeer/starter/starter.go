@@ -518,6 +518,7 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
+	glog.Warning("go-livepeer is deprecated in favor of the node stack. Please plan your migration: https://github.com/livepeer/node")
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
 			glog.Exit("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
