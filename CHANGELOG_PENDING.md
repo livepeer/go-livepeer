@@ -14,6 +14,8 @@
 
 #### General
 
+- [#4122](https://github.com/livepeer/go-livepeer/pull/4122) Warn at startup that go-livepeer is deprecated in favor of the [node stack](https://github.com/livepeer/node) (@rickstaa)
+
 #### Broadcaster
 
 #### Orchestrator
