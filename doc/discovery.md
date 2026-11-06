@@ -17,7 +17,7 @@ After feching active orchestrators, the discovery algorithm filters for eligible
 - Choosing the first M orchestrators out of N that respond to a `GetOrchestrator` request within a [timeout](https://github.com/livepeer/go-livepeer/blob/1af0a5182cd3a9aa38d961b6d1d104a3693ec814/discovery/discovery.go#L127)
 	- If an insufficient number of orchestrators are found within the timeout, a timeout escalation is used [here](https://github.com/livepeer/go-livepeer/blob/1af0a5182cd3a9aa38d961b6d1d104a3693ec814/discovery/discovery.go#L146) to continue trying to find orchestrators
 	- At the moment, a broadcaster uses separate pools of trusted and untrusted orchestrators for fast verification and for the untrusted orchestrator pool discovery will set M = N (see [here](https://github.com/livepeer/go-livepeer/blob/1af0a5182cd3a9aa38d961b6d1d104a3693ec814/server/broadcast.go#L411) and [here](https://github.com/livepeer/go-livepeer/blob/1af0a5182cd3a9aa38d961b6d1d104a3693ec814/server/broadcast.go#L726))
-- Exclusing orchestrators that are temporarily suspended
+- Excluding orchestrators that are temporarily suspended
 - Excluding orchestrators that do not have compatible capabilities for the job
 - Excluding orchestrators that advertise invalid ticket parameters, that advertise a price that exceeds the broadcaster's max price
 
