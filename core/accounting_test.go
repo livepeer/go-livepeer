@@ -1,7 +1,9 @@
 package core
 
 import (
+	"fmt"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -264,4 +266,31 @@ func TestBalancesCleanup(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	// Now balance for mid1 should be cleaned as well
 	assert.Nil(b.Balance(mid1))
+}
+
+// TestBalances_CleanupConcurrent runs cleanup alongside concurrent writers.
+// The map must only be touched under b.mtx; run with -race.
+func TestBalances_CleanupConcurrent(t *testing.T) {
+	b := NewBalances(time.Nanosecond)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				b.Credit(ManifestID(fmt.Sprintf("m-%d-%d", n, j)), big.NewRat(1, 1))
+			}
+		}(i)
+	}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				b.cleanup()
+			}
+		}()
+	}
+	wg.Wait()
 }

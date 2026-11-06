@@ -241,12 +241,12 @@ func (b *Balances) SetFixedPrice(id ManifestID, fixedPrice *big.Rat) {
 }
 
 func (b *Balances) cleanup() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
 	for id, balance := range b.balances {
-		b.mtx.Lock()
 		if int64(time.Since(balance.lastUpdate)) > int64(b.ttl) {
 			delete(b.balances, id)
 		}
-		b.mtx.Unlock()
 	}
 }
 
