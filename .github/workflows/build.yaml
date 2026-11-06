@@ -183,11 +183,11 @@ jobs:
         target:
           - GOOS: darwin
             GOARCH: amd64
-            runner: macos-14-large
+            runner: macos-15-large
 
           - GOOS: darwin
             GOARCH: arm64
-            runner: macos-14-xlarge
+            runner: macos-15-xlarge
 
     steps:
       - name: Check out code
