@@ -240,13 +240,7 @@ jobs:
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          # The lpms script verifies downloads with `sha256sum -c` on stdin, which
-          # the BSD sha256sum shipped with macOS 15 does not support. Put the GNU
-          # one from coreutils first for this step only.
-          mkdir -p "$RUNNER_TEMP/gnu-sha256sum"
-          ln -sf "$(brew --prefix coreutils)/bin/gsha256sum" "$RUNNER_TEMP/gnu-sha256sum/sha256sum"
-          PATH="$RUNNER_TEMP/gnu-sha256sum:$PATH" ./install_ffmpeg.sh
+        run: ./install_ffmpeg.sh
 
       - name: Build binaries
         env:
