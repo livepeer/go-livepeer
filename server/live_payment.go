@@ -155,7 +155,7 @@ func logPaymentSent(ctx context.Context, sess *BroadcastSession) {
 
 func (r *livePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
-	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
+	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 || segmentInfo.priceInfo.PixelsPerUnit <= 0 {
 		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting, priceInfo not set for sessionID=%s, ", segmentInfo.sessionID)
 		return nil
 	}
@@ -337,6 +337,11 @@ func (r *remotePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segm
 }
 
 func calculateFee(inPixels int64, price *net.PriceInfo) *big.Rat {
+	if price.GetPixelsPerUnit() <= 0 {
+		// Avoid big.NewRat with a zero denominator; a non-positive
+		// pixels-per-unit is not a usable price.
+		return big.NewRat(0, 1)
+	}
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
 	return priceRat.Mul(priceRat, big.NewRat(inPixels, 1))
 }
