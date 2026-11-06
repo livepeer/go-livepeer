@@ -1931,3 +1931,8 @@ func TestOrchestratorInfoWithCaps_NonNilEmptyCaps_DoesNotIncludeCapabilitiesPric
 	orch.AssertNotCalled(t, "GetCapabilitiesPrices", mock.Anything)
 	orch.AssertNotCalled(t, "PriceInfo", mock.Anything)
 }
+
+func TestEndTranscodingSession_MissingAuthToken(t *testing.T) {
+	_, err := endTranscodingSession(nil, newStubOrchestrator(), &net.EndTranscodingSessionRequest{})
+	assert.EqualError(t, err, "missing auth token")
+}
