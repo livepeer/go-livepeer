@@ -57,6 +57,7 @@ var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
 	maxPricePerCapability map[core.Capability]map[string]*core.AutoConvertedPrice
+	hardwareRequirements  *HardwareRequirements
 	mu                    sync.RWMutex
 }
 
@@ -139,6 +140,18 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 
 	// No price set for the specific model or default
 	return nil
+}
+
+func (cfg *BroadcastConfig) SetHardwareRequirements(req *HardwareRequirements) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.hardwareRequirements = req
+}
+
+func (cfg *BroadcastConfig) HardwareRequirements() *HardwareRequirements {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.hardwareRequirements
 }
 
 func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
