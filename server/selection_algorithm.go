@@ -4,14 +4,11 @@ import (
 	"context"
 	"math"
 	"math/big"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 )
-
-var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 type ProbabilitySelectionAlgorithm struct {
 	MinPerfScore float64
@@ -134,7 +131,8 @@ func selectBy(probabilities map[ethcommon.Address]float64) ethcommon.Address {
 		cumProbs = append(cumProbs, cumProb)
 	}
 
-	r := random.Float64()
+	// The global math/rand/v2 source is safe for concurrent use.
+	r := rand.Float64()
 	for i, cumProb := range cumProbs {
 		if r <= cumProb {
 			return addrs[i]
