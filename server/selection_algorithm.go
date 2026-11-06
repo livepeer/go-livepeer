@@ -5,13 +5,26 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 )
 
-var random = rand.New(rand.NewSource(time.Now().UnixNano()))
+// random is not safe for concurrent use, and gateways select orchestrators
+// for many streams at once, so every draw goes through randFloat.
+var (
+	randomMu sync.Mutex
+	random   = rand.New(rand.NewSource(time.Now().UnixNano()))
+)
+
+// randFloat returns random.Float64() while holding randomMu.
+func randFloat() float64 {
+	randomMu.Lock()
+	defer randomMu.Unlock()
+	return random.Float64()
+}
 
 type ProbabilitySelectionAlgorithm struct {
 	MinPerfScore float64
@@ -134,7 +147,7 @@ func selectBy(probabilities map[ethcommon.Address]float64) ethcommon.Address {
 		cumProbs = append(cumProbs, cumProb)
 	}
 
-	r := random.Float64()
+	r := randFloat()
 	for i, cumProb := range cumProbs {
 		if r <= cumProb {
 			return addrs[i]

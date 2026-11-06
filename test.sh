@@ -25,6 +25,8 @@ cd ..
 cd server
 go test -run TestSelectSession_ -race
 go test -run RegisterConnection -race
+# Orchestrator selection runs for many streams at once
+go test -run TestSelectBy_Concurrent -race
 cd ..
 
 cd media
