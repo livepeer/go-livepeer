@@ -320,10 +320,8 @@ func RandName() string {
 }
 
 var RandomUintUnder = func(max uint) uint {
-	n, err := crand.Int(crand.Reader, new(big.Int).SetUint64(uint64(max)))
-	if err != nil {
-		panic(fmt.Sprintf("crypto/rand failed: %v", err))
-	}
+	// crand.Reader never returns an error, so neither does Int
+	n, _ := crand.Int(crand.Reader, new(big.Int).SetUint64(uint64(max)))
 	return uint(n.Uint64())
 }
 

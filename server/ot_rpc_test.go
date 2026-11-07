@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -24,21 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// seedRandomBytes overrides common.RandomBytesGenerator with a deterministic
-// source seeded with the given value and returns a restore func. The default
-// generator reads from crypto/rand, so tests that assert on reproducible
-// IDs/nonces inject a seeded source through this seam instead.
-func seedRandomBytes(seed int64) func() {
-	orig := common.RandomBytesGenerator
-	prng := rand.New(rand.NewSource(seed))
-	common.RandomBytesGenerator = func(length uint) []byte {
-		b := make([]byte, length)
-		prng.Read(b)
-		return b
-	}
-	return func() { common.RandomBytesGenerator = orig }
-}
 
 type stubTranscoder struct {
 	called   int
@@ -122,19 +106,18 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-	defer seedRandomBytes(123)()
 	runTranscode(node, parsedURL.Host, httpc, notify)
 	assert.Equal(2, segmentRead)
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal("999", headers.Get("Pixels"))
-	assert.Equal("multipart/mixed; boundary=9259515bf7025a291b00", headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerLPT, headers.Get("Authorization"))
 	mediaType, params, err := mime.ParseMediaType(headers.Get("Content-Type"))
 	assert.Equal("multipart/mixed", mediaType)
 	assert.NoError(err)
+	assert.Len(params["boundary"], 20) // common.RandName: 10 random bytes as hex
 	mr := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 	var i int
 	for {

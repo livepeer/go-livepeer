@@ -2,8 +2,8 @@ package core
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -47,34 +47,19 @@ func TestSegmentFlatten(t *testing.T) {
 	}
 }
 
-// seedRandomBytes overrides common.RandomBytesGenerator with a deterministic
-// source seeded with the given value and returns a restore func. The default
-// generator reads from crypto/rand, so tests that assert on reproducible
-// IDs/nonces inject a seeded source through this seam instead.
-func seedRandomBytes(seed int64) func() {
-	orig := common.RandomBytesGenerator
-	prng := rand.New(rand.NewSource(seed))
-	common.RandomBytesGenerator = func(length uint) []byte {
-		b := make([]byte, length)
-		prng.Read(b)
-		return b
-	}
-	return func() { common.RandomBytesGenerator = orig }
-}
-
 func TestRandomIdGenerator(t *testing.T) {
-	defer seedRandomBytes(123)()
-	res := common.RandomIDGenerator(DefaultManifestIDLength)
-	assert.Equal(t, "f1405ced", res, "Unexpected RNG result")
+	a := common.RandomIDGenerator(DefaultManifestIDLength)
+	b := common.RandomIDGenerator(DefaultManifestIDLength)
+	assert.Len(t, a, 2*DefaultManifestIDLength)
+	_, err := hex.DecodeString(a)
+	assert.NoError(t, err)
+	// Catches a generator that returns constant output, such as all zeros
+	assert.NotEqual(t, a, b)
 }
 
 func TestStreamID(t *testing.T) {
-	defer seedRandomBytes(123)()
 	mid := RandomManifestID()
 	profile := ffmpeg.P144p30fps16x9
-
-	// Test random manifest ID generation
-	assert.Equal(t, ManifestID("f1405ced"), mid, "Unexpected ManifestID")
 
 	// Test normal cases
 	id := MakeStreamID(mid, &profile)

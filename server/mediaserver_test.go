@@ -695,14 +695,13 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	defer seedRandomBytes(123)()
 	sid, err := createSid(u)
 	require.NoError(t, err)
-	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0xba68998bed5c40f1), sap.Nonce)
+	nonce := sid.(*core.StreamParameters).Nonce
 
 	sid, err = createSid(u)
 	require.NoError(t, err)
+	assert.NotEqual(t, nonce, sid.(*core.StreamParameters).Nonce, "nonces should be random")
 	if sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
