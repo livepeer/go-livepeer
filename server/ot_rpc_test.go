@@ -25,6 +25,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// seedRandomBytes overrides common.RandomBytesGenerator with a deterministic
+// source seeded with the given value and returns a restore func. The default
+// generator reads from crypto/rand, so tests that assert on reproducible
+// IDs/nonces inject a seeded source through this seam instead.
+func seedRandomBytes(seed int64) func() {
+	orig := common.RandomBytesGenerator
+	prng := rand.New(rand.NewSource(seed))
+	common.RandomBytesGenerator = func(length uint) []byte {
+		b := make([]byte, length)
+		prng.Read(b)
+		return b
+	}
+	return func() { common.RandomBytesGenerator = orig }
+}
+
 type stubTranscoder struct {
 	called   int
 	profiles []ffmpeg.VideoProfile
@@ -107,7 +122,7 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-	common.PkgRNG = rand.New(rand.NewSource(123))
+	defer seedRandomBytes(123)()
 	runTranscode(node, parsedURL.Host, httpc, notify)
 	assert.Equal(2, segmentRead)
 	assert.Equal(2, tr.called)

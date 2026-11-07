@@ -47,14 +47,29 @@ func TestSegmentFlatten(t *testing.T) {
 	}
 }
 
+// seedRandomBytes overrides common.RandomBytesGenerator with a deterministic
+// source seeded with the given value and returns a restore func. The default
+// generator reads from crypto/rand, so tests that assert on reproducible
+// IDs/nonces inject a seeded source through this seam instead.
+func seedRandomBytes(seed int64) func() {
+	orig := common.RandomBytesGenerator
+	prng := rand.New(rand.NewSource(seed))
+	common.RandomBytesGenerator = func(length uint) []byte {
+		b := make([]byte, length)
+		prng.Read(b)
+		return b
+	}
+	return func() { common.RandomBytesGenerator = orig }
+}
+
 func TestRandomIdGenerator(t *testing.T) {
-	common.PkgRNG = rand.New(rand.NewSource(123))
+	defer seedRandomBytes(123)()
 	res := common.RandomIDGenerator(DefaultManifestIDLength)
 	assert.Equal(t, "f1405ced", res, "Unexpected RNG result")
 }
 
 func TestStreamID(t *testing.T) {
-	common.PkgRNG = rand.New(rand.NewSource(123))
+	defer seedRandomBytes(123)()
 	mid := RandomManifestID()
 	profile := ffmpeg.P144p30fps16x9
 
