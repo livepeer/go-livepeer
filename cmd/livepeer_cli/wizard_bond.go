@@ -167,9 +167,12 @@ func (w *wizard) bond() {
 		return
 	}
 
+	fmt.Printf("Current LPT balance: %v\n", eth.FormatUnits(balBigInt, "LPT"))
+
 	amount := big.NewInt(0)
 	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
-		amount = w.readBigInt("Enter bond amount")
+		fmt.Printf("Enter bond amount in LPT - ")
+		amount = w.readPositiveBaseAmount()
 		if amount.Cmp(big.NewInt(0)) == 0 {
 			break
 		}
@@ -253,7 +256,7 @@ func (w *wizard) unbond() {
 		return
 	}
 
-	if dInfo.BondedAmount.Cmp(big.NewInt(0)) < 0 {
+	if dInfo.BondedAmount.Cmp(big.NewInt(0)) <= 0 {
 		fmt.Printf("You are not bonded\n")
 		return
 	}
@@ -280,7 +283,8 @@ func (w *wizard) unbond() {
 	}
 
 	for amount.Cmp(big.NewInt(0)) == 0 || dInfo.BondedAmount.Cmp(amount) < 0 {
-		amount = w.readBigInt("Enter unbond amount")
+		fmt.Printf("Enter unbond amount in LPT - ")
+		amount = w.readPositiveBaseAmount()
 		if dInfo.BondedAmount.Cmp(amount) < 0 {
 			fmt.Printf("Must enter an amount less than or equal to the current bonded amount.")
 		}
