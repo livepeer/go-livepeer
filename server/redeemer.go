@@ -80,7 +80,7 @@ func (r *Redeemer) Start(url *url.URL, workDir string) error {
 		return err
 	}
 
-	s := grpc.NewServer(grpc.Creds(creds))
+	s := newGRPCServer(grpc.Creds(creds))
 	r.server = s
 
 	net.RegisterTicketRedeemerServer(s, r)
@@ -96,6 +96,9 @@ func (r *Redeemer) Stop() {
 
 // QueueTicket adds a ticket to the ticket queue
 func (r *Redeemer) QueueTicket(ctx context.Context, ticket *net.Ticket) (*net.QueueTicketRes, error) {
+	if ticket.GetTicketParams() == nil || ticket.GetSenderParams() == nil || ticket.GetExpirationParams() == nil {
+		return nil, status.Error(codes.InvalidArgument, "incomplete ticket")
+	}
 	t := pmTicket(ticket)
 	if r.recipient != t.Recipient {
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprintf("invalid ticket recipient 0x%x, expected %v", ticket.TicketParams.Recipient, r.recipient.Hex()))

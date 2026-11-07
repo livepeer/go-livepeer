@@ -574,3 +574,23 @@ func TestRemotePaymentSender_RequestPayment_WithLiveSignerHandler_Refresh(t *tes
 	require.Equal(1, refreshCalls)
 	require.Equal(1, segmentInfo.callCount)
 }
+
+func TestAccountPayment_ZeroPixelsPerUnitSkipped(t *testing.T) {
+	r := &livePaymentReceiver{}
+	// A payment that declares PixelsPerUnit 0 must be skipped, not fed to
+	// calculateFee (big.NewRat(x, 0) would panic).
+	err := r.AccountPayment(context.Background(), &SegmentInfoReceiver{
+		sessionID: "test",
+		units:     1,
+		priceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0},
+	})
+	require.NoError(t, err)
+}
+
+func TestCalculateFee_NonPositivePixelsPerUnit(t *testing.T) {
+	// A non-positive PixelsPerUnit must not divide by zero.
+	for _, pixels := range []int64{0, -1} {
+		fee := calculateFee(100, &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: pixels})
+		require.Equal(t, big.NewRat(0, 1), fee, "pixelsPerUnit=%d", pixels)
+	}
+}
