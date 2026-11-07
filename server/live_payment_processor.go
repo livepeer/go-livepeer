@@ -58,13 +58,24 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 		for {
 			select {
 			case timestamp := <-p.processCh:
-				p.processOne(ctx, timestamp)
+				p.processOneRecover(ctx, timestamp)
 			case <-ctx.Done():
 				clog.Info(ctx, "Done processing payments for session")
 				return
 			}
 		}
 	}()
+}
+
+// processOneRecover runs processOne and recovers from a panic so one bad
+// tick cannot stop the accounting loop.
+func (p *LivePaymentProcessor) processOneRecover(ctx context.Context, timestamp time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			clog.Errorf(ctx, "Recovered from panic in live payment processor: %v", r)
+		}
+	}()
+	p.processOne(ctx, timestamp)
 }
 
 func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Time) {

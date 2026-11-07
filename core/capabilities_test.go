@@ -785,3 +785,15 @@ func (c *Constraints) removeCapabilityConstraints(cap Capability, constraint Cap
 		}
 	}
 }
+
+func TestCapabilitiesFromNetCapabilities_BoundsBitstring(t *testing.T) {
+	// A huge bitstring must not expand into an unbounded capacities map.
+	huge := make([]uint64, 100000)
+	for i := range huge {
+		huge[i] = ^uint64(0) // every bit set
+	}
+	caps := CapabilitiesFromNetCapabilities(&net.Capabilities{Bitstring: huge})
+	assert.NotNil(t, caps)
+	assert.LessOrEqual(t, len(caps.bitstring), maxCapabilityWords)
+	assert.LessOrEqual(t, len(caps.capacities), maxCapabilityWords*64)
+}

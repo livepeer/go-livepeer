@@ -218,7 +218,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 
 // XXX do something about the implicit start of the http mux? this smells
 func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
-	s := grpc.NewServer()
+	s := newGRPCServer()
 	lp := lphttp{
 		orchestrator: orch,
 		orchRPC:      s,
@@ -541,6 +541,9 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
+	if req.GetAuthToken() == nil {
+		return nil, fmt.Errorf("missing auth token")
+	}
 	verifyToken := orch.AuthToken(req.AuthToken.SessionId, req.AuthToken.Expiration)
 	if !bytes.Equal(verifyToken.Token, req.AuthToken.Token) {
 		return nil, fmt.Errorf("Invalid auth token")

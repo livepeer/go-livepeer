@@ -177,17 +177,21 @@ jobs:
   macos-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
     runs-on: ${{ matrix.target.runner }}
+    env:
+      # Keep the macOS 14 minimum of earlier releases; without this the
+      # binaries require the runner's own macOS version.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     strategy:
       fail-fast: false
       matrix:
         target:
           - GOOS: darwin
             GOARCH: amd64
-            runner: macos-14-large
+            runner: macos-15-large
 
           - GOOS: darwin
             GOARCH: arm64
-            runner: macos-14-xlarge
+            runner: macos-15-xlarge
 
     steps:
       - name: Check out code
@@ -220,7 +224,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-macos${{ env.MACOSX_DEPLOYMENT_TARGET }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
         run: |
