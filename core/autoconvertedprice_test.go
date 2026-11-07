@@ -77,6 +77,20 @@ func TestNewAutoConvertedPrice(t *testing.T) {
 	})
 }
 
+func TestNewAutoConvertedPrice_InvalidFeedPrice(t *testing.T) {
+	previousWatcher := PriceFeedWatcher
+	t.Cleanup(func() { PriceFeedWatcher = previousWatcher })
+	for _, rate := range []*big.Rat{nil, big.NewRat(0, 1), big.NewRat(-1, 1)} {
+		watcher := NewPriceFeedWatcherMock(t)
+		PriceFeedWatcher = watcher
+		watcher.On("Currencies").Return("ETH", "USD", nil)
+		watcher.On("Current").Return(eth.PriceData{Price: rate}, nil)
+		price, err := NewAutoConvertedPrice("USD", big.NewRat(1, 1), nil)
+		require.Error(t, err)
+		require.Nil(t, price)
+	}
+}
+
 func TestAutoConvertedPrice_Update(t *testing.T) {
 	require := require.New(t)
 	watcherMock := NewPriceFeedWatcherMock(t)
@@ -104,7 +118,11 @@ func TestAutoConvertedPrice_Update(t *testing.T) {
 	require.Equal(big.NewRat(5e16, 3), price.Value())      // 50 USD * 1/3000 ETH/USD
 	require.Equal(big.NewRat(5e16, 3), <-priceUpdatedChan) // initial update must be sent
 
-	// Simulate a price update
+	// Invalid updates must not panic, publish bad conversions, or stop the loop.
+	for _, rate := range []*big.Rat{nil, big.NewRat(0, 1), big.NewRat(-1, 1)} {
+		sink <- eth.PriceData{Price: rate}
+	}
+	// A subsequent valid update must still arrive.
 	sink <- eth.PriceData{Price: big.NewRat(6000, 1)}
 
 	select {

@@ -26,7 +26,6 @@ import (
 	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/oapi-codegen/runtime/types"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/peer"
 )
@@ -75,18 +74,9 @@ var (
 	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
-	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
-	ErrNoExtensionsForType      = fmt.Errorf("no extensions exist for mime type")
-
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
 		".mp4": "video/mp4",
-	}
-	mime2ext = map[string]string{
-		"video/mp2t": ".ts",
-		"video/mp4":  ".mp4",
-		"image/png":  ".png",
-		"audio/wav":  ".wav",
 	}
 )
 
@@ -479,40 +469,9 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 	return "", errors.New("Error parsing address from keyfile")
 }
 
-// CalculateAudioDuration calculates audio file duration using the lpms/ffmpeg package.
-func CalculateAudioDuration(audio types.File) (int64, error) {
-	read, err := audio.Reader()
-	if err != nil {
-		return 0, err
-	}
-	defer read.Close()
-
-	bytearr, _ := audio.Bytes()
-	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
-	if err != nil {
-		return 0, errors.New("Error getting codec info")
-	}
-
-	duration := int64(mediaFormat.DurSecs)
-	if duration <= 0 {
-		return 0, ErrAudioDurationCalculation
-	}
-
-	return duration, nil
-}
-
 // ValidateServiceURI checks if the serviceURI is valid.
 func ValidateServiceURI(serviceURI *url.URL) bool {
 	return !strings.Contains(serviceURI.Host, "0.0.0.0")
-}
-
-// MimeTypeToExtension returns the file extension for a given MIME type.
-func MimeTypeToExtension(mimeType string) (string, error) {
-	mimeType = strings.ToLower(mimeType)
-	if ext, ok := mime2ext[mimeType]; ok {
-		return ext, nil
-	}
-	return "", ErrNoExtensionsForType
 }
 
 func AppendHostname(urlPath string, host string) (*url.URL, error) {

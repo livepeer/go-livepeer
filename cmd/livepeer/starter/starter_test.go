@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -184,16 +185,16 @@ func TestParseGetGatewayPrices(t *testing.T) {
 func TestMaxPricePerCapability(t *testing.T) {
 	assert := assert.New(t)
 
-	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "image-to-image", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "live-video-to-video", "model_id": "noop", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "live-video-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "live-video-to-video", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
 
 	prices := getCapabilityPrices(jsonTemplate)
 	assert.NotNil(prices)
 	assert.Equal(3, len(prices))
 
 	// Confirm Pipeline and ModelID is parsed correctly
-	assert.Equal(prices[0].Pipeline, "text-to-image")
-	assert.Equal(prices[1].Pipeline, "image-to-video")
-	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[0].Pipeline, "live-video-to-video")
+	assert.Equal(prices[1].Pipeline, "live-video-to-video")
+	assert.Equal(prices[0].ModelID, "noop")
 	assert.Equal(prices[1].ModelID, "default")
 
 	// Confirm prices are parsed correctly
@@ -606,4 +607,34 @@ func TestNodeRecipientAddr(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestCliAddr(t *testing.T) {
+	// Every node type must get a default. A type reaching the default case is fine; a type
+	// left with the empty address is not, since net/http then serves it on :80.
+	nodeTypes := []core.NodeType{
+		core.DefaultNode, core.BroadcasterNode, core.OrchestratorNode,
+		core.TranscoderNode, core.RedeemerNode, core.RemoteSignerNode,
+	}
+	for _, nt := range nodeTypes {
+		t.Run(nt.String(), func(t *testing.T) {
+			addr := cliAddr("", nt)
+			assert.NotEmpty(t, addr)
+			assert.True(t, strings.HasPrefix(addr, "127.0.0.1:"), "must bind loopback, got %v", addr)
+		})
+	}
+
+	// Ports are distinct so co-located nodes do not fight for the socket.
+	seen := map[string]core.NodeType{}
+	for _, nt := range nodeTypes {
+		addr := cliAddr("", nt)
+		if other, dup := seen[addr]; dup {
+			t.Errorf("%v and %v share %v", other, nt, addr)
+		}
+		seen[addr] = nt
+	}
+
+	// An explicit -cliAddr always wins.
+	assert.Equal(t, "0.0.0.0:1234", cliAddr("0.0.0.0:1234", core.RedeemerNode))
+	assert.Equal(t, "127.0.0.1:1234", cliAddr(":1234", core.DefaultNode))
 }

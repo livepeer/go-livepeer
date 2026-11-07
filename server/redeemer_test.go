@@ -21,6 +21,8 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var baseRPCErr = "rpc error: code = Internal desc = "
@@ -882,4 +884,19 @@ func (m *stubTimeManager) SubscribeL1Blocks(sink chan<- *big.Int) event.Subscrip
 	m.blockNumSink = sink
 	m.blockNumSub = &stubSubscription{errCh: make(chan error)}
 	return m.blockNumSub
+}
+
+func TestRedeemerServer_QueueTicket_IncompleteTicket(t *testing.T) {
+	r := &Redeemer{}
+	tickets := map[string]*net.Ticket{
+		"empty":                     {},
+		"missing sender params":     {TicketParams: &net.TicketParams{}, ExpirationParams: &net.TicketExpirationParams{}},
+		"missing expiration params": {TicketParams: &net.TicketParams{}, SenderParams: &net.TicketSenderParams{}},
+	}
+	for name, ticket := range tickets {
+		t.Run(name, func(t *testing.T) {
+			_, err := r.QueueTicket(context.Background(), ticket)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
 }

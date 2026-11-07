@@ -102,7 +102,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 	return &DockerManager{
 		gpus:               []string{"gpu0"},
 		modelDir:           "/models",
-		overrides:          ImageOverrides{Default: "default-image"},
+		overrides:          ImageOverrides{Live: map[string]string{"test-model": "default-image", "model": "default-image"}},
 		dockerClient:       mockDockerClient,
 		containerCreatorID: "instance-1",
 		gpuContainers:      make(map[string]*RunnerContainer),
@@ -117,10 +117,10 @@ func TestNewDockerManager(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
 	createAndVerifyManager := func() *DockerManager {
-		manager, err := NewDockerManager(ImageOverrides{Default: "default-image"}, false, []string{"gpu0"}, "/models", mockDockerClient, "instance-1")
+		manager, err := NewDockerManager(ImageOverrides{Live: map[string]string{"noop": "default-image"}}, false, []string{"gpu0"}, "/models", mockDockerClient, "instance-1")
 		require.NoError(t, err)
 		require.NotNil(t, manager)
-		require.Equal(t, "default-image", manager.overrides.Default)
+		require.Equal(t, "default-image", manager.overrides.Live["noop"])
 		require.Equal(t, []string{"gpu0"}, manager.gpus)
 		require.Equal(t, "/models", manager.modelDir)
 		require.Equal(t, mockDockerClient, manager.dockerClient)
@@ -162,7 +162,7 @@ func TestDockerManager_EnsureImageAvailable(t *testing.T) {
 	dockerManager := createDockerManager(mockDockerClient)
 
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "test-model"
 
 	tests := []struct {
@@ -209,7 +209,7 @@ func TestDockerManager_Warm(t *testing.T) {
 	dockerManager := createDockerManager(mockDockerClient)
 
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "test-model"
 	containerID := "container1"
 	optimizationFlags := OptimizationFlags{}
@@ -268,7 +268,7 @@ func TestDockerManager_Borrow(t *testing.T) {
 	dockerManager := createDockerManager(mockDockerClient)
 
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "model"
 	containerID, _ := dockerManager.getContainerImageName(pipeline, modelID)
 
@@ -323,6 +323,7 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 		modelID       string
 		expectedImage string
 		expectError   bool
+		expectedErr   string
 	}{
 		{
 			name:          "live-video-to-video with valid modelID",
@@ -356,46 +357,12 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:          "valid pipeline",
-			setup:         func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
-			pipeline:      "text-to-speech",
-			modelID:       "",
-			expectedImage: "livepeer/ai-runner:text-to-speech",
-			expectError:   false,
-		},
-		{
-			name:          "invalid pipeline",
-			setup:         func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
-			pipeline:      "invalid-pipeline",
-			modelID:       "",
-			expectedImage: "default-image",
-			expectError:   false,
-		},
-		{
-			name: "override default image",
-			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				dockerManager.overrides = ImageOverrides{
-					Default: "custom-image",
-				}
-			},
-			pipeline:      "",
-			modelID:       "",
-			expectedImage: "custom-image",
-			expectError:   false,
-		},
-		{
-			name: "override batch image",
-			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				dockerManager.overrides = ImageOverrides{
-					Batch: map[string]string{
-						"text-to-speech": "custom-image",
-					},
-				}
-			},
-			pipeline:      "text-to-speech",
-			modelID:       "",
-			expectedImage: "custom-image",
-			expectError:   false,
+			name:        "batch pipeline is rejected",
+			setup:       func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {},
+			pipeline:    "text-to-image",
+			modelID:     "",
+			expectError: true,
+			expectedErr: "no container image found for pipeline text-to-image: batch pipelines are no longer supported",
 		},
 		{
 			name: "override live image",
@@ -412,31 +379,9 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name: "non-overridden batch image",
-			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				dockerManager.overrides = ImageOverrides{
-					Default: "default-image",
-					Batch: map[string]string{
-						"text-to-speech": "custom-batch-image",
-					},
-					Live: map[string]string{
-						"streamdiffusion": "custom-live-image",
-					},
-				}
-			},
-			pipeline:      "audio-to-text",
-			modelID:       "",
-			expectedImage: "livepeer/ai-runner:audio-to-text",
-			expectError:   false,
-		},
-		{
 			name: "non-overridden live image",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				dockerManager.overrides = ImageOverrides{
-					Default: "default-image",
-					Batch: map[string]string{
-						"text-to-speech": "custom-batch-image",
-					},
 					Live: map[string]string{
 						"streamdiffusion": "custom-live-image",
 					},
@@ -465,7 +410,11 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 			image, err := dockerManager.getContainerImageName(tt.pipeline, tt.modelID)
 			if tt.expectError {
 				require.Error(t, err)
-				require.Equal(t, fmt.Sprintf("no container image found for live pipeline %s", tt.modelID), err.Error())
+				if tt.expectedErr != "" {
+					require.EqualError(t, err, tt.expectedErr)
+				} else {
+					require.Equal(t, fmt.Sprintf("no container image found for live pipeline %s", tt.modelID), err.Error())
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expectedImage, image)
@@ -476,7 +425,7 @@ func TestDockerManager_getContainerImageName(t *testing.T) {
 
 func TestDockerManager_HasCapacity(t *testing.T) {
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "test-model"
 
 	tests := []struct {
@@ -496,18 +445,8 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 			expectedHasCapacity: true,
 		},
 		{
-			name: "ImageNotAvailable",
-			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				// Mock client methods to simulate the image not being available locally.
-				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, fmt.Errorf("image not found"))
-			},
-			expectedHasCapacity: false,
-		},
-		{
 			name: "GPUAvailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				// Mock client methods to simulate the image being available locally.
-				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is available by not setting any container for the GPU.
 				dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 			},
@@ -516,8 +455,6 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 		{
 			name: "GPUUnavailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
-				// Mock client methods to simulate the image being available locally.
-				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is not available by setting a container for the GPU.
 				dockerManager.gpuContainers["gpu0"] = &RunnerContainer{
 					Pipeline: pipeline,
@@ -548,7 +485,7 @@ func TestDockerManager_isImageAvailable(t *testing.T) {
 	dockerManager := createDockerManager(mockDockerClient)
 
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "test-model"
 
 	t.Run("ImageNotFound", func(t *testing.T) {
@@ -598,11 +535,11 @@ func TestDockerManager_createContainer(t *testing.T) {
 	dockerManager := createDockerManager(mockDockerClient)
 
 	ctx := context.Background()
-	pipeline := "text-to-image"
+	pipeline := "live-video-to-video"
 	modelID := "test-model"
 	containerID := "container1"
 	gpu := "0"
-	containerHostPort := "8000"
+	containerHostPort := "8900"
 	containerName := dockerContainerName(pipeline, modelID, containerHostPort)
 	containerImage := "default-image"
 	optimizationFlags := OptimizationFlags{}
@@ -619,7 +556,7 @@ func TestDockerManager_createContainer(t *testing.T) {
 	dockerManager.gpus = []string{gpu}
 	dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 	dockerManager.containers = make(map[string]*RunnerContainer)
-	dockerManager.overrides.Default = containerImage
+	dockerManager.overrides.Live[modelID] = containerImage
 
 	mockDockerClient.On("ContainerCreate", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: containerID}, nil)
 	mockDockerClient.On("ContainerStart", mock.Anything, containerID, mock.Anything).Return(nil)

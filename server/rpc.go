@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
-	"github.com/livepeer/go-livepeer/byoc"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -62,8 +61,6 @@ type Orchestrator interface {
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation)
-	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
@@ -75,26 +72,9 @@ type Orchestrator interface {
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	CreateStorageForRequest(requestID string) error
-	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
 	Nodes() []string
-	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
-	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
-	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
-	Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error)
-	AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error)
-	LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error)
-	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
-	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
-	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
-	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
-	RemoveExternalCapability(extCapability string) error
-	GetUrlForCapability(extCapability string) string
-	CheckExternalCapabilityCapacity(extCapability string) int64
-	ReserveExternalCapabilityCapacity(extCapability string) error
-	FreeExternalCapabilityCapacity(extCapability string) error
-	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -206,11 +186,9 @@ type lphttp struct {
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
 	trickleSrv   *trickle.Server
-	byocSrv      *byoc.BYOCOrchestratorServer
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
-	net.UnimplementedAIWorkerServer
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -239,8 +217,8 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAIWorkers bool, n *core.LivepeerNode) error {
-	s := grpc.NewServer()
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
+	s := newGRPCServer()
 	lp := lphttp{
 		orchestrator: orch,
 		orchRPC:      s,
@@ -260,13 +238,6 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	if err != nil {
 		return err
 	}
-	if acceptRemoteAIWorkers {
-		net.RegisterAIWorkerServer(s, &lp)
-		lp.transRPC.Handle("/aiResults", lp.AIResults())
-	}
-	//API for dynamic capabilities
-	lp.byocSrv = byoc.NewBYOCOrchestratorServer(n, orch, lp.trickleSrv, TrickleHTTPPath, lp.transRPC)
-
 	stopTrickle := lp.trickleSrv.Start()
 	defer stopTrickle()
 
@@ -570,6 +541,9 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
+	if req.GetAuthToken() == nil {
+		return nil, fmt.Errorf("missing auth token")
+	}
 	verifyToken := orch.AuthToken(req.AuthToken.SessionId, req.AuthToken.Expiration)
 	if !bytes.Equal(verifyToken.Token, req.AuthToken.Token) {
 		return nil, fmt.Errorf("Invalid auth token")
