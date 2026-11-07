@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math/big"
+	"sync"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -341,6 +342,29 @@ func TestSelectByProbability(t *testing.T) {
 		selectedRatio := float64(selected[addr]) / float64(iters)
 		require.InDelta(t, prob, selectedRatio, 0.01)
 	}
+}
+
+func TestSelectBy_Concurrent(t *testing.T) {
+	// Gateways select orchestrators for many streams at once, so selectBy
+	// must be safe to call concurrently. Run with -race.
+	probs := map[ethcommon.Address]float64{
+		ethcommon.HexToAddress("0x0000000000000000000000000000000000000001"): 0.5,
+		ethcommon.HexToAddress("0x0000000000000000000000000000000000000002"): 0.5,
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				if addr := selectBy(probs); addr == (ethcommon.Address{}) {
+					t.Errorf("selectBy returned no orchestrator")
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestLiveSelectionAlgorithm(t *testing.T) {
