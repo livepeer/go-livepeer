@@ -53,7 +53,7 @@ func (r *Router) Start(uri *url.URL, serviceURI *url.URL, workDir string) error 
 		return err
 	}
 
-	s := grpc.NewServer(grpc.Creds(creds))
+	s := newGRPCServer(grpc.Creds(creds))
 	r.srv = s
 
 	net.RegisterOrchestratorServer(s, r)
