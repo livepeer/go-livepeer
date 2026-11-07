@@ -11,6 +11,8 @@ go test -run LB_ -race
 # Be more strict with nvidia tests: run with race detector enabled
 go test -run Nvidia_ -race
 go test -run Capabilities_ -race
+# Balances cleanup runs alongside concurrent payment writers
+go test -run TestBalances_CleanupConcurrent -race
 cd ..
 
 # Be more strict with live runner tests: run with race detector enabled

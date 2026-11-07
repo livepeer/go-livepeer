@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -313,7 +314,8 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	from := common.GetConnectionAddr(stream.Context())
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
-	if req.Secret != h.orchestrator.TranscoderSecret() {
+	secret := h.orchestrator.TranscoderSecret()
+	if secret == "" || !hmac.Equal([]byte(req.Secret), []byte(secret)) {
 		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
@@ -343,7 +345,8 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if creds != orch.TranscoderSecret() {
+	secret := orch.TranscoderSecret()
+	if secret == "" || !hmac.Equal([]byte(creds), []byte(secret)) {
 		glog.Error("Invalid shared secret")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return

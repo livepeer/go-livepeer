@@ -156,8 +156,9 @@ func TestTranscodeResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
 
 func TestTranscodeResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
 	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
+	orch := newStubOrchestrator()
+	orch.secret = "verbigsecret"
+	l.orchestrator = orch
 	var w = httptest.NewRecorder()
 
 	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
@@ -171,10 +172,9 @@ func TestTranscodeResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
 	require.Contains(t, w.Body.String(), "Unauthorized")
 }
 
-func TestTranscodeResults_ErrorsWhenContentTypeMissing(t *testing.T) {
+func TestTranscodeResults_ErrorsWhenSecretNotConfigured(t *testing.T) {
 	var l lphttp
 	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
 	var w = httptest.NewRecorder()
 
 	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
@@ -184,14 +184,15 @@ func TestTranscodeResults_ErrorsWhenContentTypeMissing(t *testing.T) {
 	r.Header.Set("Credentials", "")
 
 	l.TranscodeResults(w, r)
-	require.Equal(t, http.StatusUnsupportedMediaType, w.Code)
-	require.Contains(t, w.Body.String(), "mime: no media type")
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
 }
 
-func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
+func TestTranscodeResults_ErrorsWhenCredentialsEmpty(t *testing.T) {
 	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
+	orch := newStubOrchestrator()
+	orch.secret = "verbigsecret"
+	l.orchestrator = orch
 	var w = httptest.NewRecorder()
 
 	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
@@ -199,6 +200,74 @@ func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 
 	r.Header.Set("Authorization", protoVerLPT)
 	r.Header.Set("Credentials", "")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
+}
+
+type stubRegisterTranscoderStream struct {
+	net.Transcoder_RegisterTranscoderServer
+}
+
+func (s *stubRegisterTranscoderStream) Context() context.Context {
+	return context.Background()
+}
+
+func TestRegisterTranscoder_ChecksSecret(t *testing.T) {
+	tests := []struct {
+		name       string
+		orchSecret string
+		reqSecret  string
+		wantErr    error
+	}{
+		{name: "not configured", orchSecret: "", reqSecret: "", wantErr: errSecret},
+		{name: "wrong secret", orchSecret: "verbigsecret", reqSecret: "wrong", wantErr: errSecret},
+		{name: "empty secret sent", orchSecret: "verbigsecret", reqSecret: "", wantErr: errSecret},
+		{name: "matching secret", orchSecret: "verbigsecret", reqSecret: "verbigsecret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orch := newStubOrchestrator()
+			orch.secret = tt.orchSecret
+			l := lphttp{orchestrator: orch}
+
+			err := l.RegisterTranscoder(&net.RegisterRequest{Secret: tt.reqSecret, Capacity: 1}, &stubRegisterTranscoderStream{})
+			require.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+func TestTranscodeResults_ErrorsWhenContentTypeMissing(t *testing.T) {
+	var l lphttp
+	orch := newStubOrchestrator()
+	orch.secret = "verbigsecret"
+	l.orchestrator = orch
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "verbigsecret")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusUnsupportedMediaType, w.Code)
+	require.Contains(t, w.Body.String(), "mime: no media type")
+}
+
+func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
+	var l lphttp
+	orch := newStubOrchestrator()
+	orch.secret = "verbigsecret"
+	l.orchestrator = orch
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "verbigsecret")
 	r.Header.Set("Content-Type", "video/mp4")
 
 	l.TranscodeResults(w, r)
@@ -208,15 +277,16 @@ func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 
 func TestTranscodeResults_ErrorsWhenPixelsHeaderMissing(t *testing.T) {
 	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
+	orch := newStubOrchestrator()
+	orch.secret = "verbigsecret"
+	l.orchestrator = orch
 	var w = httptest.NewRecorder()
 
 	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Authorization", protoVerLPT)
-	r.Header.Set("Credentials", "")
+	r.Header.Set("Credentials", "verbigsecret")
 	r.Header.Set("Content-Type", "video/mp4")
 	r.Header.Set("TaskId", "123")
 
