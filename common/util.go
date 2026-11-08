@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +11,6 @@ import (
 	"io/ioutil"
 	"math"
 	"math/big"
-	"math/rand"
 	"mime"
 	"net/url"
 	"regexp"
@@ -300,18 +300,17 @@ func ratToFixed(rat *big.Rat, scalingFactor int64) (int64, error) {
 	return fp, nil
 }
 
-// Package-level RNG; tests can override it.
-var PkgRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
-
 // RandomIDGenerator generates random hexadecimal string of specified length
 // defined as variable for unit tests
 var RandomIDGenerator = func(length uint) string {
 	return hex.EncodeToString(RandomBytesGenerator(length))
 }
 
+// RandomBytesGenerator returns length cryptographically secure random bytes.
+// Defined as a variable so tests can override it with a deterministic source.
 var RandomBytesGenerator = func(length uint) []byte {
-	x := make([]byte, length, length)
-	PkgRNG.Read(x)
+	x := make([]byte, length)
+	crand.Read(x) // never fails since Go 1.24; the runtime aborts instead
 	return x
 }
 
@@ -321,7 +320,9 @@ func RandName() string {
 }
 
 var RandomUintUnder = func(max uint) uint {
-	return uint(rand.Uint32()) % max
+	// crand.Reader never returns an error, so neither does Int
+	n, _ := crand.Int(crand.Reader, new(big.Int).SetUint64(uint64(max)))
+	return uint(n.Uint64())
 }
 
 func RandomUint64() uint64 {

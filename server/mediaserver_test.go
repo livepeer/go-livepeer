@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -696,14 +695,13 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	common.PkgRNG = rand.New(rand.NewSource(123))
 	sid, err := createSid(u)
 	require.NoError(t, err)
-	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0xba68998bed5c40f1), sap.Nonce)
+	nonce := sid.(*core.StreamParameters).Nonce
 
 	sid, err = createSid(u)
 	require.NoError(t, err)
+	assert.NotEqual(t, nonce, sid.(*core.StreamParameters).Nonce, "nonces should be random")
 	if sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
@@ -1144,7 +1142,6 @@ func TestRegisterConnection(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
-	rand.Seed(123)
 	cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.NotNil(cxn)
 	assert.Nil(err)
