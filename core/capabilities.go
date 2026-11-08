@@ -513,23 +513,33 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	return netCaps
 }
 
+// maxCapabilityWords bounds the length of a peer-supplied capability
+// bitstring before it is expanded into a map one entry per set bit. Real
+// capabilities use a single 64-bit word (the highest id is well under 64);
+// 64 words (4096 ids) is far more than any legitimate peer sends.
+const maxCapabilityWords = 64
+
 func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	if caps == nil {
 		return nil
 	}
+	bitstring := caps.Bitstring
+	if len(bitstring) > maxCapabilityWords {
+		bitstring = bitstring[:maxCapabilityWords]
+	}
 	coreCaps := &Capabilities{
-		bitstring:   caps.Bitstring,
+		bitstring:   bitstring,
 		mandatories: caps.Mandatories,
 		capacities:  make(map[Capability]int),
 		version:     caps.Version,
 		constraints: Constraints{minVersion: caps.Constraints.GetMinVersion(), perCapability: make(PerCapabilityConstraints)},
 	}
-	if caps.Capacities == nil || len(caps.Capacities) == 0 {
+	if len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)
-		for arrIdx := 0; arrIdx < len(caps.Bitstring); arrIdx++ {
+		for arrIdx := 0; arrIdx < len(bitstring); arrIdx++ {
 			for capIdx := 0; capIdx < 64; capIdx++ {
 				capInt := arrIdx*64 + capIdx
-				if caps.Bitstring[arrIdx]&uint64(1<<capIdx) > 0 {
+				if bitstring[arrIdx]&uint64(1<<capIdx) > 0 {
 					coreCaps.capacities[Capability(capInt)] = 1
 				}
 			}
