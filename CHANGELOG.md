@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.10.0
+
+### Breaking Changes 🚨🚨
+
+* [#4064](https://github.com/livepeer/go-livepeer/pull/4064) Remove the deprecated BYOC (bring your own container) support (@rickstaa)
+* [#4036](https://github.com/livepeer/go-livepeer/pull/4036) Remove the deprecated ai-runner batch pipelines and the standalone AI worker node; deprecated routes now return 410 Gone (@rickstaa)
+* [#4126](https://github.com/livepeer/go-livepeer/pull/4126) Require a configured orchestrator secret for remote transcoders; nodes no longer accept an empty secret (@rickstaa)
+
+### Features ⚒
+
+* [#4122](https://github.com/livepeer/go-livepeer/pull/4122) Warn at startup that go-livepeer is deprecated (@rickstaa)
+
+### Bug Fixes 🐞
+
+* [#4127](https://github.com/livepeer/go-livepeer/pull/4127) Make orchestrator selection safe to run concurrently (@rickstaa)
+* [#4123](https://github.com/livepeer/go-livepeer/pull/4123) Generate IDs, keys and MAC secrets with crypto/rand and remove a data race on the shared RNG (@rickstaa)
+* [#4131](https://github.com/livepeer/go-livepeer/pull/4131) Bound the capability bitstring length (@rickstaa)
+* [#4130](https://github.com/livepeer/go-livepeer/pull/4130) Guard the live payment fee against a zero pixelsPerUnit (@rickstaa)
+* [#4129](https://github.com/livepeer/go-livepeer/pull/4129) Guard the balances map during cleanup (@rickstaa)
+* [#4128](https://github.com/livepeer/go-livepeer/pull/4128) Recover from panics in gRPC handlers (@rickstaa)
+* [#4081](https://github.com/livepeer/go-livepeer/pull/4081) Keep offchain gateways alive when a session is dropped (@rickstaa)
+* [#4078](https://github.com/livepeer/go-livepeer/pull/4078) Default -cliAddr for every node type (@rickstaa)
+
+### Dependencies
+
+* [#4124](https://github.com/livepeer/go-livepeer/pull/4124) Bump klauspost/compress to fix a zstd decode panic (@rickstaa)
+* [#4121](https://github.com/livepeer/go-livepeer/pull/4121) Bump the minor-and-patch dependency group with 17 updates (@dependabot)
+
 ## v0.9.4
 
 ### Bug Fixes 🐞
