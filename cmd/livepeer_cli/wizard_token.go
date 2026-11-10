@@ -41,5 +41,10 @@ func (w *wizard) transferTokens() {
 }
 
 func (w *wizard) requestTokens() {
-	httpPost(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
+	result, ok := httpPostWithSuccess(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
+	if ok {
+		fmt.Println("Successfully requested test LPT.")
+	} else if result != "" {
+		fmt.Println(result)
+	}
 }
