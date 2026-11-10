@@ -26,7 +26,7 @@ require (
 	github.com/livepeer/livepeer-data v0.8.1
 	github.com/livepeer/lpms v0.0.0-20260310011836-c44af7253bc9
 	github.com/livepeer/m3u8 v0.11.1
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/olekukonko/tablewriter v0.0.5
