@@ -50,7 +50,7 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	maxTryCount := 20
+	maxTryCount := 5
 	for try := 1; try <= maxTryCount; try++ {
 		clog.V(common.DEBUG).Infof(ctx, "Selecting orchestrator, try=%d", try)
 		sess := pool.selector.Select(ctx)
@@ -157,6 +157,7 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	defer pool.mu.Unlock()
 
 	delete(pool.sessMap, sess.Transcoder())
+	pool.selector.Remove(sess)
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
 	// If this method is called assume that the orch should be suspended
