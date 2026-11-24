@@ -59,6 +59,9 @@ func (w *wizard) deposit() {
 		"depositAmount": {depositAmount.String()},
 		"reserveAmount": {reserveAmount.String()},
 	}
+	if !w.confirmTx("fundDepositAndReserve", fmt.Sprintf("Fund %s deposit and %s reserve", eth.FormatUnits(depositAmount, "ETH"), eth.FormatUnits(reserveAmount, "ETH"))) {
+		return
+	}
 	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
 
 	return
