@@ -154,6 +154,7 @@ type LivepeerConfig struct {
 	MaxTicketEV                *string
 	MaxTotalEV                 *string
 	DepositMultiplier          *int
+	IgnoreSenderReserve        *bool
 	PricePerUnit               *string
 	PixelsPerUnit              *string
 	PriceFeedAddr              *string
@@ -295,6 +296,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxPricePerUnit := "0"
 	defaultMaxPricePerCapability := ""
 	defaultIgnoreMaxPriceIfNeeded := false
+	defaultIgnoreSenderReserve := false
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -424,6 +426,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTicketEV:             &defaultMaxTicketEV,
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
+		IgnoreSenderReserve:     &defaultIgnoreSenderReserve,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
 		MaxPricePerCapability:   &defaultMaxPricePerCapability,
 		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
@@ -1119,9 +1122,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			defer sm.Stop()
 
 			tcfg := pm.TicketParamsConfig{
-				EV:               ev,
-				RedeemGas:        redeemGas,
-				TxCostMultiplier: txCostMultiplier,
+				EV:                  ev,
+				RedeemGas:           redeemGas,
+				TxCostMultiplier:    txCostMultiplier,
+				IgnoreSenderReserve: *cfg.IgnoreSenderReserve,
 			}
 			n.Recipient, err = pm.NewRecipient(
 				recipientAddr,
@@ -1135,6 +1139,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
+			}
+			if *cfg.IgnoreSenderReserve {
+				glog.Warning("Sender reserve requirements disabled; relying on broadcaster deposit to cover ticket face value. Double-spend protection is reduced.")
 			}
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
