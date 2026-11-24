@@ -60,3 +60,21 @@ func TestLivePaymentProcessorCarriesFractionalUnits(t *testing.T) {
 		require.Equal(t, int64(21), processed)
 	})
 }
+
+func TestLivePaymentProcessorProcessSyncCompletesBeforeCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		var processed int64
+		p := NewLivePaymentProcessor(ctx, time.Second, func(units int64) error {
+			processed += units
+			return nil
+		})
+
+		time.Sleep(time.Second)
+		p.processSync(ctx)
+		cancel()
+		synctest.Wait()
+
+		require.Equal(t, int64(1), processed)
+	})
+}
